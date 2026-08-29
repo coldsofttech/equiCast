@@ -156,8 +156,20 @@ does this as two jobs — `apply-dev` runs automatically on every push to
 `main`, `apply-prod` is gated behind the `production` GitHub Environment's
 required reviewers.
 
-Then set the repo variable `MARKET_DATA_BUCKET` to the bucket name (e.g.
-`equicast-market-data-prod`) for `fx-ingestion.yml` to upload to.
+Then set two repo variables (Settings → Secrets and variables → Actions →
+Variables) so `fx-ingestion.yml` knows which bucket to upload to for each
+environment:
+
+- `MARKET_DATA_BUCKET_DEV` = `equicast-market-data-dev`
+- `MARKET_DATA_BUCKET_PROD` = `equicast-market-data-prod`
+
+These are plain repo variables, not scoped to the `dev`/`production` GitHub
+Environments those Terraform jobs use — `production` has a required-reviewer
+protection rule, and scoping the bucket lookup to that environment would
+pause every scheduled ingestion run pending manual approval. `fx-ingestion.yml`
+resolves which one to use itself (see below) and fails fast with a clear
+error if the relevant variable is unset, instead of the `Invalid bucket name
+""` error you get from `aws s3 cp` when it's missing.
 
 ## Publishing the image
 
@@ -174,25 +186,36 @@ inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
+| `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each pair's entire history (all years) instead of just the current year |
 | `chunk_size` | `300` | Target FX pairs per parallel chunk |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
+The scheduled (cron) trigger always targets **production** — there's no
+`environment` input to read on a timer, and a data feed running unattended
+every 6 hours should land in the real bucket, not dev. The `environment`
+input only applies to manual `workflow_dispatch` runs, where it defaults to
+`dev` so an ad-hoc run doesn't write to production by accident.
+
 The workflow has two jobs:
 
 1. **plan** — runs `equicast-fx-plan` to split the configured pairs into
    chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). If
    the pair list would need more than 256 chunks at the target `chunk_size`,
-   the chunk size grows instead of pairs being dropped.
+   the chunk size grows instead of pairs being dropped. It also resolves the
+   target environment/bucket once (schedule → `production`, dispatch → the
+   `environment` input) and fails fast if the corresponding
+   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
    `--pairs-json`, and uploads the resulting Parquet files to
-   `s3://equicast-market-data-<env>/`. Each leg runs on its own GitHub-hosted
-   runner (a separate source IP hitting Yahoo Finance), and each container
-   also fetches its chunk's pairs (profile + prices + metrics) concurrently —
-   so throughput scales both across and within legs.
+   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved).
+   Each leg runs on its own GitHub-hosted runner (a separate source IP
+   hitting Yahoo Finance), and each container also fetches its chunk's pairs
+   (profile + prices + metrics) concurrently — so throughput scales both
+   across and within legs.
 
 With today's 4 configured pairs this collapses to a single chunk/leg; at
 thousands of pairs it fans out automatically. A `full_load=true` run doesn't
