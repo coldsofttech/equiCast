@@ -40,12 +40,24 @@ jobs:
           ref: ${{ github.event.pull_request.base.ref }}
 
       - name: Generate Infracost baseline (base branch)
-        run: infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
+        # infracost.yml doesn't exist on main yet as of the PR that
+        # introduces it — skip the baseline rather than fail in that case,
+        # so this (and every PR before infracost.yml lands) at least gets a
+        # plain cost breakdown instead of a diff.
+        run: |
+          if [ -f infracost.yml ]; then
+            infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
+          fi
 
       - uses: actions/checkout@v4
 
       - name: Generate Infracost diff (this PR vs base)
-        run: infracost diff --config-file=infracost.yml --format=json --compare-to=/tmp/infracost-base.json --out-file=/tmp/infracost.json
+        run: |
+          if [ -f /tmp/infracost-base.json ]; then
+            infracost diff --config-file=infracost.yml --format=json --compare-to=/tmp/infracost-base.json --out-file=/tmp/infracost.json
+          else
+            infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost.json
+          fi
 
       - name: Post Infracost comment
         run: |
