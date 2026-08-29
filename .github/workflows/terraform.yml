@@ -18,12 +18,17 @@ jobs:
   # infra/infracost-usage.yml for rough usage-based estimates (S3/ECR storage
   # and request volume), since Infracost assumes zero usage by default.
   #
-  # Uses the plain CLI (breakdown/diff/comment) rather than
+  # Uses the plain CLI (breakdown/diff/output) rather than
   # infracost/actions/diff@v4 — that action's wrapper binary calls out to
   # Infracost Cloud to fetch run configuration before doing anything else,
   # which 401s ("failed to fetch run parameters: Unauthorized") unless the
-  # org's Cloud/dashboard state is fully set up. The CLI only needs the API
-  # key for pricing lookups and $GITHUB_TOKEN to post the comment.
+  # org's Cloud/dashboard state is fully set up. Posting via `gh` ourselves
+  # (rather than `infracost comment github`) also sidesteps that: this repo's
+  # API key is tied to an Infracost Cloud org, and `infracost comment github`
+  # uploads the estimate there and runs the org's FinOps policies/guardrails
+  # — when nothing's flagged, it replaces the cost table with a compact
+  # "aligned with policies" pass banner instead of showing numbers.
+  # `infracost output` is purely local rendering, no Cloud call involved.
   infracost:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -59,13 +64,25 @@ jobs:
             infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost.json
           fi
 
-      - name: Post Infracost comment
+      - name: Render cost comment
+        run: infracost output --path=/tmp/infracost.json --format=github-comment --out-file=/tmp/infracost-comment-body.md
+
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          infracost comment github --path=/tmp/infracost.json \
-            --repo=$GITHUB_REPOSITORY \
-            --github-token=${{ github.token }} \
-            --pull-request=${{ github.event.pull_request.number }} \
-            --behavior=update
+          MARKER="<!-- infracost-comment -->"
+          { echo "$MARKER"; cat /tmp/infracost-comment-body.md; } > /tmp/infracost-comment-final.md
+
+          EXISTING_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id")
+
+          if [ -n "$EXISTING_ID" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$EXISTING_ID" -f body=@/tmp/infracost-comment-final.md
+          else
+            gh pr comment "$PR_NUMBER" --body-file /tmp/infracost-comment-final.md
+          fi
 
   plan:
     runs-on: ubuntu-latest
