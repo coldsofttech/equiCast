@@ -7,6 +7,16 @@ from typing import Any
 
 from equicast_datafeed import DatafeedClient
 
+#: yfinance's own trailing 52-week window, reused as the "year" window for
+#: year_open/year_high/year_low/year_close/year_average.
+YEAR_HISTORY_PERIOD = "1y"
+
+
+def _midpoint(low: float | None, high: float | None) -> float | None:
+    if low is None or high is None:
+        return None
+    return (low + high) / 2
+
 
 class FXClient:
     """Fetches market data for one `from_currency` -> `to_currency` FX pair."""
@@ -27,8 +37,9 @@ class FXClient:
         return f"{self.from_currency}{self.to_currency}=X"
 
     def profile(self) -> dict[str, Any]:
-        """Return exchange/region/description metadata for this FX pair."""
+        """Return profile, price-range, and moving-average data for this FX pair."""
         info = self._datafeed.get_info(self.symbol)
+        history = self._datafeed.get_history(self.symbol, period=YEAR_HISTORY_PERIOD)
 
         market_time = info.get("regularMarketTime")
         last_updated = (
@@ -36,6 +47,14 @@ class FXClient:
             if market_time is not None
             else datetime.now(UTC).isoformat()
         )
+
+        day_high = info.get("regularMarketDayHigh")
+        day_low = info.get("regularMarketDayLow")
+        day_close = info.get("regularMarketPrice")
+
+        year_open = float(history["Open"].iloc[0]) if not history.empty else None
+        year_high = info.get("fiftyTwoWeekHigh")
+        year_low = info.get("fiftyTwoWeekLow")
 
         return {
             "from_currency": self.from_currency,
@@ -45,4 +64,16 @@ class FXClient:
             "description": info.get("longName") or info.get("shortName"),
             "last_updated": last_updated,
             "source": "yfinance",
+            "day_open": info.get("regularMarketOpen"),
+            "day_high": day_high,
+            "day_low": day_low,
+            "day_close": day_close,
+            "day_average": _midpoint(day_low, day_high),
+            "year_open": year_open,
+            "year_high": year_high,
+            "year_low": year_low,
+            "year_close": day_close,
+            "year_average": _midpoint(year_low, year_high),
+            "moving_average_50_days": info.get("fiftyDayAverage"),
+            "moving_average_200_days": info.get("twoHundredDayAverage"),
         }

@@ -86,8 +86,20 @@ from equicast_fx import FXClient
 FXClient("GBP", "USD").profile()
 # {"from_currency": "GBP", "to_currency": "USD", "exchange": "CCY",
 #  "region": "US", "description": "GBP/USD",
-#  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance"}
+#  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance",
+#  "day_open": 1.3594, "day_high": 1.3598, "day_low": 1.3527,
+#  "day_close": 1.3537, "day_average": 1.3563,
+#  "year_open": 1.3505, "year_high": 1.3847, "year_low": 1.3012,
+#  "year_close": 1.3537, "year_average": 1.3429,
+#  "moving_average_50_days": 1.3417, "moving_average_200_days": 1.3431}
 ```
+
+`day_*`/`moving_average_*` come straight from yfinance's `.info` (`day_close`
+is the live price — FX has no settled daily close). `year_*` uses yfinance's
+own trailing-52-week window (`fiftyTwoWeekHigh`/`Low`); `year_open` is the
+first `Open` from a `history(period="1y")` call (the only field with no
+direct equivalent), `year_close` mirrors `day_close`, and both `*_average`
+fields are the high/low midpoint, not a mean of daily closes.
 
 The FX pairs to extract are configured in `packages/fx/config/fx_pairs.yaml`
 (defaults: GBP→USD, USD→GBP, GBP→EUR, EUR→GBP). The CLI writes one Parquet

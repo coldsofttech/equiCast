@@ -1,27 +1,40 @@
 from unittest.mock import MagicMock
 
+import pandas as pd
 from equicast_fx.client import FXClient
 
+_FULL_INFO = {
+    "exchange": "CCY",
+    "region": "US",
+    "longName": "GBP/USD",
+    "regularMarketTime": 1787952545,
+    "regularMarketOpen": 1.3594,
+    "regularMarketDayHigh": 1.3598,
+    "regularMarketDayLow": 1.3527,
+    "regularMarketPrice": 1.3537,
+    "fiftyTwoWeekHigh": 1.3847,
+    "fiftyTwoWeekLow": 1.3012,
+    "fiftyDayAverage": 1.3417,
+    "twoHundredDayAverage": 1.3431,
+}
 
-def _datafeed(info: dict) -> MagicMock:
+_HISTORY = pd.DataFrame({"Open": [1.35, 1.351, 1.3594]})
+
+
+def _datafeed(info: dict, history: pd.DataFrame = _HISTORY) -> MagicMock:
     datafeed = MagicMock()
     datafeed.get_info.return_value = info
+    datafeed.get_history.return_value = history
     return datafeed
 
 
 def test_symbol_is_uppercase_yfinance_fx_ticker() -> None:
-    client = FXClient("gbp", "usd", datafeed=_datafeed({}))
+    client = FXClient("gbp", "usd", datafeed=_datafeed({}, pd.DataFrame()))
     assert client.symbol == "GBPUSD=X"
 
 
 def test_profile_maps_yfinance_info_fields() -> None:
-    info = {
-        "exchange": "CCY",
-        "region": "US",
-        "longName": "GBP/USD",
-        "regularMarketTime": 1787952545,
-    }
-    client = FXClient("GBP", "USD", datafeed=_datafeed(info))
+    client = FXClient("GBP", "USD", datafeed=_datafeed(_FULL_INFO))
 
     profile = client.profile()
 
@@ -33,12 +46,47 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "description": "GBP/USD",
         "last_updated": "2026-08-28T21:29:05+00:00",
         "source": "yfinance",
+        "day_open": 1.3594,
+        "day_high": 1.3598,
+        "day_low": 1.3527,
+        "day_close": 1.3537,
+        "day_average": (1.3527 + 1.3598) / 2,
+        "year_open": 1.35,
+        "year_high": 1.3847,
+        "year_low": 1.3012,
+        "year_close": 1.3537,
+        "year_average": (1.3012 + 1.3847) / 2,
+        "moving_average_50_days": 1.3417,
+        "moving_average_200_days": 1.3431,
     }
+
+
+def test_profile_year_open_is_first_row_of_history() -> None:
+    history = pd.DataFrame({"Open": [1.10, 1.20, 1.30]})
+    client = FXClient("GBP", "USD", datafeed=_datafeed(_FULL_INFO, history))
+
+    assert client.profile()["year_open"] == 1.10
+
+
+def test_profile_year_open_is_none_when_history_is_empty() -> None:
+    client = FXClient("GBP", "USD", datafeed=_datafeed(_FULL_INFO, pd.DataFrame()))
+
+    assert client.profile()["year_open"] is None
+
+
+def test_profile_averages_are_none_when_high_or_low_missing() -> None:
+    info = {"exchange": "CCY", "region": "US", "shortName": "GBP/USD"}
+    client = FXClient("GBP", "USD", datafeed=_datafeed(info, pd.DataFrame()))
+
+    profile = client.profile()
+
+    assert profile["day_average"] is None
+    assert profile["year_average"] is None
 
 
 def test_profile_falls_back_to_short_name_and_current_time() -> None:
     info = {"exchange": "CCY", "region": "US", "shortName": "GBP/USD"}
-    client = FXClient("GBP", "USD", datafeed=_datafeed(info))
+    client = FXClient("GBP", "USD", datafeed=_datafeed(info, pd.DataFrame()))
 
     profile = client.profile()
 

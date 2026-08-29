@@ -14,8 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reusable by any future market-data package.
 - `equicast-fx` (`packages/fx/`): standalone, class-based package for
   extracting FX pair profiles (`FXClient(from_currency, to_currency).profile()`),
-  returning from/to currency, exchange, region, description, last updated, and
-  source. Configured via `packages/fx/config/fx_pairs.yaml` (GBP/USD, USD/GBP,
+  returning from/to currency, exchange, region, description, last updated,
+  source, day open/high/low/close/average, year open/high/low/close/average
+  (trailing 52-week window, `year_open` from a `history(period="1y")` call,
+  `*_average` as the high/low midpoint), and the 50-/200-day moving averages.
+  Configured via `packages/fx/config/fx_pairs.yaml` (GBP/USD, USD/GBP,
   GBP/EUR, EUR/GBP by default); its CLI writes one Parquet file per pair to
   `fx=<PAIR>/profile.parquet`, reading pairs from that config or a
   `--pairs-json` string, with `--max-workers`/`--max-calls`/`--period-seconds`
