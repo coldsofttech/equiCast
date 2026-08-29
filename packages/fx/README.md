@@ -3,6 +3,19 @@
 Class-based FX pair market data extraction, built on
 [equicast-datafeed](../datafeed/README.md).
 
+## Disclaimer
+
+Data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
+(Yahoo Finance) for educational and informational purposes only. It is not
+financial advice, and equicast makes no guarantee of its accuracy,
+completeness, or timeliness. Do not use it as the sole basis for any
+financial decision — verify independently and consult a qualified
+professional.
+
+Constructing an `FXClient` logs this as a one-line warning the first time it
+happens in a process (shared with `equicast-datafeed`'s own disclaimer, so
+you won't see it twice).
+
 ## Usage
 
 ```python

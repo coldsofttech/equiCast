@@ -4,6 +4,20 @@ Generic risk/performance metrics for any yfinance symbol — an FX pair
 (`GBPUSD=X`) or a stock ticker (`AAPL`) alike, since the calculation only
 needs a daily close-price history, regardless of asset class.
 
+## Disclaimer
+
+These metrics (volatility, Sharpe ratio, max drawdown, CAGR) are calculated
+by equicast for educational and informational purposes only. They are not
+sourced from a licensed financial data provider and have not been
+independently verified — please validate their accuracy yourself before
+relying on them. Not financial advice.
+
+Constructing a `MetricsClient` logs this as a one-line warning the first
+time it happens in a process (via Python's `logging`, so it still reaches
+the console even if nothing else has configured a handler). Since
+`MetricsClient` also builds on `equicast-datafeed` internally, you'll
+typically see that package's yfinance-sourcing disclaimer alongside it.
+
 ## Usage
 
 ```python

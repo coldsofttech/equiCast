@@ -5,6 +5,19 @@ limiting and retry-with-backoff around `yfinance` calls, so any consumer
 (`equicast-fx`, and future data packages) gets safe defaults for hitting
 Yahoo Finance without hand-rolling error handling each time.
 
+## Disclaimer
+
+Data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
+(Yahoo Finance) for educational and informational purposes only. It is not
+financial advice, and equicast makes no guarantee of its accuracy,
+completeness, or timeliness. Do not use it as the sole basis for any
+financial decision — verify independently and consult a qualified
+professional.
+
+Constructing a `DatafeedClient` logs this as a one-line warning the first
+time it happens in a process (via Python's `logging`, so it still reaches
+the console even if nothing else has configured a handler).
+
 ## Usage
 
 ```python

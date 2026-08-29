@@ -17,6 +17,19 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
   ticker alike.
 
+## Disclaimer
+
+FX profile and price data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
+(Yahoo Finance) for educational and informational purposes only — not
+financial advice, with no guarantee of accuracy, completeness, or
+timeliness. FX metrics (volatility, Sharpe ratio, max drawdown, CAGR) are
+calculated by equicast, not sourced from a licensed provider — validate
+their accuracy yourself before relying on them. See
+[equicast-datafeed](packages/datafeed/README.md#disclaimer),
+[equicast-fx](packages/fx/README.md#disclaimer), and
+[equicast-metrics](packages/metrics/README.md#disclaimer) for the full text;
+each is also logged as a console warning the first time its client is used.
+
 ## FX data products
 
 Each configured FX pair (default: GBP→USD, USD→GBP, GBP→EUR, EUR→GBP) yields

@@ -1,7 +1,9 @@
+import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
 from equicast_datafeed.client import DatafeedClient
+from equicast_datafeed.disclaimers import YFINANCE_DATA_DISCLAIMER, reset_warned
 from equicast_datafeed.exceptions import DatafeedError
 
 
@@ -9,6 +11,13 @@ from equicast_datafeed.exceptions import DatafeedError
 def _no_rate_limit_sleep():
     with patch("equicast_datafeed.rate_limit.time.sleep"):
         yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_disclaimer():
+    reset_warned()
+    yield
+    reset_warned()
 
 
 def _client() -> DatafeedClient:
@@ -57,3 +66,13 @@ def test_get_history_returns_dataframe() -> None:
 
     mock_ticker.return_value.history.assert_called_once_with(period="1y", interval="1d")
     assert result == "not-really-a-dataframe"
+
+
+def test_constructing_client_shows_yfinance_disclaimer_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        _client()
+        _client()
+
+    assert caplog.messages == [YFINANCE_DATA_DISCLAIMER]

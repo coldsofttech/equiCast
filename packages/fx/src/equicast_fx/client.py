@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
-from equicast_datafeed import DatafeedClient, round_value
+from equicast_datafeed import YFINANCE_DATA_DISCLAIMER, DatafeedClient, round_value, warn_once
+
+logger = logging.getLogger(__name__)
 
 #: yfinance's own trailing 52-week window, reused as the "year" window for
 #: year_open/year_high/year_low/year_close/year_average.
@@ -33,6 +36,7 @@ class FXClient:
         to_currency: str,
         datafeed: DatafeedClient | None = None,
     ) -> None:
+        warn_once(logger, YFINANCE_DATA_DISCLAIMER)
         self.from_currency = from_currency.upper()
         self.to_currency = to_currency.upper()
         self._datafeed = datafeed or DatafeedClient()

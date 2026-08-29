@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Educational-use disclaimers, documented in each package's README
+  (`equicast-datafeed`, `equicast-fx`: yfinance-sourced data, not financial
+  advice; `equicast-metrics`: calculated by equicast, validate accuracy
+  independently) and shown once per process as a console warning —
+  `DatafeedClient`/`FXClient` share one disclaimer (deduped by message text,
+  via a new `equicast_datafeed.warn_once` helper, so constructing many of
+  either doesn't repeat it), `MetricsClient` shows its own. Falls back to
+  Python's logging "handler of last resort" (plain stderr output) when
+  nothing else has configured a handler, so it's visible either way.
 - Initial project scaffold with `equicast`, a core Python package (yfinance
   ingestion, Parquet storage) as the root of a uv workspace.
 - Django REST backend (`backend/`) exposing market data at

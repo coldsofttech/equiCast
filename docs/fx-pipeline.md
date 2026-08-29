@@ -29,6 +29,13 @@ FX pairs config isn't baked in as the only input — pairs can also be passed
 at runtime via `--pairs-json`, which is how the scheduled workflow feeds each
 parallel chunk its share of the work (see below).
 
+Expect two `WARNING` lines near the top of every run's logs — a one-time
+(per process) disclaimer from `equicast-datafeed` (data via yfinance,
+educational use only) and one from `equicast-metrics` (metrics calculated by
+equicast, not independently verified). See the [README's disclaimer
+section](../README.md#disclaimer) for the full text; this is expected, not
+an error.
+
 ## Running the CLI locally
 
 ```bash

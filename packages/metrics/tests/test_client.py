@@ -1,8 +1,17 @@
+import logging
 from unittest.mock import MagicMock
 
 import pandas as pd
 import pytest
-from equicast_metrics.client import MetricsClient
+from equicast_datafeed.disclaimers import reset_warned
+from equicast_metrics.client import EQUICAST_METRICS_DISCLAIMER, MetricsClient
+
+
+@pytest.fixture(autouse=True)
+def _reset_disclaimer():
+    reset_warned()
+    yield
+    reset_warned()
 
 
 def _history(prices: list[float], start: str = "2015-01-01") -> pd.DataFrame:
@@ -20,6 +29,16 @@ def _datafeed(info: dict, history: pd.DataFrame) -> MagicMock:
 def test_symbol_is_uppercased() -> None:
     client = MetricsClient("aapl", datafeed=_datafeed({}, pd.DataFrame()))
     assert client.symbol == "AAPL"
+
+
+def test_constructing_client_shows_equicast_disclaimer_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        MetricsClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
+        MetricsClient("GBPUSD=X", datafeed=_datafeed({}, pd.DataFrame()))
+
+    assert caplog.messages == [EQUICAST_METRICS_DISCLAIMER]
 
 
 def test_metrics_uses_yfinance_cagr_1y_when_present() -> None:

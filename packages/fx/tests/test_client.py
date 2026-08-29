@@ -1,7 +1,18 @@
+import logging
 from unittest.mock import MagicMock
 
 import pandas as pd
+import pytest
+from equicast_datafeed import YFINANCE_DATA_DISCLAIMER
+from equicast_datafeed.disclaimers import reset_warned
 from equicast_fx.client import FXClient
+
+
+@pytest.fixture(autouse=True)
+def _reset_disclaimer():
+    reset_warned()
+    yield
+    reset_warned()
 
 _FULL_INFO = {
     "exchange": "CCY",
@@ -31,6 +42,16 @@ def _datafeed(info: dict, history: pd.DataFrame = _HISTORY) -> MagicMock:
 def test_symbol_is_uppercase_yfinance_fx_ticker() -> None:
     client = FXClient("gbp", "usd", datafeed=_datafeed({}, pd.DataFrame()))
     assert client.symbol == "GBPUSD=X"
+
+
+def test_constructing_client_shows_yfinance_disclaimer_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    with caplog.at_level(logging.WARNING):
+        FXClient("GBP", "USD", datafeed=_datafeed({}, pd.DataFrame()))
+        FXClient("USD", "GBP", datafeed=_datafeed({}, pd.DataFrame()))
+
+    assert caplog.messages == [YFINANCE_DATA_DISCLAIMER]
 
 
 def test_profile_maps_yfinance_info_fields() -> None:

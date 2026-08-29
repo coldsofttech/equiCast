@@ -15,6 +15,7 @@ from tenacity import (
     wait_exponential,
 )
 
+from equicast_datafeed.disclaimers import YFINANCE_DATA_DISCLAIMER, warn_once
 from equicast_datafeed.exceptions import DatafeedError
 from equicast_datafeed.rate_limit import RateLimiter
 
@@ -31,6 +32,7 @@ class DatafeedClient:
         max_retries: int = 3,
         backoff_base_seconds: float = 1.0,
     ) -> None:
+        warn_once(logger, YFINANCE_DATA_DISCLAIMER)
         self._rate_limiter = RateLimiter(max_calls=max_calls, period_seconds=period_seconds)
         self._max_retries = max_retries
         self._backoff_base_seconds = backoff_base_seconds

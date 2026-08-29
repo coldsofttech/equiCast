@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
-from equicast_datafeed import DatafeedClient, round_value
+from equicast_datafeed import DatafeedClient, round_value, warn_once
 
 from equicast_metrics.calculations import (
     annualized_volatility,
@@ -14,6 +15,14 @@ from equicast_metrics.calculations import (
     max_drawdown,
     sharpe_ratio,
     trailing_window,
+)
+
+logger = logging.getLogger(__name__)
+
+#: Shown once per process on the first MetricsClient construction.
+EQUICAST_METRICS_DISCLAIMER = (
+    "equicast-metrics: metrics calculated by equicast, for educational purposes only "
+    "- validate accuracy independently."
 )
 
 #: The only CAGR window yfinance has a direct equivalent for (fiftyTwoWeekChangePercent).
@@ -39,6 +48,7 @@ class MetricsClient:
     """
 
     def __init__(self, symbol: str, datafeed: DatafeedClient | None = None) -> None:
+        warn_once(logger, EQUICAST_METRICS_DISCLAIMER)
         self.symbol = symbol.upper()
         self._datafeed = datafeed or DatafeedClient()
 
