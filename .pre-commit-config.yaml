@@ -1,0 +1,89 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: mypy-core
+        name: mypy (equicast core)
+        entry: bash -c 'cd packages/equicast && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/equicast/.*\.py$
+
+      - id: mypy-backend
+        name: mypy (Django backend)
+        entry: bash -c 'cd backend && uv run mypy . --ignore-missing-imports'
+        language: system
+        pass_filenames: false
+        files: ^backend/.*\.py$
+
+      - id: pytest-core
+        name: pytest (equicast core, unit)
+        entry: bash -c 'cd packages/equicast && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/equicast/
+
+      - id: pytest-backend
+        name: pytest (Django backend, unit)
+        entry: bash -c 'cd backend && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^backend/
+
+      - id: mypy-datafeed
+        name: mypy (equicast-datafeed)
+        entry: bash -c 'cd packages/datafeed && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/datafeed/.*\.py$
+
+      - id: pytest-datafeed
+        name: pytest (equicast-datafeed, unit)
+        entry: bash -c 'cd packages/datafeed && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/datafeed/
+
+      - id: mypy-fx
+        name: mypy (equicast-fx)
+        entry: bash -c 'cd packages/fx && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/fx/.*\.py$
+
+      - id: pytest-fx
+        name: pytest (equicast-fx, unit)
+        entry: bash -c 'cd packages/fx && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/fx/
+
+      - id: eslint-frontend
+        name: eslint (React frontend)
+        entry: bash -c 'cd frontend && npm run lint'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(js|jsx|ts|tsx)$
+
+      - id: vitest-frontend
+        name: vitest (React frontend, unit)
+        entry: bash -c 'cd frontend && npm run test -- --run'
+        language: system
+        pass_filenames: false
+        files: ^frontend/.*\.(js|jsx|ts|tsx)$

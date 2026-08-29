@@ -1,0 +1,9 @@
+pairs:
+  - from: GBP
+    to: USD
+  - from: USD
+    to: GBP
+  - from: GBP
+    to: EUR
+  - from: EUR
+    to: GBP
