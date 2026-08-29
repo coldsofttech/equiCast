@@ -1,1 +1,119 @@
 # equiCast
+
+Equity and FX market data ingestion, storage, and forecasting toolkit.
+
+## What's inside
+
+- **`equicast`** — core Python package: pulls historical price data from
+  yfinance and caches it as Parquet.
+- **Backend (Django REST API)** — exposes market data over HTTP, backed by
+  `equicast`, for the frontend to consume.
+- **Frontend (React)** — a UI for looking up ticker history through the
+  backend API.
+- **FX data pipeline (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)**
+  — a scheduled pipeline that extracts FX pair data from Yahoo Finance and
+  lands it in S3 as Parquet, ready for downstream analysis.
+- **`equicast-metrics`** — generic risk/performance metrics (volatility,
+  Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
+  ticker alike.
+
+## Disclaimer
+
+FX profile and price data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
+(Yahoo Finance) for educational and informational purposes only — not
+financial advice, with no guarantee of accuracy, completeness, or
+timeliness. FX metrics (volatility, Sharpe ratio, max drawdown, CAGR) are
+calculated by equicast, not sourced from a licensed provider — validate
+their accuracy yourself before relying on them. See
+[equicast-datafeed](packages/datafeed/README.md#disclaimer),
+[equicast-fx](packages/fx/README.md#disclaimer), and
+[equicast-metrics](packages/metrics/README.md#disclaimer) for the full text;
+each is also logged as a console warning the first time its client is used.
+
+## FX data products
+
+Each configured FX pair (default: GBP→USD, USD→GBP, GBP→EUR, EUR→GBP) yields
+three kinds of data. Every numeric field below is rounded to 8 decimal places
+— comfortably above FX's ~5-decimal pipette precision and the ~4-6 decimals
+meaningful for risk/performance ratios, while cutting off the float64
+representation noise you'd otherwise see (e.g. `1.3504753112792969`).
+
+### Profile — a current snapshot
+
+```python
+from equicast_fx import FXClient
+
+FXClient("GBP", "USD").profile()
+# {"from_currency": "GBP", "to_currency": "USD", "exchange": "CCY",
+#  "region": "US", "description": "GBP/USD",
+#  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance",
+#  "day_open": 1.3594, "day_high": 1.3598, "day_low": 1.3527,
+#  "day_close": 1.3537, "day_average": 1.3563,
+#  "year_open": 1.3505, "year_high": 1.3847, "year_low": 1.3012,
+#  "year_close": 1.3537, "year_average": 1.3429,
+#  "moving_average_50_days": 1.3417, "moving_average_200_days": 1.3431}
+```
+
+`day_close` is the live price — FX trades ~24/5, so there's no settled daily
+close. `year_*` uses a trailing 52-week window; `*_average` fields are the
+high/low midpoint, not a mean of daily closes.
+
+### Prices — daily history
+
+```python
+FXClient("GBP", "USD").prices()
+# [{"from_currency": "GBP", "to_currency": "USD", "date": "2026-01-02",
+#   "open": 1.3475, "high": 1.3502, "low": 1.3435, "close": 1.3474,
+#   "average": 1.3468, "last_updated": "2026-08-29T11:10:39+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One row per trading day. By default covers the current year only; a full
+historical load (every year available) can be requested separately — see
+[the FX pipeline docs](docs/fx-pipeline.md).
+
+### Metrics — risk and performance
+
+```python
+from equicast_metrics import MetricsClient
+
+MetricsClient("GBPUSD=X").metrics()
+# {"volatility": 0.066, "sharpe_ratio": 0.062, "max_drawdown": -0.048,
+#  "cagr_1y": -0.007, "cagr_2y": 0.011, "cagr_3y": 0.024,
+#  "cagr_5y": -0.002, "cagr_10y": 0.003,
+#  "last_updated": "2026-08-29T11:55:00+00:00", "source": "equicast"}
+```
+
+`volatility`/`sharpe_ratio`/`max_drawdown` use a trailing 1-year window
+(Sharpe assumes a 0% risk-free rate); the five `cagr_*` fields cover 1/2/3/5/10
+years, `None` where a pair doesn't have enough history yet. `equicast-metrics`
+is generic — it works the same way for a stock ticker (`MetricsClient("AAPL")`)
+as for an FX pair, checking yfinance for an existing value first (only
+`cagr_1y` has one) before calculating it.
+
+### Where it lands
+
+The pipeline writes all three as Parquet to S3, partitioned by pair and —
+for prices — by year:
+
+```
+s3://equicast-market-data-<env>/
+└── fx=GBPUSD/
+    ├── profile.parquet
+    ├── metrics.parquet
+    ├── year=2025/price.parquet
+    └── year=2026/price.parquet
+```
+
+Refreshed every 6 hours automatically.
+
+## Documentation
+
+- [Local setup](docs/local-setup.md) — get every package running on your machine
+- [FX pipeline: deployment and execution](docs/fx-pipeline.md) — build the image,
+  deploy the infrastructure, and run/schedule the ingestion pipeline
+- [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX ingestion), and how to
+  troubleshoot it
+- [Changelog](CHANGELOG.md)
