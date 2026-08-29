@@ -12,11 +12,18 @@ on:
       - ".github/workflows/terraform.yml"
 
 jobs:
-  # Pure HCL cost diff (no terraform plan/state/AWS credentials needed) —
-  # posts/updates one PR comment showing what this change adds to the dev
-  # and prod monthly cost estimate, per infracost.yml's two projects. Uses
+  # Pure HCL cost diff (no terraform plan/state involved) — posts/updates one
+  # PR comment showing what this change adds to the dev and prod monthly
+  # cost estimate, per infracost.yml's two projects. Uses
   # infra/infracost-usage.yml for rough usage-based estimates (S3/ECR storage
   # and request volume), since Infracost assumes zero usage by default.
+  #
+  # Uses the plain CLI (breakdown/diff/comment) rather than
+  # infracost/actions/diff@v4 — that action's wrapper binary calls out to
+  # Infracost Cloud to fetch run configuration before doing anything else,
+  # which 401s ("failed to fetch run parameters: Unauthorized") unless the
+  # org's Cloud/dashboard state is fully set up. The CLI only needs the API
+  # key for pricing lookups and $GITHUB_TOKEN to post the comment.
   infracost:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -24,20 +31,29 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: infracost/actions/setup@v3
         with:
-          path: head
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
 
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.base.ref }}
-          path: base
 
-      - uses: infracost/actions/diff@v4
-        with:
-          api-key: ${{ secrets.INFRACOST_API_KEY }}
-          base-path: base
-          head-path: head
+      - name: Generate Infracost baseline (base branch)
+        run: infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
+
+      - uses: actions/checkout@v4
+
+      - name: Generate Infracost diff (this PR vs base)
+        run: infracost diff --config-file=infracost.yml --format=json --compare-to=/tmp/infracost-base.json --out-file=/tmp/infracost.json
+
+      - name: Post Infracost comment
+        run: |
+          infracost comment github --path=/tmp/infracost.json \
+            --repo=$GITHUB_REPOSITORY \
+            --github-token=${{ github.token }} \
+            --pull-request=${{ github.event.pull_request.number }} \
+            --behavior=update
 
   plan:
     runs-on: ubuntu-latest
@@ -56,12 +72,17 @@ jobs:
       - run: terraform init -backend=false
       - run: terraform validate
 
+      # Real backend init needs credentials, so this has to come before it —
+      # -backend=false above was only for fmt/validate, which don't touch
+      # state. plan previews against dev's state (read-only, no var passed
+      # means it'd otherwise default to dev anyway, but be explicit).
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - run: terraform plan -input=false
+      - run: terraform init -reconfigure -backend-config="key=equicast/dev/terraform.tfstate"
+      - run: terraform plan -input=false -var environment=dev
 
   apply-dev:
     needs: plan
