@@ -100,4 +100,7 @@ Refreshed every 6 hours automatically.
 - [Local setup](docs/local-setup.md) — get every package running on your machine
 - [FX pipeline: deployment and execution](docs/fx-pipeline.md) — build the image,
   deploy the infrastructure, and run/schedule the ingestion pipeline
+- [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX ingestion), and how to
+  troubleshoot it
 - [Changelog](CHANGELOG.md)

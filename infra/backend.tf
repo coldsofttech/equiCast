@@ -5,7 +5,7 @@
 #   backend "s3" {
 #     bucket         = "equicast-terraform-state"
 #     key            = "equicast/terraform.tfstate"
-#     region         = "us-east-1"
+#     region         = "eu-west-1"
 #     dynamodb_table = "equicast-terraform-locks"
 #     encrypt        = true
 #   }

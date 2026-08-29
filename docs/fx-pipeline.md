@@ -120,6 +120,16 @@ Git Bash/PowerShell mangle bare absolute paths like `/smoke_output` passed to
 
 ## Deploying the infrastructure
 
+One-time prerequisite: create the OIDC provider and IAM role
+`terraform.yml`/`deploy.yml`/`fx-ingestion.yml` all authenticate to AWS
+through — see [aws-github-oidc-setup.md](aws-github-oidc-setup.md) for the
+exact steps. This is deliberately *not* something Terraform creates itself
+(it would need AWS credentials to bootstrap the very thing meant to replace
+long-lived credentials).
+
+Once that role exists and the `AWS_ROLE_ARN` repo secret is set, deploy the
+rest of the infrastructure:
+
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
@@ -127,18 +137,12 @@ terraform init
 terraform apply
 ```
 
-This provisions:
+This provisions the `equicast-market-data-<env>` S3 bucket (shared with the
+backend's on-demand cache — FX data lands under `fx=<PAIR>/...` in it), the
+frontend static-site bucket, and the backend ECR repo.
 
-- `equicast-market-data-<env>` S3 bucket (shared with the backend's on-demand
-  cache) — FX data lands under `fx=<PAIR>/...` in this bucket
-- A GitHub Actions OIDC IAM role scoped to `s3://equicast-market-data-<env>/fx=*/*`,
-  so `fx-ingestion.yml` uploads without any long-lived AWS credentials
-
-After applying, wire the outputs into the repo:
-
-- Repo secret `AWS_FX_INGESTION_ROLE_ARN` = the `fx_ingestion_role_arn` Terraform output
-- Repo variable `MARKET_DATA_BUCKET` = the bucket name (e.g. `equicast-market-data-prod`)
-- Repo variable `AWS_REGION` (optional, defaults to `us-east-1`)
+Then set the repo variable `MARKET_DATA_BUCKET` to the bucket name (e.g.
+`equicast-market-data-prod`) for `fx-ingestion.yml` to upload to.
 
 ## Publishing the image
 

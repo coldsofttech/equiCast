@@ -9,33 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `equicast_datafeed.round_value`/`DECIMAL_PRECISION` (8): a shared
-  decimal-precision policy for every numeric field `equicast-fx` and
-  `equicast-metrics` compute or re-emit, cutting off float64 representation
-  noise (e.g. `1.3504753112792969` → `1.35047531`) while staying above FX's
-  ~5-decimal pipette precision and the ~4-6 decimals meaningful for
-  risk/performance ratios. Applied at the point each value is computed
-  (`FXClient.profile()`/`.prices()`, the `equicast_metrics.calculations`
-  functions, `MetricsClient.metrics()`'s yfinance-sourced `cagr_1y`) rather
-  than only at JSON/Parquet output time, so every consumer sees the same
-  rounded value.
-
-- `equicast-metrics` (`packages/metrics/`): standalone, generic package for
-  risk/performance metrics on any yfinance symbol — an FX pair (`GBPUSD=X`)
-  or a stock ticker (`AAPL`) alike. `MetricsClient(symbol).metrics()` returns
-  `volatility`, `sharpe_ratio`, `max_drawdown` (all trailing 1-year, Sharpe
-  assuming a 0% risk-free rate), `cagr_1y`/`2y`/`3y`/`5y`/`10y` (`None` where
-  there isn't enough history), `last_updated`, and `source`. Checks yfinance
-  first per field (only `cagr_1y` has an equivalent, `fiftyTwoWeekChangePercent`)
-  before calculating; guards against a still-forming trading day's `NaN`
-  close price poisoning every downstream calculation.
-- `equicast-fx` now also writes `fx=<PAIR>/metrics.parquet` per pair (from/to
-  currency plus the `equicast-metrics` fields above), fetched as a third
-  concurrent task alongside profile and prices. Unaffected by `--full-load`
-  (metrics always looks back as far as `cagr_10y` needs, regardless).
-- `fx-ci.yml` and `.pre-commit-config.yaml` now also lint/type-check/test
-  `equicast-metrics`; `packages/fx/Dockerfile` copies it into the image.
-
+- Initial project scaffold with `equicast`, a core Python package (yfinance
+  ingestion, Parquet storage) as the root of a uv workspace.
+- Django REST backend (`backend/`) exposing market data at
+  `/api/market-data/<ticker>/`, depending on `equicast` via the uv workspace.
+- React (Vite) frontend (`frontend/`) with a minimal UI for fetching ticker
+  history.
+- Terraform configuration (`infra/`) for AWS: S3 market-data bucket, S3
+  static-site bucket for the frontend, and an ECR repository for the backend
+  image.
+- GitHub Actions workflows: backend CI (ruff, mypy, pytest), frontend CI
+  (eslint, vitest, build), Terraform plan/apply, and deploy (ECR push + S3
+  sync).
+- Pre-commit hooks (`.pre-commit-config.yaml`) covering ruff, mypy, and
+  pytest (unit) for the core package and Django backend, plus eslint and
+  vitest (unit) for the React frontend.
 - `equicast-datafeed` (`packages/datafeed/`): standalone package providing a
   resilient yfinance client with rate limiting and retry-with-backoff,
   reusable by any future market-data package.
@@ -62,10 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Parquet files to `s3://equicast-market-data-<env>/fx=<PAIR>/`. Scales to
   large pair lists both across legs (separate runners/IPs) and within each
   container (concurrent fetches under a shared rate limit).
-- `fx-ci.yml`: ruff, mypy, and pytest for `equicast-datafeed` and `equicast-fx`.
-- Terraform `github_oidc_role` module: provisions a GitHub Actions OIDC
-  provider and IAM role scoped to `s3://equicast-market-data-<env>/fx=*/*`,
-  used by `fx-ingestion.yml` instead of long-lived AWS credentials.
+- `fx-ci.yml`: ruff, mypy, and pytest for `equicast-datafeed` and
+  `equicast-fx`.
 - `FXClient.prices(full_load=False)`: returns one daily OHLC record per
   trading day (from/to currency, date, open, high, low, close, average,
   last updated, source). Defaults to the current year (`period="ytd"`);
@@ -85,8 +71,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Yahoo Finance data for a set of pairs (defaults to `config/fx_pairs.yaml`,
   or `--pairs FROM:TO,...`), printing JSON to stdout or writing real Parquet
   via `--format parquet --out <dir>`, with `--full-load` for prices. Works
-  the same way inside the Docker image via an entrypoint override; documented
-  in `docs/fx-pipeline.md`.
+  the same way inside the Docker image via an entrypoint override;
+  documented in `docs/fx-pipeline.md`.
+- `equicast-metrics` (`packages/metrics/`): standalone, generic package for
+  risk/performance metrics on any yfinance symbol — an FX pair (`GBPUSD=X`)
+  or a stock ticker (`AAPL`) alike. `MetricsClient(symbol).metrics()` returns
+  `volatility`, `sharpe_ratio`, `max_drawdown` (all trailing 1-year, Sharpe
+  assuming a 0% risk-free rate), `cagr_1y`/`2y`/`3y`/`5y`/`10y` (`None` where
+  there isn't enough history), `last_updated`, and `source`. Checks yfinance
+  first per field (only `cagr_1y` has an equivalent, `fiftyTwoWeekChangePercent`)
+  before calculating; guards against a still-forming trading day's `NaN`
+  close price poisoning every downstream calculation.
+- `equicast-fx` now also writes `fx=<PAIR>/metrics.parquet` per pair (from/to
+  currency plus the `equicast-metrics` fields above), fetched as a third
+  concurrent task alongside profile and prices. Unaffected by `--full-load`
+  (metrics always looks back as far as `cagr_10y` needs, regardless).
+- `fx-ci.yml` and `.pre-commit-config.yaml` now also lint/type-check/test
+  `equicast-metrics`; `packages/fx/Dockerfile` copies it into the image.
+- `equicast_datafeed.round_value`/`DECIMAL_PRECISION` (8): a shared
+  decimal-precision policy for every numeric field `equicast-fx` and
+  `equicast-metrics` compute or re-emit, cutting off float64 representation
+  noise (e.g. `1.3504753112792969` → `1.35047531`) while staying above FX's
+  ~5-decimal pipette precision and the ~4-6 decimals meaningful for
+  risk/performance ratios. Applied at the point each value is computed
+  (`FXClient.profile()`/`.prices()`, the `equicast_metrics.calculations`
+  functions, `MetricsClient.metrics()`'s yfinance-sourced `cagr_1y`) rather
+  than only at JSON/Parquet output time, so every consumer sees the same
+  rounded value.
+- `docs/aws-github-oidc-setup.md`: reference doc for how GitHub Actions
+  authenticates to AWS — the OIDC federation `terraform.yml`, `deploy.yml`,
+  and `fx-ingestion.yml` all use to assume a single IAM role — covering
+  manual setup (the trust policy, a least-privilege permissions policy),
+  verification, and common errors (trust policy mismatches, a duplicate
+  OIDC provider in the account, missing `id-token` permissions).
 
 ### Changed
 
@@ -96,20 +113,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   virtual uv workspace root (`[tool.uv.workspace]` only, no `[project]` of its
   own) listing `packages/equicast`, `packages/datafeed`, `packages/fx`, and
   `backend` as members, sharing one lockfile/`.venv` for local dev and CI.
-
-## [0.1.0] - 2026-08-29
-
-### Added
-
-- Initial project scaffold with `equicast`, a core Python package (yfinance ingestion,
-  Parquet storage) as the root of a uv workspace.
-- Django REST backend (`backend/`) exposing market data at `/api/market-data/<ticker>/`,
-  depending on `equicast` via the uv workspace.
-- React (Vite) frontend (`frontend/`) with a minimal UI for fetching ticker history.
-- Terraform configuration (`infra/`) for AWS: S3 market-data bucket, S3 static-site
-  bucket for the frontend, and an ECR repository for the backend image.
-- GitHub Actions workflows: backend CI (ruff, mypy, pytest), frontend CI (eslint,
-  vitest, build), Terraform plan/apply, and deploy (ECR push + S3 sync).
-- Pre-commit hooks (`.pre-commit-config.yaml`) covering ruff, mypy, and pytest
-  (unit) for the core package and Django backend, plus eslint and vitest (unit)
-  for the React frontend.
+- Replaced the Terraform-managed, FX-scoped GitHub OIDC IAM role with a
+  single, manually-created role used by all three AWS-touching workflows
+  (`terraform.yml`, `deploy.yml`, `fx-ingestion.yml`), referenced by one
+  repo secret, `AWS_ROLE_ARN`. Removes the circularity of Terraform needing
+  AWS credentials to create the very OIDC setup meant to replace long-lived
+  credentials — the provider and role are now bootstrapped once, manually,
+  outside Terraform's management. `deploy.yml` and `terraform.yml` also
+  moved off static `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` secrets onto
+  this same role. Removed `infra/modules/github_oidc_role/` and the
+  `fx_ingestion_role_arn` Terraform output entirely; documented the manual
+  setup in `docs/aws-github-oidc-setup.md`.
+- Default AWS region changed from `us-east-1` to `eu-west-1` across
+  Terraform (`aws_region` variable, `terraform.tfvars.example`, the
+  commented remote-state backend example) and every workflow's
+  `AWS_REGION` fallback.

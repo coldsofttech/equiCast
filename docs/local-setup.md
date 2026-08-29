@@ -15,7 +15,7 @@ equiCast/
 ├── backend/             # Django REST API (uv workspace member, depends on equicast)
 │   └── market_data/     # Django app exposing market data endpoints
 ├── frontend/            # React (Vite) UI
-├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket, OIDC role)
+├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
 ├── docs/                # This directory
 └── .github/workflows/   # CI/CD pipelines
@@ -101,8 +101,10 @@ terraform init
 terraform plan
 ```
 
-Reviews (doesn't apply) the S3 buckets, ECR repo, and IAM/OIDC role described
-in [fx-pipeline.md](fx-pipeline.md#deploying-the-infrastructure).
+Reviews (doesn't apply) the S3 buckets and ECR repo described in
+[fx-pipeline.md](fx-pipeline.md#deploying-the-infrastructure). The IAM role
+Terraform itself authenticates through is created manually, not by
+Terraform — see [aws-github-oidc-setup.md](aws-github-oidc-setup.md).
 
 ## Pre-commit hooks
 

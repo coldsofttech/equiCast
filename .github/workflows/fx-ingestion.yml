@@ -101,8 +101,8 @@ jobs:
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ secrets.AWS_FX_INGESTION_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - name: Upload FX profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ vars.MARKET_DATA_BUCKET }}/" --recursive
