@@ -117,8 +117,8 @@ Refreshed every 6 hours automatically.
 ## Stock data products
 
 Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
-TSLA, QCOM, AVGO) yields a profile — the only stock data product so far, no
-daily prices or metrics yet.
+TSLA, QCOM, AVGO) yields a profile and daily prices — no risk/performance
+metrics yet.
 
 ```python
 from equicast_stock import StockClient
@@ -145,12 +145,28 @@ StockClient("AAPL").profile()
 
 `ceos` and `ipo_date` are best-effort — yfinance has no dedicated field for
 either; see [equicast-stock's README](packages/stock/README.md) for how
-they're derived. Lands in the same bucket as FX data:
+they're derived.
+
+```python
+StockClient("AAPL").prices()
+# [{"ticker": "AAPL", "currency": "USD", "date": "2026-01-02",
+#   "open": 225.30, "high": 227.32, "low": 224.29, "close": 226.31,
+#   "average": 225.805, "last_updated": "2026-08-29T11:10:39+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One row per trading day. By default covers the current year only; a full
+historical load (every year available) can be requested the same way as FX
+— see [the stock pipeline docs](docs/stock-pipeline.md). Lands in the same
+bucket as FX data:
 
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
-    └── profile.parquet
+    ├── profile.parquet
+    ├── year=2025/price.parquet
+    └── year=2026/price.parquet
 ```
 
 Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so

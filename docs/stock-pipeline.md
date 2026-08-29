@@ -17,7 +17,7 @@ equicast-stock CLI  ── uses ──▶  equicast-datafeed (rate limiting + re
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet)
+Parquet files (profile.parquet, price.parquet)
         │
         ▼
 GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -29,9 +29,9 @@ The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
 feeds each parallel chunk its share of the work (see below).
 
-**Only `profile()` is implemented so far** — no daily prices or risk metrics
-yet, unlike `equicast-fx`. `equicast-stock` also only depends on
-`equicast-datafeed` (no `equicast-metrics`).
+**Only `profile()` and `prices()` are implemented so far** — no risk/
+performance metrics yet, unlike `equicast-fx`. `equicast-stock` also only
+depends on `equicast-datafeed` (no `equicast-metrics`).
 
 Expect a `WARNING` line near the top of every run's logs — a one-time (per
 process) disclaimer from `equicast-datafeed`/`StockClient` (data via
@@ -47,18 +47,32 @@ uv run equicast-stock --config config/stocks.yaml --out ./output
 uv run equicast-stock --tickers-json '["AAPL"]' --out ./output
 ```
 
-For each ticker this writes `stock=<TICKER>/profile.parquet` — one row: name,
-quote type, exchange, currency, description, sector, industry, website,
-beta, payout ratio, dividend rate/yield, market cap, volume, day
-open/high/low/close/average, year open/high/low/close/average, 50-/200-day
-moving averages (same fields/logic as `equicast-fx`'s profile), address,
-country, region, full-time employees, CEO(s) (each with a name and role),
-IPO date, last updated, source. See
-[packages/stock/README.md](../packages/stock/README.md) for the exact field
-list, including how `address`, `ceos`, and `ipo_date` are derived (the
-latter two best-effort — yfinance has no dedicated fields for either).
+For each ticker this writes:
 
-- `--max-workers` — profile fetches run concurrently, up to this many at once (default: 1)
+- `stock=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
+  currency, description, sector, industry, website, beta, payout ratio,
+  dividend rate/yield, market cap, volume, day open/high/low/close/average,
+  year open/high/low/close/average, 50-/200-day moving averages (same
+  fields/logic as `equicast-fx`'s profile), address, country, region,
+  full-time employees, CEO(s) (each with a name and role), IPO date, last
+  updated, source
+- `stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day, for
+  the current year only by default: ticker, currency, date,
+  open/high/low/close/average, last updated, source
+
+See [packages/stock/README.md](../packages/stock/README.md) for the exact
+field lists, including how `address`, `ceos`, and `ipo_date` are derived
+(the latter two best-effort — yfinance has no dedicated fields for either).
+
+Add `--full-load` to fetch each ticker's entire available yfinance history
+for **prices**, writing one `price.parquet` per year found (current year
+included). It does not affect `profile.parquet`:
+
+```bash
+uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
+```
+
+- `--max-workers` — profile/price fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -66,16 +80,16 @@ latter two best-effort — yfinance has no dedicated fields for either).
 ```bash
 docker build -f packages/stock/Dockerfile -t equicast-stock:local .
 docker run --rm -v "$PWD/output:/output" equicast-stock:local \
-  --tickers-json '["AAPL"]' --out /output
+  --tickers-json '["AAPL"]' --out /output --full-load
 ```
 
 ## Manual smoke testing (`scripts/smoke_test.py`)
 
-`packages/stock/scripts/smoke_test.py` exercises `StockClient.profile()`
-against **live** Yahoo Finance data — it's a manual QA tool, not part of the
-automated `pytest` suite (a live-network test would make CI slow and
-flaky), so run it by hand whenever you want to sanity-check the pipeline end
-to end.
+`packages/stock/scripts/smoke_test.py` exercises `StockClient.profile()`,
+`.prices()`, and the Parquet writers against **live** Yahoo Finance data —
+it's a manual QA tool, not part of the automated `pytest` suite (a
+live-network test would make CI slow and flaky), so run it by hand whenever
+you want to sanity-check the pipeline end to end.
 
 ```bash
 cd packages/stock
@@ -86,12 +100,19 @@ uv run python scripts/smoke_test.py
 # Only specific tickers
 uv run python scripts/smoke_test.py --tickers AAPL,MSFT
 
-# Write a real Parquet file instead (exercises the writer function too)
+# Write real Parquet files instead (exercises the writer functions too)
 uv run python scripts/smoke_test.py --tickers AAPL --format parquet --out ./smoke_output
+
+# Full historical load instead of current-year-only (applies to prices only)
+uv run python scripts/smoke_test.py --tickers AAPL --format parquet --out ./smoke_output --full-load
 ```
 
-`--format parquet` writes the real file via `write_profile_parquet`, so you
-can then inspect it with any Parquet reader (e.g. `pd.read_parquet`).
+In `--format json` mode, `profile` is printed in full and `prices` is
+summarized (row count, date range, first/last row) rather than dumped in
+full — a `--full-load` run can be 20+ years of daily rows. `--format
+parquet` writes the real files via `write_profile_parquet`/
+`write_price_parquet`, so you can then inspect them with any Parquet reader
+(e.g. `pd.read_parquet`).
 
 It also works inside the Docker image — same file is already copied in by
 `packages/stock/Dockerfile` — by overriding the image's entrypoint:
@@ -144,6 +165,7 @@ workflow*) with these inputs:
 | Input | Default | Meaning |
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
+| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices instead of just the current year |
 | `chunk_size` | `300` | Target stock tickers per parallel chunk |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
@@ -179,5 +201,7 @@ The workflow has two jobs, structured identically to `fx-ingestion.yml`'s:
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
-    └── profile.parquet
+    ├── profile.parquet
+    ├── year=2025/price.parquet
+    └── year=2026/price.parquet
 ```

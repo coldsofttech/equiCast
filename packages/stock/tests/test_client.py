@@ -270,3 +270,67 @@ def test_profile_ipo_date_falls_back_to_epoch_utc_seconds() -> None:
 def test_profile_ipo_date_is_none_when_unavailable() -> None:
     client = StockClient("AAPL", datafeed=_datafeed({}))
     assert client.profile()["ipo_date"] is None
+
+
+_PRICE_HISTORY = pd.DataFrame(
+    {
+        "Open": [225.30, 226.10],
+        "High": [227.32, 228.33],
+        "Low": [224.29, 225.30],
+        "Close": [226.31, 227.32],
+    },
+    index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+)
+
+
+def test_prices_returns_one_record_per_row() -> None:
+    client = StockClient("AAPL", datafeed=_datafeed({"currency": "USD"}, _PRICE_HISTORY))
+
+    records = client.prices()
+
+    assert records == [
+        {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "date": "2026-01-02",
+            "open": 225.30,
+            "high": 227.32,
+            "low": 224.29,
+            "close": 226.31,
+            "average": round((224.29 + 227.32) / 2, 8),
+            "last_updated": records[0]["last_updated"],
+            "source": "yfinance",
+        },
+        {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "date": "2026-01-05",
+            "open": 226.10,
+            "high": 228.33,
+            "low": 225.30,
+            "close": 227.32,
+            "average": round((225.30 + 228.33) / 2, 8),
+            "last_updated": records[1]["last_updated"],
+            "source": "yfinance",
+        },
+    ]
+    assert records[0]["last_updated"] == records[1]["last_updated"]
+
+
+def test_prices_default_uses_ytd_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    StockClient("AAPL", datafeed=datafeed).prices()
+
+    datafeed.get_history.assert_called_once_with("AAPL", period="ytd")
+
+
+def test_prices_full_load_uses_max_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    StockClient("AAPL", datafeed=datafeed).prices(full_load=True)
+
+    datafeed.get_history.assert_called_once_with("AAPL", period="max")
+
+
+def test_prices_empty_history_returns_no_records() -> None:
+    client = StockClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
+    assert client.prices() == []

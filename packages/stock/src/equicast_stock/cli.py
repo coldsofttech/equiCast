@@ -1,8 +1,9 @@
-"""CLI: extract a profile for every configured stock ticker.
+"""CLI: extract a profile and daily prices for every configured stock ticker.
 
-Writes one profile.parquet snapshot per ticker as Parquet. Only profile() is
-implemented for now (prices/metrics may follow, mirroring equicast-fx), so
-unlike equicast-fx's CLI there's a single task per ticker rather than three.
+For each ticker, writes one profile.parquet snapshot and one price.parquet
+per year covered (just the current year by default, or the ticker's full
+yfinance history with --full-load). No metrics yet, unlike equicast-fx, so
+there are two tasks per ticker rather than three.
 """
 
 from __future__ import annotations
@@ -18,14 +19,14 @@ from equicast_datafeed import DatafeedClient
 
 from equicast_stock.client import StockClient
 from equicast_stock.config import StockTicker, load_stock_tickers, parse_stock_tickers_json
-from equicast_stock.writer import write_profile_parquet
+from equicast_stock.writer import write_price_parquet, write_profile_parquet
 
 logger = logging.getLogger(__name__)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract stock ticker profiles, writing one Parquet file per ticker."
+        description="Extract stock ticker profiles and daily prices, writing both as Parquet."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--config", type=Path, help="Path to a stock tickers YAML config.")
@@ -37,10 +38,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--out", type=Path, required=True, help="Output directory for Parquet files."
     )
     parser.add_argument(
+        "--full-load",
+        action="store_true",
+        help="Fetch each ticker's entire yfinance history instead of just the current year.",
+    )
+    parser.add_argument(
         "--max-workers",
         type=int,
         default=1,
-        help="Profile fetches run concurrently, up to this many at once (default: 1).",
+        help="Profile/price fetches run concurrently, up to this many at once (default: 1).",
     )
     parser.add_argument(
         "--max-calls",
@@ -69,10 +75,16 @@ def _profile_task(client: StockClient, output_dir: Path, key: str) -> list[Path]
     return [write_profile_parquet(client.profile(), output_dir)]
 
 
+def _prices_task(client: StockClient, output_dir: Path, key: str, full_load: bool) -> list[Path]:
+    logger.info("Fetching prices for %s (full_load=%s)", key, full_load)
+    return write_price_parquet(client.prices(full_load=full_load), output_dir)
+
+
 def run(
     config: Path | None,
     output_dir: Path,
     tickers_json: str | None = None,
+    full_load: bool = False,
     max_workers: int = 1,
     max_calls: int = 1,
     period_seconds: float = 1.0,
@@ -83,10 +95,15 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
+    # One StockClient per ticker, shared by that ticker's profile and prices
+    # tasks — both only read immutable state and delegate to the
+    # (thread-safe) shared datafeed, so calling them concurrently on one
+    # instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
         client = StockClient(ticker.ticker, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, ticker.key))
+        tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -103,6 +120,7 @@ def main() -> None:
         args.config,
         args.out,
         tickers_json=args.tickers_json,
+        full_load=args.full_load,
         max_workers=args.max_workers,
         max_calls=args.max_calls,
         period_seconds=args.period_seconds,

@@ -153,13 +153,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ipo_date` is similarly best-effort, sourced from
   `firstTradeDateMilliseconds` (falling back to `firstTradeDateEpochUtc`) —
   yfinance has no true IPO date field either — formatted as a full ISO 8601
-  datetime, same as `last_updated` (not just a date). Only depends on
-  `equicast-datafeed` (no `equicast-metrics` yet —
-  prices/metrics aren't implemented for stocks). Configured via
+  datetime, same as `last_updated` (not just a date). Configured via
   `packages/stock/config/stocks.yaml` (AAPL, MSFT, GOOGL, AMZN, NVDA, META,
-  TSLA, QCOM, AVGO by default); its CLI writes one Parquet file per ticker
-  to `stock=<TICKER>/profile.parquet`, reading tickers from that config or a
-  `--tickers-json` string.
+  TSLA, QCOM, AVGO by default); its CLI writes `stock=<TICKER>/profile.parquet`,
+  reading tickers from that config or a `--tickers-json` string.
+- `StockClient.prices()`: one daily OHLC record per trading day (ticker,
+  currency, date, open/high/low/close/average, last updated,
+  source=yfinance), mirroring `FXClient.prices()` — current year only by
+  default (`ytd`), or the ticker's entire yfinance history with
+  `full_load=True` (`max`). Unlike the from/to-currency pairs `equicast-fx`
+  already knows, `currency` isn't available on `StockClient` itself, so
+  `prices()` makes its own `get_info()` call to read it. The CLI writes one
+  `price.parquet` per year covered to
+  `stock=<TICKER>/year=<YYYY>/price.parquet`, alongside profile.parquet, via
+  a new `--full-load` flag (same shape as `equicast-fx`'s). Only depends on
+  `equicast-datafeed` still (no `equicast-metrics` yet — risk/performance
+  metrics aren't implemented for stocks).
 - `equicast-stock-plan`: a second CLI entry point, identical in shape to
   `equicast-fx-plan`, splitting the configured tickers into chunks (capped
   at 256) for the ingestion workflow's matrix.
@@ -167,17 +176,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `stock-image.yml` workflow.
 - `packages/stock/scripts/smoke_test.py`, mirroring `equicast-fx`'s: a
   manual QA tool (not part of the automated `pytest` suite) exercising
-  `StockClient.profile()` against live Yahoo Finance data, with `--tickers`
-  and `--format json|parquet` options.
+  `StockClient.profile()`/`.prices()` against live Yahoo Finance data, with
+  `--tickers`, `--format json|parquet`, and `--full-load` options.
 - `stock-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
   structured identically to `fx-ingestion.yml` — a `plan` job computing
   chunks via `equicast-stock-plan` and resolving the target
   environment/bucket, and an `ingest` matrix job uploading the resulting
-  Parquet files to `s3://equicast-market-data-<env>/stock=<TICKER>/`. Shares
-  the bucket and the `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD`
-  variables with `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` —
-  offset 2 hours from FX's `0 */6 * * *` — so the two pipelines never
-  overlap even if a run takes longer than expected.
+  profile/price Parquet files to
+  `s3://equicast-market-data-<env>/stock=<TICKER>/`, with a `full_load`
+  input controlling prices' history depth (same shape as `fx-ingestion.yml`'s).
+  Shares the bucket and the
+  `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
+  `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` — offset 2 hours from
+  FX's `0 */6 * * *` — so the two pipelines never overlap even if a run
+  takes longer than expected.
 - `stock-ci.yml`: lint/type-check/test for `equicast-datafeed` and
   `equicast-stock`, mirroring `fx-ci.yml`.
 - `docs/stock-pipeline.md`, documenting the stock pipeline's architecture,

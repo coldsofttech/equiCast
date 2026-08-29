@@ -118,16 +118,30 @@ same as `last_updated` (e.g. `"1980-12-12T14:30:00+00:00"`), not just a date.
 
 ## CLI
 
-Reads the stock tickers listed in a config file, fetches a profile for each,
-and writes one Parquet file per ticker to
-`<out>/stock=<TICKER>/profile.parquet`:
+Reads the stock tickers listed in a config file, fetches a profile and daily
+prices for each, and writes:
+
+- `<out>/stock=<TICKER>/profile.parquet` — one row, current snapshot
+- `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
+  for the current year only by default
 
 ```bash
 uv run equicast-stock --config config/stocks.yaml --out ./output
 ```
 
-Only `profile()` is implemented so far — no prices or metrics yet, unlike
-`equicast-fx`.
+Add `--full-load` to fetch each ticker's entire available yfinance history
+for prices, writing one `price.parquet` per year found (current year
+included) — same as `equicast-fx`'s `--full-load`:
+
+```bash
+uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
+```
+
+`prices()` returns records shaped `{ticker, currency, date, open, high, low,
+close, average, last_updated, source}` — `currency` comes from a
+`get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
+data). No risk/performance metrics yet, unlike `equicast-fx` (no
+`equicast-metrics` dependency).
 
 ## Configuration
 
