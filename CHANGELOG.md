@@ -39,6 +39,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Terraform `github_oidc_role` module: provisions a GitHub Actions OIDC
   provider and IAM role scoped to `s3://equicast-market-data-<env>/fx=*/*`,
   used by `fx-ingestion.yml` instead of long-lived AWS credentials.
+- `FXClient.prices(full_load=False)`: returns one daily OHLC record per
+  trading day (from/to currency, date, open, high, low, close, average,
+  last updated, source). Defaults to the current year (`period="ytd"`);
+  `full_load=True` fetches the pair's entire yfinance history instead
+  (`period="max"`). The CLI writes one `fx=<PAIR>/year=<YYYY>/price.parquet`
+  per year covered, and a `--full-load` flag controls the same behavior;
+  `fx-ingestion.yml` exposes it as a `workflow_dispatch` boolean input.
+  Profile and prices are fetched as independent concurrent tasks per pair
+  (submitted to the same worker pool as `--max-workers`), sharing one
+  `FXClient`/`DatafeedClient` so the configured rate limit still applies
+  across both.
+- `docs/local-setup.md` and `docs/fx-pipeline.md`: the technical setup and
+  deployment/execution details that used to live in the README, which is now
+  scoped to the functional description of what equiCast produces.
+- `packages/fx/scripts/smoke_test.py`: a manual QA tool (not part of the
+  `pytest` suite) that runs `FXClient.profile()`/`.prices()` against live
+  Yahoo Finance data for a set of pairs (defaults to `config/fx_pairs.yaml`,
+  or `--pairs FROM:TO,...`), printing JSON to stdout or writing real Parquet
+  via `--format parquet --out <dir>`, with `--full-load` for prices. Works
+  the same way inside the Docker image via an entrypoint override; documented
+  in `docs/fx-pipeline.md`.
 
 ### Changed
 

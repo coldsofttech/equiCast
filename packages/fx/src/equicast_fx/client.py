@@ -11,6 +11,12 @@ from equicast_datafeed import DatafeedClient
 #: year_open/year_high/year_low/year_close/year_average.
 YEAR_HISTORY_PERIOD = "1y"
 
+#: Default `prices()` window: this calendar year only.
+PRICES_DEFAULT_PERIOD = "ytd"
+
+#: `prices(full_load=True)` window: everything yfinance has for this pair.
+PRICES_FULL_LOAD_PERIOD = "max"
+
 
 def _midpoint(low: float | None, high: float | None) -> float | None:
     if low is None or high is None:
@@ -77,3 +83,33 @@ class FXClient:
             "moving_average_50_days": info.get("fiftyDayAverage"),
             "moving_average_200_days": info.get("twoHundredDayAverage"),
         }
+
+    def prices(self, full_load: bool = False) -> list[dict[str, Any]]:
+        """Return one daily OHLC record per trading day.
+
+        By default covers this calendar year only (year-to-date). With
+        `full_load=True`, covers this pair's entire yfinance history instead.
+        """
+        period = PRICES_FULL_LOAD_PERIOD if full_load else PRICES_DEFAULT_PERIOD
+        history = self._datafeed.get_history(self.symbol, period=period)
+        fetched_at = datetime.now(UTC).isoformat()
+
+        records = []
+        for date, row in history.iterrows():
+            high = float(row["High"])
+            low = float(row["Low"])
+            records.append(
+                {
+                    "from_currency": self.from_currency,
+                    "to_currency": self.to_currency,
+                    "date": date.date().isoformat(),
+                    "open": float(row["Open"]),
+                    "high": high,
+                    "low": low,
+                    "close": float(row["Close"]),
+                    "average": _midpoint(low, high),
+                    "last_updated": fetched_at,
+                    "source": "yfinance",
+                }
+            )
+        return records

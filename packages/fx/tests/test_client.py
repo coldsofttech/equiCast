@@ -93,3 +93,67 @@ def test_profile_falls_back_to_short_name_and_current_time() -> None:
     assert profile["description"] == "GBP/USD"
     assert profile["last_updated"]
     assert profile["source"] == "yfinance"
+
+
+_PRICE_HISTORY = pd.DataFrame(
+    {
+        "Open": [1.30, 1.31],
+        "High": [1.32, 1.33],
+        "Low": [1.29, 1.30],
+        "Close": [1.31, 1.32],
+    },
+    index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+)
+
+
+def test_prices_returns_one_record_per_row() -> None:
+    client = FXClient("GBP", "USD", datafeed=_datafeed({}, _PRICE_HISTORY))
+
+    records = client.prices()
+
+    assert records == [
+        {
+            "from_currency": "GBP",
+            "to_currency": "USD",
+            "date": "2026-01-02",
+            "open": 1.30,
+            "high": 1.32,
+            "low": 1.29,
+            "close": 1.31,
+            "average": (1.29 + 1.32) / 2,
+            "last_updated": records[0]["last_updated"],
+            "source": "yfinance",
+        },
+        {
+            "from_currency": "GBP",
+            "to_currency": "USD",
+            "date": "2026-01-05",
+            "open": 1.31,
+            "high": 1.33,
+            "low": 1.30,
+            "close": 1.32,
+            "average": (1.30 + 1.33) / 2,
+            "last_updated": records[1]["last_updated"],
+            "source": "yfinance",
+        },
+    ]
+    assert records[0]["last_updated"] == records[1]["last_updated"]
+
+
+def test_prices_default_uses_ytd_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    FXClient("GBP", "USD", datafeed=datafeed).prices()
+
+    datafeed.get_history.assert_called_once_with("GBPUSD=X", period="ytd")
+
+
+def test_prices_full_load_uses_max_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    FXClient("GBP", "USD", datafeed=datafeed).prices(full_load=True)
+
+    datafeed.get_history.assert_called_once_with("GBPUSD=X", period="max")
+
+
+def test_prices_empty_history_returns_no_records() -> None:
+    client = FXClient("GBP", "USD", datafeed=_datafeed({}, pd.DataFrame()))
+    assert client.prices() == []

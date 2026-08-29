@@ -5,6 +5,10 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
+      full_load:
+        description: "Full historical load (all years) instead of current year only"
+        type: boolean
+        default: false
       chunk_size:
         description: "Target FX pairs per parallel chunk"
         default: "300"
@@ -81,7 +85,7 @@ jobs:
       - name: Pull equicast-fx image
         run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-fx:latest
 
-      - name: Extract this chunk's FX pair profiles
+      - name: Extract this chunk's FX pair profiles and prices
         run: |
           mkdir -p output
           docker run --rm \
@@ -89,6 +93,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/equicast-fx:latest \
             --pairs-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
+            ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \
             --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
             --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
@@ -99,5 +104,5 @@ jobs:
           role-to-assume: ${{ secrets.AWS_FX_INGESTION_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'us-east-1' }}
 
-      - name: Upload FX profiles to S3
+      - name: Upload FX profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ vars.MARKET_DATA_BUCKET }}/" --recursive

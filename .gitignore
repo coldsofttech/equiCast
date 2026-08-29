@@ -235,3 +235,4 @@ crash.*.log
 data/*.parquet
 packages/fx/output/
 packages/fx/chunks/
+packages/fx/smoke_output/
