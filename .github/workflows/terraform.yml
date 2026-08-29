@@ -96,7 +96,10 @@ jobs:
             --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id")
 
           if [ -n "$EXISTING_ID" ]; then
-            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$EXISTING_ID" -f body=@/tmp/infracost-comment-final.md
+            # gh api's -f doesn't do @file substitution — it sends the
+            # literal "@/tmp/..." string. Read the file into the shell
+            # instead.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$EXISTING_ID" -f body="$(cat /tmp/infracost-comment-final.md)"
           else
             gh pr comment "$PR_NUMBER" --body-file /tmp/infracost-comment-final.md
           fi
