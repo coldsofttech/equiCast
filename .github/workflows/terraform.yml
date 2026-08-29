@@ -65,7 +65,24 @@ jobs:
           fi
 
       - name: Render cost comment
-        run: infracost output --path=/tmp/infracost.json --format=github-comment --out-file=/tmp/infracost-comment-body.md
+        # github-comment expects diff-shaped JSON (past cost vs new cost) —
+        # fed a plain breakdown (no baseline available), it only renders a
+        # bare header with no numbers. Fall back to the table format, which
+        # works for either shape, in that case.
+        run: |
+          if [ -f /tmp/infracost-base.json ]; then
+            infracost output --path=/tmp/infracost.json --format=github-comment --out-file=/tmp/infracost-comment-body.md
+          else
+            {
+              echo "### 💰 Infracost report"
+              echo ""
+              echo "_No baseline on \`main\` yet to diff against — showing the full breakdown instead._"
+              echo ""
+              echo '```'
+              infracost output --path=/tmp/infracost.json --format=table
+              echo '```'
+            } > /tmp/infracost-comment-body.md
+          fi
 
       - name: Post or update PR comment
         env:
