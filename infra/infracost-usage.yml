@@ -7,12 +7,29 @@
 version: 0.1
 resource_usage:
   # FX + on-demand market data lands here (packages/fx, backend cache).
-  # 20GB is a rough guess at a few years of FX daily/intraday Parquet data.
+  # Sized from per-file Parquet estimates (profile.parquet ~15KB,
+  # metrics.parquet ~10KB, price.parquet ~20KB per year) against the 4 pairs
+  # currently configured in packages/fx/config/fx_pairs.yaml — recompute
+  # both numbers below if that pair count changes materially.
+  #
+  # storage_gb: profile.parquet/metrics.parquet are overwritten in place each
+  # run (one file per pair, don't accumulate); price.parquet is one file per
+  # pair per year and does accumulate. Assumes ~24 years of price history per
+  # pair (matching the year=2003..2026 range in docs/fx-pipeline.md's S3
+  # layout example):
+  #   4 pairs * (15KB + 10KB + 24 * 20KB) = 4 * 505KB = 2,020KB (~0.002GB)
+  # rounded up for headroom.
+  #
+  # monthly_tier_1_requests: fx-ingestion.yml's schedule (cron: "0 */6 * * *")
+  # runs ~120x/month (4/day). Each run uploads 3 files per pair (profile +
+  # metrics + current year's price — full_load isn't passed on schedule):
+  #   120 runs * 4 pairs * 3 files = 1,440 PUTs, rounded up for headroom
+  #   (manual workflow_dispatch runs, --full-load reruns writing extra years)
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
-      storage_gb: 20
-      monthly_tier_1_requests: 5000 # PUT/COPY/POST/LIST — fx-ingestion.yml runs every 6h
-      monthly_tier_2_requests: 20000 # GET — backend reads on demand
+      storage_gb: 0.01
+      monthly_tier_1_requests: 1500 # PUT/COPY/POST/LIST — fx-ingestion.yml runs every 6h
+      monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from FX pair estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)
   # on every deploy.
