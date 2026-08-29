@@ -5,6 +5,13 @@ on:
     - cron: "0 */6 * * *"
   workflow_dispatch:
     inputs:
+      environment:
+        description: "Environment to run against"
+        type: choice
+        options:
+          - dev
+          - production
+        default: dev
       full_load:
         description: "Full historical load (all years) instead of current year only"
         type: boolean
@@ -38,6 +45,8 @@ jobs:
     outputs:
       chunks: ${{ steps.plan.outputs.chunks }}
       has_chunks: ${{ steps.plan.outputs.has_chunks }}
+      environment: ${{ steps.env.outputs.environment }}
+      bucket: ${{ steps.env.outputs.bucket }}
     steps:
       - uses: actions/checkout@v4
 
@@ -60,6 +69,35 @@ jobs:
           else
             echo "has_chunks=true" >> "$GITHUB_OUTPUT"
           fi
+
+      # Scheduled runs always target production, regardless of the
+      # workflow_dispatch default below — there's no input to read on a
+      # cron trigger. Manual runs pick dev/production via the "environment"
+      # input. Resolved once here (not per matrix leg in the ingest job) so
+      # every chunk uploads to the same bucket and a missing variable fails
+      # fast, before any container spends time fetching data.
+      - name: Resolve target environment and bucket
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ENVIRONMENT=production
+          else
+            ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          fi
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
+          else
+            BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
+          fi
+
+          if [ -z "$BUCKET" ]; then
+            echo "::error::MARKET_DATA_BUCKET_$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]') repo variable is not set"
+            exit 1
+          fi
+
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
 
   ingest:
     needs: plan
@@ -105,4 +143,4 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - name: Upload FX profiles and prices to S3
-        run: aws s3 cp output/ "s3://${{ vars.MARKET_DATA_BUCKET }}/" --recursive
+        run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive

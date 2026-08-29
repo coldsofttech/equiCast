@@ -189,3 +189,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deleted), and `deploy.yml`'s backend/frontend jobs are likewise commented
   out and replaced by a no-op `paused` job so the workflow stays valid and
   green. `market_data_bucket` and `fx-ingestion.yml` are unaffected.
+- Fixed `fx-ingestion.yml` uploading to `s3:///fx=<PAIR>/...` (empty bucket
+  name, `aws s3 cp` rejecting it with `Invalid bucket name ""`): the
+  `MARKET_DATA_BUCKET` variable it read had never been set anywhere. Added
+  a `workflow_dispatch` `environment` input (`dev`/`production`, default
+  `dev`) and a `plan`-job step that resolves the target environment —
+  the scheduled trigger always resolves to `production` (there's no input
+  to read on a cron run), manual runs use the input — and looks up the
+  matching bucket from two new plain repo variables,
+  `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` (not scoped to the
+  `dev`/`production` GitHub Environments, since `production`'s
+  required-reviewer rule would otherwise pause every scheduled run pending
+  approval). Fails fast with a clear `::error::` if the relevant variable
+  is unset, rather than surfacing the confusing empty-bucket AWS error.
+  Documented in `docs/fx-pipeline.md`.
