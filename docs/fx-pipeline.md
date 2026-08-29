@@ -134,19 +134,27 @@ exact steps. This is deliberately *not* something Terraform creates itself
 (it would need AWS credentials to bootstrap the very thing meant to replace
 long-lived credentials).
 
+Second one-time prerequisite: the state bucket `equicast-tf-state`
+must exist before `terraform init` will succeed — see
+[terraform-state-setup.md](terraform-state-setup.md).
+
 Once that role exists and the `AWS_ROLE_ARN` repo secret is set, deploy the
 rest of the infrastructure:
 
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform apply
+terraform init -backend-config="key=equicast/dev/terraform.tfstate"
+terraform apply -var environment=dev
 ```
 
-This provisions the `equicast-market-data-<env>` S3 bucket (shared with the
+(swap `dev` for `prod` to target the prod state/environment instead). This
+provisions the `equicast-market-data-<env>` S3 bucket (shared with the
 backend's on-demand cache — FX data lands under `fx=<PAIR>/...` in it), the
-frontend static-site bucket, and the backend ECR repo.
+frontend static-site bucket, and the backend ECR repo. In CI, `terraform.yml`
+does this as two jobs — `apply-dev` runs automatically on every push to
+`main`, `apply-prod` is gated behind the `production` GitHub Environment's
+required reviewers.
 
 Then set the repo variable `MARKET_DATA_BUCKET` to the bucket name (e.g.
 `equicast-market-data-prod`) for `fx-ingestion.yml` to upload to.

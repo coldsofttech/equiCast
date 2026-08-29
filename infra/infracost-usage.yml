@@ -1,0 +1,28 @@
+# Rough usage estimates so Infracost can price the usage-based parts of S3 and
+# ECR (storage, requests) — by default Infracost assumes zero usage for these,
+# which would understate the real cost of running these buckets/repo.
+# These are deliberately rough guesses; tune them as real usage becomes known.
+# Regenerate the exact supported keys for your Infracost CLI version with:
+#   infracost breakdown --config-file=infracost.yml --sync-usage-file
+version: 0.1
+resource_usage:
+  # FX + on-demand market data lands here (packages/fx, backend cache).
+  # 20GB is a rough guess at a few years of FX daily/intraday Parquet data.
+  module.market_data_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 20
+      monthly_tier_1_requests: 5000 # PUT/COPY/POST/LIST — fx-ingestion.yml runs every 6h
+      monthly_tier_2_requests: 20000 # GET — backend reads on demand
+
+  # React static site — small, but re-synced (and re-read by every visitor)
+  # on every deploy.
+  module.frontend_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 1
+      monthly_tier_1_requests: 500 # one `aws s3 sync` per deploy
+      monthly_tier_2_requests: 50000 # page loads
+
+  # Backend image. A lifecycle policy caps this repo at the 2 most recently
+  # pushed images, so this is ~2x a single image's size, not unbounded.
+  module.backend_ecr.aws_ecr_repository.this:
+    storage_gb: 2

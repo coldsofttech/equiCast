@@ -113,6 +113,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   manual setup (the trust policy, a least-privilege permissions policy),
   verification, and common errors (trust policy mismatches, a duplicate
   OIDC provider in the account, missing `id-token` permissions).
+- Infracost cost estimation: a new `infracost` job in `terraform.yml` posts
+  (and updates) one PR comment with the estimated cost diff for both the
+  `dev` and `prod` projects declared in the new `infracost.yml`, using new
+  `infra/infracost-usage.yml` for rough S3/ECR usage estimates (storage,
+  request volume) Infracost otherwise assumes are zero. It's a pure HCL
+  diff — no `terraform plan`, state, or AWS credentials involved.
+  `deploy.yml`'s `estimate-backend`/`estimate-frontend` jobs separately
+  print a rough, size-based cost estimate (hardcoded, approximate AWS unit
+  prices) for the image/bundle about to be pushed to the run's step summary,
+  visible before either gate is approved.
+- `infra/modules/ecr`: added an `aws_ecr_lifecycle_policy` capping
+  `equicast-backend` at the 2 most recently pushed images.
 
 ### Changed
 
@@ -137,3 +149,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Terraform (`aws_region` variable, `terraform.tfvars.example`, the
   commented remote-state backend example) and every workflow's
   `AWS_REGION` fallback.
+- Consolidated the GitHub Actions IAM role from
+  `equicast-github-actions-prod-role` to a single `equicast-github-actions`,
+  shared by dev and prod (matching what `docs/aws-github-oidc-setup.md`
+  already documented); the `AWS_ROLE_ARN` repo secret was updated to match.
+- `infra/backend.tf`: enabled the S3 remote state backend
+  (`equicast-tf-state`, using Terraform's native S3 state locking —
+  `use_lockfile`, no DynamoDB table needed), previously left fully commented
+  out — every `terraform apply` in CI had been silently using a throwaway
+  local backend on the ephemeral runner, so Terraform had no memory of
+  previously-created resources between runs. State is split per environment
+  via `-backend-config="key=..."` at `terraform init` time
+  (`equicast/dev/terraform.tfstate`, `equicast/prod/terraform.tfstate`),
+  since a backend block's `key` can't be interpolated with
+  `var.environment`. `infra/providers.tf`'s `required_version` bumped to
+  `>= 1.10` for native locking support. Documented in new
+  `docs/terraform-state-setup.md`, including the bucket bootstrap steps and
+  the `terraform import` runbook for resources created by earlier `apply`
+  runs before the backend existed.
+- Dev/prod environment split, gated behind explicit approval: `terraform.yml`'s
+  `apply` job is now `apply-dev` (runs automatically on push to `main`,
+  `-var environment=dev`) followed by `apply-prod` (`-var environment=prod`,
+  gated behind the `production` GitHub Environment's required reviewers).
+  `deploy.yml` similarly splits backend/frontend each into an `estimate-*`
+  job (builds the image/bundle once) plus `deploy-*-dev` (gated behind a new
+  `deploy-dev` environment) and `deploy-*-prod` (gated behind `production`),
+  promoting the exact artifact `estimate-*` built rather than rebuilding.
+- Disabled S3 bucket versioning on `market_data_bucket` (cost reasons); it
+  now uses the `s3_bucket` module's default (`false`), same as
+  `frontend_bucket` already did.
+- Fixed `deploy-backend-prod`'s image promotion: `equicast-backend` is
+  `IMMUTABLE`, so re-pointing the `prod` tag on a second promotion would
+  have failed (`ImageAlreadyExistsException`) — it now deletes the existing
+  `prod` tag first (a no-op the first time).
+- Paused deploying the frontend/backend, since there's nothing ready to
+  ship yet and keeping the S3 bucket/ECR repo around just to sit empty
+  costs money for nothing: `infra/main.tf`'s `frontend_bucket`/`backend_ecr`
+  modules and their outputs in `infra/outputs.tf` are commented out (not
+  deleted), and `deploy.yml`'s backend/frontend jobs are likewise commented
+  out and replaced by a no-op `paused` job so the workflow stays valid and
+  green. `market_data_bucket` and `fx-ingestion.yml` are unaffected.

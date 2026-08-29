@@ -7,52 +7,220 @@ on:
     types: [completed]
 
 jobs:
-  deploy-backend:
+  # Everything below is paused: infra/main.tf no longer provisions the
+  # frontend S3 bucket or backend ECR repo (solution isn't ready to deploy
+  # yet, and keeping them around just to sit empty costs money for nothing).
+  # This job is a placeholder so the workflow stays valid/green in the
+  # meantime. Uncomment the jobs below it (and re-enable the modules in
+  # infra/main.tf) when there's something worth deploying again.
+  paused:
     if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
     steps:
-      - uses: actions/checkout@v4
+      - run: echo "Deploy pipeline paused — see infra/main.tf and this file's commented-out jobs."
 
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-
-      - uses: aws-actions/amazon-ecr-login@v2
-        id: ecr
-
-      - name: Build and push backend image
-        run: |
-          IMAGE="${{ steps.ecr.outputs.registry }}/equicast-backend:${{ github.sha }}"
-          docker build -f backend/Dockerfile -t "$IMAGE" .
-          docker push "$IMAGE"
-
-  deploy-frontend:
-    if: github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-
-      - name: Sync to S3
-        run: aws s3 sync frontend/dist s3://equicast-frontend-prod --delete
+  # # Builds the image once (no push) so its real size is known before anyone
+  # # is asked to approve a spend, and hands that exact image to both
+  # # deploy-backend-dev and (via promotion) deploy-backend-prod.
+  # estimate-backend:
+  #   if: github.event.workflow_run.conclusion == 'success'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - name: Build backend image
+  #       run: docker build -f backend/Dockerfile -t equicast-backend:build .
+  #
+  #     - name: Estimate incremental cost
+  #       run: |
+  #         SIZE_BYTES=$(docker image inspect equicast-backend:build --format='{{.Size}}')
+  #         SIZE_GB=$(awk "BEGIN { printf \"%.4f\", $SIZE_BYTES / 1000000000 }")
+  #         # Rough, region-approximate ECR storage rate — verify against
+  #         # https://aws.amazon.com/ecr/pricing/ if this needs to be precise.
+  #         ECR_GB_MONTH_USD=0.10
+  #         COST=$(awk "BEGIN { printf \"%.4f\", $SIZE_GB * $ECR_GB_MONTH_USD }")
+  #         {
+  #           echo "### Backend image cost estimate"
+  #           echo ""
+  #           echo "| Metric | Value |"
+  #           echo "|---|---|"
+  #           echo "| Image size | ${SIZE_GB} GB |"
+  #           echo "| Added ECR storage cost | ~\$${COST}/month (at \$${ECR_GB_MONTH_USD}/GB-month) |"
+  #           echo ""
+  #           echo "⚠️ Rough estimate only. \`equicast-backend\`'s lifecycle"
+  #           echo "policy keeps at most 2 images, so this roughly adds to (not"
+  #           echo "replaces) the previous image's cost until the 3rd-oldest"
+  #           echo "image ages out."
+  #         } >> "$GITHUB_STEP_SUMMARY"
+  #
+  #     - name: Save image artifact
+  #       run: docker save equicast-backend:build | gzip > equicast-backend.tar.gz
+  #
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: equicast-backend-image
+  #         path: equicast-backend.tar.gz
+  #         retention-days: 1
+  #
+  # # Gated behind the "deploy-dev" GitHub Environment's required reviewers
+  # # (Settings -> Environments -> deploy-dev) — the estimate above already
+  # # ran and is visible in this workflow run before anyone approves.
+  # deploy-backend-dev:
+  #   needs: estimate-backend
+  #   runs-on: ubuntu-latest
+  #   environment: deploy-dev
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: equicast-backend-image
+  #
+  #     - run: docker load < equicast-backend.tar.gz
+  #
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  #
+  #     - uses: aws-actions/amazon-ecr-login@v2
+  #       id: ecr
+  #
+  #     - name: Tag and push backend image
+  #       run: |
+  #         IMAGE="${{ steps.ecr.outputs.registry }}/equicast-backend:${{ github.sha }}"
+  #         docker tag equicast-backend:build "$IMAGE"
+  #         docker push "$IMAGE"
+  #
+  # # Gated behind the "production" GitHub Environment's required reviewers
+  # # (Settings -> Environments -> production). Promotes the exact image
+  # # deploy-backend-dev already built and pushed by adding a "prod" tag to it
+  # # via the registry API, rather than rebuilding — the same artifact that
+  # # ran in dev is what reaches prod.
+  # deploy-backend-prod:
+  #   needs: deploy-backend-dev
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  #
+  #     - name: Promote dev image to prod tag
+  #       run: |
+  #         # equicast-backend is IMMUTABLE, so the "prod" tag can't just be
+  #         # overwritten once it exists from a prior promotion — delete it
+  #         # first (no-op, ignored, the very first time it doesn't exist yet).
+  #         aws ecr batch-delete-image \
+  #           --repository-name equicast-backend \
+  #           --image-ids imageTag=prod || true
+  #
+  #         MANIFEST=$(aws ecr batch-get-image \
+  #           --repository-name equicast-backend \
+  #           --image-ids imageTag=${{ github.sha }} \
+  #           --query 'images[0].imageManifest' --output text)
+  #         aws ecr put-image \
+  #           --repository-name equicast-backend \
+  #           --image-tag prod \
+  #           --image-manifest "$MANIFEST"
+  #
+  # # Builds the frontend once so its real size is known before anyone is
+  # # asked to approve a spend, and hands that exact build to both
+  # # deploy-frontend-dev and deploy-frontend-prod.
+  # estimate-frontend:
+  #   if: github.event.workflow_run.conclusion == 'success'
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #
+  #     - uses: actions/setup-node@v4
+  #       with:
+  #         node-version: "22"
+  #
+  #     - name: Build frontend
+  #       working-directory: frontend
+  #       run: |
+  #         npm ci
+  #         npm run build
+  #
+  #     - name: Estimate incremental cost
+  #       working-directory: frontend
+  #       run: |
+  #         SIZE_BYTES=$(du -sb dist | cut -f1)
+  #         SIZE_GB=$(awk "BEGIN { printf \"%.6f\", $SIZE_BYTES / 1000000000 }")
+  #         FILE_COUNT=$(find dist -type f | wc -l)
+  #         # Rough, region-approximate S3 rates (eu-west-1) — verify against
+  #         # https://aws.amazon.com/s3/pricing/ if this needs to be precise.
+  #         S3_GB_MONTH_USD=0.023
+  #         S3_PUT_PER_1000_USD=0.005
+  #         STORAGE_COST=$(awk "BEGIN { printf \"%.6f\", $SIZE_GB * $S3_GB_MONTH_USD }")
+  #         PUT_COST=$(awk "BEGIN { printf \"%.6f\", $FILE_COUNT / 1000 * $S3_PUT_PER_1000_USD }")
+  #         {
+  #           echo "### Frontend deploy cost estimate"
+  #           echo ""
+  #           echo "| Metric | Value |"
+  #           echo "|---|---|"
+  #           echo "| Build size | ${SIZE_GB} GB across ${FILE_COUNT} files |"
+  #           echo "| Added monthly storage cost | ~\$${STORAGE_COST}/month (at \$${S3_GB_MONTH_USD}/GB-month) |"
+  #           echo "| One-time upload (PUT) cost | ~\$${PUT_COST} (at \$${S3_PUT_PER_1000_USD}/1,000 requests) |"
+  #           echo ""
+  #           echo "⚠️ Rough estimate only, per environment this is synced to"
+  #           echo "(dev and prod each pay this independently)."
+  #         } >> "$GITHUB_STEP_SUMMARY"
+  #
+  #     - uses: actions/upload-artifact@v4
+  #       with:
+  #         name: frontend-dist
+  #         path: frontend/dist
+  #         retention-days: 1
+  #
+  # # Gated behind the "deploy-dev" GitHub Environment's required reviewers.
+  # deploy-frontend-dev:
+  #   needs: estimate-frontend
+  #   runs-on: ubuntu-latest
+  #   environment: deploy-dev
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: frontend-dist
+  #         path: frontend-dist
+  #
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  #
+  #     - name: Sync to S3
+  #       run: aws s3 sync frontend-dist s3://equicast-frontend-dev --delete
+  #
+  # # Gated behind the "production" GitHub Environment's required reviewers.
+  # # Reuses the exact build estimate-frontend produced instead of rebuilding,
+  # # so what's promoted to prod is byte-for-byte what ran in dev.
+  # deploy-frontend-prod:
+  #   needs: deploy-frontend-dev
+  #   runs-on: ubuntu-latest
+  #   environment: production
+  #   permissions:
+  #     id-token: write
+  #     contents: read
+  #   steps:
+  #     - uses: actions/download-artifact@v4
+  #       with:
+  #         name: frontend-dist
+  #         path: frontend-dist
+  #
+  #     - uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+  #
+  #     - name: Sync to S3
+  #       run: aws s3 sync frontend-dist s3://equicast-frontend-prod --delete

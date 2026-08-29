@@ -12,6 +12,33 @@ on:
       - ".github/workflows/terraform.yml"
 
 jobs:
+  # Pure HCL cost diff (no terraform plan/state/AWS credentials needed) —
+  # posts/updates one PR comment showing what this change adds to the dev
+  # and prod monthly cost estimate, per infracost.yml's two projects. Uses
+  # infra/infracost-usage.yml for rough usage-based estimates (S3/ECR storage
+  # and request volume), since Infracost assumes zero usage by default.
+  infracost:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: head
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+          path: base
+
+      - uses: infracost/actions/diff@v4
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+          base-path: base
+          head-path: head
+
   plan:
     runs-on: ubuntu-latest
     permissions:
@@ -36,8 +63,36 @@ jobs:
 
       - run: terraform plan -input=false
 
-  apply:
+  apply-dev:
     needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - run: terraform init -backend-config="key=equicast/dev/terraform.tfstate"
+      - run: terraform apply -auto-approve -input=false -var environment=dev
+
+  # Gated behind the "production" GitHub Environment's required reviewers
+  # (Settings -> Environments -> production) — only an approved reviewer can
+  # let this job proceed, even though apply-dev above runs automatically for
+  # anyone who can merge to main.
+  apply-prod:
+    needs: apply-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
@@ -57,5 +112,5 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - run: terraform init
-      - run: terraform apply -auto-approve -input=false
+      - run: terraform init -backend-config="key=equicast/prod/terraform.tfstate"
+      - run: terraform apply -auto-approve -input=false -var environment=prod
