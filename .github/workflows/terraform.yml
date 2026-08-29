@@ -12,6 +12,98 @@ on:
       - ".github/workflows/terraform.yml"
 
 jobs:
+  # Pure HCL cost diff (no terraform plan/state involved) — posts/updates one
+  # PR comment showing what this change adds to the dev and prod monthly
+  # cost estimate, per infracost.yml's two projects. Uses
+  # infra/infracost-usage.yml for rough usage-based estimates (S3/ECR storage
+  # and request volume), since Infracost assumes zero usage by default.
+  #
+  # Uses the plain CLI (breakdown/diff/output) rather than
+  # infracost/actions/diff@v4 — that action's wrapper binary calls out to
+  # Infracost Cloud to fetch run configuration before doing anything else,
+  # which 401s ("failed to fetch run parameters: Unauthorized") unless the
+  # org's Cloud/dashboard state is fully set up. Posting via `gh` ourselves
+  # (rather than `infracost comment github`) also sidesteps that: this repo's
+  # API key is tied to an Infracost Cloud org, and `infracost comment github`
+  # uploads the estimate there and runs the org's FinOps policies/guardrails
+  # — when nothing's flagged, it replaces the cost table with a compact
+  # "aligned with policies" pass banner instead of showing numbers.
+  # `infracost output` is purely local rendering, no Cloud call involved.
+  infracost:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: infracost/actions/setup@v3
+        with:
+          api-key: ${{ secrets.INFRACOST_API_KEY }}
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.ref }}
+
+      - name: Generate Infracost baseline (base branch)
+        # infracost.yml doesn't exist on main yet as of the PR that
+        # introduces it — skip the baseline rather than fail in that case,
+        # so this (and every PR before infracost.yml lands) at least gets a
+        # plain cost breakdown instead of a diff.
+        run: |
+          if [ -f infracost.yml ]; then
+            infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Generate Infracost diff (this PR vs base)
+        run: |
+          if [ -f /tmp/infracost-base.json ]; then
+            infracost diff --config-file=infracost.yml --format=json --compare-to=/tmp/infracost-base.json --out-file=/tmp/infracost.json
+          else
+            infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost.json
+          fi
+
+      - name: Render cost comment
+        # github-comment expects diff-shaped JSON (past cost vs new cost) —
+        # fed a plain breakdown (no baseline available), it only renders a
+        # bare header with no numbers. Fall back to the table format, which
+        # works for either shape, in that case.
+        run: |
+          if [ -f /tmp/infracost-base.json ]; then
+            infracost output --path=/tmp/infracost.json --format=github-comment --out-file=/tmp/infracost-comment-body.md
+          else
+            {
+              echo "### 💰 Infracost report"
+              echo ""
+              echo "_No baseline on \`main\` yet to diff against — showing the full breakdown instead._"
+              echo ""
+              echo '```'
+              infracost output --path=/tmp/infracost.json --format=table
+              echo '```'
+            } > /tmp/infracost-comment-body.md
+          fi
+
+      - name: Post or update PR comment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          MARKER="<!-- infracost-comment -->"
+          { echo "$MARKER"; cat /tmp/infracost-comment-body.md; } > /tmp/infracost-comment-final.md
+
+          EXISTING_ID=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq "[.[] | select(.body | startswith(\"$MARKER\"))][0].id")
+
+          if [ -n "$EXISTING_ID" ]; then
+            # gh api's -f doesn't do @file substitution — it sends the
+            # literal "@/tmp/..." string. Read the file into the shell
+            # instead.
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$EXISTING_ID" -f body="$(cat /tmp/infracost-comment-final.md)"
+          else
+            gh pr comment "$PR_NUMBER" --body-file /tmp/infracost-comment-final.md
+          fi
+
   plan:
     runs-on: ubuntu-latest
     permissions:
@@ -29,15 +121,48 @@ jobs:
       - run: terraform init -backend=false
       - run: terraform validate
 
+      # Real backend init needs credentials, so this has to come before it —
+      # -backend=false above was only for fmt/validate, which don't touch
+      # state. plan previews against dev's state (read-only, no var passed
+      # means it'd otherwise default to dev anyway, but be explicit).
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - run: terraform plan -input=false
+      - run: terraform init -reconfigure -backend-config="key=equicast/dev/terraform.tfstate"
+      - run: terraform plan -input=false -var environment=dev
 
-  apply:
+  apply-dev:
     needs: plan
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - run: terraform init -backend-config="key=equicast/dev/terraform.tfstate"
+      - run: terraform apply -auto-approve -input=false -var environment=dev
+
+  # Gated behind the "production" GitHub Environment's required reviewers
+  # (Settings -> Environments -> production) — only an approved reviewer can
+  # let this job proceed, even though apply-dev above runs automatically for
+  # anyone who can merge to main.
+  apply-prod:
+    needs: apply-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: production
@@ -57,5 +182,5 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - run: terraform init
-      - run: terraform apply -auto-approve -input=false
+      - run: terraform init -backend-config="key=equicast/prod/terraform.tfstate"
+      - run: terraform apply -auto-approve -input=false -var environment=prod

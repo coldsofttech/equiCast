@@ -97,14 +97,16 @@ deploy/execute the scheduled ingestion pipeline.
 ```bash
 cd infra
 cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform plan
+terraform init -backend-config="key=equicast/dev/terraform.tfstate"
+terraform plan -var environment=dev
 ```
 
 Reviews (doesn't apply) the S3 buckets and ECR repo described in
 [fx-pipeline.md](fx-pipeline.md#deploying-the-infrastructure). The IAM role
 Terraform itself authenticates through is created manually, not by
-Terraform — see [aws-github-oidc-setup.md](aws-github-oidc-setup.md).
+Terraform — see [aws-github-oidc-setup.md](aws-github-oidc-setup.md). The
+state bucket is likewise created manually — see
+[terraform-state-setup.md](terraform-state-setup.md).
 
 ## Pre-commit hooks
 
@@ -122,7 +124,12 @@ frontend. See `.pre-commit-config.yaml`.
 - `backend-ci.yml` — ruff, mypy, and pytest for the core package and Django backend via `uv`
 - `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`, `equicast-metrics`, and `equicast-fx`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
-- `terraform.yml` — `fmt`/`validate`/`plan` on PRs, `apply` on merge to `main`
-- `deploy.yml` — builds/pushes the backend image to ECR and syncs the frontend build to S3
+- `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
+  PR comment; on merge to `main`, `apply-dev` runs automatically and
+  `apply-prod` waits for approval on the `production` GitHub Environment
+  (see [terraform-state-setup.md](terraform-state-setup.md))
+- `deploy.yml` — builds the backend image/frontend bundle once, posts a rough
+  cost estimate, then `dev` and `prod` deploys each wait for approval on their
+  own GitHub Environment (`deploy-dev`, `production`) before pushing/syncing
 - `fx-image.yml` / `fx-ingestion.yml` — build the FX pipeline's image and run it on a
   schedule; see [fx-pipeline.md](fx-pipeline.md) for details
