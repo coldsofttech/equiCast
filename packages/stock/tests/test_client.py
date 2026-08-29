@@ -1,6 +1,7 @@
 import logging
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 from equicast_datafeed import YFINANCE_DATA_DISCLAIMER
 from equicast_datafeed.disclaimers import reset_warned
@@ -29,6 +30,14 @@ _FULL_INFO = {
     "dividendYield": 0.005,
     "marketCap": 3000000000000,
     "volume": 50000000,
+    "regularMarketOpen": 227.5,
+    "regularMarketDayHigh": 229.10,
+    "regularMarketDayLow": 226.80,
+    "regularMarketPrice": 228.50,
+    "fiftyTwoWeekHigh": 260.10,
+    "fiftyTwoWeekLow": 164.08,
+    "fiftyDayAverage": 220.45,
+    "twoHundredDayAverage": 200.12,
     "address1": "One Apple Park Way",
     "city": "Cupertino",
     "state": "CA",
@@ -45,9 +54,13 @@ _FULL_INFO = {
 }
 
 
-def _datafeed(info: dict) -> MagicMock:
+_HISTORY = pd.DataFrame({"Open": [180.0, 181.5, 227.5]})
+
+
+def _datafeed(info: dict, history: pd.DataFrame = _HISTORY) -> MagicMock:
     datafeed = MagicMock()
     datafeed.get_info.return_value = info
+    datafeed.get_history.return_value = history
     return datafeed
 
 
@@ -87,6 +100,18 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "dividend_yield": 0.005,
         "market_cap": 3000000000000,
         "volume": 50000000,
+        "day_open": 227.5,
+        "day_high": 229.1,
+        "day_low": 226.8,
+        "day_close": 228.5,
+        "day_average": 227.95,
+        "year_open": 180.0,
+        "year_high": 260.1,
+        "year_low": 164.08,
+        "year_close": 228.5,
+        "year_average": 212.09,
+        "moving_average_50_days": 220.45,
+        "moving_average_200_days": 200.12,
         "address": "One Apple Park Way, Cupertino, CA 95014",
         "country": "United States",
         "region": "North America",
@@ -124,6 +149,35 @@ def test_profile_volume_falls_back_to_regular_market_volume() -> None:
     client = StockClient("AAPL", datafeed=_datafeed(info))
 
     assert client.profile()["volume"] == 12345
+
+
+def test_profile_fetches_history_over_the_trailing_year() -> None:
+    datafeed = _datafeed({})
+    StockClient("AAPL", datafeed=datafeed).profile()
+
+    datafeed.get_history.assert_called_once_with("AAPL", period="1y")
+
+
+def test_profile_year_open_is_first_row_of_history() -> None:
+    history = pd.DataFrame({"Open": [10.0, 20.0, 30.0]})
+    client = StockClient("AAPL", datafeed=_datafeed({}, history))
+
+    assert client.profile()["year_open"] == 10.0
+
+
+def test_profile_year_open_is_none_when_history_is_empty() -> None:
+    client = StockClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
+
+    assert client.profile()["year_open"] is None
+
+
+def test_profile_day_and_year_averages_are_none_when_high_or_low_missing() -> None:
+    client = StockClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
+
+    profile = client.profile()
+
+    assert profile["day_average"] is None
+    assert profile["year_average"] is None
 
 
 def test_profile_address_formats_all_parts() -> None:

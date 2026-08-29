@@ -39,6 +39,11 @@ profile = client.profile()
 #     "dividend_yield": 0.005,
 #     "market_cap": 3000000000000,
 #     "volume": 50000000,
+#     "day_open": 227.5, "day_high": 229.1, "day_low": 226.8,
+#     "day_close": 228.5, "day_average": 227.95,
+#     "year_open": 180.0, "year_high": 260.1, "year_low": 164.08,
+#     "year_close": 228.5, "year_average": 212.09,
+#     "moving_average_50_days": 220.45, "moving_average_200_days": 200.12,
 #     "address": "One Apple Park Way, Cupertino, CA 95014",
 #     "country": "United States",
 #     "region": "North America",
@@ -53,6 +58,18 @@ profile = client.profile()
 `dividend_rate`/`dividend_yield`/`payout_ratio` are `None` for tickers that
 don't pay a dividend — yfinance simply omits those keys rather than
 reporting zero.
+
+### On the price-range fields
+
+`day_*`/`year_*`/`moving_average_*` mirror `equicast-fx`'s `FXClient.profile()`
+exactly (same source fields, same logic): `day_close` is the live price;
+`year_*` uses a trailing 52-week window (`year_open` from a
+`history(period="1y")` call, everything else from yfinance's own
+`fiftyTwoWeekHigh`/`fiftyTwoWeekLow`); `*_average` fields are the high/low
+midpoint, not a mean of daily closes; `moving_average_50_days`/
+`moving_average_200_days` come straight from yfinance's own 50/200-day
+averages. All rounded to 8 decimal places (`equicast-datafeed`'s
+`round_value`), `None` wherever the underlying yfinance field is missing.
 
 ### On `address`
 

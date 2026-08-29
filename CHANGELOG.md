@@ -129,8 +129,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `equicast-fx`'s design, for extracting stock ticker profiles
   (`StockClient(ticker).profile()`), returning ticker, name, quote type,
   exchange, currency, description, sector, industry, website, beta, payout
-  ratio, dividend rate/yield, market cap, volume, address, country, region,
-  full-time employees, CEO(s), IPO date, last updated, and source.
+  ratio, dividend rate/yield, market cap, volume, day
+  open/high/low/close/average, year open/high/low/close/average, 50-/200-day
+  moving averages, address, country, region, full-time employees, CEO(s),
+  IPO date, last updated, and source. The day/year/moving-average fields
+  mirror `equicast-fx`'s `FXClient.profile()` exactly (same yfinance source
+  fields, same midpoint/rounding logic, same trailing-52-week `year_*`
+  window via a `history(period="1y")` call).
   `address` is formatted from `address1`/`address2`/`city`/`state`/`zip`,
   kept independent of the separate `country`/`region` fields (yfinance's own
   keys, not parsed out of the address string) so all three stay filterable.

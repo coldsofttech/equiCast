@@ -11,6 +11,17 @@ from equicast_datafeed import YFINANCE_DATA_DISCLAIMER, DatafeedClient, round_va
 
 logger = logging.getLogger(__name__)
 
+#: yfinance's own trailing 52-week window, reused as the "year" window for
+#: year_open/year_high/year_low/year_close/year_average — same as equicast-fx.
+YEAR_HISTORY_PERIOD = "1y"
+
+
+def _midpoint(low: float | None, high: float | None) -> float | None:
+    if low is None or high is None:
+        return None
+    return (low + high) / 2
+
+
 #: Matches "CEO" (as a whole word, so it doesn't match inside e.g. "ceosome")
 #: or "Chief Executive Officer" in an officer/executive title, case-insensitive
 #: so it also picks up "Co-CEO", "President, CEO & Director", etc.
@@ -139,6 +150,7 @@ class StockClient:
     def profile(self) -> dict[str, Any]:
         """Return profile data for this stock ticker."""
         info = self._datafeed.get_info(self.symbol)
+        history = self._datafeed.get_history(self.symbol, period=YEAR_HISTORY_PERIOD)
 
         market_time = info.get("regularMarketTime")
         last_updated = (
@@ -146,6 +158,14 @@ class StockClient:
             if market_time is not None
             else datetime.now(UTC).isoformat()
         )
+
+        day_high = info.get("regularMarketDayHigh")
+        day_low = info.get("regularMarketDayLow")
+        day_close = info.get("regularMarketPrice")
+
+        year_open = float(history["Open"].iloc[0]) if not history.empty else None
+        year_high = info.get("fiftyTwoWeekHigh")
+        year_low = info.get("fiftyTwoWeekLow")
 
         return {
             "ticker": self.ticker,
@@ -163,6 +183,18 @@ class StockClient:
             "dividend_yield": round_value(info.get("dividendYield")),
             "market_cap": info.get("marketCap"),
             "volume": info.get("volume") or info.get("regularMarketVolume"),
+            "day_open": round_value(info.get("regularMarketOpen")),
+            "day_high": round_value(day_high),
+            "day_low": round_value(day_low),
+            "day_close": round_value(day_close),
+            "day_average": round_value(_midpoint(day_low, day_high)),
+            "year_open": round_value(year_open),
+            "year_high": round_value(year_high),
+            "year_low": round_value(year_low),
+            "year_close": round_value(day_close),
+            "year_average": round_value(_midpoint(year_low, year_high)),
+            "moving_average_50_days": round_value(info.get("fiftyDayAverage")),
+            "moving_average_200_days": round_value(info.get("twoHundredDayAverage")),
             "address": _format_address(info),
             "country": info.get("country"),
             "region": info.get("region"),
