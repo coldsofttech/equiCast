@@ -1,7 +1,7 @@
 from pathlib import Path
 
 import pandas as pd
-from equicast_fx.writer import write_price_parquet, write_profile_parquet
+from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 
 
 def test_write_profile_parquet_partitions_by_pair(tmp_path: Path) -> None:
@@ -63,3 +63,26 @@ def test_write_price_parquet_partitions_by_pair_and_year(tmp_path: Path) -> None
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_price_parquet([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
+
+
+def test_write_metrics_parquet_adds_pair_identification(tmp_path: Path) -> None:
+    metrics = {
+        "volatility": 0.083,
+        "sharpe_ratio": 0.42,
+        "max_drawdown": -0.061,
+        "cagr_1y": 0.091,
+        "cagr_2y": 0.08,
+        "cagr_3y": 0.07,
+        "cagr_5y": 0.09,
+        "cagr_10y": 0.06,
+        "last_updated": "2026-08-29T12:00:00+00:00",
+        "source": "equicast",
+    }
+
+    path = write_metrics_parquet(metrics, "GBP", "USD", tmp_path)
+
+    assert path == tmp_path / "fx=GBPUSD" / "metrics.parquet"
+    result = pd.read_parquet(path)
+    assert result.to_dict(orient="records") == [
+        {"from_currency": "GBP", "to_currency": "USD", **metrics}
+    ]

@@ -1,8 +1,8 @@
 """Smoke-test equicast-fx against live yfinance data.
 
 Not part of the automated pytest suite (it hits the real Yahoo Finance API,
-so it doesn't belong in CI) — run manually to sanity-check FXClient.profile()
-and .prices(), and the Parquet writers, end to end.
+so it doesn't belong in CI) — run manually to sanity-check FXClient.profile(),
+.prices(), MetricsClient.metrics(), and the Parquet writers, end to end.
 
 Usage:
     uv run python scripts/smoke_test.py
@@ -20,7 +20,8 @@ from pathlib import Path
 
 from equicast_fx.client import FXClient
 from equicast_fx.config import FxPair, load_fx_pairs
-from equicast_fx.writer import write_price_parquet, write_profile_parquet
+from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
+from equicast_metrics import MetricsClient
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "fx_pairs.yaml"
 
@@ -37,7 +38,8 @@ def _parse_pairs(raw: str) -> list[FxPair]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Smoke-test equicast-fx (profile + prices) against live yfinance data."
+        description="Smoke-test equicast-fx (profile + prices + metrics) against live "
+        "yfinance data."
     )
     parser.add_argument(
         "--config",
@@ -84,22 +86,30 @@ def _summarize_prices(records: list[dict]) -> dict:
 
 def run_pair(pair: FxPair, output_format: str, output_dir: Path, full_load: bool) -> None:
     client = FXClient(pair.from_currency, pair.to_currency)
+    metrics_client = MetricsClient(client.symbol)
     print(f"\n=== {pair.key} ===")
 
     profile = client.profile()
     prices = client.prices(full_load=full_load)
+    metrics = metrics_client.metrics()
 
     if output_format == "json":
         print(f"\n--- {pair.key} profile ---")
         print(json.dumps(profile, indent=2, default=str))
         print(f"\n--- {pair.key} prices (summary; full_load={full_load}) ---")
         print(json.dumps(_summarize_prices(prices), indent=2, default=str))
+        print(f"\n--- {pair.key} metrics ---")
+        print(json.dumps(metrics, indent=2, default=str))
     else:
         profile_path = write_profile_parquet(profile, output_dir)
         price_paths = write_price_parquet(prices, output_dir)
+        metrics_path = write_metrics_parquet(
+            metrics, pair.from_currency, pair.to_currency, output_dir
+        )
         print(f"  wrote {profile_path}")
         for path in price_paths:
             print(f"  wrote {path}")
+        print(f"  wrote {metrics_path}")
 
 
 def main() -> None:

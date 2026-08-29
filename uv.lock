@@ -22,6 +22,7 @@ members = [
     "equicast-backend",
     "equicast-datafeed",
     "equicast-fx",
+    "equicast-metrics",
 ]
 
 [[package]]
@@ -695,6 +696,7 @@ version = "0.1.0"
 source = { editable = "packages/fx" }
 dependencies = [
     { name = "equicast-datafeed" },
+    { name = "equicast-metrics" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyyaml" },
@@ -712,6 +714,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "equicast-metrics", editable = "packages/metrics" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },
@@ -720,6 +723,34 @@ requires-dist = [
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "types-pyyaml", marker = "extra == 'dev'", specifier = ">=6.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
+name = "equicast-metrics"
+version = "0.1.0"
+source = { editable = "packages/metrics" }
+dependencies = [
+    { name = "equicast-datafeed" },
+    { name = "pandas" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pandas", specifier = ">=2.2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
 provides-extras = ["dev"]
 

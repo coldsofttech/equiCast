@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `equicast-metrics` (`packages/metrics/`): standalone, generic package for
+  risk/performance metrics on any yfinance symbol — an FX pair (`GBPUSD=X`)
+  or a stock ticker (`AAPL`) alike. `MetricsClient(symbol).metrics()` returns
+  `volatility`, `sharpe_ratio`, `max_drawdown` (all trailing 1-year, Sharpe
+  assuming a 0% risk-free rate), `cagr_1y`/`2y`/`3y`/`5y`/`10y` (`None` where
+  there isn't enough history), `last_updated`, and `source`. Checks yfinance
+  first per field (only `cagr_1y` has an equivalent, `fiftyTwoWeekChangePercent`)
+  before calculating; guards against a still-forming trading day's `NaN`
+  close price poisoning every downstream calculation.
+- `equicast-fx` now also writes `fx=<PAIR>/metrics.parquet` per pair (from/to
+  currency plus the `equicast-metrics` fields above), fetched as a third
+  concurrent task alongside profile and prices. Unaffected by `--full-load`
+  (metrics always looks back as far as `cagr_10y` needs, regardless).
+- `fx-ci.yml` and `.pre-commit-config.yaml` now also lint/type-check/test
+  `equicast-metrics`; `packages/fx/Dockerfile` copies it into the image.
+
 - `equicast-datafeed` (`packages/datafeed/`): standalone package providing a
   resilient yfinance client with rate limiting and retry-with-backoff,
   reusable by any future market-data package.

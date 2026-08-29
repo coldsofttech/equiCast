@@ -10,14 +10,17 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   `equicast`, for the frontend to consume.
 - **Frontend (React)** — a UI for looking up ticker history through the
   backend API.
-- **FX data pipeline (`equicast-datafeed`, `equicast-fx`)** — a scheduled
-  pipeline that extracts FX pair data from Yahoo Finance and lands it in S3
-  as Parquet, ready for downstream analysis.
+- **FX data pipeline (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)**
+  — a scheduled pipeline that extracts FX pair data from Yahoo Finance and
+  lands it in S3 as Parquet, ready for downstream analysis.
+- **`equicast-metrics`** — generic risk/performance metrics (volatility,
+  Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
+  ticker alike.
 
 ## FX data products
 
 Each configured FX pair (default: GBP→USD, USD→GBP, GBP→EUR, EUR→GBP) yields
-two kinds of data, both sourced from Yahoo Finance:
+three kinds of data:
 
 ### Profile — a current snapshot
 
@@ -54,15 +57,35 @@ One row per trading day. By default covers the current year only; a full
 historical load (every year available) can be requested separately — see
 [the FX pipeline docs](docs/fx-pipeline.md).
 
+### Metrics — risk and performance
+
+```python
+from equicast_metrics import MetricsClient
+
+MetricsClient("GBPUSD=X").metrics()
+# {"volatility": 0.066, "sharpe_ratio": 0.062, "max_drawdown": -0.048,
+#  "cagr_1y": -0.007, "cagr_2y": 0.011, "cagr_3y": 0.024,
+#  "cagr_5y": -0.002, "cagr_10y": 0.003,
+#  "last_updated": "2026-08-29T11:55:00+00:00", "source": "equicast"}
+```
+
+`volatility`/`sharpe_ratio`/`max_drawdown` use a trailing 1-year window
+(Sharpe assumes a 0% risk-free rate); the five `cagr_*` fields cover 1/2/3/5/10
+years, `None` where a pair doesn't have enough history yet. `equicast-metrics`
+is generic — it works the same way for a stock ticker (`MetricsClient("AAPL")`)
+as for an FX pair, checking yfinance for an existing value first (only
+`cagr_1y` has one) before calculating it.
+
 ### Where it lands
 
-The pipeline writes both as Parquet to S3, partitioned by pair and — for
-prices — by year:
+The pipeline writes all three as Parquet to S3, partitioned by pair and —
+for prices — by year:
 
 ```
 s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
+    ├── metrics.parquet
     ├── year=2025/price.parquet
     └── year=2026/price.parquet
 ```

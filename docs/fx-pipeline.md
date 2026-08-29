@@ -2,8 +2,8 @@
 
 How the `equicast-fx` scheduled ingestion pipeline is built, deployed, and
 run. For local package setup (installing deps, running unit tests), see
-[local-setup.md](local-setup.md). For what the `profile`/`price` data
-actually contains, see the root [README](../README.md).
+[local-setup.md](local-setup.md). For what the `profile`/`price`/`metrics`
+data actually contains, see the root [README](../README.md).
 
 ## Architecture
 
@@ -12,11 +12,12 @@ packages/fx/config/fx_pairs.yaml   (the pairs to extract)
         │
         ▼
 equicast-fx CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
+        │              └────▶  equicast-metrics (volatility, Sharpe, drawdown, CAGR)
         │                              │
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet, price.parquet)
+Parquet files (profile.parquet, price.parquet, metrics.parquet)
         │
         ▼
 GitHub Actions (fx-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -41,18 +42,21 @@ For each pair this writes:
 - `fx=<PAIR>/profile.parquet` — one row, current snapshot
 - `fx=<PAIR>/year=<YYYY>/price.parquet` — one row per trading day, for the
   current year only by default
+- `fx=<PAIR>/metrics.parquet` — one row, volatility/Sharpe/drawdown/CAGR
 
-Add `--full-load` to instead fetch each pair's entire available yfinance
-history, writing one `price.parquet` per year found (current year included):
+Add `--full-load` to fetch each pair's entire available yfinance history for
+**prices**, writing one `price.parquet` per year found (current year
+included). It does not affect `metrics.parquet`, which always looks back far
+enough for `cagr_10y` regardless of this flag:
 
 ```bash
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output --full-load
 ```
 
-Profile and prices are fetched as independent concurrent tasks per pair
-(shared across one rate-limited `DatafeedClient`), tune with:
+Profile, prices, and metrics are fetched as independent concurrent tasks per
+pair (shared across one rate-limited `DatafeedClient`), tune with:
 
-- `--max-workers` — profile/price fetches run concurrently, up to this many at once (default: 1)
+- `--max-workers` — profile/price/metrics fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -65,11 +69,11 @@ docker run --rm -v "$PWD/output:/output" equicast-fx:local \
 
 ## Manual smoke testing (`scripts/smoke_test.py`)
 
-`packages/fx/scripts/smoke_test.py` exercises `FXClient.profile()` and
-`.prices()` against **live** Yahoo Finance data — it's a manual QA tool, not
-part of the automated `pytest` suite (a live-network test would make CI slow
-and flaky), so run it by hand whenever you want to sanity-check the pipeline
-end to end.
+`packages/fx/scripts/smoke_test.py` exercises `FXClient.profile()`,
+`.prices()`, and `MetricsClient.metrics()` against **live** Yahoo Finance
+data — it's a manual QA tool, not part of the automated `pytest` suite (a
+live-network test would make CI slow and flaky), so run it by hand whenever
+you want to sanity-check the pipeline end to end.
 
 ```bash
 cd packages/fx
@@ -87,10 +91,11 @@ uv run python scripts/smoke_test.py --pairs GBP:USD --format parquet --out ./smo
 uv run python scripts/smoke_test.py --pairs GBP:USD --format parquet --out ./smoke_output --full-load
 ```
 
-In `--format json` mode, `profile` is printed in full and `prices` is
-summarized (row count, date range, first/last row) rather than dumped in
-full — a `--full-load` run can be 20+ years of daily rows. `--format parquet`
-writes the real files via `write_profile_parquet`/`write_price_parquet`, so
+In `--format json` mode, `profile` and `metrics` are printed in full and
+`prices` is summarized (row count, date range, first/last row) rather than
+dumped in full — a `--full-load` run can be 20+ years of daily rows.
+`--format parquet` writes the real files via
+`write_profile_parquet`/`write_price_parquet`/`write_metrics_parquet`, so
 you can then inspect them with any Parquet reader (e.g. `pd.read_parquet`).
 
 It also works inside the Docker image — same file is already copied in by
@@ -167,13 +172,14 @@ The workflow has two jobs:
    `--pairs-json`, and uploads the resulting Parquet files to
    `s3://equicast-market-data-<env>/`. Each leg runs on its own GitHub-hosted
    runner (a separate source IP hitting Yahoo Finance), and each container
-   also fetches its chunk's pairs (profile + prices) concurrently — so
-   throughput scales both across and within legs.
+   also fetches its chunk's pairs (profile + prices + metrics) concurrently —
+   so throughput scales both across and within legs.
 
 With today's 4 configured pairs this collapses to a single chunk/leg; at
 thousands of pairs it fans out automatically. A `full_load=true` run doesn't
-change the chunking — it just makes each container fetch full history
-instead of year-to-date for the pairs it's assigned.
+change the chunking — it just makes each container fetch full history for
+**prices** instead of year-to-date for the pairs it's assigned (`metrics`
+always looks back as far as it needs, regardless of this flag).
 
 ### S3 layout produced
 
@@ -181,6 +187,7 @@ instead of year-to-date for the pairs it's assigned.
 s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
+    ├── metrics.parquet
     ├── year=2003/price.parquet
     ├── year=2004/price.parquet
     ├── ...

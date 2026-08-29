@@ -60,6 +60,20 @@ repos:
         pass_filenames: false
         files: ^packages/datafeed/
 
+      - id: mypy-metrics
+        name: mypy (equicast-metrics)
+        entry: bash -c 'cd packages/metrics && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/metrics/.*\.py$
+
+      - id: pytest-metrics
+        name: pytest (equicast-metrics, unit)
+        entry: bash -c 'cd packages/metrics && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/metrics/
+
       - id: mypy-fx
         name: mypy (equicast-fx)
         entry: bash -c 'cd packages/fx && uv run mypy src/'

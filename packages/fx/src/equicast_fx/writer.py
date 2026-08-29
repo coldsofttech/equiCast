@@ -19,6 +19,24 @@ def write_profile_parquet(profile: dict[str, Any], output_dir: Path) -> Path:
     return path
 
 
+def write_metrics_parquet(
+    metrics: dict[str, Any], from_currency: str, to_currency: str, output_dir: Path
+) -> Path:
+    """Write `metrics` to `<output_dir>/fx=<FROM><TO>/metrics.parquet`.
+
+    Unlike profile()/prices(), MetricsClient is generic (keyed by a plain
+    yfinance symbol, not a currency pair), so the pair identification is
+    added here rather than already being present in `metrics`.
+    """
+    record = {"from_currency": from_currency, "to_currency": to_currency, **metrics}
+    directory = output_dir / f"fx={from_currency}{to_currency}"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "metrics.parquet"
+    pd.DataFrame([record]).to_parquet(path, index=False)
+    return path
+
+
 def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Write `records` to one `<output_dir>/fx=<FROM><TO>/year=<YYYY>/price.parquet` per year."""
     if not records:

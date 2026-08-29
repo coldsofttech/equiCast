@@ -10,6 +10,7 @@ equiCast/
 ├── packages/
 │   ├── equicast/        # Core Python package (yfinance ingestion, Parquet storage)
 │   ├── datafeed/        # equicast-datafeed: resilient yfinance client (retries, rate limits)
+│   ├── metrics/         # equicast-metrics: volatility, Sharpe ratio, max drawdown, CAGR
 │   └── fx/              # equicast-fx: FX pair data extraction, containerized, pushed to GHCR
 ├── backend/             # Django REST API (uv workspace member, depends on equicast)
 │   └── market_data/     # Django app exposing market data endpoints
@@ -79,10 +80,11 @@ npm run lint
 npm run test -- --run
 ```
 
-## FX packages (`equicast-datafeed`, `equicast-fx`)
+## FX packages (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)
 
 ```bash
 cd packages/datafeed && uv run pytest && uv run mypy src/
+cd ../metrics && uv run pytest && uv run mypy src/
 cd ../fx && uv run pytest && uv run mypy src/
 ```
 
@@ -110,13 +112,13 @@ uvx pre-commit run --all-files
 ```
 
 Runs ruff, mypy, and pytest (unit) for the core package, Django backend, and
-the datafeed/fx packages, plus eslint and vitest (unit) for the React
+the datafeed/metrics/fx packages, plus eslint and vitest (unit) for the React
 frontend. See `.pre-commit-config.yaml`.
 
 ## CI/CD workflows
 
 - `backend-ci.yml` — ruff, mypy, and pytest for the core package and Django backend via `uv`
-- `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed` and `equicast-fx`
+- `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`, `equicast-metrics`, and `equicast-fx`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, `apply` on merge to `main`
 - `deploy.yml` — builds/pushes the backend image to ECR and syncs the frontend build to S3

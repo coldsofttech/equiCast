@@ -1,10 +1,11 @@
-"""CLI: extract a profile and daily prices for every configured FX pair.
+"""CLI: extract a profile, daily prices, and risk metrics for every configured FX pair.
 
-For each pair, both are written as Parquet: one profile.parquet snapshot, and
-one price.parquet per year covered (just the current year by default, or the
-pair's full yfinance history with --full-load). The profile and prices fetch
-for a given pair are independent tasks submitted to the same worker pool, so
-they run concurrently rather than one after the other.
+For each pair, all three are written as Parquet: one profile.parquet
+snapshot, one price.parquet per year covered (just the current year by
+default, or the pair's full yfinance history with --full-load), and one
+metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
+These three fetches for a given pair are independent tasks submitted to the
+same worker pool, so they run concurrently rather than one after the other.
 """
 
 from __future__ import annotations
@@ -17,17 +18,19 @@ from functools import partial
 from pathlib import Path
 
 from equicast_datafeed import DatafeedClient
+from equicast_metrics import MetricsClient
 
 from equicast_fx.client import FXClient
 from equicast_fx.config import FxPair, load_fx_pairs, parse_fx_pairs_json
-from equicast_fx.writer import write_price_parquet, write_profile_parquet
+from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 
 logger = logging.getLogger(__name__)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract FX pair profiles and daily prices, writing both as Parquet."
+        description="Extract FX pair profiles, daily prices, and risk metrics, "
+        "writing all three as Parquet."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--config", type=Path, help="Path to an FX pairs YAML config.")
@@ -47,7 +50,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--max-workers",
         type=int,
         default=1,
-        help="Profile/price fetches run concurrently, up to this many at once (default: 1).",
+        help="Profile/price/metrics fetches run concurrently, up to this many at once "
+        "(default: 1).",
     )
     parser.add_argument(
         "--max-calls",
@@ -81,6 +85,18 @@ def _prices_task(client: FXClient, output_dir: Path, key: str, full_load: bool) 
     return write_price_parquet(client.prices(full_load=full_load), output_dir)
 
 
+def _metrics_task(
+    metrics_client: MetricsClient,
+    from_currency: str,
+    to_currency: str,
+    output_dir: Path,
+    key: str,
+) -> list[Path]:
+    logger.info("Computing metrics for %s", key)
+    metrics = metrics_client.metrics()
+    return [write_metrics_parquet(metrics, from_currency, to_currency, output_dir)]
+
+
 def run(
     config: Path | None,
     output_dir: Path,
@@ -96,14 +112,26 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One FXClient per pair, shared by that pair's profile and prices tasks —
-    # both methods only read immutable state and delegate to the (thread-safe)
-    # shared datafeed, so calling them concurrently on one instance is safe.
+    # One FXClient/MetricsClient per pair, shared by that pair's profile,
+    # prices, and metrics tasks — all three only read immutable state and
+    # delegate to the (thread-safe) shared datafeed, so calling them
+    # concurrently on one instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for pair in pairs:
         client = FXClient(pair.from_currency, pair.to_currency, datafeed=datafeed)
+        metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, pair.key))
         tasks.append(partial(_prices_task, client, output_dir, pair.key, full_load))
+        tasks.append(
+            partial(
+                _metrics_task,
+                metrics_client,
+                pair.from_currency,
+                pair.to_currency,
+                output_dir,
+                pair.key,
+            )
+        )
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
