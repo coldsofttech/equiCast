@@ -1,0 +1,181 @@
+# Stock pipeline: deployment and execution
+
+How the `equicast-stock` scheduled ingestion pipeline is built, deployed,
+and run. Mirrors [fx-pipeline.md](fx-pipeline.md)'s structure — read that
+first if you haven't; this only calls out where stock differs. For local
+package setup (installing deps, running unit tests), see
+[local-setup.md](local-setup.md).
+
+## Architecture
+
+```
+packages/stock/config/stocks.yaml   (the tickers to extract)
+        │
+        ▼
+equicast-stock CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
+        │                              │
+        │                              ▼
+        │                       Yahoo Finance (yfinance)
+        ▼
+Parquet files (profile.parquet)
+        │
+        ▼
+GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
+```
+
+`packages/stock/Dockerfile` containerizes the CLI. `stock-image.yml` builds
+and pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-stock`).
+The ticker config isn't baked in as the only input — tickers can also be
+passed at runtime via `--tickers-json`, which is how the scheduled workflow
+feeds each parallel chunk its share of the work (see below).
+
+**Only `profile()` is implemented so far** — no daily prices or risk metrics
+yet, unlike `equicast-fx`. `equicast-stock` also only depends on
+`equicast-datafeed` (no `equicast-metrics`).
+
+Expect a `WARNING` line near the top of every run's logs — a one-time (per
+process) disclaimer from `equicast-datafeed`/`StockClient` (data via
+yfinance, educational use only). See the [README's disclaimer
+section](../README.md#disclaimer) for the full text; this is expected, not
+an error.
+
+## Running the CLI locally
+
+```bash
+cd packages/stock
+uv run equicast-stock --config config/stocks.yaml --out ./output
+uv run equicast-stock --tickers-json '["AAPL"]' --out ./output
+```
+
+For each ticker this writes `stock=<TICKER>/profile.parquet` — one row: name,
+quote type, exchange, currency, description, sector, industry, website,
+beta, payout ratio, dividend rate/yield, market cap, volume, address,
+country, region, full-time employees, CEO(s) (each with a name and role),
+IPO date, last updated, source. See
+[packages/stock/README.md](../packages/stock/README.md) for the exact field
+list, including how `address`, `ceos`, and `ipo_date` are derived (the
+latter two best-effort — yfinance has no dedicated fields for either).
+
+- `--max-workers` — profile fetches run concurrently, up to this many at once (default: 1)
+- `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
+
+## Running the Docker image locally
+
+```bash
+docker build -f packages/stock/Dockerfile -t equicast-stock:local .
+docker run --rm -v "$PWD/output:/output" equicast-stock:local \
+  --tickers-json '["AAPL"]' --out /output
+```
+
+## Manual smoke testing (`scripts/smoke_test.py`)
+
+`packages/stock/scripts/smoke_test.py` exercises `StockClient.profile()`
+against **live** Yahoo Finance data — it's a manual QA tool, not part of the
+automated `pytest` suite (a live-network test would make CI slow and
+flaky), so run it by hand whenever you want to sanity-check the pipeline end
+to end.
+
+```bash
+cd packages/stock
+
+# Defaults to every ticker in config/stocks.yaml, prints JSON to stdout
+uv run python scripts/smoke_test.py
+
+# Only specific tickers
+uv run python scripts/smoke_test.py --tickers AAPL,MSFT
+
+# Write a real Parquet file instead (exercises the writer function too)
+uv run python scripts/smoke_test.py --tickers AAPL --format parquet --out ./smoke_output
+```
+
+`--format parquet` writes the real file via `write_profile_parquet`, so you
+can then inspect it with any Parquet reader (e.g. `pd.read_parquet`).
+
+It also works inside the Docker image — same file is already copied in by
+`packages/stock/Dockerfile` — by overriding the image's entrypoint:
+
+```bash
+docker build -f packages/stock/Dockerfile -t equicast-stock:local .
+docker run --rm --entrypoint uv equicast-stock:local \
+  run --no-sync python scripts/smoke_test.py --tickers AAPL
+
+# Parquet mode needs a volume so the output survives the container:
+docker volume create smoke-test-vol
+docker run --rm --entrypoint uv -v smoke-test-vol:/smoke_output equicast-stock:local \
+  run --no-sync python scripts/smoke_test.py --tickers AAPL --format parquet --out /smoke_output
+docker run --rm -v smoke-test-vol:/smoke_output alpine find /smoke_output -type f
+docker volume rm smoke-test-vol
+```
+
+Prefer a named Docker volume over a host bind mount for this on Windows —
+Git Bash/PowerShell mangle bare absolute paths like `/smoke_output` passed to
+`docker run` (a shell quirk, not a Docker or script issue).
+
+## Deploying the infrastructure
+
+Shares `equicast-market-data-<env>` with `equicast-fx` (`fx=<PAIR>/...` and
+`stock=<TICKER>/...` both land in the same bucket) — no separate bucket or
+Terraform changes needed. See [fx-pipeline.md's "Deploying the
+infrastructure"](fx-pipeline.md#deploying-the-infrastructure) section for the
+one-time OIDC role and bucket setup; it already covers this pipeline too
+(both AWS-touching workflows authenticate through the same role, and the
+IAM policy's `equicast-*` resource wildcard already includes the shared
+bucket).
+
+Uses the same `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` repo
+variables `fx-ingestion.yml` uses (see fx-pipeline.md) — nothing extra to
+configure there either.
+
+## Publishing the image
+
+`stock-image.yml` builds and pushes `equicast-stock` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/stock/` on `main`, or on demand
+via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
+*Run workflow*).
+
+## Running the scheduled ingestion
+
+`stock-ingestion.yml` runs every 6 hours (`cron: "0 2,8,14,20 * * *"`) and can
+also be triggered manually (Actions tab → *Stock Ingestion* → *Run
+workflow*) with these inputs:
+
+| Input | Default | Meaning |
+|---|---|---|
+| `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
+| `chunk_size` | `300` | Target stock tickers per parallel chunk |
+| `max_workers` | `5` | Concurrent fetches within each container |
+| `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
+| `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
+
+**Deliberately offset from `fx-ingestion.yml`'s schedule** (`0 */6 * * *` —
+00:00/06:00/12:00/18:00 UTC): stock runs 2 hours after each FX run
+(02:00/08:00/14:00/20:00 UTC), so the two pipelines never overlap even if a
+run takes longer than expected — both write into the same S3 bucket and pull
+from the same GHCR/Yahoo Finance rate limits.
+
+The scheduled (cron) trigger always targets **production** — same reasoning
+as `fx-ingestion.yml`: there's no `environment` input to read on a timer, and
+an unattended run every 6 hours should land in the real bucket, not dev. The
+`environment` input only applies to manual `workflow_dispatch` runs, where
+it defaults to `dev` so an ad-hoc run doesn't write to production by
+accident.
+
+The workflow has two jobs, structured identically to `fx-ingestion.yml`'s:
+
+1. **plan** — runs `equicast-stock-plan` to split the configured tickers into
+   chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). It
+   also resolves the target environment/bucket once (schedule → `production`,
+   dispatch → the `environment` input) and fails fast if the corresponding
+   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
+2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
+   file) with one leg per chunk: pulls the image, passes its chunk via
+   `--tickers-json`, and uploads the resulting Parquet files to
+   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved).
+
+### S3 layout produced
+
+```
+s3://equicast-market-data-<env>/
+└── stock=AAPL/
+    └── profile.parquet
+```

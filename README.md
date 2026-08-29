@@ -16,6 +16,10 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
 - **`equicast-metrics`** — generic risk/performance metrics (volatility,
   Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
   ticker alike.
+- **Stock data pipeline (`equicast-datafeed`, `equicast-stock`)** — a
+  scheduled pipeline that extracts stock ticker profiles from Yahoo Finance
+  and lands them in the same S3 bucket as Parquet. Only company profiles so
+  far (no daily prices or metrics yet).
 
 ## Disclaimer
 
@@ -24,10 +28,12 @@ FX profile and price data is sourced via [yfinance](https://github.com/ranarouss
 financial advice, with no guarantee of accuracy, completeness, or
 timeliness. FX metrics (volatility, Sharpe ratio, max drawdown, CAGR) are
 calculated by equicast, not sourced from a licensed provider — validate
-their accuracy yourself before relying on them. See
+their accuracy yourself before relying on them. Stock profile data is
+sourced the same way via yfinance, with the same caveat. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
-[equicast-fx](packages/fx/README.md#disclaimer), and
-[equicast-metrics](packages/metrics/README.md#disclaimer) for the full text;
+[equicast-fx](packages/fx/README.md#disclaimer),
+[equicast-metrics](packages/metrics/README.md#disclaimer), and
+[equicast-stock](packages/stock/README.md#disclaimer) for the full text;
 each is also logged as a console warning the first time its client is used.
 
 ## FX data products
@@ -108,12 +114,51 @@ s3://equicast-market-data-<env>/
 
 Refreshed every 6 hours automatically.
 
+## Stock data products
+
+Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
+TSLA, QCOM, AVGO) yields a profile — the only stock data product so far, no
+daily prices or metrics yet.
+
+```python
+from equicast_stock import StockClient
+
+StockClient("AAPL").profile()
+# {"ticker": "AAPL", "name": "Apple Inc.", "quote_type": "EQUITY",
+#  "exchange": "NMS", "currency": "USD",
+#  "description": "Apple Inc. designs, manufactures, and markets smartphones, ...",
+#  "sector": "Technology", "industry": "Consumer Electronics",
+#  "website": "https://www.apple.com", "beta": 1.2, "payout_ratio": 0.15,
+#  "dividend_rate": 1.0, "dividend_yield": 0.005, "market_cap": 3000000000000,
+#  "volume": 50000000, "address": "One Apple Park Way, Cupertino, CA 95014",
+#  "country": "United States", "region": "North America",
+#  "full_time_employees": 164000,
+#  "ceos": [{"name": "Timothy D. Cook", "role": "CEO & Director"}],
+#  "ipo_date": "1980-12-12T14:30:00+00:00",
+#  "last_updated": "2026-08-29T21:29:05+00:00", "source": "yfinance"}
+```
+
+`ceos` and `ipo_date` are best-effort — yfinance has no dedicated field for
+either; see [equicast-stock's README](packages/stock/README.md) for how
+they're derived. Lands in the same bucket as FX data:
+
+```
+s3://equicast-market-data-<env>/
+└── stock=AAPL/
+    └── profile.parquet
+```
+
+Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so
+the two pipelines never overlap.
+
 ## Documentation
 
 - [Local setup](docs/local-setup.md) — get every package running on your machine
 - [FX pipeline: deployment and execution](docs/fx-pipeline.md) — build the image,
   deploy the infrastructure, and run/schedule the ingestion pipeline
+- [Stock pipeline: deployment and execution](docs/stock-pipeline.md) — same,
+  for the stock ticker pipeline
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX ingestion), and how to
-  troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock ingestion), and how
+  to troubleshoot it
 - [Changelog](CHANGELOG.md)

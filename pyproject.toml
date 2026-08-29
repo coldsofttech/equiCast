@@ -1,5 +1,12 @@
 [tool.uv.workspace]
-members = ["packages/equicast", "packages/datafeed", "packages/metrics", "packages/fx", "backend"]
+members = [
+    "packages/equicast",
+    "packages/datafeed",
+    "packages/metrics",
+    "packages/fx",
+    "packages/stock",
+    "backend",
+]
 
 [tool.ruff]
 line-length = 100
