@@ -17,6 +17,9 @@ on:
       - "uv.lock"
       - ".github/workflows/backend-ci.yml"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
