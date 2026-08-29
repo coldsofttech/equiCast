@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
-from equicast_datafeed import DatafeedClient
+from equicast_datafeed import DatafeedClient, round_value
 
 from equicast_metrics.calculations import (
     annualized_volatility,
@@ -27,7 +27,7 @@ def _cagr_1y_from_info(info: dict[str, Any]) -> float | None:
     """`fiftyTwoWeekChangePercent` is, for a 1-year window, the same figure as
     CAGR (total return over exactly one year, with no compounding needed)."""
     value = info.get("fiftyTwoWeekChangePercent")
-    return float(value) / 100 if value is not None else None
+    return round_value(float(value) / 100) if value is not None else None
 
 
 class MetricsClient:

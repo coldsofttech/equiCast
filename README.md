@@ -20,7 +20,10 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
 ## FX data products
 
 Each configured FX pair (default: GBP→USD, USD→GBP, GBP→EUR, EUR→GBP) yields
-three kinds of data:
+three kinds of data. Every numeric field below is rounded to 8 decimal places
+— comfortably above FX's ~5-decimal pipette precision and the ~4-6 decimals
+meaningful for risk/performance ratios, while cutting off the float64
+representation noise you'd otherwise see (e.g. `1.3504753112792969`).
 
 ### Profile — a current snapshot
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from equicast_datafeed import DatafeedClient
+from equicast_datafeed import DatafeedClient, round_value
 
 #: yfinance's own trailing 52-week window, reused as the "year" window for
 #: year_open/year_high/year_low/year_close/year_average.
@@ -70,18 +70,18 @@ class FXClient:
             "description": info.get("longName") or info.get("shortName"),
             "last_updated": last_updated,
             "source": "yfinance",
-            "day_open": info.get("regularMarketOpen"),
-            "day_high": day_high,
-            "day_low": day_low,
-            "day_close": day_close,
-            "day_average": _midpoint(day_low, day_high),
-            "year_open": year_open,
-            "year_high": year_high,
-            "year_low": year_low,
-            "year_close": day_close,
-            "year_average": _midpoint(year_low, year_high),
-            "moving_average_50_days": info.get("fiftyDayAverage"),
-            "moving_average_200_days": info.get("twoHundredDayAverage"),
+            "day_open": round_value(info.get("regularMarketOpen")),
+            "day_high": round_value(day_high),
+            "day_low": round_value(day_low),
+            "day_close": round_value(day_close),
+            "day_average": round_value(_midpoint(day_low, day_high)),
+            "year_open": round_value(year_open),
+            "year_high": round_value(year_high),
+            "year_low": round_value(year_low),
+            "year_close": round_value(day_close),
+            "year_average": round_value(_midpoint(year_low, year_high)),
+            "moving_average_50_days": round_value(info.get("fiftyDayAverage")),
+            "moving_average_200_days": round_value(info.get("twoHundredDayAverage")),
         }
 
     def prices(self, full_load: bool = False) -> list[dict[str, Any]]:
@@ -103,11 +103,11 @@ class FXClient:
                     "from_currency": self.from_currency,
                     "to_currency": self.to_currency,
                     "date": date.date().isoformat(),
-                    "open": float(row["Open"]),
-                    "high": high,
-                    "low": low,
-                    "close": float(row["Close"]),
-                    "average": _midpoint(low, high),
+                    "open": round_value(float(row["Open"])),
+                    "high": round_value(high),
+                    "low": round_value(low),
+                    "close": round_value(float(row["Close"])),
+                    "average": round_value(_midpoint(low, high)),
                     "last_updated": fetched_at,
                     "source": "yfinance",
                 }

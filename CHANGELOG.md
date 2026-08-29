@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `equicast_datafeed.round_value`/`DECIMAL_PRECISION` (8): a shared
+  decimal-precision policy for every numeric field `equicast-fx` and
+  `equicast-metrics` compute or re-emit, cutting off float64 representation
+  noise (e.g. `1.3504753112792969` → `1.35047531`) while staying above FX's
+  ~5-decimal pipette precision and the ~4-6 decimals meaningful for
+  risk/performance ratios. Applied at the point each value is computed
+  (`FXClient.profile()`/`.prices()`, the `equicast_metrics.calculations`
+  functions, `MetricsClient.metrics()`'s yfinance-sourced `cagr_1y`) rather
+  than only at JSON/Parquet output time, so every consumer sees the same
+  rounded value.
+
 - `equicast-metrics` (`packages/metrics/`): standalone, generic package for
   risk/performance metrics on any yfinance symbol — an FX pair (`GBPUSD=X`)
   or a stock ticker (`AAPL`) alike. `MetricsClient(symbol).metrics()` returns

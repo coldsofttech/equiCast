@@ -15,6 +15,21 @@ info = client.get_info("GBPUSD=X")
 history = client.get_history("GBPUSD=X", period="1y", interval="1d")
 ```
 
+Also exports the shared decimal-precision policy used across equicast's
+market-data packages (`equicast-fx`, `equicast-metrics`): every numeric field
+they compute or re-emit is rounded to `DECIMAL_PRECISION` (8) decimal places,
+via `round_value`, to cut off float64 representation noise (e.g.
+`1.3504753112792969` → `1.35047531`) while staying well above FX's ~5-decimal
+(pipette) precision and the ~4-6 decimals meaningful for risk/performance
+ratios.
+
+```python
+from equicast_datafeed import DECIMAL_PRECISION, round_value
+
+round_value(1.3504753112792969)  # 1.35047531
+round_value(None)  # None
+```
+
 ## Development
 
 ```bash

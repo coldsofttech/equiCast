@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 
 import pandas as pd
+from equicast_datafeed import round_value
 
 TRADING_DAYS_PER_YEAR = 252
 
@@ -26,7 +27,7 @@ def annualized_volatility(close: pd.Series) -> float | None:
     returns = close.pct_change().dropna()
     if len(returns) < 2:
         return None
-    return float(returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR))
+    return round_value(float(returns.std() * math.sqrt(TRADING_DAYS_PER_YEAR)))
 
 
 def sharpe_ratio(close: pd.Series, risk_free_rate: float = 0.0) -> float | None:
@@ -36,7 +37,9 @@ def sharpe_ratio(close: pd.Series, risk_free_rate: float = 0.0) -> float | None:
         return None
     daily_risk_free = risk_free_rate / TRADING_DAYS_PER_YEAR
     excess_returns = returns - daily_risk_free
-    return float((excess_returns.mean() / returns.std()) * math.sqrt(TRADING_DAYS_PER_YEAR))
+    return round_value(
+        float((excess_returns.mean() / returns.std()) * math.sqrt(TRADING_DAYS_PER_YEAR))
+    )
 
 
 def max_drawdown(close: pd.Series) -> float | None:
@@ -45,7 +48,7 @@ def max_drawdown(close: pd.Series) -> float | None:
         return None
     running_max = close.cummax()
     drawdown = (close - running_max) / running_max
-    return float(drawdown.min())
+    return round_value(float(drawdown.min()))
 
 
 def cagr(close: pd.Series, years: int) -> float | None:
@@ -70,4 +73,4 @@ def cagr(close: pd.Series, years: int) -> float | None:
     if start_price <= 0:
         return None
 
-    return (end_price / start_price) ** (1 / years) - 1
+    return round_value((end_price / start_price) ** (1 / years) - 1)
