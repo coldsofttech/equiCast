@@ -1,3 +1,8 @@
+# Changing this list changes the market_data_bucket cost estimate:
+# infra/infracost-usage.yml's module.market_data_bucket.aws_s3_bucket.this
+# usage (storage_gb, monthly_tier_1_requests) is computed from this file's
+# pair count — update those numbers (see the comments there for the formula)
+# whenever pairs are added or removed here.
 pairs:
   - from: GBP
     to: USD

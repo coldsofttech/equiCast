@@ -203,3 +203,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   approval). Fails fast with a clear `::error::` if the relevant variable
   is unset, rather than surfacing the confusing empty-bucket AWS error.
   Documented in `docs/fx-pipeline.md`.
+- Sized `infra/infracost-usage.yml`'s `market_data_bucket` estimate from
+  per-file Parquet sizes instead of a flat guess: `storage_gb` (`20` →
+  `0.01`) and `monthly_tier_1_requests` (`5000` → `1500`) are now computed
+  from profile.parquet (~15KB), metrics.parquet (~10KB), and price.parquet
+  (~20KB/year) against the pair count in
+  `packages/fx/config/fx_pairs.yaml` (currently 4) and `fx-ingestion.yml`'s
+  6-hourly schedule — see that file's comments for the formula.
+  `packages/fx/config/fx_pairs.yaml` now points back at it, so the cost
+  estimate isn't forgotten the next time the pair list changes.
