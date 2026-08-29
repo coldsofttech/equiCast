@@ -6,6 +6,13 @@ on:
     branches: [main]
     types: [completed]
 
+# Baseline for the active "paused" job below, which needs no permissions at
+# all (it doesn't even check out code) — the commented-out real jobs already
+# declare their own more specific per-job permissions (id-token, contents),
+# which take precedence over this once they're uncommented.
+permissions:
+  contents: read
+
 jobs:
   # Everything below is paused: infra/main.tf no longer provisions the
   # frontend S3 bucket or backend ECR repo (solution isn't ready to deploy

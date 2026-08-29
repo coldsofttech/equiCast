@@ -19,6 +19,9 @@ on:
       - "uv.lock"
       - ".github/workflows/fx-ci.yml"
 
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
