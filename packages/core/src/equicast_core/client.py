@@ -20,9 +20,9 @@ from pyarrow import BufferReader
 class MarketDataClient:
     """Reads profile/price Parquet objects from one S3 bucket."""
 
-    def __init__(self, bucket: str, s3_client: Any = None) -> None:
+    def __init__(self, bucket: str, s3_client: Any = None, region_name: str | None = None) -> None:
         self._bucket = bucket
-        self._s3 = s3_client or boto3.client("s3")
+        self._s3 = s3_client or boto3.client("s3", region_name=region_name)
 
     def _read_parquet(self, key: str) -> list[dict[str, Any]] | None:
         """Return every row of the Parquet object at `key`, or `None` if it

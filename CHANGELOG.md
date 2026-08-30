@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase C Identity: Auth0-based authentication for the backend.
+  `equicast_core.UserProfileClient` (`packages/core/src/equicast_core/user_profiles.py`),
+  a DynamoDB client mirroring `MarketDataClient`'s shape, reads/upserts one
+  item per user (`user_id`, `default_currency`) in the `user-profiles`
+  table `infra/main.tf` already provisioned but hadn't wired up yet.
+  `get_or_create_profile()` creates a new profile with
+  `default_currency="GBP"` (equiCast's app-level default, not USD) on first
+  login, via a conditional put (`attribute_not_exists(user_id)`) so a
+  concurrent first login can't clobber a profile the user has already
+  started customizing — the loser re-fetches and returns the winning write.
+  The DynamoDB `Table` resource is resolved lazily (a `cached_property`,
+  not in `__init__`), unlike `MarketDataClient`'s eager S3 client, since
+  `resource("dynamodb").Table(name)` validates its name argument
+  immediately and would otherwise blow up at Django's URLconf import time
+  whenever `USER_PROFILES_TABLE` is unset (e.g. local dev without it
+  configured). `packages/core`'s scope/README/description widened
+  accordingly (was S3-market-data-specific); its dev deps gained
+  `moto[s3]` → `moto[s3,dynamodb]` for `tests/test_user_profiles.py`.
+  New `backend/identity/` Django app: `Auth0JWTAuthentication` (a DRF
+  `BaseAuthentication` verifying RS256 access tokens against Auth0's JWKS
+  via `PyJWKClient`, checking issuer/audience/expiry, keyed by the token's
+  `sub` claim) and `GET /api/identity/me/` (`IsAuthenticated`, calls
+  `get_or_create_profile(request.user.user_id)`), registered as
+  `REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]` — it only *identifies*
+  a caller when a Bearer token is present (returns `None`, not an error,
+  when the header is missing), so `market_data`'s existing unauthenticated
+  endpoints are unaffected. Still one Lambda: `identity` is just another
+  Django app sharing `market_data`'s existing `backend_lambda`/API Gateway,
+  not a new deployment unit. New settings `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`,
+  `USER_PROFILES_TABLE` (no defaults, same "fail loudly" precedent as
+  `MARKET_DATA_BUCKET`); new dependency `pyjwt[crypto]>=2.8`.
+  `infra/main.tf`'s `backend_lambda` environment now also includes
+  `USER_PROFILES_TABLE` (the table name was already exposed by
+  `module.user_profiles_table` but never consumed) and
+  `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (new `var.auth0_domain`/`var.auth0_audience`
+  in `infra/variables.tf`, required inputs — Auth0 isn't Terraform-managed,
+  see `docs/auth0-setup.md`). `terraform.yml`'s `plan`/`apply-dev`/`apply-prod`
+  steps pass them as `-var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var
+  auth0_audience=${{ vars.AUTH0_AUDIENCE }}` — plain GitHub repo
+  **variables**, not secrets: neither value is sensitive (the domain is a
+  public JWKS hostname, the audience is embedded in every issued token's
+  `aud` claim and the frontend's own Auth0 config), and this phase
+  introduces no real secret at all since the backend only verifies tokens,
+  never authenticates itself to Auth0. New `docs/auth0-setup.md` (mirrors
+  `docs/aws-github-oidc-setup.md`'s style) covering tenant/API creation and
+  end-to-end verification via a test token.
 - `equicast-events` (`packages/events/`): standalone, generic package for
   corporate events (earnings reports, analyst rating changes, stock splits)
   on any yfinance equity-like symbol, built the same way as

@@ -8,7 +8,7 @@ ASSET_CLASSES = {"fx", "stock", "etf"}
 
 #: One shared client for the process — cheap to construct, but no reason to
 #: rebuild it (and its boto3 client) on every request.
-_client = MarketDataClient(settings.MARKET_DATA_BUCKET)
+_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
 
 
 class ProfileView(APIView):
