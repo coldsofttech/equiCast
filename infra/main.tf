@@ -65,6 +65,7 @@ module "backend_lambda" {
 
   function_name = "${var.project_name}-backend-${var.environment}"
   handler       = "equicast_api.lambda_handler.handler"
+  attach_policy = true
   policy_json   = data.aws_iam_policy_document.backend_lambda_permissions.json
 
   environment_variables = {
