@@ -11,12 +11,21 @@
 # `equicast-core` themselves build from their local source trees (they
 # have no published wheel to fetch at all — `:all:` would block them too).
 #
-# `--no-editable` is required: `uv export` otherwise emits `-e ./backend`/
-# `-e ./packages/core` for these workspace-local packages, which `uv pip
-# install --target` would turn into a path reference back to this build
-# machine — meaningless once the zip is deployed elsewhere. Non-editable
-# mode makes it build a real wheel from each local path and copy its actual
-# files into the target directory instead.
+# `--no-editable` is needed on BOTH commands, not just `uv export`: without
+# it there, `uv export` emits `-e ./backend`/`-e ./packages/core` for these
+# workspace-local packages. But even with `uv export --no-editable` (plain
+# `./backend`/`./packages/core` path requirements, no `-e`), `uv pip install
+# --target` with a foreign --python-platform/--python-version still silently
+# falls back to installing local path dependencies editable — a `.pth` file
+# pointing back to this build machine's absolute path instead of copied
+# source files, direct_url.json showing `"editable": true` despite nothing
+# in the requirements file asking for that. Only a real, deployed-from-a-
+# different-machine test surfaces this (`ModuleNotFoundError: No module
+# named 'equicast_core'` in Lambda) — the build itself "succeeds" either
+# way, since the .pth trick works fine as long as the source tree it points
+# at still exists on the machine that ran the install. `--no-editable` on
+# `uv pip install` itself is what forces a real wheel build with the actual
+# files copied into the target directory.
 #
 # Must run from the repo root, not `backend/`: `uv export`'s local-path
 # entries (`./backend`, `./packages/core`) are written relative to the
@@ -43,6 +52,7 @@ uv pip install \
     --python-platform x86_64-manylinux_2_28 \
     --python-version 3.13 \
     --only-binary pyarrow \
+    --no-editable \
     -r "$REQUIREMENTS_FILE"
 
 UNZIPPED_BYTES=$(du -sb "$BUILD_DIR" | cut -f1)
