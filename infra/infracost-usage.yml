@@ -23,37 +23,39 @@ resource_usage:
   #             120 runs * 4 pairs * 3 files = 1,440 PUTs -> 1,500 (rounded up)
   #
   # --- Stock (packages/stock/config/stocks.yaml, currently 9 tickers) ---
-  #   size:     profile.parquet — no real sample yet, assumed ~45KB/ticker as
-  #             a placeholder (same order of magnitude as FX's combined
-  #             per-pair footprint above; replace with a real estimate once
-  #             known) — plus price.parquet ~20KB (current year only, same
-  #             per-year assumption as FX's — full_load isn't passed on
-  #             schedule) — plus metrics.parquet ~15KB (also a placeholder;
-  #             combines equicast-metrics' risk/performance fields with its
-  #             15 stock-only fundamentals, roughly 3x FX's metrics.parquet
-  #             field count, so sized up from FX's ~10KB accordingly) — plus
-  #             dividend.parquet ~2KB (also a placeholder; just a handful of
-  #             {ticker, currency, ex_dividend_date, price, last_updated,
-  #             source} rows per year - quarterly payers have ~4, many
-  #             tickers have none at all) = ~82KB/ticker.
-  #   storage:  9 tickers * 82KB = 738KB
+  #   size (real samples, not placeholders):
+  #     profile.parquet   ~30KB  (one snapshot, overwritten each run)
+  #     metrics.parquet   ~20KB  (one snapshot, overwritten each run)
+  #     price.parquet     ~20KB/year
+  #     dividend.parquet  ~10KB/year
+  #     events.parquet    ~10KB/year (equicast-events: earnings/ratings/splits)
+  #   Unlike profile/metrics, the three per-year files accumulate one
+  #   year=<YYYY> partition per year rather than being overwritten — assuming
+  #   20 years of accumulated history per ticker (a full yfinance backfill via
+  #   --full-load, then steady-state incremental runs): (20+10+10)KB * 20
+  #   years = 800KB/ticker of per-year files, + 30KB + 20KB one-time
+  #   snapshots = 850KB/ticker.
+  #   storage:  9 tickers * 850KB = 7,650KB
   #   schedule: stock-ingestion.yml, cron "0 2,8,14,20 * * *" -> also
   #             ~120 runs/month (4/day, offset 2h from FX so they never
   #             overlap)
-  #   requests: 4 files/ticker (profile + price + dividend + metrics), all PUT
-  #             120 runs * 9 tickers * 4 files = 4,320 PUTs -> 4,400 (rounded up)
+  #   requests: 5 files/ticker/run (profile + price + dividend + events +
+  #             metrics — each run only touches the current year's
+  #             price/dividend/events file, not the full accumulated
+  #             history), all PUT
+  #             120 runs * 9 tickers * 5 files = 5,400 PUTs
   #
   # --- Totals used below ---
-  #   storage:  180KB + 738KB = 918KB (~0.0009GB) -> 0.01GB (rounded up for
-  #             headroom). Neither pipeline's figure accounts for
-  #             price.parquet/dividend.parquet accumulating additional
-  #             year=<YYYY> files as time passes — bump storage_gb once real
-  #             multi-year history has built up for either pipeline.
-  #   requests: 1,500 (FX) + 4,400 (stock) = 5,900
+  #   storage:  180KB + 7,650KB = 7,830KB (~0.0078GB) -> 0.01GB (rounded up).
+  #             Recompute the accumulated-years assumption above once actual
+  #             bucket age approaches (or exceeds) 20 years, or once
+  #             --full-load has actually been run and real multi-year sizes
+  #             are known instead of the 20-year projection.
+  #   requests: 1,500 (FX) + 5,400 (stock) = 6,900
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 5900 # PUT/COPY/POST/LIST — FX (1,500) + stock (4,400), both every 6h (offset)
+      monthly_tier_1_requests: 6900 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400), both every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

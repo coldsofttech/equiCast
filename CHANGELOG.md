@@ -264,6 +264,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Re-sized `infra/infracost-usage.yml`'s Stock section from real per-file
+  estimates instead of placeholders: profile.parquet ~30KB and
+  metrics.parquet ~20KB (one-time snapshots), plus price.parquet ~20KB/year,
+  dividend.parquet ~10KB/year, and events.parquet ~10KB/year — the latter
+  three now projected across 20 years of accumulated `year=<YYYY>`
+  partitions per ticker (~850KB/ticker total) rather than only the current
+  year, and now including `events.parquet` in both the size and PUT-request
+  counts. `packages/stock/config/stocks.yaml`'s cost-estimate comment
+  updated to match.
 - Restructured the repo: `equicast`, `equicast-datafeed`, and `equicast-fx`
   now live under `packages/<name>/` (each its own independent distribution,
   own `pyproject.toml`, own `src/` layout). The root `pyproject.toml` became a
