@@ -7,7 +7,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
-COPY packages/equicast/ packages/equicast/
+COPY packages/core/ packages/core/
 COPY backend/ backend/
 
 WORKDIR /app/backend

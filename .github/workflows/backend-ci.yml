@@ -4,14 +4,14 @@ on:
   push:
     branches: [main]
     paths:
-      - "packages/equicast/**"
+      - "packages/core/**"
       - "backend/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
-      - "packages/equicast/**"
+      - "packages/core/**"
       - "backend/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -37,16 +37,16 @@ jobs:
       - name: Lint
         run: uv run ruff check .
 
-      - name: Type check equicast core
-        working-directory: packages/equicast
+      - name: Type check equicast-core
+        working-directory: packages/core
         run: uv run mypy src/
 
       - name: Type check Django backend
         working-directory: backend
         run: uv run mypy . --ignore-missing-imports
 
-      - name: Test equicast core
-        working-directory: packages/equicast
+      - name: Test equicast-core
+        working-directory: packages/core
         run: uv run pytest
 
       - name: Test Django backend

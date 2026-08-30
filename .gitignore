@@ -239,3 +239,8 @@ packages/fx/smoke_output/
 packages/stock/output/
 packages/stock/chunks/
 packages/stock/smoke_output/
+
+# backend/scripts/build_lambda_package.sh output
+backend/build/
+backend/build_requirements.txt
+backend/lambda_package.zip

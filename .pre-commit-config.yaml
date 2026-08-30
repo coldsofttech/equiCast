@@ -19,11 +19,11 @@ repos:
   - repo: local
     hooks:
       - id: mypy-core
-        name: mypy (equicast core)
-        entry: bash -c 'cd packages/equicast && uv run mypy src/'
+        name: mypy (equicast-core)
+        entry: bash -c 'cd packages/core && uv run mypy src/'
         language: system
         pass_filenames: false
-        files: ^packages/equicast/.*\.py$
+        files: ^packages/core/.*\.py$
 
       - id: mypy-backend
         name: mypy (Django backend)
@@ -33,11 +33,11 @@ repos:
         files: ^backend/.*\.py$
 
       - id: pytest-core
-        name: pytest (equicast core, unit)
-        entry: bash -c 'cd packages/equicast && uv run pytest'
+        name: pytest (equicast-core, unit)
+        entry: bash -c 'cd packages/core && uv run pytest'
         language: system
         pass_filenames: false
-        files: ^packages/equicast/
+        files: ^packages/core/
 
       - id: pytest-backend
         name: pytest (Django backend, unit)
