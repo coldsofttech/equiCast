@@ -130,20 +130,24 @@ as a full ISO 8601 datetime, same as `last_updated`.
 
 ## CLI
 
-Reads the ETF tickers listed in a config file, fetches a profile and daily
-prices for each, and writes:
+Reads the ETF tickers listed in a config file, fetches a profile, daily
+prices, and dividends for each, and writes:
 
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
   for the current year only by default
+- `<out>/etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
+  ex-dividend date, for the current year only by default (empty for tickers
+  with no dividend history)
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, writing one `price.parquet` per year found (current year
-included) — same as `equicast-stock`'s `--full-load`:
+for prices and dividends, writing one `price.parquet`/`dividend.parquet` per
+year found (current year included) — same as `equicast-stock`'s
+`--full-load`:
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
@@ -152,8 +156,23 @@ uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
 close, average, last_updated, source}` — `currency` comes from a
 `get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
-data). No dividends, events, or metrics yet (unlike `equicast-stock`),
-mirroring how `equicast-stock` itself started out.
+data). No events or metrics yet (unlike `equicast-stock`), mirroring how
+`equicast-stock` itself started out.
+
+### On `dividend.parquet`
+
+Written from [`equicast-dividends`](../dividends/README.md)'
+`DividendsClient` — a generic client (not part of `ETFClient`), the same one
+`equicast-stock` uses, built so it's reusable across asset classes rather
+than living inside either package.
+
+Records are shaped `{ticker, currency, ex_dividend_date, price,
+last_updated, source}`. `price` is the dividend cash amount per share, not
+an ETF price. There's no `payment_date` field — yfinance's dividend history
+only has ex-dividend date and amount, for any ticker, at any point in
+history; see equicast-dividends's README for details. Tickers with no
+dividend history (e.g. `GLD`, a gold trust that pays no distribution)
+simply produce no `dividend.parquet` file for that year.
 
 ## Configuration
 

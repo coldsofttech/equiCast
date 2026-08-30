@@ -113,16 +113,18 @@ only `equicast-stock` consumes either. See
 against live data with `scripts/smoke_test.py`, build the Docker image, and
 deploy/execute the scheduled ingestion pipeline.
 
-## ETF packages (`equicast-datafeed`, `equicast-etf`)
+## ETF packages (`equicast-datafeed`, `equicast-dividends`, `equicast-etf`)
 
 ```bash
 cd packages/datafeed && uv run pytest && uv run mypy src/
+cd ../dividends && uv run pytest && uv run mypy src/
 cd ../etf && uv run pytest && uv run mypy src/
 ```
 
-Only depends on `equicast-datafeed` so far — `equicast-etf` implements
-`profile()` and `prices()` (no dividends/events/metrics yet), mirroring how
-`equicast-stock` itself started out. See
+`equicast-etf` implements `profile()`, `prices()`, and dividends (via the
+same generic `equicast-dividends`' `DividendsClient` that `equicast-stock`
+uses) — no events/metrics yet, mirroring how `equicast-stock` itself
+started out. See
 [etf-pipeline.md](etf-pipeline.md) for how to run the CLI, smoke-test
 against live data with `scripts/smoke_test.py`, build the Docker image, and
 deploy/execute the scheduled ingestion pipeline.
@@ -161,7 +163,8 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 - `stock-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
   `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
   `equicast-stock`
-- `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed` and `equicast-etf`
+- `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
+  `equicast-dividends`, and `equicast-etf`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
   PR comment; on merge to `main`, `apply-dev` runs automatically and

@@ -36,3 +36,24 @@ def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list
         year_df.to_parquet(path, index=False)
         written.append(path)
     return written
+
+
+def write_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
+    """Write `records` to one `<output_dir>/etf=<TICKER>/year=<YYYY>/dividend.parquet`
+    per year."""
+    if not records:
+        return []
+
+    ticker = records[0]["ticker"]
+    df = pd.DataFrame(records)
+    years = df["ex_dividend_date"].str[:4]
+
+    written = []
+    for year, year_df in df.groupby(years):
+        directory = output_dir / f"etf={ticker}" / f"year={year}"
+        directory.mkdir(parents=True, exist_ok=True)
+
+        path = directory / "dividend.parquet"
+        year_df.to_parquet(path, index=False)
+        written.append(path)
+    return written

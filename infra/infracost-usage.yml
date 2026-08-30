@@ -47,39 +47,48 @@ resource_usage:
   #
   # --- ETF (packages/etf/config/etfs.yaml, currently 5 tickers) ---
   #   size (real samples, not placeholders):
-  #     profile.parquet   ~22-23KB (one snapshot, overwritten each run) ->
-  #                       25KB/ticker rounded up for headroom
-  #     price.parquet     ~14KB for a partial (Jan-Aug, 165-row) year,
-  #                       measured across VOO/QQQ/VTI/AGG/GLD -> scales to
-  #                       ~20KB for a full ~252-trading-day year, same
-  #                       figure as the Stock section's price.parquet
-  #   No dividends/events/metrics yet (mirroring how equicast-stock itself
-  #   started). Unlike profile, price.parquet accumulates one year=<YYYY>
-  #   partition per year rather than being overwritten — assuming 20 years
-  #   of accumulated history per ticker (same assumption as the Stock
-  #   section): 20KB * 20 years = 400KB/ticker of price files, + 25KB
-  #   one-time profile snapshot = 425KB/ticker.
-  #   storage:  5 tickers * 425KB = 2,125KB
+  #     profile.parquet    ~22-23KB (one snapshot, overwritten each run) ->
+  #                        25KB/ticker rounded up for headroom
+  #     price.parquet      ~14KB for a partial (Jan-Aug, 165-row) year,
+  #                        measured across VOO/QQQ/VTI/AGG/GLD -> scales to
+  #                        ~20KB for a full ~252-trading-day year, same
+  #                        figure as the Stock section's price.parquet
+  #     dividend.parquet   ~4KB for a partial-year (2-7 rows depending on
+  #                        distribution frequency) measured across
+  #                        VOO/QQQ/VTI/AGG — GLD pays no dividend at all
+  #                        (no file for that ticker/year) -> ~5KB/year for a
+  #                        full year, smaller than the Stock section's
+  #                        assumed 10KB/year since ETF distributions here
+  #                        are quarterly/monthly cash amounts with no other
+  #                        per-row fields, not sized from a real stock
+  #                        sample there
+  #   No events/metrics yet (mirroring how equicast-stock itself started).
+  #   Unlike profile, price.parquet/dividend.parquet accumulate one
+  #   year=<YYYY> partition per year rather than being overwritten —
+  #   assuming 20 years of accumulated history per ticker (same assumption
+  #   as the Stock section): (20+5)KB * 20 years = 500KB/ticker of per-year
+  #   files, + 25KB one-time profile snapshot = 525KB/ticker.
+  #   storage:  5 tickers * 525KB = 2,625KB
   #   schedule: etf-ingestion.yml, cron "0 4,10,16,22 * * *" -> also
   #             ~120 runs/month (4/day, offset 4h from FX and 2h from stock
   #             so none of the three ever overlap)
-  #   requests: 2 files/ticker/run (profile + price — each run only touches
-  #             the current year's price file, not the full accumulated
-  #             history), all PUT
-  #             120 runs * 5 tickers * 2 files = 1,200 PUTs
+  #   requests: 3 files/ticker/run (profile + price + dividend — each run
+  #             only touches the current year's price/dividend file, not
+  #             the full accumulated history), all PUT
+  #             120 runs * 5 tickers * 3 files = 1,800 PUTs
   #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650KB + 2,125KB = 9,955KB (~0.00995GB) -> 0.01GB
+  #   storage:  180KB + 7,650KB + 2,625KB = 10,455KB (~0.01GB) -> 0.01GB
   #             (rounded up). Recompute the accumulated-years assumption in
   #             the stock/ETF sections once actual bucket age approaches (or
   #             exceeds) 20 years, or once --full-load has actually been run
   #             and real multi-year sizes are known instead of the 20-year
   #             projection.
-  #   requests: 1,500 (FX) + 5,400 (stock) + 1,200 (ETF) = 8,100
+  #   requests: 1,500 (FX) + 5,400 (stock) + 1,800 (ETF) = 8,700
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 8100 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400) + ETF (1,200), all every 6h (offset)
+      monthly_tier_1_requests: 8700 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400) + ETF (1,800), all every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

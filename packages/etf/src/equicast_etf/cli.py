@@ -1,9 +1,10 @@
-"""CLI: extract a profile and daily prices for every configured ETF ticker.
+"""CLI: extract a profile, daily prices, and dividends for every configured
+ETF ticker.
 
-For each ticker, writes one profile.parquet snapshot and one price.parquet
-per year covered (just the current year by default, or the ticker's full
-yfinance history with --full-load). No dividends/events/metrics yet, unlike
-equicast-stock, so there are two tasks per ticker rather than five.
+For each ticker, writes one profile.parquet snapshot and one price.parquet/
+dividend.parquet per year covered (just the current year by default, or the
+ticker's full yfinance history with --full-load). No events/metrics yet,
+unlike equicast-stock, so there are three tasks per ticker rather than five.
 """
 
 from __future__ import annotations
@@ -16,17 +17,23 @@ from functools import partial
 from pathlib import Path
 
 from equicast_datafeed import DatafeedClient
+from equicast_dividends import DividendsClient
 
 from equicast_etf.client import ETFClient
 from equicast_etf.config import ETFTicker, load_etf_tickers, parse_etf_tickers_json
-from equicast_etf.writer import write_price_parquet, write_profile_parquet
+from equicast_etf.writer import (
+    write_dividend_parquet,
+    write_price_parquet,
+    write_profile_parquet,
+)
 
 logger = logging.getLogger(__name__)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract ETF ticker profiles and daily prices, writing both as Parquet."
+        description="Extract ETF ticker profiles, daily prices, and dividends, writing all "
+        "three as Parquet."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--config", type=Path, help="Path to an ETF tickers YAML config.")
@@ -46,7 +53,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--max-workers",
         type=int,
         default=1,
-        help="Profile/price fetches run concurrently, up to this many at once (default: 1).",
+        help="Profile/price/dividends fetches run concurrently, up to this many at once "
+        "(default: 1).",
     )
     parser.add_argument(
         "--max-calls",
@@ -80,6 +88,13 @@ def _prices_task(client: ETFClient, output_dir: Path, key: str, full_load: bool)
     return write_price_parquet(client.prices(full_load=full_load), output_dir)
 
 
+def _dividends_task(
+    dividends_client: DividendsClient, output_dir: Path, key: str, full_load: bool
+) -> list[Path]:
+    logger.info("Fetching dividends for %s (full_load=%s)", key, full_load)
+    return write_dividend_parquet(dividends_client.dividends(full_load=full_load), output_dir)
+
+
 def run(
     config: Path | None,
     output_dir: Path,
@@ -95,15 +110,17 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One ETFClient per ticker, shared by that ticker's profile and prices
-    # tasks — both only read immutable state and delegate to the
-    # (thread-safe) shared datafeed, so calling them concurrently on one
-    # instance is safe.
+    # One ETFClient/DividendsClient per ticker, shared by that ticker's
+    # profile, prices, and dividends tasks — all three only read immutable
+    # state and delegate to the (thread-safe) shared datafeed, so calling
+    # them concurrently on one instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
         client = ETFClient(ticker.ticker, datafeed=datafeed)
+        dividends_client = DividendsClient(client.symbol, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, ticker.key))
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
+        tasks.append(partial(_dividends_task, dividends_client, output_dir, ticker.key, full_load))
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

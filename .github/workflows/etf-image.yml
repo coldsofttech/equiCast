@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "packages/datafeed/**"
+      - "packages/dividends/**"
       - "packages/etf/**"
       - "pyproject.toml"
       - "uv.lock"

@@ -28,10 +28,10 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   pipeline that extracts stock ticker profiles, daily prices, dividends,
   events, and metrics from Yahoo Finance and lands them in the same S3
   bucket as Parquet.
-- **ETF data pipeline (`equicast-datafeed`, `equicast-etf`)** — a scheduled
-  pipeline that extracts ETF ticker profiles and daily prices from Yahoo
-  Finance and lands them in the same S3 bucket as Parquet. No dividends,
-  events, or metrics yet.
+- **ETF data pipeline (`equicast-datafeed`, `equicast-dividends`,
+  `equicast-etf`)** — a scheduled pipeline that extracts ETF ticker
+  profiles, daily prices, and dividends from Yahoo Finance and lands them
+  in the same S3 bucket as Parquet. No events or metrics yet.
 
 ## Disclaimer
 
@@ -267,7 +267,7 @@ the two pipelines never overlap.
 ## ETF data products
 
 Each configured ETF ticker (default: VOO, QQQ, VTI, AGG, GLD) yields a
-profile and daily prices — no dividends, events, or metrics yet.
+profile, daily prices, and dividends — no events or metrics yet.
 
 ```python
 from equicast_etf import ETFClient
@@ -310,15 +310,33 @@ ETFClient("VOO").prices()
 
 One row per trading day. By default covers the current year only; a full
 historical load (every year available) can be requested the same way as
-FX/stock — see [the ETF pipeline docs](docs/etf-pipeline.md). Lands in the
-same bucket as FX/stock data:
+FX/stock — see [the ETF pipeline docs](docs/etf-pipeline.md).
+
+```python
+from equicast_dividends import DividendsClient
+
+DividendsClient("VOO").dividends()
+# [{"ticker": "VOO", "currency": "USD", "ex_dividend_date": "2026-03-27",
+#   "price": 1.872, "last_updated": "2026-08-30T09:58:48+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One record per ex-dividend date; `price` is the dividend amount per share,
+not an ETF price. By default covers the current year only, same
+full-history option as prices. Empty for tickers with no dividend history
+(e.g. `GLD`, a gold trust that pays no distribution). `equicast-dividends`
+is the same generic client `equicast-stock` uses, not ETF- or
+stock-specific. Lands in the same bucket as FX/stock data:
 
 ```
 s3://equicast-market-data-<env>/
 └── etf=VOO/
     ├── profile.parquet
     ├── year=2025/price.parquet
-    └── year=2026/price.parquet
+    ├── year=2025/dividend.parquet
+    ├── year=2026/price.parquet
+    └── year=2026/dividend.parquet
 ```
 
 Refreshed every 6 hours automatically, offset 4 hours from the FX schedule
