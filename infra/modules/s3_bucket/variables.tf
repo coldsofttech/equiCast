@@ -14,3 +14,9 @@ variable "static_site" {
   type        = bool
   default     = false
 }
+
+variable "noncurrent_version_expiration_days" {
+  description = "If set (requires versioning = true), expire noncurrent object versions after this many days. Bounds storage growth for buckets that accumulate versioned uploads (e.g. deploy artifacts)."
+  type        = number
+  default     = null
+}

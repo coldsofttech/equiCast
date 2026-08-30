@@ -6,141 +6,135 @@ on:
     branches: [main]
     types: [completed]
 
-# Baseline for the active "paused" job below, which needs no permissions at
-# all (it doesn't even check out code) — the commented-out real jobs already
-# declare their own more specific per-job permissions (id-token, contents),
-# which take precedence over this once they're uncommented.
+# Baseline permissions; the active jobs below all declare their own more
+# specific per-job permissions (id-token, contents), which take precedence.
 permissions:
   contents: read
 
 jobs:
-  # Everything below is paused: infra/main.tf no longer provisions the
-  # frontend S3 bucket or backend ECR repo (solution isn't ready to deploy
-  # yet, and keeping them around just to sit empty costs money for nothing).
-  # This job is a placeholder so the workflow stays valid/green in the
-  # meantime. Uncomment the jobs below it (and re-enable the modules in
-  # infra/main.tf) when there's something worth deploying again.
-  paused:
-    if: github.event.workflow_run.conclusion == 'success'
+  # Frontend isn't ready to deploy yet (infra/main.tf's frontend_bucket
+  # module is still commented out) — placeholder so this workflow stays
+  # valid/green for Frontend CI completions in the meantime. Uncomment the
+  # frontend jobs below (and that module) when that changes.
+  frontend-paused:
+    if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Deploy pipeline paused — see infra/main.tf and this file's commented-out jobs."
+      - run: echo "Frontend deploy pipeline paused — see infra/main.tf and this file's commented-out jobs."
 
-  # # Builds the image once (no push) so its real size is known before anyone
-  # # is asked to approve a spend, and hands that exact image to both
-  # # deploy-backend-dev and (via promotion) deploy-backend-prod.
-  # estimate-backend:
-  #   if: github.event.workflow_run.conclusion == 'success'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - name: Build backend image
-  #       run: docker build -f backend/Dockerfile -t equicast-backend:build .
-  #
-  #     - name: Estimate incremental cost
-  #       run: |
-  #         SIZE_BYTES=$(docker image inspect equicast-backend:build --format='{{.Size}}')
-  #         SIZE_GB=$(awk "BEGIN { printf \"%.4f\", $SIZE_BYTES / 1000000000 }")
-  #         # Rough, region-approximate ECR storage rate — verify against
-  #         # https://aws.amazon.com/ecr/pricing/ if this needs to be precise.
-  #         ECR_GB_MONTH_USD=0.10
-  #         COST=$(awk "BEGIN { printf \"%.4f\", $SIZE_GB * $ECR_GB_MONTH_USD }")
-  #         {
-  #           echo "### Backend image cost estimate"
-  #           echo ""
-  #           echo "| Metric | Value |"
-  #           echo "|---|---|"
-  #           echo "| Image size | ${SIZE_GB} GB |"
-  #           echo "| Added ECR storage cost | ~\$${COST}/month (at \$${ECR_GB_MONTH_USD}/GB-month) |"
-  #           echo ""
-  #           echo "⚠️ Rough estimate only. \`equicast-backend\`'s lifecycle"
-  #           echo "policy keeps at most 2 images, so this roughly adds to (not"
-  #           echo "replaces) the previous image's cost until the 3rd-oldest"
-  #           echo "image ages out."
-  #         } >> "$GITHUB_STEP_SUMMARY"
-  #
-  #     - name: Save image artifact
-  #       run: docker save equicast-backend:build | gzip > equicast-backend.tar.gz
-  #
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         name: equicast-backend-image
-  #         path: equicast-backend.tar.gz
-  #         retention-days: 1
-  #
-  # # Gated behind the "deploy-dev" GitHub Environment's required reviewers
-  # # (Settings -> Environments -> deploy-dev) — the estimate above already
-  # # ran and is visible in this workflow run before anyone approves.
-  # deploy-backend-dev:
-  #   needs: estimate-backend
-  #   runs-on: ubuntu-latest
-  #   environment: deploy-dev
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         name: equicast-backend-image
-  #
-  #     - run: docker load < equicast-backend.tar.gz
-  #
-  #     - uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-  #
-  #     - uses: aws-actions/amazon-ecr-login@v2
-  #       id: ecr
-  #
-  #     - name: Tag and push backend image
-  #       run: |
-  #         IMAGE="${{ steps.ecr.outputs.registry }}/equicast-backend:${{ github.sha }}"
-  #         docker tag equicast-backend:build "$IMAGE"
-  #         docker push "$IMAGE"
-  #
-  # # Gated behind the "production" GitHub Environment's required reviewers
-  # # (Settings -> Environments -> production). Promotes the exact image
-  # # deploy-backend-dev already built and pushed by adding a "prod" tag to it
-  # # via the registry API, rather than rebuilding — the same artifact that
-  # # ran in dev is what reaches prod.
-  # deploy-backend-prod:
-  #   needs: deploy-backend-dev
-  #   runs-on: ubuntu-latest
-  #   environment: production
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-  #
-  #     - name: Promote dev image to prod tag
-  #       run: |
-  #         # equicast-backend is IMMUTABLE, so the "prod" tag can't just be
-  #         # overwritten once it exists from a prior promotion — delete it
-  #         # first (no-op, ignored, the very first time it doesn't exist yet).
-  #         aws ecr batch-delete-image \
-  #           --repository-name equicast-backend \
-  #           --image-ids imageTag=prod || true
-  #
-  #         MANIFEST=$(aws ecr batch-get-image \
-  #           --repository-name equicast-backend \
-  #           --image-ids imageTag=${{ github.sha }} \
-  #           --query 'images[0].imageManifest' --output text)
-  #         aws ecr put-image \
-  #           --repository-name equicast-backend \
-  #           --image-tag prod \
-  #           --image-manifest "$MANIFEST"
-  #
+  # Builds the zip once so its real size is known before anyone approves a
+  # spend, and hands that exact artifact to both deploy-backend-dev and (by
+  # promoting the same S3 object version, not rebuilding) deploy-backend-prod.
+  build-backend:
+    if: github.event.workflow_run.name == 'Backend CI' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Build Lambda deployment package
+        run: bash backend/scripts/build_lambda_package.sh
+
+      - name: Record size in job summary
+        run: |
+          {
+            echo "### Backend Lambda package"
+            echo ""
+            echo "See the \"Build Lambda deployment package\" step's log above for"
+            echo "the exact unzipped/zip sizes (unzipped is checked against"
+            echo "Lambda's 250MB deployment package limit)."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-lambda-package
+          path: backend/lambda_package.zip
+          retention-days: 1
+
+  # Gated behind the "deploy-dev" GitHub Environment's required reviewers
+  # (Settings -> Environments -> deploy-dev). Requires infra/main.tf's
+  # backend_lambda module to have already been applied at least once — same
+  # class of bootstrap dependency the old ECR flow had (pushing an image
+  # needed the repository to exist first).
+  deploy-backend-dev:
+    needs: build-backend
+    runs-on: ubuntu-latest
+    environment: deploy-dev
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      version_id: ${{ steps.upload.outputs.version_id }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: backend-lambda-package
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Upload to S3 and update the Lambda function
+        id: upload
+        run: |
+          aws s3 cp lambda_package.zip s3://equicast-backend-deploy-dev/backend.zip
+          VERSION_ID=$(aws s3api head-object \
+            --bucket equicast-backend-deploy-dev --key backend.zip \
+            --query VersionId --output text)
+          echo "version_id=$VERSION_ID" >> "$GITHUB_OUTPUT"
+
+          aws lambda update-function-code \
+            --function-name equicast-backend-dev \
+            --s3-bucket equicast-backend-deploy-dev \
+            --s3-key backend.zip \
+            --s3-object-version "$VERSION_ID"
+
+  # Gated behind the "production" GitHub Environment's required reviewers
+  # (Settings -> Environments -> production). Copies the *same* S3 object
+  # version deploy-backend-dev just uploaded (rather than rebuilding) into
+  # the prod bucket, then points prod's Lambda function at that copy — the
+  # same "promote the exact artifact that ran in dev" principle the old ECR
+  # flow used (tagging one image as "prod" rather than rebuilding).
+  deploy-backend-prod:
+    needs: deploy-backend-dev
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Promote dev artifact to prod
+        run: |
+          aws s3api copy-object \
+            --bucket equicast-backend-deploy-prod \
+            --key backend.zip \
+            --copy-source "equicast-backend-deploy-dev/backend.zip?versionId=${{ needs.deploy-backend-dev.outputs.version_id }}"
+
+          VERSION_ID=$(aws s3api head-object \
+            --bucket equicast-backend-deploy-prod --key backend.zip \
+            --query VersionId --output text)
+
+          aws lambda update-function-code \
+            --function-name equicast-backend-prod \
+            --s3-bucket equicast-backend-deploy-prod \
+            --s3-key backend.zip \
+            --s3-object-version "$VERSION_ID"
+
   # # Builds the frontend once so its real size is known before anyone is
   # # asked to approve a spend, and hands that exact build to both
   # # deploy-frontend-dev and deploy-frontend-prod.
   # estimate-frontend:
-  #   if: github.event.workflow_run.conclusion == 'success'
+  #   if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
   #   runs-on: ubuntu-latest
   #   steps:
   #     - uses: actions/checkout@v4

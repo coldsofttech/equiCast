@@ -24,6 +24,20 @@ resource "aws_s3_bucket_website_configuration" "this" {
   }
 }
 
+resource "aws_s3_bucket_lifecycle_configuration" "this" {
+  count  = var.noncurrent_version_expiration_days != null ? 1 : 0
+  bucket = aws_s3_bucket.this.id
+
+  rule {
+    id     = "expire-noncurrent-versions"
+    status = "Enabled"
+    filter {}
+    noncurrent_version_expiration {
+      noncurrent_days = var.noncurrent_version_expiration_days
+    }
+  }
+}
+
 resource "aws_s3_bucket_public_access_block" "this" {
   bucket = aws_s3_bucket.this.id
 
