@@ -86,7 +86,7 @@ can assume it:
 
 ```bash
 aws iam create-role \
-  --role-name equicast-github-actions \
+  --role-name equicast-github-actions-role \
   --assume-role-policy-document file://trust-policy.json
 ```
 
@@ -151,7 +151,7 @@ rather than broad account-wide access:
 
 ```bash
 aws iam put-role-policy \
-  --role-name equicast-github-actions \
+  --role-name equicast-github-actions-role \
   --policy-name equicast-github-actions-permissions \
   --policy-document file://permissions-policy.json
 ```
@@ -207,7 +207,7 @@ else in this statement. Terraform reads the log group via this call before
 ## Step 4: Wire it into the repo
 
 - Settings → Secrets and variables → Actions → **New repository secret**:
-  `AWS_ROLE_ARN` = `arn:aws:iam::<AWS_ACCOUNT_ID>:role/equicast-github-actions`
+  `AWS_ROLE_ARN` = `arn:aws:iam::<AWS_ACCOUNT_ID>:role/equicast-github-actions-role`
 - Settings → Secrets and variables → Actions → **Variables** tab (optional):
   `AWS_REGION` if not `eu-west-1`
 
