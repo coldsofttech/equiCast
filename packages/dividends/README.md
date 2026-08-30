@@ -35,12 +35,16 @@ DividendsClient("AAPL").dividends()
 #  ...]
 ```
 
-One record per ex-dividend date. By default covers this calendar year only;
+One record per ex-dividend date. By default covers this calendar year to
+date, plus any future-dated entries (`index.year >= this year`, not `==
+this year`) — in practice a no-op today, since yfinance's dividend data is
+derived from price history and never has a date past today, but keeps the
+filter's direction correct rather than relying on that absence.
 `dividends(full_load=True)` covers the symbol's entire dividend history
 instead — same year-to-date/full-history split as `FXClient.prices()`/
 `StockClient.prices()`, even though yfinance's underlying dividends call has
 no period parameter of its own (the full series is always fetched in one
-call; the default just filters it down to the current year).
+call; the default just filters it down).
 
 A symbol with no dividend history (growth stocks, non-dividend-paying
 tickers) simply returns `[]`.

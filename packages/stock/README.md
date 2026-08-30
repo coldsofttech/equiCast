@@ -125,11 +125,12 @@ prices, dividends, events, and metrics for each, and writes:
 - `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
   for the current year only by default
 - `<out>/stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
-  ex-dividend date, for the current year only by default (empty for tickers
-  with no dividend history)
+  ex-dividend date, this year to date by default (empty for tickers with no
+  dividend history)
 - `<out>/stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event
-  (earnings report, analyst rating change, stock split), for the current
-  year only by default (empty for tickers/years with none of the three)
+  (earnings report, analyst rating change, stock split), this year to date
+  plus any future-dated entries by default (empty for tickers/years with
+  none of the three)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,

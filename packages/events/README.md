@@ -48,10 +48,14 @@ One record per event, combining three distinct kinds into a single list
 rather than three separate methods — each record's `event_type`
 (`"earnings"` / `"rating"` / `"split"`) says which, and only that type's
 fields are populated (everything else is `None`). By default covers this
-calendar year only (by event `date`); `events(full_load=True)` covers this
-symbol's entire available history instead — same year-to-date/full-history
-split as `DividendsClient.dividends()`/`StockClient.prices()`, even though
-none of the three underlying yfinance calls has a period parameter of its
+calendar year to date, plus any future-dated entries (`date >= this year`,
+not `== this year`) — only earnings ever has any (estimated future report
+dates); rating changes and splits are purely historical, so this is a no-op
+for them. `events(full_load=True)` covers this symbol's entire available
+history instead, future entries included either way — same
+year-to-date/full-history split as `DividendsClient.dividends()`/
+`StockClient.prices()`, even though none of the three underlying yfinance
+calls has a period parameter of its
 own.
 
 A symbol with no events of a given kind (no upcoming/reported earnings, no

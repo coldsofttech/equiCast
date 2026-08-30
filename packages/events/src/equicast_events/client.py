@@ -66,13 +66,16 @@ class EventsClient:
         eps_estimate, reported_eps, surprise_pct, firm, from_grade,
         to_grade, action, ratio, last_updated, source}.
 
-        By default covers this calendar year only (by event `date`), even
-        though none of the three underlying yfinance calls take a period
-        parameter - same year-filter-after-fetch convention as
-        `DividendsClient.dividends()`. With `full_load=True`, covers this
-        symbol's entire available history instead (earnings dates still
-        capped at yfinance's own 100-row limit; rating changes and splits
-        have no such cap, so those are always complete either way).
+        By default covers this calendar year to date plus any future-dated
+        entries (`date >= this year`, not `== this year`) - only earnings
+        ever has any (estimated future report dates); rating changes and
+        splits are purely historical, so this is a no-op for them - same
+        year-filter-after-fetch convention as `DividendsClient.dividends()`.
+        With `full_load=True`, covers this symbol's entire available
+        history instead, future entries included either way (earnings
+        dates still capped at yfinance's own 100-row limit; rating changes
+        and splits have no such cap, so those are always complete either
+        way).
 
         `surprise_pct`/`ratio` are passed through as yfinance reports them
         (percentage points and a raw ratio respectively, not normalized to
@@ -86,8 +89,8 @@ class EventsClient:
         ]
 
         if not full_load:
-            current_year = str(datetime.now(UTC).year)
-            records = [record for record in records if record["date"][:4] == current_year]
+            current_year = datetime.now(UTC).year
+            records = [record for record in records if int(record["date"][:4]) >= current_year]
 
         return records
 

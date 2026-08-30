@@ -74,16 +74,16 @@ For each ticker this writes:
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source
 - `stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per ex-dividend
-  date, for the current year only by default: ticker, currency,
-  ex_dividend_date, price (the dividend amount per share, not a stock
-  price), last updated, source. No `payment_date` — yfinance's dividend
-  history has none. Not written for tickers/years with no dividends.
-- `stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event, for the
-  current year only by default: ticker, event_type (earnings/rating/split),
-  date, plus that type's fields (eps_estimate/reported_eps/surprise_pct for
-  earnings; firm/from_grade/to_grade/action for ratings; ratio for splits),
-  last updated, source. Not written for tickers/years with none of the
-  three.
+  date, this year to date by default: ticker, currency, ex_dividend_date,
+  price (the dividend amount per share, not a stock price), last updated,
+  source. No `payment_date` — yfinance's dividend history has none. Not
+  written for tickers/years with no dividends.
+- `stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event, this
+  year to date plus any future-dated entries by default (only earnings
+  ever has any): ticker, event_type (earnings/rating/split), date, plus
+  that type's fields (eps_estimate/reported_eps/surprise_pct for earnings;
+  firm/from_grade/to_grade/action for ratings; ratio for splits), last
+  updated, source. Not written for tickers/years with none of the three.
 - `stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,

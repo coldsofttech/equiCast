@@ -182,8 +182,10 @@ DividendsClient("AAPL").dividends()
 ```
 
 One record per ex-dividend date; `price` is the dividend amount per share,
-not a stock price. By default covers the current year only, same
-full-history option as prices. There's no `payment_date` field — yfinance's
+not a stock price. By default covers this year to date (plus any
+future-dated entries, though yfinance's dividend data has none in
+practice), same full-history option as prices. There's no `payment_date`
+field — yfinance's
 dividend history only has ex-dividend date and amount, for any ticker, at
 any point in history. `equicast-dividends` is generic the same way
 `equicast-metrics` is — built for any yfinance equity-like symbol, not
@@ -208,8 +210,9 @@ EventsClient("AAPL").events()
 One record per event — earnings report, analyst rating change, or stock
 split — tagged by `event_type`, with only that type's fields populated (the
 rest `None`), combined into a single list rather than three separate calls.
-Same current-year-only default / `full_load=True` option as dividends and
-prices. `equicast-events` is generic the same way `equicast-dividends` is;
+Same year-to-date-plus-future-entries default / `full_load=True` option as
+dividends and prices (only earnings ever has future-dated entries).
+`equicast-events` is generic the same way `equicast-dividends` is;
 see [equicast-events's README](packages/events/README.md) for exactly how
 each event type is sourced.
 

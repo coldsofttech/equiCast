@@ -213,7 +213,7 @@ def test_events_split_records() -> None:
     ]
 
 
-def test_events_defaults_to_current_year_only() -> None:
+def test_events_default_excludes_prior_years() -> None:
     this_year = datetime.now(UTC).year
     earnings = _earnings_df(
         [
@@ -239,6 +239,25 @@ def test_events_defaults_to_current_year_only() -> None:
         ("rating", f"{this_year}-03-01"),
         ("split", f"{this_year}-06-09"),
     ]
+
+
+def test_events_default_includes_future_dated_earnings() -> None:
+    # Default is year-to-date *and beyond* (`date >= this year`, not
+    # `== this year`) - only earnings ever lands in a future year (an
+    # upcoming report scheduled past year-end); ratings/splits are purely
+    # historical so this only exercises earnings meaningfully.
+    this_year = datetime.now(UTC).year
+    earnings = _earnings_df(
+        [
+            (f"{this_year}-10-30", None, 1.5, 2.0),
+            (f"{this_year + 1}-01-28", 2.3, None, None),
+        ]
+    )
+    client = EventsClient("AAPL", datafeed=_datafeed(earnings=earnings))
+
+    records = client.events()
+
+    assert [r["date"] for r in records] == [f"{this_year}-10-30", f"{this_year + 1}-01-28"]
 
 
 def test_events_full_load_returns_every_year() -> None:
