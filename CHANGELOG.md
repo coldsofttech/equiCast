@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `terraform.yml` now sets `concurrency: { group: terraform-${{ github.ref }},
+  cancel-in-progress: true }`. Since `development`/`production` gained
+  required-reviewer approval, a run left `waiting` on an unapproved gate
+  no longer gets superseded on its own — an older push's `apply-dev` could
+  sit waiting indefinitely alongside a newer one for the same ref, cluttering
+  the approval queue and risking someone approving stale infra. A newer push
+  now cancels the older run for the same `github.ref` outright.
 - Collapsed the `deploy-dev` GitHub Environment into `development`:
   `deploy.yml`'s `deploy-backend-dev`/`deploy-frontend-dev` now gate on
   `environment: development` (previously `deploy-dev`), the same
