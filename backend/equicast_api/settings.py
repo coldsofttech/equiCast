@@ -77,8 +77,9 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     # Only *identifies* a caller when a valid Bearer token is present — it
-    # doesn't require one, so market_data's unauthenticated views (DRF's
-    # AllowAny default, no permission_classes override) are unaffected.
+    # doesn't itself require one. Views that need to be locked down still
+    # declare their own `permission_classes = [IsAuthenticated]` (see
+    # identity/views.py, market_data/views.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["identity.authentication.Auth0JWTAuthentication"],
 }
 
