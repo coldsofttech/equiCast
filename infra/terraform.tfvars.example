@@ -1,3 +1,7 @@
 aws_region   = "eu-west-1"
 environment  = "dev"
 project_name = "equicast"
+
+# See docs/auth0-setup.md for where these come from. Shared across dev/prod.
+auth0_domain   = "equicast.eu.auth0.com"
+auth0_audience = "https://api.equicast.app"

@@ -394,4 +394,6 @@ and 2 hours from the stock schedule so none of the three pipelines overlap.
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
   authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF ingestion), and
   how to troubleshoot it
+- [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
+  the backend's JWT authentication, and wiring its values into the repo
 - [Changelog](CHANGELOG.md)

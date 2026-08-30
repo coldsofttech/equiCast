@@ -17,6 +17,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "corsheaders",
     "market_data",
+    "identity",
 ]
 
 MIDDLEWARE = [
@@ -75,6 +76,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    # Only *identifies* a caller when a valid Bearer token is present — it
+    # doesn't require one, so market_data's unauthenticated views (DRF's
+    # AllowAny default, no permission_classes override) are unaffected.
+    "DEFAULT_AUTHENTICATION_CLASSES": ["identity.authentication.Auth0JWTAuthentication"],
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -85,3 +90,11 @@ CORS_ALLOWED_ORIGINS = [
 # should fail loudly rather than silently pointing at nothing.
 MARKET_DATA_BUCKET = os.environ.get("MARKET_DATA_BUCKET")
 AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")
+
+# Auth0 tenant/API identifying which access tokens Auth0JWTAuthentication
+# accepts — see docs/auth0-setup.md. No defaults, same "fail loudly" reasoning
+# as MARKET_DATA_BUCKET: an unset value should error, not silently accept (or
+# reject) every token.
+AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
+AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
+USER_PROFILES_TABLE = os.environ.get("USER_PROFILES_TABLE")

@@ -131,7 +131,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - run: terraform init -reconfigure -backend-config="key=equicast/dev/terraform.tfstate"
-      - run: terraform plan -input=false -var environment=dev
+      - run: terraform plan -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
 
   apply-dev:
     needs: plan
@@ -155,7 +155,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - run: terraform init -backend-config="key=equicast/dev/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=dev
+      - run: terraform apply -auto-approve -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
 
   # Gated behind the "production" GitHub Environment's required reviewers
   # (Settings -> Environments -> production) — only an approved reviewer can
@@ -183,4 +183,4 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - run: terraform init -backend-config="key=equicast/prod/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=prod
+      - run: terraform apply -auto-approve -input=false -var environment=prod -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}

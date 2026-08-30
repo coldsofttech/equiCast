@@ -17,9 +17,19 @@ Set `MARKET_DATA_BUCKET` (e.g. `equicast-market-data-dev`) to actually serve
 data — without it, the server still starts, but every `/api/market/...`
 request fails. Needs working AWS read credentials for that bucket locally.
 
+Set `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` (e.g.
+`equicast-user-profiles-dev`) to use `/api/identity/...` — see
+[docs/auth0-setup.md](../docs/auth0-setup.md). Without them, the server
+still starts and `/api/market/...` is unaffected, but any request with an
+`Authorization: Bearer` header fails to authenticate, and
+`/api/identity/me/` always returns `401`.
+
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;
+  returns the caller's profile (`user_id`, `default_currency`), creating it
+  with `default_currency: "GBP"` on first login
 
 ## Lambda packaging
 

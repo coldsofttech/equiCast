@@ -8,7 +8,7 @@ How to get every part of the equiCast monorepo running on your machine.
 equiCast/
 ├── pyproject.toml       # virtual uv workspace root (no [project] of its own)
 ├── packages/
-│   ├── core/            # equicast-core: generic S3 Parquet reader (boto3+pyarrow), consumed by the backend
+│   ├── core/            # equicast-core: shared AWS clients (S3 Parquet reads, DynamoDB user profiles), consumed by the backend
 │   ├── datafeed/        # equicast-datafeed: resilient yfinance client (retries, rate limits)
 │   ├── metrics/         # equicast-metrics: volatility, Sharpe ratio, max drawdown, CAGR + stock fundamentals
 │   ├── dividends/       # equicast-dividends: generic dividend history for any equity-like symbol
@@ -17,7 +17,8 @@ equiCast/
 │   ├── stock/           # equicast-stock: stock ticker data extraction, containerized, pushed to GHCR
 │   └── etf/             # equicast-etf: ETF ticker data extraction, containerized, pushed to GHCR
 ├── backend/             # Django REST API (uv workspace member, depends on equicast-core); zip-packaged for Lambda
-│   └── market_data/     # Django app exposing real market data (reads S3 via equicast-core)
+│   ├── market_data/     # Django app exposing real market data (reads S3 via equicast-core)
+│   └── identity/        # Django app: Auth0 JWT verification, first-login DynamoDB profile upsert
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -48,7 +49,7 @@ re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
 ## Backend (Django REST) and `equicast-core`
 
-`equicast-core` is a small generic package (boto3 + pyarrow, no Django import) that reads the ingestion pipelines' S3 Parquet layout — currently only consumed by the backend, but not backend-specific code itself:
+`equicast-core` is a small generic package (boto3, no Django import) with two clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout) and `UserProfileClient` (DynamoDB user profiles) — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
 cd packages/core
@@ -64,10 +65,13 @@ uv run manage.py runserver
 
 Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MARKET_DATA_BUCKET=equicast-market-data-dev`, plus working AWS read credentials locally. Without it, the server still starts (only `GET /health/` and the admin work).
 
+Needs `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` set (no defaults) to use `/api/identity/...` — see [auth0-setup.md](auth0-setup.md) for where the Auth0 values come from. Without them, `/api/market/...` is unaffected, but any `Authorization: Bearer` header fails to authenticate and `/api/identity/me/` always returns `401`.
+
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
 
 ```bash
 uv run pytest
@@ -144,7 +148,7 @@ deploy/execute the scheduled ingestion pipeline.
 
 ```bash
 cd infra
-cp terraform.tfvars.example terraform.tfvars
+cp terraform.tfvars.example terraform.tfvars   # fill in auth0_domain/auth0_audience — see auth0-setup.md
 terraform init -backend-config="key=equicast/dev/terraform.tfstate"
 terraform plan -var environment=dev
 ```

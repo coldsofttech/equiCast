@@ -67,8 +67,11 @@ module "backend_lambda" {
   policy_json   = data.aws_iam_policy_document.backend_lambda_permissions.json
 
   environment_variables = {
-    MARKET_DATA_BUCKET = module.market_data_bucket.bucket_name
-    DJANGO_SECRET_KEY  = random_password.django_secret_key.result
+    MARKET_DATA_BUCKET  = module.market_data_bucket.bucket_name
+    DJANGO_SECRET_KEY   = random_password.django_secret_key.result
+    USER_PROFILES_TABLE = module.user_profiles_table.table_name
+    AUTH0_DOMAIN        = var.auth0_domain
+    AUTH0_AUDIENCE      = var.auth0_audience
   }
 }
 

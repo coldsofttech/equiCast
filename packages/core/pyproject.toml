@@ -1,7 +1,7 @@
 [project]
 name = "equicast-core"
 version = "0.1.0"
-description = "Generic reader for equicast's S3 market-data layout (Parquet via pyarrow), for any consumer (Django backend, Lambda, scripts)."
+description = "Shared AWS storage clients for equicast (S3 market-data reads via pyarrow, DynamoDB user-profile storage), for any consumer (Django backend, Lambda, scripts)."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,7 +13,7 @@ dependencies = [
 dev = [
     "pytest>=8.0",
     "pytest-cov>=5.0",
-    "moto[s3]>=5.0",
+    "moto[s3,dynamodb]>=5.0",
     "ruff>=0.6",
     "mypy>=1.11",
 ]
