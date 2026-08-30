@@ -80,3 +80,8 @@ REST_FRAMEWORK = {
 CORS_ALLOWED_ORIGINS = [
     o for o in os.environ.get("DJANGO_CORS_ORIGINS", "http://localhost:5173").split(",") if o
 ]
+
+# No default: there's no sane bucket to fall back to, so an unset value
+# should fail loudly rather than silently pointing at nothing.
+MARKET_DATA_BUCKET = os.environ.get("MARKET_DATA_BUCKET")
+AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")

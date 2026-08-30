@@ -242,3 +242,8 @@ packages/stock/smoke_output/
 packages/etf/output/
 packages/etf/chunks/
 packages/etf/smoke_output/
+
+# backend/scripts/build_lambda_package.sh output
+backend/build/
+backend/build_requirements.txt
+backend/lambda_package.zip

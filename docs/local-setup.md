@@ -8,7 +8,7 @@ How to get every part of the equiCast monorepo running on your machine.
 equiCast/
 ├── pyproject.toml       # virtual uv workspace root (no [project] of its own)
 ├── packages/
-│   ├── equicast/        # Core Python package (yfinance ingestion, Parquet storage)
+│   ├── core/            # equicast-core: generic S3 Parquet reader (boto3+pyarrow), consumed by the backend
 │   ├── datafeed/        # equicast-datafeed: resilient yfinance client (retries, rate limits)
 │   ├── metrics/         # equicast-metrics: volatility, Sharpe ratio, max drawdown, CAGR + stock fundamentals
 │   ├── dividends/       # equicast-dividends: generic dividend history for any equity-like symbol
@@ -16,8 +16,8 @@ equiCast/
 │   ├── fx/              # equicast-fx: FX pair data extraction, containerized, pushed to GHCR
 │   ├── stock/           # equicast-stock: stock ticker data extraction, containerized, pushed to GHCR
 │   └── etf/             # equicast-etf: ETF ticker data extraction, containerized, pushed to GHCR
-├── backend/             # Django REST API (uv workspace member, depends on equicast)
-│   └── market_data/     # Django app exposing market data endpoints
+├── backend/             # Django REST API (uv workspace member, depends on equicast-core); zip-packaged for Lambda
+│   └── market_data/     # Django app exposing real market data (reads S3 via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -46,15 +46,15 @@ uv sync --all-packages --extra dev   # creates .venv, installs every workspace p
 Every Python package below shares that one `.venv`/lockfile — you don't
 re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
-## Core package (`equicast`)
+## Backend (Django REST) and `equicast-core`
+
+`equicast-core` is a small generic package (boto3 + pyarrow, no Django import) that reads the ingestion pipelines' S3 Parquet layout — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
-cd packages/equicast
+cd packages/core
 uv run pytest
 uv run mypy src/
 ```
-
-## Backend (Django REST)
 
 ```bash
 cd backend
@@ -62,7 +62,12 @@ uv run manage.py migrate
 uv run manage.py runserver
 ```
 
-API available at `http://localhost:8000/api/market-data/<ticker>/`.
+Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MARKET_DATA_BUCKET=equicast-market-data-dev`, plus working AWS read credentials locally. Without it, the server still starts (only `GET /health/` and the admin work).
+
+API available at:
+- `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
+- `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
+- `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
 
 ```bash
 uv run pytest
@@ -158,13 +163,13 @@ uvx pre-commit install
 uvx pre-commit run --all-files
 ```
 
-Runs ruff, mypy, and pytest (unit) for the core package, Django backend, and
-the datafeed/metrics/dividends/events/fx/stock/etf packages, plus eslint and
+Runs ruff, mypy, and pytest (unit) for `equicast-core`, the Django backend,
+and the datafeed/metrics/dividends/events/fx/stock/etf packages, plus eslint and
 vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 
 ## CI/CD workflows
 
-- `backend-ci.yml` — ruff, mypy, and pytest for the core package and Django backend via `uv`
+- `backend-ci.yml` — ruff, mypy, and pytest for `equicast-core` and the Django backend via `uv`
 - `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`, `equicast-metrics`, and `equicast-fx`
 - `stock-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
   `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
