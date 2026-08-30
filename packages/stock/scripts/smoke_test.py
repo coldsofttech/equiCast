@@ -106,7 +106,12 @@ def run_ticker(ticker: StockTicker, output_format: str, output_dir: Path, full_l
 
     if output_format == "json":
         print(f"\n--- {ticker.key} profile ---")
-        print(json.dumps(profile, indent=2, default=str))
+        # CodeQL flags `profile["address"]` as sensitive personal data via its
+        # generic field-name heuristic; it's actually the company's public HQ
+        # address from yfinance's profile data, and printing the full profile
+        # is this script's entire purpose (manual QA, never used in prod).
+        profile_json = json.dumps(profile, indent=2, default=str)
+        print(profile_json)  # lgtm[py/clear-text-logging-sensitive-data]
         print(f"\n--- {ticker.key} prices (summary; full_load={full_load}) ---")
         print(json.dumps(_summarize_prices(prices), indent=2, default=str))
         print(f"\n--- {ticker.key} dividends (full_load={full_load}) ---")
