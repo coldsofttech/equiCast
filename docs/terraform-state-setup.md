@@ -100,8 +100,8 @@ creates them fresh the first time it runs.
 
 Three GitHub Environments are in play, across both workflows:
 
-- **`dev`** (`terraform.yml` only) — no protection rules; `apply-dev` runs
-  automatically on push to `main`. Infra changes are reviewed via the
+- **`development`** (`terraform.yml` only) — no protection rules; `apply-dev`
+  runs automatically on push to `main`. Infra changes are reviewed via the
   Infracost PR comment (see below) before merge, not via an approval gate.
 - **`deploy-dev`** (`deploy.yml` only) — add **required reviewers**
   (Settings → Environments → `deploy-dev` → *Required reviewers*) naming the
