@@ -1,8 +1,11 @@
 from django.conf import settings
 from equicast_core import MarketDataClient
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+from identity.authentication import Auth0JWTAuthentication
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
@@ -12,6 +15,9 @@ _client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS
 
 
 class ProfileView(APIView):
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def get(self, request: Request, asset_class: str, symbol: str) -> Response:
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
@@ -23,6 +29,9 @@ class ProfileView(APIView):
 
 
 class PricesView(APIView):
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
     def get(self, request: Request, asset_class: str, symbol: str) -> Response:
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)

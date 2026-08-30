@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `market_data`'s `ProfileView`/`PricesView` now require Auth0 authentication
+  (`authentication_classes = [Auth0JWTAuthentication]`,
+  `permission_classes = [IsAuthenticated]`), matching `identity.MeView`.
+  Previously these fell back to DRF's `AllowAny` default and were reachable
+  without a Bearer token — `REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]`
+  only *identifies* a caller, it doesn't by itself require authentication.
+  `backend/market_data/tests.py` updated to mock the Auth0 JWT flow and
+  assert 401 when no token is supplied.
+
 ### Added
 
 - Phase C Identity: Auth0-based authentication for the backend.
