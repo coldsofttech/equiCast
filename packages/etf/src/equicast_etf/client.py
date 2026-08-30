@@ -154,3 +154,35 @@ class ETFClient:
             "last_updated": last_updated,
             "source": "yfinance",
         }
+
+    def prices(self, full_load: bool = False) -> list[dict[str, Any]]:
+        """Return one daily OHLC record per trading day.
+
+        By default covers this calendar year only (year-to-date). With
+        `full_load=True`, covers this ticker's entire yfinance history
+        instead.
+        """
+        period = PRICES_FULL_LOAD_PERIOD if full_load else PRICES_DEFAULT_PERIOD
+        currency = self._datafeed.get_info(self.symbol).get("currency")
+        history = self._datafeed.get_history(self.symbol, period=period)
+        fetched_at = datetime.now(UTC).isoformat()
+
+        records = []
+        for date, row in history.iterrows():
+            high = float(row["High"])
+            low = float(row["Low"])
+            records.append(
+                {
+                    "ticker": self.ticker,
+                    "currency": currency,
+                    "date": date.date().isoformat(),
+                    "open": round_value(float(row["Open"])),
+                    "high": round_value(high),
+                    "low": round_value(low),
+                    "close": round_value(float(row["Close"])),
+                    "average": round_value(_midpoint(low, high)),
+                    "last_updated": fetched_at,
+                    "source": "yfinance",
+                }
+            )
+        return records

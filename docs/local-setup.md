@@ -120,8 +120,8 @@ cd packages/datafeed && uv run pytest && uv run mypy src/
 cd ../etf && uv run pytest && uv run mypy src/
 ```
 
-Only depends on `equicast-datafeed` so far — `equicast-etf` only implements
-`profile()` (no prices/dividends/events/metrics yet), mirroring how
+Only depends on `equicast-datafeed` so far — `equicast-etf` implements
+`profile()` and `prices()` (no dividends/events/metrics yet), mirroring how
 `equicast-stock` itself started out. See
 [etf-pipeline.md](etf-pipeline.md) for how to run the CLI, smoke-test
 against live data with `scripts/smoke_test.py`, build the Docker image, and

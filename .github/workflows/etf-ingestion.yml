@@ -15,6 +15,10 @@ on:
           - dev
           - production
         default: dev
+      full_load:
+        description: "Full historical load (all years) instead of current year only"
+        type: boolean
+        default: false
       chunk_size:
         description: "Target ETF tickers per parallel chunk"
         default: "300"
@@ -125,7 +129,7 @@ jobs:
       - name: Pull equicast-etf image
         run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-etf:latest
 
-      - name: Extract this chunk's ETF ticker profiles
+      - name: Extract this chunk's ETF ticker profiles and prices
         run: |
           mkdir -p output
           docker run --rm \
@@ -133,6 +137,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/equicast-etf:latest \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
+            ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \
             --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
             --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
@@ -143,5 +148,5 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: Upload ETF profiles to S3
+      - name: Upload ETF profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive

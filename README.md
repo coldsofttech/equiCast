@@ -29,9 +29,9 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   events, and metrics from Yahoo Finance and lands them in the same S3
   bucket as Parquet.
 - **ETF data pipeline (`equicast-datafeed`, `equicast-etf`)** — a scheduled
-  pipeline that extracts ETF ticker profiles from Yahoo Finance and lands
-  them in the same S3 bucket as Parquet. Only profiles so far (no daily
-  prices, dividends, events, or metrics yet).
+  pipeline that extracts ETF ticker profiles and daily prices from Yahoo
+  Finance and lands them in the same S3 bucket as Parquet. No dividends,
+  events, or metrics yet.
 
 ## Disclaimer
 
@@ -267,8 +267,7 @@ the two pipelines never overlap.
 ## ETF data products
 
 Each configured ETF ticker (default: VOO, QQQ, VTI, AGG, GLD) yields a
-profile — the only ETF data product so far, no daily prices, dividends,
-events, or metrics yet.
+profile and daily prices — no dividends, events, or metrics yet.
 
 ```python
 from equicast_etf import ETFClient
@@ -300,12 +299,26 @@ fields (`category`, `total_assets`, `expense_ratio`, `nav_price`,
 for the full field-by-field comparison, and how `website`/`beta` are
 derived.
 
-Lands in the same bucket as FX/stock data:
+```python
+ETFClient("VOO").prices()
+# [{"ticker": "VOO", "currency": "USD", "date": "2026-01-02",
+#   "open": 626.83, "high": 627.84, "low": 621.43, "close": 624.50,
+#   "average": 624.64, "last_updated": "2026-08-30T09:48:13+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One row per trading day. By default covers the current year only; a full
+historical load (every year available) can be requested the same way as
+FX/stock — see [the ETF pipeline docs](docs/etf-pipeline.md). Lands in the
+same bucket as FX/stock data:
 
 ```
 s3://equicast-market-data-<env>/
 └── etf=VOO/
-    └── profile.parquet
+    ├── profile.parquet
+    ├── year=2025/price.parquet
+    └── year=2026/price.parquet
 ```
 
 Refreshed every 6 hours automatically, offset 4 hours from the FX schedule

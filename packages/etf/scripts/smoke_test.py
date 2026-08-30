@@ -2,12 +2,13 @@
 
 Not part of the automated pytest suite (it hits the real Yahoo Finance API,
 so it doesn't belong in CI) — run manually to sanity-check
-ETFClient.profile() and the Parquet writer, end to end.
+ETFClient.profile(), .prices(), and the Parquet writers, end to end.
 
 Usage:
     uv run python scripts/smoke_test.py
     uv run python scripts/smoke_test.py --tickers VOO,QQQ
     uv run python scripts/smoke_test.py --format parquet --out ./smoke_output
+    uv run python scripts/smoke_test.py --full-load
 """
 
 from __future__ import annotations
@@ -19,7 +20,7 @@ from pathlib import Path
 
 from equicast_etf.client import ETFClient
 from equicast_etf.config import ETFTicker, load_etf_tickers
-from equicast_etf.writer import write_profile_parquet
+from equicast_etf.writer import write_price_parquet, write_profile_parquet
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "etfs.yaml"
 
@@ -36,7 +37,7 @@ def _parse_tickers(raw: str) -> list[ETFTicker]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Smoke-test equicast-etf (profile) against live yfinance data."
+        description="Smoke-test equicast-etf (profile + prices) against live yfinance data."
     )
     parser.add_argument(
         "--config",
@@ -62,21 +63,44 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=Path("./smoke_output"),
         help="Output directory when --format parquet (default: ./smoke_output).",
     )
+    parser.add_argument(
+        "--full-load",
+        action="store_true",
+        help="Fetch each ticker's entire yfinance history for prices, instead of just "
+        "the current year.",
+    )
     return parser
 
 
-def run_ticker(ticker: ETFTicker, output_format: str, output_dir: Path) -> None:
+def _summarize_prices(records: list[dict]) -> dict:
+    if not records:
+        return {"rows": 0}
+    return {
+        "rows": len(records),
+        "date_range": [records[0]["date"], records[-1]["date"]],
+        "first_row": records[0],
+        "last_row": records[-1],
+    }
+
+
+def run_ticker(ticker: ETFTicker, output_format: str, output_dir: Path, full_load: bool) -> None:
     client = ETFClient(ticker.ticker)
     print(f"\n=== {ticker.key} ===")
 
     profile = client.profile()
+    prices = client.prices(full_load=full_load)
 
     if output_format == "json":
         print(f"\n--- {ticker.key} profile ---")
         print(json.dumps(profile, indent=2, default=str))
+        print(f"\n--- {ticker.key} prices (summary; full_load={full_load}) ---")
+        print(json.dumps(_summarize_prices(prices), indent=2, default=str))
     else:
         profile_path = write_profile_parquet(profile, output_dir)
+        price_paths = write_price_parquet(prices, output_dir)
         print(f"  wrote {profile_path}")
+        for path in price_paths:
+            print(f"  wrote {path}")
 
 
 def main() -> None:
@@ -89,7 +113,7 @@ def main() -> None:
         sys.exit(1)
 
     for ticker in tickers:
-        run_ticker(ticker, args.format, args.out)
+        run_ticker(ticker, args.format, args.out, args.full_load)
 
 
 if __name__ == "__main__":

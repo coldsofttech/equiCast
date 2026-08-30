@@ -218,3 +218,67 @@ def test_profile_inception_date_is_none_when_unavailable() -> None:
     client = ETFClient("VOO", datafeed=_datafeed({}))
 
     assert client.profile()["inception_date"] is None
+
+
+_PRICE_HISTORY = pd.DataFrame(
+    {
+        "Open": [700.10, 705.20],
+        "High": [702.50, 707.80],
+        "Low": [698.00, 703.90],
+        "Close": [701.30, 706.10],
+    },
+    index=pd.to_datetime(["2026-01-02", "2026-01-05"]),
+)
+
+
+def test_prices_returns_one_record_per_row() -> None:
+    client = ETFClient("VOO", datafeed=_datafeed({"currency": "USD"}, _PRICE_HISTORY))
+
+    records = client.prices()
+
+    assert records == [
+        {
+            "ticker": "VOO",
+            "currency": "USD",
+            "date": "2026-01-02",
+            "open": 700.10,
+            "high": 702.50,
+            "low": 698.00,
+            "close": 701.30,
+            "average": round((698.00 + 702.50) / 2, 8),
+            "last_updated": records[0]["last_updated"],
+            "source": "yfinance",
+        },
+        {
+            "ticker": "VOO",
+            "currency": "USD",
+            "date": "2026-01-05",
+            "open": 705.20,
+            "high": 707.80,
+            "low": 703.90,
+            "close": 706.10,
+            "average": round((703.90 + 707.80) / 2, 8),
+            "last_updated": records[1]["last_updated"],
+            "source": "yfinance",
+        },
+    ]
+    assert records[0]["last_updated"] == records[1]["last_updated"]
+
+
+def test_prices_default_uses_ytd_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    ETFClient("VOO", datafeed=datafeed).prices()
+
+    datafeed.get_history.assert_called_once_with("VOO", period="ytd")
+
+
+def test_prices_full_load_uses_max_period() -> None:
+    datafeed = _datafeed({}, _PRICE_HISTORY)
+    ETFClient("VOO", datafeed=datafeed).prices(full_load=True)
+
+    datafeed.get_history.assert_called_once_with("VOO", period="max")
+
+
+def test_prices_empty_history_returns_no_records() -> None:
+    client = ETFClient("VOO", datafeed=_datafeed({}, pd.DataFrame()))
+    assert client.prices() == []

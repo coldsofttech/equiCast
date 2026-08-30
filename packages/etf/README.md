@@ -130,18 +130,30 @@ as a full ISO 8601 datetime, same as `last_updated`.
 
 ## CLI
 
-Reads the ETF tickers listed in a config file, fetches a profile for each,
-and writes:
+Reads the ETF tickers listed in a config file, fetches a profile and daily
+prices for each, and writes:
 
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
+- `<out>/etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
+  for the current year only by default
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output
 ```
 
-Only `profile()` is implemented so far — no daily prices, dividends, events,
-or metrics yet (unlike `equicast-stock`), mirroring how `equicast-stock`
-itself started out.
+Add `--full-load` to fetch each ticker's entire available yfinance history
+for prices, writing one `price.parquet` per year found (current year
+included) — same as `equicast-stock`'s `--full-load`:
+
+```bash
+uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
+```
+
+`prices()` returns records shaped `{ticker, currency, date, open, high, low,
+close, average, last_updated, source}` — `currency` comes from a
+`get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
+data). No dividends, events, or metrics yet (unlike `equicast-stock`),
+mirroring how `equicast-stock` itself started out.
 
 ## Configuration
 

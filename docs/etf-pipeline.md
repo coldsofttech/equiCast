@@ -17,7 +17,7 @@ equicast-etf CLI  ── uses ──▶  equicast-datafeed (rate limiting + retr
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet)
+Parquet files (profile.parquet, price.parquet)
         │
         ▼
 GitHub Actions (etf-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -29,7 +29,7 @@ The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
 feeds each parallel chunk its share of the work (see below).
 
-**Only `profile()` is implemented so far** — no daily prices, dividends,
+**Only `profile()` and `prices()` are implemented so far** — no dividends,
 events, or risk metrics yet, mirroring how `equicast-stock` itself started
 out. `equicast-etf` also only depends on `equicast-datafeed`.
 
@@ -47,16 +47,30 @@ uv run equicast-etf --config config/etfs.yaml --out ./output
 uv run equicast-etf --tickers-json '["VOO"]' --out ./output
 ```
 
-For each ticker this writes `etf=<TICKER>/profile.parquet` — one row: name,
-quote type, exchange, currency, description, category, fund family,
-website, beta, expense ratio, dividend rate/yield, total assets, NAV price,
-volume, day/year price range and moving averages, YTD/3yr/5yr average
-returns, inception date, last updated, source. See
-[packages/etf/README.md](../packages/etf/README.md) for the exact field
-list, including how it differs from `equicast-stock`'s profile and how
+For each ticker this writes:
+
+- `etf=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
+  currency, description, category, fund family, website, beta, expense
+  ratio, dividend rate/yield, total assets, NAV price, volume, day/year
+  price range and moving averages, YTD/3yr/5yr average returns, inception
+  date, last updated, source
+- `etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day, for
+  the current year only by default: ticker, currency, date,
+  open/high/low/close/average, last updated, source
+
+See [packages/etf/README.md](../packages/etf/README.md) for the exact field
+lists, including how the profile differs from `equicast-stock`'s and how
 `website`/`beta`/`inception_date` are derived.
 
-- `--max-workers` — profile fetches run concurrently, up to this many at once (default: 1)
+Add `--full-load` to fetch each ticker's entire available yfinance history
+for **prices**, writing one `price.parquet` per year found (current year
+included). It does not affect `profile.parquet`:
+
+```bash
+uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
+```
+
+- `--max-workers` — profile/price fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -64,16 +78,16 @@ list, including how it differs from `equicast-stock`'s profile and how
 ```bash
 docker build -f packages/etf/Dockerfile -t equicast-etf:local .
 docker run --rm -v "$PWD/output:/output" equicast-etf:local \
-  --tickers-json '["VOO"]' --out /output
+  --tickers-json '["VOO"]' --out /output --full-load
 ```
 
 ## Manual smoke testing (`scripts/smoke_test.py`)
 
-`packages/etf/scripts/smoke_test.py` exercises `ETFClient.profile()` against
-**live** Yahoo Finance data — it's a manual QA tool, not part of the
-automated `pytest` suite (a live-network test would make CI slow and
-flaky), so run it by hand whenever you want to sanity-check the pipeline end
-to end.
+`packages/etf/scripts/smoke_test.py` exercises `ETFClient.profile()`,
+`.prices()`, and the Parquet writers against **live** Yahoo Finance data —
+it's a manual QA tool, not part of the automated `pytest` suite (a
+live-network test would make CI slow and flaky), so run it by hand whenever
+you want to sanity-check the pipeline end to end.
 
 ```bash
 cd packages/etf
@@ -84,12 +98,19 @@ uv run python scripts/smoke_test.py
 # Only specific tickers
 uv run python scripts/smoke_test.py --tickers VOO,QQQ
 
-# Write a real Parquet file instead (exercises the writer function too)
+# Write real Parquet files instead (exercises the writer functions too)
 uv run python scripts/smoke_test.py --tickers VOO --format parquet --out ./smoke_output
+
+# Full historical load instead of current-year-only (applies to prices only)
+uv run python scripts/smoke_test.py --tickers VOO --format parquet --out ./smoke_output --full-load
 ```
 
-`--format parquet` writes the real file via `write_profile_parquet`, so you
-can then inspect it with any Parquet reader (e.g. `pd.read_parquet`).
+In `--format json` mode, `profile` is printed in full and `prices` is
+summarized (row count, date range, first/last row) rather than dumped in
+full — a `--full-load` run can be 20+ years of daily rows. `--format
+parquet` writes the real files via `write_profile_parquet`/
+`write_price_parquet`, so you can then inspect them with any Parquet reader
+(e.g. `pd.read_parquet`).
 
 It also works inside the Docker image — same file is already copied in by
 `packages/etf/Dockerfile` — by overriding the image's entrypoint:
@@ -142,6 +163,7 @@ workflow*) with these inputs:
 | Input | Default | Meaning |
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
+| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices instead of just the current year |
 | `chunk_size` | `300` | Target ETF tickers per parallel chunk |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
@@ -179,5 +201,7 @@ The workflow has two jobs, structured identically to
 ```
 s3://equicast-market-data-<env>/
 └── etf=VOO/
-    └── profile.parquet
+    ├── profile.parquet
+    ├── year=2025/price.parquet
+    └── year=2026/price.parquet
 ```
