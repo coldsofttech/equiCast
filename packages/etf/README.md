@@ -131,7 +131,7 @@ as a full ISO 8601 datetime, same as `last_updated`.
 ## CLI
 
 Reads the ETF tickers listed in a config file, fetches a profile, daily
-prices, and dividends for each, and writes:
+prices, dividends, and metrics for each, and writes:
 
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
@@ -139,6 +139,9 @@ prices, and dividends for each, and writes:
 - `<out>/etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
   ex-dividend date, for the current year only by default (empty for tickers
   with no dividend history)
+- `<out>/etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
+  risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
+  CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output
@@ -147,7 +150,7 @@ uv run equicast-etf --config config/etfs.yaml --out ./output
 Add `--full-load` to fetch each ticker's entire available yfinance history
 for prices and dividends, writing one `price.parquet`/`dividend.parquet` per
 year found (current year included) — same as `equicast-stock`'s
-`--full-load`:
+`--full-load`. It does not affect `metrics.parquet`:
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
@@ -156,8 +159,25 @@ uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
 close, average, last_updated, source}` — `currency` comes from a
 `get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
-data). No events or metrics yet (unlike `equicast-stock`), mirroring how
+data). No events yet (unlike `equicast-stock`), mirroring how
 `equicast-stock` itself started out.
+
+### On `metrics.parquet`
+
+Only `MetricsClient.metrics()` — volatility, Sharpe ratio, max drawdown,
+CAGR (1/2/3/5/10-year) — works the same way as for a stock ticker or FX pair
+(see [equicast-metrics's README](../metrics/README.md)). Deliberately
+**not** `.fundamentals()`, unlike `equicast-stock`: its valuation ratios
+(PE, EPS, PEG, price-to-book/sales, EV/EBITDA, margins, ROE/ROA,
+debt-to-equity, FCF/share) are earnings/balance-sheet-based and stock-only.
+Checked live against VOO/QQQ/AGG/GLD before deciding this — 12-13 of its 15
+fields came back `None` for every one of them, and the few that didn't
+(`trailing_pe`, `price_to_book`) were an inconsistent yfinance
+aggregate-portfolio figure, present for some ETFs and absent for others
+with no clear pattern, not a genuine per-fund fundamental worth publishing.
+The fund-level figures that matter for an ETF — expense ratio, NAV, AUM,
+category, YTD/3yr/5yr returns — already live in `profile.parquet` (see
+above), so there's no gap for a `fundamentals()`-style tier to fill here.
 
 ### On `dividend.parquet`
 

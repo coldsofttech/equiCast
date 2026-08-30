@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "equicast-datafeed",
+    "equicast-metrics",
     "equicast-dividends",
     "pandas>=2.2",
     "pyarrow>=17.0",
@@ -27,6 +28,7 @@ equicast-etf-plan = "equicast_etf.plan:main"
 
 [tool.uv.sources]
 equicast-datafeed = { workspace = true }
+equicast-metrics = { workspace = true }
 equicast-dividends = { workspace = true }
 
 [build-system]

@@ -303,9 +303,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   for ETFs — so `equicast-etf` gets dividend history with no new
   dividend-fetching logic of its own. `equicast-dividends` is now a
   dependency of `equicast-etf` (`pyproject.toml`, `Dockerfile`,
-  `etf-ci.yml`'s/`etf-image.yml`'s path filters). Only depends on
-  `equicast-datafeed`/`equicast-dividends` still (no `equicast-metrics`/
-  `equicast-events` yet).
+  `etf-ci.yml`'s/`etf-image.yml`'s path filters).
+- Wired `equicast-metrics` into `equicast-etf`: a new `_metrics_task` in the
+  CLI writes `etf=<TICKER>/metrics.parquet` (via a new
+  `write_metrics_parquet`, ticker-keyed the same way `equicast-stock`'s is).
+  Only calls `MetricsClient.metrics()` (volatility, Sharpe ratio, max
+  drawdown, CAGR 1/2/3/5/10y) — deliberately **not** `.fundamentals()`,
+  unlike `equicast-stock`: checked live against VOO/QQQ/AGG/GLD first, and
+  12-13 of its 15 valuation fields came back `None` for every one of them,
+  with the couple that didn't (`trailing_pe`, `price_to_book`) being an
+  inconsistent yfinance aggregate-portfolio figure rather than a genuine
+  fund fundamental. The fund-level figures that matter for an ETF (expense
+  ratio, NAV, AUM, category, YTD/3yr/5yr returns) already live in
+  `profile()`, so there was no gap for a `fundamentals()`-style tier to
+  fill. `equicast-metrics` is now a dependency of `equicast-etf`
+  (`pyproject.toml`, `Dockerfile`, `etf-ci.yml`'s/`etf-image.yml`'s path
+  filters). Only depends on `equicast-datafeed`/`equicast-metrics`/
+  `equicast-dividends` still (no `equicast-events` yet).
 - `equicast-etf-plan`: a second CLI entry point, identical in shape to
   `equicast-stock-plan`, splitting the configured tickers into chunks
   (capped at 256) for the ingestion workflow's matrix.
@@ -313,14 +327,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the new `etf-image.yml` workflow.
 - `packages/etf/scripts/smoke_test.py`, mirroring `equicast-stock`'s: a
   manual QA tool (not part of the automated `pytest` suite) exercising
-  `ETFClient.profile()`/`.prices()`, `DividendsClient.dividends()`, and the
-  Parquet writers against live Yahoo Finance data, with `--tickers`,
-  `--format json|parquet`, and `--full-load` options.
+  `ETFClient.profile()`/`.prices()`, `DividendsClient.dividends()`,
+  `MetricsClient.metrics()`, and the Parquet writers against live Yahoo
+  Finance data, with `--tickers`, `--format json|parquet`, and
+  `--full-load` options.
 - `etf-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
   structured identically to `fx-ingestion.yml`/`stock-ingestion.yml` — a
   `plan` job computing chunks via `equicast-etf-plan` and resolving the
   target environment/bucket, and an `ingest` matrix job uploading the
-  resulting profile/price/dividend Parquet files to
+  resulting profile/price/dividend/metrics Parquet files to
   `s3://equicast-market-data-<env>/etf=<TICKER>/`, with a `full_load` input
   controlling prices'/dividends' history depth (same shape as
   `fx-ingestion.yml`'s/`stock-ingestion.yml`'s). Shares the bucket and the
@@ -330,7 +345,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `0 2,8,14,20 * * *` — so none of the three pipelines overlap even if a run
   takes longer than expected.
 - `etf-ci.yml`: lint/type-check/test for `equicast-datafeed`,
-  `equicast-dividends`, and `equicast-etf`, mirroring `stock-ci.yml`.
+  `equicast-metrics`, `equicast-dividends`, and `equicast-etf`, mirroring
+  `stock-ci.yml`.
 - `docs/etf-pipeline.md`, documenting the ETF pipeline's architecture,
   local/Docker usage, and scheduled-run inputs (mirrors
   `docs/stock-pipeline.md`).
@@ -341,8 +357,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   figure the Stock section uses; dividend.parquet ~4KB for a partial year
   across VOO/QQQ/VTI/AGG — GLD pays none — scaling to ~5KB/year, smaller
   than the Stock section's assumed 10KB/year since ETF distributions here
-  carry no other per-row fields) rather than a placeholder, following the
-  same real-sample approach the Stock section was re-sized to use.
+  carry no other per-row fields; metrics.parquet ~6.7KB, identical across
+  tickers since the schema is fixed, notably smaller than the Stock
+  section's 20KB since it's risk/performance only, no fundamentals) rather
+  than a placeholder, following the same real-sample approach the Stock
+  section was re-sized to use.
 
 ### Changed
 

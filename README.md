@@ -28,20 +28,22 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   pipeline that extracts stock ticker profiles, daily prices, dividends,
   events, and metrics from Yahoo Finance and lands them in the same S3
   bucket as Parquet.
-- **ETF data pipeline (`equicast-datafeed`, `equicast-dividends`,
-  `equicast-etf`)** — a scheduled pipeline that extracts ETF ticker
-  profiles, daily prices, and dividends from Yahoo Finance and lands them
-  in the same S3 bucket as Parquet. No events or metrics yet.
+- **ETF data pipeline (`equicast-datafeed`, `equicast-metrics`,
+  `equicast-dividends`, `equicast-etf`)** — a scheduled pipeline that
+  extracts ETF ticker profiles, daily prices, dividends, and risk metrics
+  from Yahoo Finance and lands them in the same S3 bucket as Parquet. No
+  events yet.
 
 ## Disclaimer
 
 FX, stock, and ETF profile/price data is sourced via
 [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
 educational and informational purposes only — not financial advice, with no
-guarantee of accuracy, completeness, or timeliness. FX/stock risk metrics
-(volatility, Sharpe ratio, max drawdown, CAGR) and stock fundamentals (PE,
-EPS, margins, returns, leverage) are calculated by equicast where yfinance
-doesn't provide them directly, not sourced from a licensed provider —
+guarantee of accuracy, completeness, or timeliness. FX/stock/ETF risk
+metrics (volatility, Sharpe ratio, max drawdown, CAGR) and stock
+fundamentals (PE, EPS, margins, returns, leverage) are calculated by
+equicast where yfinance doesn't provide them directly, not sourced from a
+licensed provider —
 validate their accuracy yourself before relying on them. An ETF profile's
 `website` field is also equicast's own addition (a small static
 `fund_family` → issuer-website lookup), since yfinance never populates
@@ -267,7 +269,7 @@ the two pipelines never overlap.
 ## ETF data products
 
 Each configured ETF ticker (default: VOO, QQQ, VTI, AGG, GLD) yields a
-profile, daily prices, and dividends — no events or metrics yet.
+profile, daily prices, dividends, and risk metrics — no events yet.
 
 ```python
 from equicast_etf import ETFClient
@@ -327,12 +329,29 @@ not an ETF price. By default covers the current year only, same
 full-history option as prices. Empty for tickers with no dividend history
 (e.g. `GLD`, a gold trust that pays no distribution). `equicast-dividends`
 is the same generic client `equicast-stock` uses, not ETF- or
-stock-specific. Lands in the same bucket as FX/stock data:
+stock-specific.
+
+```python
+MetricsClient("VOO").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX/stock
+```
+
+Only `metrics()` — unlike `equicast-stock`, `equicast-etf` never calls
+`MetricsClient.fundamentals()`. Its valuation ratios (PE, EPS, margins,
+returns, leverage) are earnings/balance-sheet-based and stock-only; checked
+live against several ETFs before deciding this — most fields came back
+`None`, and the few that didn't were an inconsistent yfinance
+aggregate-portfolio figure rather than a genuine fund fundamental. The
+figures that matter for an ETF (expense ratio, NAV, AUM, category,
+YTD/3yr/5yr returns) already live in `profile()` — see
+[equicast-etf's README](packages/etf/README.md#on-metricsparquet) for
+details. The pipeline writes all four as Parquet, landing in the same
+bucket as FX/stock data:
 
 ```
 s3://equicast-market-data-<env>/
 └── etf=VOO/
     ├── profile.parquet
+    ├── metrics.parquet
     ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
     ├── year=2026/price.parquet

@@ -57,3 +57,23 @@ def write_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> l
         year_df.to_parquet(path, index=False)
         written.append(path)
     return written
+
+
+def write_metrics_parquet(metrics: dict[str, Any], ticker: str, output_dir: Path) -> Path:
+    """Write `metrics` to `<output_dir>/etf=<TICKER>/metrics.parquet`.
+
+    Unlike profile()/prices()/dividends(), MetricsClient is generic (keyed by
+    a plain yfinance symbol, not a ticker), so the ticker identification is
+    added here rather than already being present in `metrics`. Only
+    `MetricsClient.metrics()`'s risk/performance fields are written here, not
+    `.fundamentals()` — its valuation ratios (PE, EPS, margins, ...) are
+    stock-only, mostly `None` or unreliable for ETFs, same as `equicast-fx`
+    never calling it either.
+    """
+    record = {"ticker": ticker, **metrics}
+    directory = output_dir / f"etf={ticker}"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "metrics.parquet"
+    pd.DataFrame([record]).to_parquet(path, index=False)
+    return path

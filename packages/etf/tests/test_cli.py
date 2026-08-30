@@ -86,9 +86,33 @@ def _fake_dividends_client_factory(created: list[MagicMock] | None = None):
     return fake_dividends_client
 
 
+def _fake_metrics_client_factory(created: list[MagicMock] | None = None):
+    def fake_metrics_client(symbol: str, datafeed=None) -> MagicMock:
+        client = MagicMock()
+        client.symbol = symbol
+        client.metrics.return_value = {
+            "volatility": 0.13,
+            "sharpe_ratio": 1.55,
+            "max_drawdown": -0.09,
+            "cagr_1y": 0.2,
+            "cagr_2y": 0.19,
+            "cagr_3y": 0.22,
+            "cagr_5y": 0.13,
+            "cagr_10y": 0.15,
+            "last_updated": "2026-08-30T09:00:03+00:00",
+            "source": "equicast",
+        }
+        if created is not None:
+            created.append(client)
+        return client
+
+    return fake_metrics_client
+
+
 def _patch_clients(
     etf_created: list[MagicMock] | None = None,
     dividends_created: list[MagicMock] | None = None,
+    metrics_created: list[MagicMock] | None = None,
 ):
     return (
         patch("equicast_etf.cli.DatafeedClient"),
@@ -97,47 +121,54 @@ def _patch_clients(
             "equicast_etf.cli.DividendsClient",
             side_effect=_fake_dividends_client_factory(dividends_created),
         ),
+        patch(
+            "equicast_etf.cli.MetricsClient",
+            side_effect=_fake_metrics_client_factory(metrics_created),
+        ),
     )
 
 
-def test_run_writes_profile_price_and_dividend_parquet_per_configured_ticker(
+def test_run_writes_profile_price_dividend_and_metrics_parquet_per_configured_ticker(
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "etfs.yaml"
     config.write_text("tickers:\n  - VOO\n  - QQQ\n")
     out_dir = tmp_path / "output"
 
-    datafeed_patch, etf_patch, dividends_patch = _patch_clients()
-    with datafeed_patch, etf_patch, dividends_patch:
+    datafeed_patch, etf_patch, dividends_patch, metrics_patch = _patch_clients()
+    with datafeed_patch, etf_patch, dividends_patch, metrics_patch:
         written = run(config, out_dir)
 
-    assert len(written) == 6  # profile + price + dividend per ticker
+    assert len(written) == 8  # profile + price + dividend + metrics per ticker
     for ticker in ("VOO", "QQQ"):
         assert (out_dir / f"etf={ticker}" / "profile.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "year=2026" / "price.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "year=2026" / "dividend.parquet").exists()
+        assert (out_dir / f"etf={ticker}" / "metrics.parquet").exists()
 
 
 def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
     out_dir = tmp_path / "output"
     tickers_json = '["VOO"]'
 
-    datafeed_patch, etf_patch, dividends_patch = _patch_clients()
-    with datafeed_patch, etf_patch, dividends_patch:
+    datafeed_patch, etf_patch, dividends_patch, metrics_patch = _patch_clients()
+    with datafeed_patch, etf_patch, dividends_patch, metrics_patch:
         written = run(None, out_dir, tickers_json=tickers_json)
 
     assert set(written) == {
         out_dir / "etf=VOO" / "profile.parquet",
         out_dir / "etf=VOO" / "year=2026" / "price.parquet",
         out_dir / "etf=VOO" / "year=2026" / "dividend.parquet",
+        out_dir / "etf=VOO" / "metrics.parquet",
     }
 
 
-def test_run_passes_full_load_through_to_prices_and_dividends(tmp_path: Path) -> None:
+def test_run_passes_full_load_through_to_prices_and_dividends_only(tmp_path: Path) -> None:
     out_dir = tmp_path / "output"
     tickers_json = '["VOO"]'
     etf_created: list[MagicMock] = []
     dividends_created: list[MagicMock] = []
+    metrics_created: list[MagicMock] = []
 
     with (
         patch("equicast_etf.cli.DatafeedClient"),
@@ -146,6 +177,10 @@ def test_run_passes_full_load_through_to_prices_and_dividends(tmp_path: Path) ->
             "equicast_etf.cli.DividendsClient",
             side_effect=_fake_dividends_client_factory(dividends_created),
         ),
+        patch(
+            "equicast_etf.cli.MetricsClient",
+            side_effect=_fake_metrics_client_factory(metrics_created),
+        ),
     ):
         run(None, out_dir, tickers_json=tickers_json, full_load=True)
 
@@ -153,6 +188,8 @@ def test_run_passes_full_load_through_to_prices_and_dividends(tmp_path: Path) ->
     etf_created[0].prices.assert_called_once_with(full_load=True)
     assert len(dividends_created) == 1
     dividends_created[0].dividends.assert_called_once_with(full_load=True)
+    assert len(metrics_created) == 1
+    metrics_created[0].metrics.assert_called_once_with()  # full_load doesn't affect metrics
 
 
 def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
@@ -166,6 +203,9 @@ def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
         patch(
             "equicast_etf.cli.DividendsClient", side_effect=_fake_dividends_client_factory()
         ) as mock_dividends_client,
+        patch(
+            "equicast_etf.cli.MetricsClient", side_effect=_fake_metrics_client_factory()
+        ) as mock_metrics_client,
     ):
         run(config, out_dir, max_workers=2, max_calls=5, period_seconds=2.0)
 
@@ -174,4 +214,6 @@ def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
     for call in mock_client.call_args_list:
         assert call.kwargs["datafeed"] is shared_datafeed
     for call in mock_dividends_client.call_args_list:
+        assert call.kwargs["datafeed"] is shared_datafeed
+    for call in mock_metrics_client.call_args_list:
         assert call.kwargs["datafeed"] is shared_datafeed
