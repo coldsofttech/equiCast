@@ -1,9 +1,9 @@
 # AWS ↔ GitHub OIDC setup
 
 How GitHub Actions authenticates to AWS — for `terraform.yml` (managing
-infrastructure), `deploy.yml` (backend image to ECR, frontend to S3), and
-`fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml` (FX/stock/ETF
-Parquet files to S3, same bucket). This is the detailed reference;
+infrastructure), `deploy.yml` (backend deployment package to Lambda via S3,
+frontend to S3), and `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`
+(FX/stock/ETF Parquet files to S3, same bucket). This is the detailed reference;
 [fx-pipeline.md](fx-pipeline.md) has the quick-start version.
 
 ## Why this is created manually, not by Terraform
@@ -110,16 +110,34 @@ rather than broad account-wide access:
       ]
     },
     {
-      "Sid": "EcrRepositoryManagement",
+      "Sid": "LambdaManagement",
       "Effect": "Allow",
-      "Action": "ecr:*",
-      "Resource": "arn:aws:ecr:*:<AWS_ACCOUNT_ID>:repository/equicast-*"
+      "Action": "lambda:*",
+      "Resource": "arn:aws:lambda:*:<AWS_ACCOUNT_ID>:function:equicast-*"
     },
     {
-      "Sid": "EcrAuth",
+      "Sid": "DynamoDbManagement",
       "Effect": "Allow",
-      "Action": "ecr:GetAuthorizationToken",
-      "Resource": "*"
+      "Action": "dynamodb:*",
+      "Resource": "arn:aws:dynamodb:*:<AWS_ACCOUNT_ID>:table/equicast-*"
+    },
+    {
+      "Sid": "LambdaLogsManagement",
+      "Effect": "Allow",
+      "Action": "logs:*",
+      "Resource": "arn:aws:logs:*:<AWS_ACCOUNT_ID>:log-group:/aws/lambda/equicast-*"
+    },
+    {
+      "Sid": "LambdaExecutionRoleManagement",
+      "Effect": "Allow",
+      "Action": "iam:*",
+      "Resource": "arn:aws:iam::<AWS_ACCOUNT_ID>:role/equicast-*"
+    },
+    {
+      "Sid": "ApiGatewayManagement",
+      "Effect": "Allow",
+      "Action": "apigateway:*",
+      "Resource": "arn:aws:apigateway:*::/apis/*"
     }
   ]
 }
@@ -132,18 +150,37 @@ aws iam put-role-policy \
   --policy-document file://permissions-policy.json
 ```
 
-**On the `s3:*`/`ecr:*` action wildcards**: true action-level least privilege
-for Terraform-managed resources is fragile in practice — the AWS provider's
-drift-detection reads a long, version-dependent list of `Get*`/`List*`
-actions per resource, and hand-picking them tends to break on the next
-provider upgrade. Scoping tightly by **resource** (only `equicast-*` named
-buckets and repos, never the rest of the account) while allowing full
-service actions *within* those resources is the pragmatic middle ground:
-narrow enough that this role can't touch anything outside this project, but
-not so brittle it breaks the next time `terraform plan` reads one more
-attribute. `ecr:GetAuthorizationToken` is the one exception that must stay
-`Resource: "*"` — AWS doesn't support resource-level scoping for it; it's
-only used to authenticate `docker login`, not to act on any repository.
+`put-role-policy` replaces the named inline policy wholesale — re-running it
+with the updated document is the whole update, no separate step to remove
+old statements first.
+
+**On the `s3:*`/`lambda:*`/`dynamodb:*` action wildcards**: true action-level
+least privilege for Terraform-managed resources is fragile in practice — the
+AWS provider's drift-detection reads a long, version-dependent list of
+`Get*`/`List*` actions per resource, and hand-picking them tends to break on
+the next provider upgrade. Scoping tightly by **resource** (only
+`equicast-*` named resources, never the rest of the account) while allowing
+full service actions *within* those resources is the pragmatic middle
+ground: narrow enough that this role can't touch anything outside this
+project, but not so brittle it breaks the next time `terraform plan` reads
+one more attribute.
+
+**On `LambdaExecutionRoleManagement`'s `iam:*`**: this is the one statement
+here that isn't purely self-contained — granting `iam:*` on `equicast-*`
+role names lets this role create/modify *other* `equicast-*`-named IAM
+roles too, not just the one Lambda execution role it's meant for. It's still
+far narrower than `iam:*` account-wide, and needed because Terraform must
+create/manage the Lambda function's execution role, but it's worth naming
+as a real (if scoped) privilege-escalation surface rather than pretending
+resource-name scoping makes IAM management fully self-contained the way it
+does for S3/Lambda/DynamoDB.
+
+**On `ApiGatewayManagement`'s `/apis/*` scoping**: API Gateway's ARN model
+doesn't support naming-convention scoping the way `equicast-*` works for
+other services — an API's ID is only known after it's created, so this is
+scoped to "any HTTP API in this account/region" rather than to
+`equicast-*` specifically. Narrower scoping isn't available for this
+resource type.
 
 ## Step 4: Wire it into the repo
 
@@ -175,15 +212,18 @@ job is missing `permissions: id-token: write`. This must be set explicitly
 on every job that assumes the role; it isn't part of the default permission
 set.
 
-**`AccessDenied` on a specific S3/ECR action** — the resource name doesn't
-match the `equicast-*` pattern the permissions policy scopes to, or it's a
-service/action outside what's granted (e.g. IAM, EC2 — this role has none).
+**`AccessDenied` on a specific S3/Lambda/DynamoDB/API Gateway action** — the
+resource name doesn't match the `equicast-*` pattern the permissions policy
+scopes to, or it's a service/action outside what's granted (e.g. EC2 — this
+role has none).
 
 ## Security notes
 
 - The role trusts only this specific repo (`repo:coldsofttech/equiCast:*`),
   not the whole GitHub org or arbitrary repos.
-- Permissions are scoped to `equicast-*` named S3 buckets and ECR
-  repositories only — nothing else in the account is reachable.
+- Permissions are scoped to `equicast-*` named S3 buckets, Lambda functions,
+  DynamoDB tables, CloudWatch log groups, and IAM roles — plus HTTP APIs in
+  API Gateway, which can't be name-scoped the same way (see the note above).
+  Nothing else in the account is reachable.
 - No credentials are stored anywhere: each workflow run gets its own
   short-lived token (~1 hour), and a new one is issued fresh on every run.

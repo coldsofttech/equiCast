@@ -1,6 +1,7 @@
-# Rough usage estimates so Infracost can price the usage-based parts of S3 and
-# ECR (storage, requests) — by default Infracost assumes zero usage for these,
-# which would understate the real cost of running these buckets/repo.
+# Rough usage estimates so Infracost can price the usage-based parts of S3,
+# Lambda, API Gateway, and DynamoDB (storage, requests, compute) — by default
+# Infracost assumes zero usage for these, which would understate the real
+# cost of running them.
 # These are deliberately rough guesses; tune them as real usage becomes known.
 # Regenerate the exact supported keys for your Infracost CLI version with:
 #   infracost breakdown --config-file=infracost.yml --sync-usage-file
@@ -122,7 +123,34 @@ resource_usage:
       monthly_tier_1_requests: 500 # one `aws s3 sync` per deploy
       monthly_tier_2_requests: 50000 # page loads
 
-  # Backend image. A lifecycle policy caps this repo at the 2 most recently
-  # pushed images, so this is ~2x a single image's size, not unbounded.
-  module.backend_ecr.aws_ecr_repository.this:
-    storage_gb: 2
+  # --- Backend Lambda + API Gateway (no real traffic yet — nothing is wired
+  # to call these in production). Sized against the illustrative planning
+  # scenario worked out for this architecture: 500 monthly active users,
+  # ~20 sessions/user/month, ~5 API calls/session = 50,000 requests/month.
+  # Recompute once real usage is known. ---
+  module.backend_lambda.aws_lambda_function.this:
+    monthly_requests: 50000
+    request_duration_ms: 300 # rough guess pending a real cold/warm measurement
+
+  module.backend_api_gateway.aws_apigatewayv2_api.this:
+    monthly_requests: 50000
+
+  # User profiles table — nothing calls this yet either (Auth0 integration is
+  # later work). Sized the same way: a light profile-lookup pattern, ~1 read
+  # per session plus occasional writes on profile updates.
+  module.user_profiles_table.aws_dynamodb_table.this:
+    monthly_write_request_units: 1000
+    monthly_read_request_units: 10000
+    storage_gb: 0.01
+
+  # Backend deploy artifacts bucket. Real measurement: Phase A's
+  # scripts/build_lambda_package.sh produced a 76.2MB zip. Versioned (so
+  # deploy.yml can promote one exact object version dev -> prod), with a
+  # 30-day noncurrent-version expiration — at a rough ~8 deploys/month during
+  # active development, that's ~8 retained versions at any time (~608MB),
+  # rounded up to 1GB for headroom. Two PUTs per deploy (upload + prod
+  # promotion copy-object).
+  module.backend_deploy_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 1
+      monthly_tier_1_requests: 20
