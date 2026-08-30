@@ -28,25 +28,29 @@ resource_usage:
   #             per-pair footprint above; replace with a real estimate once
   #             known) — plus price.parquet ~20KB (current year only, same
   #             per-year assumption as FX's — full_load isn't passed on
-  #             schedule) = ~65KB/ticker. No metrics yet, unlike FX.
-  #   storage:  9 tickers * 65KB = 585KB
+  #             schedule) — plus metrics.parquet ~15KB (also a placeholder;
+  #             combines equicast-metrics' risk/performance fields with its
+  #             15 stock-only fundamentals, roughly 3x FX's metrics.parquet
+  #             field count, so sized up from FX's ~10KB accordingly) =
+  #             ~80KB/ticker.
+  #   storage:  9 tickers * 80KB = 720KB
   #   schedule: stock-ingestion.yml, cron "0 2,8,14,20 * * *" -> also
   #             ~120 runs/month (4/day, offset 2h from FX so they never
   #             overlap)
-  #   requests: 2 files/ticker (profile + price), all PUT
-  #             120 runs * 9 tickers * 2 files = 2,160 PUTs -> 2,200 (rounded up)
+  #   requests: 3 files/ticker (profile + price + metrics), all PUT
+  #             120 runs * 9 tickers * 3 files = 3,240 PUTs -> 3,300 (rounded up)
   #
   # --- Totals used below ---
-  #   storage:  180KB + 585KB = 765KB (~0.0007GB) -> 0.01GB (rounded up for
+  #   storage:  180KB + 720KB = 900KB (~0.0009GB) -> 0.01GB (rounded up for
   #             headroom). Neither pipeline's figure accounts for
   #             price.parquet accumulating additional year=<YYYY> files as
   #             time passes — bump storage_gb once real multi-year history
   #             has built up for either pipeline.
-  #   requests: 1,500 (FX) + 2,200 (stock) = 3,700
+  #   requests: 1,500 (FX) + 3,300 (stock) = 4,800
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 3700 # PUT/COPY/POST/LIST — FX (1,500) + stock (2,200), both every 6h (offset)
+      monthly_tier_1_requests: 4800 # PUT/COPY/POST/LIST — FX (1,500) + stock (3,300), both every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

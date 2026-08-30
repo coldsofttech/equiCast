@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
-from equicast_stock.writer import write_price_parquet, write_profile_parquet
+from equicast_stock.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 
 
 def test_write_profile_parquet_partitions_by_ticker(tmp_path: Path) -> None:
@@ -109,3 +109,39 @@ def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> No
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_price_parquet([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
+
+
+def test_write_metrics_parquet_adds_ticker_identification(tmp_path: Path) -> None:
+    metrics = {
+        "volatility": 0.24,
+        "sharpe_ratio": 0.81,
+        "max_drawdown": -0.18,
+        "cagr_1y": 0.21,
+        "cagr_2y": 0.15,
+        "cagr_3y": 0.12,
+        "cagr_5y": 0.19,
+        "cagr_10y": 0.22,
+        "trailing_pe": 30.1,
+        "forward_pe": 27.4,
+        "trailing_eps": 6.13,
+        "forward_eps": 6.75,
+        "peg": 2.05,
+        "price_to_book": 45.2,
+        "price_to_sales": 8.1,
+        "ev_ebitda": 21.3,
+        "gross_margin": 0.462,
+        "operating_margin": 0.312,
+        "profit_margin": 0.24,
+        "return_on_equity": 1.52,
+        "return_on_assets": 0.29,
+        "debt_to_equity": 148.6,
+        "free_cash_flow_per_share": 6.42,
+        "last_updated": "2026-08-30T09:00:00+00:00",
+        "source": "yfinance",
+    }
+
+    path = write_metrics_parquet(metrics, "AAPL", tmp_path)
+
+    assert path == tmp_path / "stock=AAPL" / "metrics.parquet"
+    result = pd.read_parquet(path)
+    assert result.to_dict(orient="records") == [{"ticker": "AAPL", **metrics}]

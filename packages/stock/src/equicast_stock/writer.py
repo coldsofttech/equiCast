@@ -29,6 +29,22 @@ def write_profile_parquet(profile: dict[str, Any], output_dir: Path) -> Path:
     return path
 
 
+def write_metrics_parquet(metrics: dict[str, Any], ticker: str, output_dir: Path) -> Path:
+    """Write `metrics` to `<output_dir>/stock=<TICKER>/metrics.parquet`.
+
+    Unlike profile()/prices(), MetricsClient is generic (keyed by a plain
+    yfinance symbol, not a ticker), so the ticker identification is added
+    here rather than already being present in `metrics`.
+    """
+    record = {"ticker": ticker, **metrics}
+    directory = output_dir / f"stock={ticker}"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "metrics.parquet"
+    pd.DataFrame([record]).to_parquet(path, index=False)
+    return path
+
+
 def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Write `records` to one `<output_dir>/stock=<TICKER>/year=<YYYY>/price.parquet` per year."""
     if not records:

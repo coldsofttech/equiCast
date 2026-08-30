@@ -118,12 +118,16 @@ same as `last_updated` (e.g. `"1980-12-12T14:30:00+00:00"`), not just a date.
 
 ## CLI
 
-Reads the stock tickers listed in a config file, fetches a profile and daily
-prices for each, and writes:
+Reads the stock tickers listed in a config file, fetches a profile, daily
+prices, and metrics for each, and writes:
 
 - `<out>/stock=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
   for the current year only by default
+- `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
+  `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
+  max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
+  returns, leverage, FCF/share)
 
 ```bash
 uv run equicast-stock --config config/stocks.yaml --out ./output
@@ -131,7 +135,8 @@ uv run equicast-stock --config config/stocks.yaml --out ./output
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
 for prices, writing one `price.parquet` per year found (current year
-included) — same as `equicast-fx`'s `--full-load`:
+included) — same as `equicast-fx`'s `--full-load`. It does not affect
+`metrics.parquet`:
 
 ```bash
 uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
@@ -140,8 +145,27 @@ uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
 close, average, last_updated, source}` — `currency` comes from a
 `get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
-data). No risk/performance metrics yet, unlike `equicast-fx` (no
-`equicast-metrics` dependency).
+data).
+
+### On `metrics.parquet`
+
+Built from two independent `equicast-metrics` calls on one `MetricsClient`,
+merged into a single row:
+
+- `MetricsClient.metrics()` — generic risk/performance metrics, works the
+  same way as for an FX pair (see [equicast-metrics's
+  README](../metrics/README.md)).
+- `MetricsClient.fundamentals()` — stock-only valuation/fundamental metrics
+  (trailing/forward PE, trailing/forward EPS, PEG, price-to-book,
+  price-to-sales, EV/EBITDA, gross/operating/profit margin, return on
+  equity/assets, debt-to-equity, free cash flow per share). See
+  [equicast-metrics's README](../metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
+  for exactly how each field is sourced/derived.
+
+Both calls compute their own `last_updated`/`source` independently (a moment
+apart); the merge keeps the later `last_updated` and reports `source` as
+`"equicast"` if either call needed to compute anything, `"yfinance"` only if
+every field in both came directly from yfinance's `.info`.
 
 ## Configuration
 

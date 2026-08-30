@@ -15,21 +15,23 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   lands it in S3 as Parquet, ready for downstream analysis.
 - **`equicast-metrics`** — generic risk/performance metrics (volatility,
   Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
-  ticker alike.
-- **Stock data pipeline (`equicast-datafeed`, `equicast-stock`)** — a
-  scheduled pipeline that extracts stock ticker profiles from Yahoo Finance
-  and lands them in the same S3 bucket as Parquet. Only company profiles so
-  far (no daily prices or metrics yet).
+  ticker alike, plus stock-only valuation/fundamental metrics (PE, EPS,
+  margins, returns, leverage).
+- **Stock data pipeline (`equicast-datafeed`, `equicast-metrics`,
+  `equicast-stock`)** — a scheduled pipeline that extracts stock ticker
+  profiles, daily prices, and metrics from Yahoo Finance and lands them in
+  the same S3 bucket as Parquet.
 
 ## Disclaimer
 
-FX profile and price data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
-(Yahoo Finance) for educational and informational purposes only — not
-financial advice, with no guarantee of accuracy, completeness, or
-timeliness. FX metrics (volatility, Sharpe ratio, max drawdown, CAGR) are
-calculated by equicast, not sourced from a licensed provider — validate
-their accuracy yourself before relying on them. Stock profile data is
-sourced the same way via yfinance, with the same caveat. See
+FX and stock profile/price data is sourced via
+[yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
+educational and informational purposes only — not financial advice, with no
+guarantee of accuracy, completeness, or timeliness. FX/stock risk metrics
+(volatility, Sharpe ratio, max drawdown, CAGR) and stock fundamentals (PE,
+EPS, margins, returns, leverage) are calculated by equicast where yfinance
+doesn't provide them directly, not sourced from a licensed provider —
+validate their accuracy yourself before relying on them. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
 [equicast-fx](packages/fx/README.md#disclaimer),
 [equicast-metrics](packages/metrics/README.md#disclaimer), and
@@ -117,8 +119,7 @@ Refreshed every 6 hours automatically.
 ## Stock data products
 
 Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
-TSLA, QCOM, AVGO) yields a profile and daily prices — no risk/performance
-metrics yet.
+TSLA, QCOM, AVGO) yields a profile, daily prices, and metrics.
 
 ```python
 from equicast_stock import StockClient
@@ -158,13 +159,35 @@ StockClient("AAPL").prices()
 
 One row per trading day. By default covers the current year only; a full
 historical load (every year available) can be requested the same way as FX
-— see [the stock pipeline docs](docs/stock-pipeline.md). Lands in the same
-bucket as FX data:
+— see [the stock pipeline docs](docs/stock-pipeline.md).
+
+```python
+MetricsClient("AAPL").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX
+MetricsClient("AAPL").fundamentals()
+# {"trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
+#  "forward_eps": 6.75, "peg": 2.05, "price_to_book": 45.2,
+#  "price_to_sales": 8.1, "ev_ebitda": 21.3, "gross_margin": 0.462,
+#  "operating_margin": 0.312, "profit_margin": 0.24,
+#  "return_on_equity": 1.52, "return_on_assets": 0.29,
+#  "debt_to_equity": 148.6, "free_cash_flow_per_share": 6.42,
+#  "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"}
+```
+
+`fundamentals()` is stock-only — valuation/leverage metrics have no meaning
+for an FX pair, so `equicast-metrics` raises `UnsupportedSymbolError` if
+called with one. See [equicast-metrics's
+README](packages/metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
+for exactly how each field is sourced/derived.
+
+The pipeline writes all three as Parquet, landing in the same bucket as FX
+data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
+`fundamentals()` into one row:
 
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
+    ├── metrics.parquet
     ├── year=2025/price.parquet
     └── year=2026/price.parquet
 ```

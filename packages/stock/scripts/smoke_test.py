@@ -2,7 +2,8 @@
 
 Not part of the automated pytest suite (it hits the real Yahoo Finance API,
 so it doesn't belong in CI) — run manually to sanity-check
-StockClient.profile(), .prices(), and the Parquet writers, end to end.
+StockClient.profile(), .prices(), MetricsClient.metrics()/.fundamentals(),
+and the Parquet writers, end to end.
 
 Usage:
     uv run python scripts/smoke_test.py
@@ -18,9 +19,11 @@ import json
 import sys
 from pathlib import Path
 
+from equicast_metrics import MetricsClient
+from equicast_stock.cli import _combine_metrics
 from equicast_stock.client import StockClient
 from equicast_stock.config import StockTicker, load_stock_tickers
-from equicast_stock.writer import write_price_parquet, write_profile_parquet
+from equicast_stock.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 
 DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "stocks.yaml"
 
@@ -37,7 +40,8 @@ def _parse_tickers(raw: str) -> list[StockTicker]:
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Smoke-test equicast-stock (profile + prices) against live yfinance data."
+        description="Smoke-test equicast-stock (profile + prices + metrics) against live "
+        "yfinance data."
     )
     parser.add_argument(
         "--config",
@@ -85,22 +89,28 @@ def _summarize_prices(records: list[dict]) -> dict:
 
 def run_ticker(ticker: StockTicker, output_format: str, output_dir: Path, full_load: bool) -> None:
     client = StockClient(ticker.ticker)
+    metrics_client = MetricsClient(client.symbol)
     print(f"\n=== {ticker.key} ===")
 
     profile = client.profile()
     prices = client.prices(full_load=full_load)
+    metrics = _combine_metrics(metrics_client.metrics(), metrics_client.fundamentals())
 
     if output_format == "json":
         print(f"\n--- {ticker.key} profile ---")
         print(json.dumps(profile, indent=2, default=str))
         print(f"\n--- {ticker.key} prices (summary; full_load={full_load}) ---")
         print(json.dumps(_summarize_prices(prices), indent=2, default=str))
+        print(f"\n--- {ticker.key} metrics ---")
+        print(json.dumps(metrics, indent=2, default=str))
     else:
         profile_path = write_profile_parquet(profile, output_dir)
         price_paths = write_price_parquet(prices, output_dir)
+        metrics_path = write_metrics_parquet(metrics, ticker.ticker, output_dir)
         print(f"  wrote {profile_path}")
         for path in price_paths:
             print(f"  wrote {path}")
+        print(f"  wrote {metrics_path}")
 
 
 def main() -> None:

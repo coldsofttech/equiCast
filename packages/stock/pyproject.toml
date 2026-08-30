@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "equicast-datafeed",
+    "equicast-metrics",
     "pandas>=2.2",
     "pyarrow>=17.0",
     "pyyaml>=6.0",
@@ -26,6 +27,7 @@ equicast-stock-plan = "equicast_stock.plan:main"
 
 [tool.uv.sources]
 equicast-datafeed = { workspace = true }
+equicast-metrics = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

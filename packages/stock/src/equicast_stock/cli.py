@@ -1,9 +1,14 @@
-"""CLI: extract a profile and daily prices for every configured stock ticker.
+"""CLI: extract a profile, daily prices, and metrics for every configured
+stock ticker.
 
-For each ticker, writes one profile.parquet snapshot and one price.parquet
-per year covered (just the current year by default, or the ticker's full
-yfinance history with --full-load). No metrics yet, unlike equicast-fx, so
-there are two tasks per ticker rather than three.
+For each ticker, writes one profile.parquet snapshot, one price.parquet per
+year covered (just the current year by default, or the ticker's full
+yfinance history with --full-load), and one metrics.parquet snapshot
+combining equicast-metrics' risk/performance metrics (volatility, Sharpe
+ratio, max drawdown, CAGR) with its stock-only valuation/fundamental
+metrics (PE, EPS, margins, returns, leverage, FCF/share). These three
+fetches for a given ticker are independent tasks submitted to the same
+worker pool, so they run concurrently rather than one after the other.
 """
 
 from __future__ import annotations
@@ -14,19 +19,22 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from functools import partial
 from pathlib import Path
+from typing import Any
 
 from equicast_datafeed import DatafeedClient
+from equicast_metrics import MetricsClient
 
 from equicast_stock.client import StockClient
 from equicast_stock.config import StockTicker, load_stock_tickers, parse_stock_tickers_json
-from equicast_stock.writer import write_price_parquet, write_profile_parquet
+from equicast_stock.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 
 logger = logging.getLogger(__name__)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract stock ticker profiles and daily prices, writing both as Parquet."
+        description="Extract stock ticker profiles, daily prices, and metrics, writing all "
+        "three as Parquet."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--config", type=Path, help="Path to a stock tickers YAML config.")
@@ -46,7 +54,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--max-workers",
         type=int,
         default=1,
-        help="Profile/price fetches run concurrently, up to this many at once (default: 1).",
+        help="Profile/price/metrics fetches run concurrently, up to this many at once "
+        "(default: 1).",
     )
     parser.add_argument(
         "--max-calls",
@@ -80,6 +89,28 @@ def _prices_task(client: StockClient, output_dir: Path, key: str, full_load: boo
     return write_price_parquet(client.prices(full_load=full_load), output_dir)
 
 
+def _combine_metrics(risk_metrics: dict[str, Any], fundamentals: dict[str, Any]) -> dict[str, Any]:
+    """Merge MetricsClient.metrics() (risk/performance) and .fundamentals()
+    (valuation) into one metrics.parquet record.
+
+    Both compute their own last_updated/source independently (fetched
+    moments apart), so this reconciles the two into a single pair of each
+    rather than keeping duplicate keys.
+    """
+    combined = {**risk_metrics, **fundamentals}
+    combined["last_updated"] = max(risk_metrics["last_updated"], fundamentals["last_updated"])
+    combined["source"] = (
+        "equicast" if "equicast" in (risk_metrics["source"], fundamentals["source"]) else "yfinance"
+    )
+    return combined
+
+
+def _metrics_task(metrics_client: MetricsClient, output_dir: Path, key: str) -> list[Path]:
+    logger.info("Computing metrics for %s", key)
+    combined = _combine_metrics(metrics_client.metrics(), metrics_client.fundamentals())
+    return [write_metrics_parquet(combined, metrics_client.symbol, output_dir)]
+
+
 def run(
     config: Path | None,
     output_dir: Path,
@@ -95,15 +126,17 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One StockClient per ticker, shared by that ticker's profile and prices
-    # tasks — both only read immutable state and delegate to the
-    # (thread-safe) shared datafeed, so calling them concurrently on one
-    # instance is safe.
+    # One StockClient/MetricsClient per ticker, shared by that ticker's
+    # profile, prices, and metrics tasks — all three only read immutable
+    # state and delegate to the (thread-safe) shared datafeed, so calling
+    # them concurrently on one instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
         client = StockClient(ticker.ticker, datafeed=datafeed)
+        metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, ticker.key))
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
+        tasks.append(partial(_metrics_task, metrics_client, output_dir, ticker.key))
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

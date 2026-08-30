@@ -166,9 +166,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `prices()` makes its own `get_info()` call to read it. The CLI writes one
   `price.parquet` per year covered to
   `stock=<TICKER>/year=<YYYY>/price.parquet`, alongside profile.parquet, via
-  a new `--full-load` flag (same shape as `equicast-fx`'s). Only depends on
-  `equicast-datafeed` still (no `equicast-metrics` yet — risk/performance
-  metrics aren't implemented for stocks).
+  a new `--full-load` flag (same shape as `equicast-fx`'s).
 - `equicast-stock-plan`: a second CLI entry point, identical in shape to
   `equicast-fx-plan`, splitting the configured tickers into chunks (capped
   at 256) for the ingestion workflow's matrix.
@@ -176,13 +174,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `stock-image.yml` workflow.
 - `packages/stock/scripts/smoke_test.py`, mirroring `equicast-fx`'s: a
   manual QA tool (not part of the automated `pytest` suite) exercising
-  `StockClient.profile()`/`.prices()` against live Yahoo Finance data, with
-  `--tickers`, `--format json|parquet`, and `--full-load` options.
+  `StockClient.profile()`/`.prices()`,
+  `MetricsClient.metrics()`/`.fundamentals()`, and the Parquet writers
+  against live Yahoo Finance data, with `--tickers`, `--format json|parquet`,
+  and `--full-load` options.
 - `stock-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
   structured identically to `fx-ingestion.yml` — a `plan` job computing
   chunks via `equicast-stock-plan` and resolving the target
   environment/bucket, and an `ingest` matrix job uploading the resulting
-  profile/price Parquet files to
+  profile/price/metrics Parquet files to
   `s3://equicast-market-data-<env>/stock=<TICKER>/`, with a `full_load`
   input controlling prices' history depth (same shape as `fx-ingestion.yml`'s).
   Shares the bucket and the
@@ -190,11 +190,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` — offset 2 hours from
   FX's `0 */6 * * *` — so the two pipelines never overlap even if a run
   takes longer than expected.
-- `stock-ci.yml`: lint/type-check/test for `equicast-datafeed` and
-  `equicast-stock`, mirroring `fx-ci.yml`.
+- `stock-ci.yml`: lint/type-check/test for `equicast-datafeed`,
+  `equicast-metrics`, and `equicast-stock`, mirroring `fx-ci.yml`.
 - `docs/stock-pipeline.md`, documenting the stock pipeline's architecture,
   local/Docker usage, and scheduled-run inputs (mirrors
   `docs/fx-pipeline.md`).
+- `equicast_datafeed.DatafeedClient.get_balance_sheet()`/`.get_financials()`:
+  fetch a ticker's annual balance sheet/income statement (`yf.Ticker(...).balance_sheet`/
+  `.financials`), through the same rate-limit/retry wrapper as
+  `get_info()`/`get_history()`.
+- `MetricsClient.fundamentals()` (`equicast-metrics`): stock-only
+  valuation/fundamental metrics — trailing/forward PE, trailing/forward EPS,
+  PEG, price-to-book, price-to-sales, EV/EBITDA, gross/operating/profit
+  margin, return on equity/assets, debt-to-equity, and free cash flow per
+  share. For each field, prefers yfinance's `.info` directly, then a ratio
+  built from other `.info` fields, and only as a last resort a line item
+  pulled from the new `get_balance_sheet()`/`get_financials()` calls
+  (fetched lazily, at most once each, since most tickers resolve every field
+  from `.info` alone). PEG falls back to `trailing_pe / (earningsGrowth * 100)`
+  when yfinance doesn't report `trailingPegRatio`/`pegRatio`. Raises the new
+  `equicast_metrics.UnsupportedSymbolError` for an FX symbol (one ending in
+  `"=X"`) — FX pairs have no earnings or balance sheet, so this is
+  `equicast-stock`-only; `equicast-fx` never calls it.
+- `equicast-stock`'s CLI now also computes metrics: a new `_metrics_task`
+  calls both `MetricsClient.metrics()` and `.fundamentals()` and merges them
+  into one `stock=<TICKER>/metrics.parquet` row (via a new
+  `write_metrics_parquet`), reconciling the two independently-computed
+  `last_updated`/`source` pairs into one of each. `equicast-metrics` is now
+  a dependency of `equicast-stock` (`pyproject.toml`, `Dockerfile`,
+  `stock-image.yml`'s path filters).
 
 ### Changed
 
@@ -282,3 +306,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   6-hourly schedule — see that file's comments for the formula.
   `packages/fx/config/fx_pairs.yaml` now points back at it, so the cost
   estimate isn't forgotten the next time the pair list changes.
+- Extended the same `market_data_bucket` estimate with a Stock section,
+  broken out and summed alongside FX's: profile.parquet (~45KB/ticker
+  placeholder) + price.parquet (~20KB/year) + the new metrics.parquet
+  (~15KB/ticker placeholder) against `packages/stock/config/stocks.yaml`'s
+  9 tickers and `stock-ingestion.yml`'s 6-hourly (offset) schedule —
+  `monthly_tier_1_requests` (`3700` → `4800`) now covers both pipelines'
+  three files/run each. `packages/stock/config/stocks.yaml` now points back
+  at it too.

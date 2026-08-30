@@ -68,6 +68,26 @@ def test_get_history_returns_dataframe() -> None:
     assert result == "not-really-a-dataframe"
 
 
+def test_get_balance_sheet_returns_dataframe() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.balance_sheet = "not-really-a-dataframe"
+
+        result = _client().get_balance_sheet("AAPL")
+
+    mock_ticker.assert_called_once_with("AAPL")
+    assert result == "not-really-a-dataframe"
+
+
+def test_get_financials_returns_dataframe() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.financials = "not-really-a-dataframe"
+
+        result = _client().get_financials("AAPL")
+
+    mock_ticker.assert_called_once_with("AAPL")
+    assert result == "not-really-a-dataframe"
+
+
 def test_constructing_client_shows_yfinance_disclaimer_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
