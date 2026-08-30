@@ -1,0 +1,100 @@
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+from equicast_etf.cli import run
+
+
+def _fake_etf_client_factory(created: list[MagicMock] | None = None):
+    def fake_etf_client(ticker: str, datafeed=None) -> MagicMock:
+        client = MagicMock()
+        client.symbol = ticker
+        client.profile.return_value = {
+            "ticker": ticker,
+            "name": f"{ticker} Trust",
+            "quote_type": "ETF",
+            "exchange": "PCX",
+            "currency": "USD",
+            "description": f"{ticker} description.",
+            "category": "Large Blend",
+            "fund_family": "Example Family",
+            "website": "https://example.com",
+            "beta": 1.0,
+            "expense_ratio": 0.03,
+            "dividend_rate": None,
+            "dividend_yield": 0.01,
+            "total_assets": 1000000000,
+            "nav_price": 100.0,
+            "volume": 1000000,
+            "day_open": 100.0,
+            "day_high": 101.0,
+            "day_low": 99.0,
+            "day_close": 100.5,
+            "day_average": 100.0,
+            "year_open": 90.0,
+            "year_high": 110.0,
+            "year_low": 85.0,
+            "year_close": 100.5,
+            "year_average": 97.5,
+            "moving_average_50_days": 99.0,
+            "moving_average_200_days": 95.0,
+            "ytd_return": 5.0,
+            "three_year_average_return": 0.2,
+            "five_year_average_return": 0.15,
+            "inception_date": "2000-01-01T00:00:00+00:00",
+            "last_updated": "2026-08-28T21:29:05+00:00",
+            "source": "yfinance",
+        }
+        if created is not None:
+            created.append(client)
+        return client
+
+    return fake_etf_client
+
+
+def _patch_clients(created: list[MagicMock] | None = None):
+    return (
+        patch("equicast_etf.cli.DatafeedClient"),
+        patch("equicast_etf.cli.ETFClient", side_effect=_fake_etf_client_factory(created)),
+    )
+
+
+def test_run_writes_profile_parquet_per_configured_ticker(tmp_path: Path) -> None:
+    config = tmp_path / "etfs.yaml"
+    config.write_text("tickers:\n  - VOO\n  - QQQ\n")
+    out_dir = tmp_path / "output"
+
+    datafeed_patch, etf_patch = _patch_clients()
+    with datafeed_patch, etf_patch:
+        written = run(config, out_dir)
+
+    assert len(written) == 2  # profile per ticker
+    for ticker in ("VOO", "QQQ"):
+        assert (out_dir / f"etf={ticker}" / "profile.parquet").exists()
+
+
+def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+    tickers_json = '["VOO"]'
+
+    datafeed_patch, etf_patch = _patch_clients()
+    with datafeed_patch, etf_patch:
+        written = run(None, out_dir, tickers_json=tickers_json)
+
+    assert written == [out_dir / "etf=VOO" / "profile.parquet"]
+
+
+def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
+    config = tmp_path / "etfs.yaml"
+    config.write_text("tickers:\n  - VOO\n  - QQQ\n")
+    out_dir = tmp_path / "output"
+
+    with (
+        patch("equicast_etf.cli.DatafeedClient") as mock_datafeed_cls,
+        patch("equicast_etf.cli.ETFClient", side_effect=_fake_etf_client_factory()) as mock_client,
+    ):
+        run(config, out_dir, max_workers=2, max_calls=5, period_seconds=2.0)
+
+    mock_datafeed_cls.assert_called_once_with(max_calls=5, period_seconds=2.0)
+    shared_datafeed = mock_datafeed_cls.return_value
+    for call in mock_client.call_args_list:
+        assert call.kwargs["datafeed"] is shared_datafeed

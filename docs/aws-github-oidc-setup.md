@@ -2,9 +2,9 @@
 
 How GitHub Actions authenticates to AWS — for `terraform.yml` (managing
 infrastructure), `deploy.yml` (backend image to ECR, frontend to S3), and
-`fx-ingestion.yml`/`stock-ingestion.yml` (FX/stock Parquet files to S3, same
-bucket). This is the detailed reference; [fx-pipeline.md](fx-pipeline.md) has
-the quick-start version.
+`fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml` (FX/stock/ETF
+Parquet files to S3, same bucket). This is the detailed reference;
+[fx-pipeline.md](fx-pipeline.md) has the quick-start version.
 
 ## Why this is created manually, not by Terraform
 
@@ -21,7 +21,7 @@ never manages its own trust root.
 
 ## One role, one secret
 
-There's a single IAM role, trusted via OIDC, used identically by all four
+There's a single IAM role, trusted via OIDC, used identically by all five
 workflows:
 
 ```yaml

@@ -6,12 +6,12 @@
 #   infracost breakdown --config-file=infracost.yml --sync-usage-file
 version: 0.1
 resource_usage:
-  # FX + stock profile data (and on-demand backend cache reads) lands here.
-  # Two independent scheduled pipelines write into this one bucket — broken
-  # out per pipeline below, then summed into the storage_gb/
+  # FX + stock + ETF profile data (and on-demand backend cache reads) lands
+  # here. Three independent scheduled pipelines write into this one bucket —
+  # broken out per pipeline below, then summed into the storage_gb/
   # monthly_tier_1_requests values actually used. Recompute a pipeline's own
   # lines if its pair/ticker count or schedule changes materially; the other
-  # pipeline's lines are unaffected.
+  # pipelines' lines are unaffected.
   #
   # --- FX (packages/fx/config/fx_pairs.yaml, currently 4 pairs) ---
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
@@ -45,17 +45,31 @@ resource_usage:
   #             history), all PUT
   #             120 runs * 9 tickers * 5 files = 5,400 PUTs
   #
+  # --- ETF (packages/etf/config/etfs.yaml, currently 5 tickers) ---
+  #   size (real sample, not a placeholder): profile.parquet only (no
+  #   metrics/prices/dividends/events yet, mirroring how equicast-stock
+  #   itself started) — measured ~22-23KB across VOO/QQQ/VTI/AGG/GLD,
+  #   rounded up to 25KB/ticker for headroom.
+  #   storage:  5 tickers * 25KB = 125KB (one snapshot per ticker,
+  #             overwritten each run, same as FX/stock profile.parquet)
+  #   schedule: etf-ingestion.yml, cron "0 4,10,16,22 * * *" -> also
+  #             ~120 runs/month (4/day, offset 4h from FX and 2h from stock
+  #             so none of the three ever overlap)
+  #   requests: 1 file/ticker/run (profile only), PUT
+  #             120 runs * 5 tickers * 1 file = 600 PUTs -> 650 (rounded up)
+  #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650KB = 7,830KB (~0.0078GB) -> 0.01GB (rounded up).
-  #             Recompute the accumulated-years assumption above once actual
-  #             bucket age approaches (or exceeds) 20 years, or once
-  #             --full-load has actually been run and real multi-year sizes
-  #             are known instead of the 20-year projection.
-  #   requests: 1,500 (FX) + 5,400 (stock) = 6,900
+  #   storage:  180KB + 7,650KB + 125KB = 7,955KB (~0.008GB) -> 0.01GB
+  #             (rounded up). Recompute the accumulated-years assumption in
+  #             the stock section once actual bucket age approaches (or
+  #             exceeds) 20 years, or once --full-load has actually been run
+  #             and real multi-year sizes are known instead of the 20-year
+  #             projection.
+  #   requests: 1,500 (FX) + 5,400 (stock) + 650 (ETF) = 7,550
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 6900 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400), both every 6h (offset)
+      monthly_tier_1_requests: 7550 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400) + ETF (650), all every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

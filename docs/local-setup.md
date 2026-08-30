@@ -14,7 +14,8 @@ equiCast/
 │   ├── dividends/       # equicast-dividends: generic dividend history for any equity-like symbol
 │   ├── events/          # equicast-events: generic earnings/ratings/splits for any equity-like symbol
 │   ├── fx/              # equicast-fx: FX pair data extraction, containerized, pushed to GHCR
-│   └── stock/           # equicast-stock: stock ticker data extraction, containerized, pushed to GHCR
+│   ├── stock/           # equicast-stock: stock ticker data extraction, containerized, pushed to GHCR
+│   └── etf/             # equicast-etf: ETF ticker data extraction, containerized, pushed to GHCR
 ├── backend/             # Django REST API (uv workspace member, depends on equicast)
 │   └── market_data/     # Django app exposing market data endpoints
 ├── frontend/            # React (Vite) UI
@@ -33,7 +34,7 @@ installable/publishable distribution with its own `pyproject.toml` — the root
 
 - [uv](https://docs.astral.sh/uv/) for Python dependency and virtualenv management
 - Node.js 22+ for the frontend
-- Docker, if you want to build/run the `equicast-fx`/`equicast-stock` images locally
+- Docker, if you want to build/run the `equicast-fx`/`equicast-stock`/`equicast-etf` images locally
 - Terraform >= 1.7 and AWS credentials, only if you're touching `infra/`
 
 ## One-time workspace setup
@@ -112,6 +113,20 @@ only `equicast-stock` consumes either. See
 against live data with `scripts/smoke_test.py`, build the Docker image, and
 deploy/execute the scheduled ingestion pipeline.
 
+## ETF packages (`equicast-datafeed`, `equicast-etf`)
+
+```bash
+cd packages/datafeed && uv run pytest && uv run mypy src/
+cd ../etf && uv run pytest && uv run mypy src/
+```
+
+Only depends on `equicast-datafeed` so far — `equicast-etf` only implements
+`profile()` (no prices/dividends/events/metrics yet), mirroring how
+`equicast-stock` itself started out. See
+[etf-pipeline.md](etf-pipeline.md) for how to run the CLI, smoke-test
+against live data with `scripts/smoke_test.py`, build the Docker image, and
+deploy/execute the scheduled ingestion pipeline.
+
 ## Infrastructure (Terraform)
 
 ```bash
@@ -136,7 +151,7 @@ uvx pre-commit run --all-files
 ```
 
 Runs ruff, mypy, and pytest (unit) for the core package, Django backend, and
-the datafeed/metrics/dividends/events/fx/stock packages, plus eslint and
+the datafeed/metrics/dividends/events/fx/stock/etf packages, plus eslint and
 vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 
 ## CI/CD workflows
@@ -146,6 +161,7 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 - `stock-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
   `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
   `equicast-stock`
+- `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed` and `equicast-etf`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
   PR comment; on merge to `main`, `apply-dev` runs automatically and
@@ -158,3 +174,5 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
   schedule; see [fx-pipeline.md](fx-pipeline.md) for details
 - `stock-image.yml` / `stock-ingestion.yml` — build the stock pipeline's image and run it
   on a schedule; see [stock-pipeline.md](stock-pipeline.md) for details
+- `etf-image.yml` / `etf-ingestion.yml` — build the ETF pipeline's image and run it
+  on a schedule; see [etf-pipeline.md](etf-pipeline.md) for details

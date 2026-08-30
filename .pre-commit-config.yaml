@@ -130,6 +130,20 @@ repos:
         pass_filenames: false
         files: ^packages/stock/
 
+      - id: mypy-etf
+        name: mypy (equicast-etf)
+        entry: bash -c 'cd packages/etf && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/etf/.*\.py$
+
+      - id: pytest-etf
+        name: pytest (equicast-etf, unit)
+        entry: bash -c 'cd packages/etf && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/etf/
+
       - id: eslint-frontend
         name: eslint (React frontend)
         entry: bash -c 'cd frontend && npm run lint'

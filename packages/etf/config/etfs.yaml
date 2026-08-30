@@ -1,0 +1,13 @@
+# Changing this list changes the market_data_bucket cost estimate (this
+# pipeline shares the bucket with FX/stock). See
+# infra/infracost-usage.yml's module.market_data_bucket.aws_s3_bucket.this
+# comments (ETF section) for the formula — recompute those lines if this
+# list's length changes materially. Diversified across categories rather
+# than issuer: VOO/VTI (US equity, Vanguard), QQQ (large growth, Invesco),
+# AGG (bonds, iShares), GLD (commodity, State Street).
+tickers:
+  - VOO
+  - QQQ
+  - VTI
+  - AGG
+  - GLD

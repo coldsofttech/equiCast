@@ -28,23 +28,32 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   pipeline that extracts stock ticker profiles, daily prices, dividends,
   events, and metrics from Yahoo Finance and lands them in the same S3
   bucket as Parquet.
+- **ETF data pipeline (`equicast-datafeed`, `equicast-etf`)** — a scheduled
+  pipeline that extracts ETF ticker profiles from Yahoo Finance and lands
+  them in the same S3 bucket as Parquet. Only profiles so far (no daily
+  prices, dividends, events, or metrics yet).
 
 ## Disclaimer
 
-FX and stock profile/price data is sourced via
+FX, stock, and ETF profile/price data is sourced via
 [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
 educational and informational purposes only — not financial advice, with no
 guarantee of accuracy, completeness, or timeliness. FX/stock risk metrics
 (volatility, Sharpe ratio, max drawdown, CAGR) and stock fundamentals (PE,
 EPS, margins, returns, leverage) are calculated by equicast where yfinance
 doesn't provide them directly, not sourced from a licensed provider —
-validate their accuracy yourself before relying on them. See
+validate their accuracy yourself before relying on them. An ETF profile's
+`website` field is also equicast's own addition (a small static
+`fund_family` → issuer-website lookup), since yfinance never populates
+`website` for ETFs — see [equicast-etf's README](packages/etf/README.md#on-website)
+for details. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
 [equicast-fx](packages/fx/README.md#disclaimer),
 [equicast-metrics](packages/metrics/README.md#disclaimer),
 [equicast-dividends](packages/dividends/README.md#disclaimer),
-[equicast-events](packages/events/README.md#disclaimer), and
-[equicast-stock](packages/stock/README.md#disclaimer) for the full text;
+[equicast-events](packages/events/README.md#disclaimer),
+[equicast-stock](packages/stock/README.md#disclaimer), and
+[equicast-etf](packages/etf/README.md#disclaimer) for the full text;
 each is also logged as a console warning the first time its client is used.
 
 ## FX data products
@@ -255,6 +264,53 @@ s3://equicast-market-data-<env>/
 Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so
 the two pipelines never overlap.
 
+## ETF data products
+
+Each configured ETF ticker (default: VOO, QQQ, VTI, AGG, GLD) yields a
+profile — the only ETF data product so far, no daily prices, dividends,
+events, or metrics yet.
+
+```python
+from equicast_etf import ETFClient
+
+ETFClient("VOO").profile()
+# {"ticker": "VOO", "name": "Vanguard S&P 500 ETF", "quote_type": "ETF",
+#  "exchange": "PCX", "currency": "USD",
+#  "description": "The fund manager employs an indexing investment approach ...",
+#  "category": "Large Blend", "fund_family": "Vanguard",
+#  "website": "https://www.vanguard.com", "beta": 1.0, "expense_ratio": 0.03,
+#  "dividend_rate": None, "dividend_yield": 0.0107,
+#  "total_assets": 1686884319232, "nav_price": 708.98, "volume": 8067208,
+#  "day_open": 709.39, "day_high": 712.6692, "day_low": 706.26,
+#  "day_close": 707.24, "day_average": 709.4646, "year_open": 588.29,
+#  "year_high": 716.39, "year_low": 578.46, "year_close": 707.24,
+#  "year_average": 647.425, "moving_average_50_days": 693.1996,
+#  "moving_average_200_days": 652.7322, "ytd_return": 10.11602,
+#  "three_year_average_return": 0.2217858, "five_year_average_return": 0.1294499,
+#  "inception_date": "2010-09-07T00:00:00+00:00",
+#  "last_updated": "2026-08-28T20:00:00+00:00", "source": "yfinance"}
+```
+
+An ETF has no company behind it, so `equicast-stock`'s company-specific
+fields (`sector`/`industry`, `market_cap`, `ceos`, `address`/`country`/
+`region`/`full_time_employees`) don't apply here — replaced by fund-specific
+fields (`category`, `total_assets`, `expense_ratio`, `nav_price`,
+`ytd_return`/`three_year_average_return`/`five_year_average_return`,
+`inception_date`). See [equicast-etf's README](packages/etf/README.md#how-this-differs-from-equicast-stocks-profile)
+for the full field-by-field comparison, and how `website`/`beta` are
+derived.
+
+Lands in the same bucket as FX/stock data:
+
+```
+s3://equicast-market-data-<env>/
+└── etf=VOO/
+    └── profile.parquet
+```
+
+Refreshed every 6 hours automatically, offset 4 hours from the FX schedule
+and 2 hours from the stock schedule so none of the three pipelines overlap.
+
 ## Documentation
 
 - [Local setup](docs/local-setup.md) — get every package running on your machine
@@ -262,7 +318,9 @@ the two pipelines never overlap.
   deploy the infrastructure, and run/schedule the ingestion pipeline
 - [Stock pipeline: deployment and execution](docs/stock-pipeline.md) — same,
   for the stock ticker pipeline
+- [ETF pipeline: deployment and execution](docs/etf-pipeline.md) — same,
+  for the ETF ticker pipeline
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock ingestion), and how
-  to troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF ingestion), and
+  how to troubleshoot it
 - [Changelog](CHANGELOG.md)

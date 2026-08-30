@@ -261,6 +261,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mypy`/`pytest` hooks added to `.pre-commit-config.yaml` and
   `docs/local-setup.md` gaining the stock packages' setup instructions it
   was previously missing.
+- `equicast-etf` (`packages/etf/`): new standalone package, mirroring
+  `equicast-stock`'s design but scoped to `profile()` only for now (same
+  starting point `equicast-stock` itself had). `ETFClient(ticker).profile()`
+  returns ticker, name, quote type, exchange, currency, description,
+  category, fund family, website, beta, expense ratio, dividend rate/yield,
+  total assets, NAV price, volume, day/year price range and moving
+  averages, YTD/3yr/5yr average returns, inception date, last updated, and
+  source. Several `equicast-stock` profile fields don't apply to a fund and
+  are dropped (`sector`/`industry`, `market_cap`, `payout_ratio`, `ceos`,
+  `address`/`country`/`region`/`full_time_employees`) or re-sourced from a
+  different yfinance field under the same name (`beta` here comes from
+  yfinance's `beta3Year`, not a plain `beta` — yfinance has none for ETFs;
+  `ipo_date` becomes `inception_date`, sourced from yfinance's
+  `fundInceptionDate` instead of `firstTradeDateMilliseconds`/
+  `firstTradeDateEpochUtc`, though those remain the fallback if
+  `fundInceptionDate` is missing). `website` is the one field not sourced
+  from yfinance at all — yfinance never populates it for ETFs (confirmed
+  empty across Vanguard/iShares/Invesco/State Street/Schwab/BlackRock-issued
+  funds) — so it's looked up from a small static `fund_family` →
+  issuer-website map instead, matched by substring since `fundFamily` itself
+  varies by ticker for the same issuer. Only depends on `equicast-datafeed`
+  (no `equicast-metrics`/`equicast-dividends`/`equicast-events` yet).
+  Configured via `packages/etf/config/etfs.yaml` (VOO, QQQ, VTI, AGG, GLD by
+  default — diversified across categories/issuers rather than picked for
+  any other reason); its CLI writes one Parquet file per ticker to
+  `etf=<TICKER>/profile.parquet`, reading tickers from that config or a
+  `--tickers-json` string.
+- `equicast-etf-plan`: a second CLI entry point, identical in shape to
+  `equicast-stock-plan`, splitting the configured tickers into chunks
+  (capped at 256) for the ingestion workflow's matrix.
+- `packages/etf/Dockerfile`, built and pushed to GHCR as a private image via
+  the new `etf-image.yml` workflow.
+- `packages/etf/scripts/smoke_test.py`, mirroring `equicast-stock`'s (the
+  profile-only version): a manual QA tool (not part of the automated
+  `pytest` suite) exercising `ETFClient.profile()` and the Parquet writer
+  against live Yahoo Finance data, with `--tickers` and
+  `--format json|parquet` options.
+- `etf-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
+  structured identically to `fx-ingestion.yml`/`stock-ingestion.yml` — a
+  `plan` job computing chunks via `equicast-etf-plan` and resolving the
+  target environment/bucket, and an `ingest` matrix job uploading the
+  resulting Parquet files to `s3://equicast-market-data-<env>/etf=<TICKER>/`.
+  Shares the bucket and the `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD`
+  variables with `fx-ingestion.yml`/`stock-ingestion.yml`. Scheduled at
+  `0 4,10,16,22 * * *` — offset 4 hours from FX's `0 */6 * * *` and 2 hours
+  from stock's `0 2,8,14,20 * * *` — so none of the three pipelines overlap
+  even if a run takes longer than expected.
+- `etf-ci.yml`: lint/type-check/test for `equicast-datafeed` and
+  `equicast-etf`, mirroring `stock-ci.yml`.
+- `docs/etf-pipeline.md`, documenting the ETF pipeline's architecture,
+  local/Docker usage, and scheduled-run inputs (mirrors
+  `docs/stock-pipeline.md`).
+- Added an ETF section to `infra/infracost-usage.yml`'s
+  `module.market_data_bucket.aws_s3_bucket.this` estimate, sized from real
+  per-file measurements (profile.parquet ~22-23KB across the 5 configured
+  tickers, rounded to 25KB/ticker) rather than a placeholder, following the
+  same real-sample approach the Stock section was re-sized to use.
 
 ### Changed
 
