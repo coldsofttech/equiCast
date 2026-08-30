@@ -145,11 +145,11 @@ resource_usage:
 
   # Backend deploy artifacts bucket. Real measurement: Phase A's
   # scripts/build_lambda_package.sh produced a 76.2MB zip. Versioned (so
-  # deploy.yml can promote one exact object version dev -> prod), with a
-  # 30-day noncurrent-version expiration — at a rough ~8 deploys/month during
-  # active development, that's ~8 retained versions at any time (~608MB),
-  # rounded up to 1GB for headroom. Two PUTs per deploy (upload + prod
-  # promotion copy-object).
+  # deploy.yml can promote one exact object version dev -> prod), no
+  # lifecycle expiration — every deploy adds another ~76MB version, so this
+  # grows unbounded; 1GB is a rough near-term estimate, revisit once real
+  # deploy cadence is known. Two PUTs per deploy (upload + prod promotion
+  # copy-object).
   module.backend_deploy_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 1

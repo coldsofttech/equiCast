@@ -18,14 +18,12 @@ module "market_data_bucket" {
 # Stages the backend's zip deployment package for Lambda to read from —
 # needed either way since the real zip is well over the 50MB direct-upload
 # limit. Versioned so deploy.yml can promote one exact object version from
-# dev to prod (copy-object) rather than rebuilding; the 30-day expiration
-# bounds growth, since every deploy adds another ~76MB version.
+# dev to prod (copy-object) rather than rebuilding.
 module "backend_deploy_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name                        = "${var.project_name}-backend-deploy-${var.environment}"
-  versioning                         = true
-  noncurrent_version_expiration_days = 30
+  bucket_name = "${var.project_name}-backend-deploy-${var.environment}"
+  versioning  = true
 }
 
 # Minimal user-profile store (see docs/ discussion: DynamoDB holds only the

@@ -86,7 +86,7 @@ can assume it:
 
 ```bash
 aws iam create-role \
-  --role-name equicast-github-actions \
+  --role-name equicast-github-actions-role \
   --assume-role-policy-document file://trust-policy.json
 ```
 
@@ -125,7 +125,10 @@ rather than broad account-wide access:
       "Sid": "LambdaLogsManagement",
       "Effect": "Allow",
       "Action": "logs:*",
-      "Resource": "arn:aws:logs:*:<AWS_ACCOUNT_ID>:log-group:/aws/lambda/equicast-*"
+      "Resource": [
+        "arn:aws:logs:*:<AWS_ACCOUNT_ID>:log-group:/aws/lambda/equicast-*",
+        "arn:aws:logs:*:<AWS_ACCOUNT_ID>:log-group::log-stream:"
+      ]
     },
     {
       "Sid": "LambdaExecutionRoleManagement",
@@ -137,7 +140,10 @@ rather than broad account-wide access:
       "Sid": "ApiGatewayManagement",
       "Effect": "Allow",
       "Action": "apigateway:*",
-      "Resource": "arn:aws:apigateway:*::/apis/*"
+      "Resource": [
+        "arn:aws:apigateway:*::/apis",
+        "arn:aws:apigateway:*::/apis/*"
+      ]
     }
   ]
 }
@@ -145,7 +151,7 @@ rather than broad account-wide access:
 
 ```bash
 aws iam put-role-policy \
-  --role-name equicast-github-actions \
+  --role-name equicast-github-actions-role \
   --policy-name equicast-github-actions-permissions \
   --policy-document file://permissions-policy.json
 ```
@@ -175,17 +181,33 @@ as a real (if scoped) privilege-escalation surface rather than pretending
 resource-name scoping makes IAM management fully self-contained the way it
 does for S3/Lambda/DynamoDB.
 
-**On `ApiGatewayManagement`'s `/apis/*` scoping**: API Gateway's ARN model
-doesn't support naming-convention scoping the way `equicast-*` works for
-other services — an API's ID is only known after it's created, so this is
-scoped to "any HTTP API in this account/region" rather than to
+**On `ApiGatewayManagement`'s `/apis`/`/apis/*` scoping**: API Gateway's ARN
+model doesn't support naming-convention scoping the way `equicast-*` works
+for other services — an API's ID is only known after it's created, so this
+is scoped to "any HTTP API in this account/region" rather than to
 `equicast-*` specifically. Narrower scoping isn't available for this
-resource type.
+resource type. Both the bare `/apis` and the `/apis/*` resource are needed:
+`CreateApi` (`apigateway:POST`) authorizes against the parent collection
+path `/apis` (there's no API ID yet to match `/apis/*` against), while
+every other action — reading/updating/deleting a specific API, its routes,
+integrations, stages — authorizes against `/apis/{api-id}`, matched by
+`/apis/*`. Terraform's own `plan`/`refresh` needs the latter even before
+`apply` creates anything, so both must be present from the start.
+
+**On `LambdaLogsManagement`'s extra `log-group::log-stream:` resource**:
+`logs:DescribeLogGroups` is a list action — CloudWatch Logs doesn't expose
+resource-level permissions for it the normal way, and AWS's own
+documentation for this action requires exactly this fixed placeholder ARN
+(literal double colon, empty log group name, trailing `:log-stream:`)
+rather than the `/aws/lambda/equicast-*`-prefixed one used for everything
+else in this statement. Terraform reads the log group via this call before
+`aws_cloudwatch_log_group` exists, so it's needed even on a from-scratch
+`plan`/`apply`.
 
 ## Step 4: Wire it into the repo
 
 - Settings → Secrets and variables → Actions → **New repository secret**:
-  `AWS_ROLE_ARN` = `arn:aws:iam::<AWS_ACCOUNT_ID>:role/equicast-github-actions`
+  `AWS_ROLE_ARN` = `arn:aws:iam::<AWS_ACCOUNT_ID>:role/equicast-github-actions-role`
 - Settings → Secrets and variables → Actions → **Variables** tab (optional):
   `AWS_REGION` if not `eu-west-1`
 
