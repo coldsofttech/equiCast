@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `equicast-events` (`packages/events/`): standalone, generic package for
+  corporate events (earnings reports, analyst rating changes, stock splits)
+  on any yfinance equity-like symbol, built the same way as
+  `equicast-dividends`/`equicast-metrics`. `equicast-stock`'s CLI now writes
+  `stock=<TICKER>/year=<YYYY>/events.parquet` alongside price/dividend,
+  combining all three event types into one file per year via an
+  `event_type` discriminator column.
+- `equicast-datafeed`: `get_earnings_dates`, `get_upgrades_downgrades`, and
+  `get_splits`, backing `equicast-events`.
 - Educational-use disclaimers, documented in each package's README
   (`equicast-datafeed`, `equicast-fx`: yfinance-sourced data, not financial
   advice; `equicast-metrics`: calculated by equicast, validate accuracy

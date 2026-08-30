@@ -4,6 +4,7 @@ members = [
     "packages/datafeed",
     "packages/metrics",
     "packages/dividends",
+    "packages/events",
     "packages/fx",
     "packages/stock",
     "backend",

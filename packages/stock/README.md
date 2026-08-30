@@ -119,14 +119,18 @@ same as `last_updated` (e.g. `"1980-12-12T14:30:00+00:00"`), not just a date.
 ## CLI
 
 Reads the stock tickers listed in a config file, fetches a profile, daily
-prices, dividends, and metrics for each, and writes:
+prices, dividends, events, and metrics for each, and writes:
 
 - `<out>/stock=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
   for the current year only by default
 - `<out>/stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
-  ex-dividend date, for the current year only by default (empty for tickers
-  with no dividend history)
+  ex-dividend date, this year to date by default (empty for tickers with no
+  dividend history)
+- `<out>/stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event
+  (earnings report, analyst rating change, stock split), this year to date
+  plus any future-dated entries by default (empty for tickers/years with
+  none of the three)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
@@ -137,9 +141,10 @@ uv run equicast-stock --config config/stocks.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices and dividends, writing one `price.parquet`/`dividend.parquet` per
-year found (current year included) — same as `equicast-fx`'s `--full-load`.
-It does not affect `metrics.parquet`:
+for prices, dividends, and events, writing one
+`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
+year included) — same as `equicast-fx`'s `--full-load`. It does not affect
+`metrics.parquet`:
 
 ```bash
 uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
@@ -164,6 +169,21 @@ stock price. There's no `payment_date` field — yfinance's dividend history
 only has ex-dividend date and amount, for any ticker, at any point in
 history; see equicast-dividends's README for details. Tickers with no
 dividend history simply produce no `dividend.parquet` file for that year.
+
+### On `events.parquet`
+
+Written from [`equicast-events`](../events/README.md)' `EventsClient` — a
+generic client (not part of `StockClient`), built the same way
+`equicast-dividends`' `DividendsClient` is, so it's reusable by any future
+asset-class package.
+
+Records are shaped `{ticker, event_type, date, eps_estimate, reported_eps,
+surprise_pct, firm, from_grade, to_grade, action, ratio, last_updated,
+source}`, combining three distinct event types (earnings reports, analyst
+rating changes, stock splits) into one file per year — `event_type` says
+which, and only that type's fields are populated (the rest `None`). See
+equicast-events's README for exactly how each type is sourced. Tickers/years
+with none of the three simply produce no `events.parquet` file.
 
 ### On `metrics.parquet`
 

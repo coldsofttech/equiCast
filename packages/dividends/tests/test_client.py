@@ -86,7 +86,7 @@ def test_dividends_returns_one_record_per_ex_dividend_date() -> None:
     assert records[0]["last_updated"] == records[1]["last_updated"]
 
 
-def test_dividends_defaults_to_current_year_only() -> None:
+def test_dividends_default_excludes_prior_years() -> None:
     this_year = datetime.now(UTC).year
     dividends = _dividends_series([(f"{this_year - 1}-11-10", 0.25), (f"{this_year}-02-10", 0.26)])
     client = DividendsClient("AAPL", datafeed=_datafeed({}, dividends))
@@ -94,6 +94,24 @@ def test_dividends_defaults_to_current_year_only() -> None:
     records = client.dividends()
 
     assert [r["ex_dividend_date"] for r in records] == [f"{this_year}-02-10"]
+
+
+def test_dividends_default_includes_future_dated_entries() -> None:
+    # Default is year-to-date *and beyond* (`index.year >= this year`, not
+    # `== this year`) - a no-op in practice since yfinance's dividend data
+    # has no forward-looking entries (see DividendsClient.dividends()'s
+    # docstring), but this locks in the filter's intended direction rather
+    # than relying on that absence.
+    this_year = datetime.now(UTC).year
+    dividends = _dividends_series([(f"{this_year}-02-10", 0.26), (f"{this_year + 1}-01-15", 0.27)])
+    client = DividendsClient("AAPL", datafeed=_datafeed({}, dividends))
+
+    records = client.dividends()
+
+    assert [r["ex_dividend_date"] for r in records] == [
+        f"{this_year}-02-10",
+        f"{this_year + 1}-01-15",
+    ]
 
 
 def test_dividends_full_load_returns_every_year() -> None:

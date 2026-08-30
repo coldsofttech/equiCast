@@ -98,6 +98,37 @@ def test_get_financials_returns_dataframe() -> None:
     assert result == "not-really-a-dataframe"
 
 
+def test_get_earnings_dates_returns_dataframe() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.get_earnings_dates.return_value = "not-really-a-dataframe"
+
+        result = _client().get_earnings_dates("AAPL", limit=8)
+
+    mock_ticker.assert_called_once_with("AAPL")
+    mock_ticker.return_value.get_earnings_dates.assert_called_once_with(limit=8)
+    assert result == "not-really-a-dataframe"
+
+
+def test_get_upgrades_downgrades_returns_dataframe() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.upgrades_downgrades = "not-really-a-dataframe"
+
+        result = _client().get_upgrades_downgrades("AAPL")
+
+    mock_ticker.assert_called_once_with("AAPL")
+    assert result == "not-really-a-dataframe"
+
+
+def test_get_splits_returns_series() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.splits = "not-really-a-series"
+
+        result = _client().get_splits("AAPL")
+
+    mock_ticker.assert_called_once_with("AAPL")
+    assert result == "not-really-a-series"
+
+
 def test_constructing_client_shows_yfinance_disclaimer_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

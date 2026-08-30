@@ -38,11 +38,17 @@ class DividendsClient:
         """Return one record per ex-dividend date: {ticker, currency,
         ex_dividend_date, price, last_updated, source}.
 
-        By default covers this calendar year only, even though yfinance's
-        dividend data has no period parameter like `history()` does (the
-        full series is fetched in one call regardless; this filters the
-        already-fetched result by year, for consistency with how prices()
-        elsewhere defaults to the current year). With `full_load=True`,
+        By default covers this calendar year to date plus any future-dated
+        entries (`index.year >= this year`, not `== this year`), even
+        though yfinance's dividend data has no period parameter like
+        `history()` does (the full series is fetched in one call
+        regardless; this filters the already-fetched result by year). In
+        practice this is a no-op today - yfinance's dividend history is
+        derived from price-history data, which never has a date past
+        today, so there's nothing to include beyond this year - but keeps
+        the filter honest (year-to-date-and-beyond, not merely
+        "this calendar year") should that ever change, and matches
+        `EventsClient.events()`'s same convention. With `full_load=True`,
         covers this symbol's entire dividend history instead.
 
         yfinance's dividend history only has ex-dividend date and cash
@@ -54,7 +60,7 @@ class DividendsClient:
 
         if not full_load and not dividends.empty:
             current_year = datetime.now(UTC).year
-            dividends = dividends[dividends.index.year == current_year]
+            dividends = dividends[dividends.index.year >= current_year]
 
         records = []
         for ex_dividend_date, amount in dividends.items():

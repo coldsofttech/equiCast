@@ -61,6 +61,29 @@ class DatafeedClient:
         """Return `symbol`'s annual income statement, most-recent period in the first column."""
         return self._call(lambda: yf.Ticker(symbol).financials, symbol)
 
+    def get_earnings_dates(self, symbol: str, limit: int = 12) -> pd.DataFrame:
+        """Return up to `limit` of `symbol`'s earnings dates (yfinance caps
+        this at 100), indexed by earnings date, mixing already-reported rows
+        (EPS Estimate/Reported EPS/Surprise(%) all populated) with upcoming
+        estimated ones (Reported EPS/Surprise(%) still NaN) - yfinance has no
+        separate call for each, only this one combined, most-recent-first
+        list capped by row count rather than a date range."""
+        return self._call(lambda: yf.Ticker(symbol).get_earnings_dates(limit=limit), symbol)
+
+    def get_upgrades_downgrades(self, symbol: str) -> pd.DataFrame:
+        """Return `symbol`'s full analyst rating-change history reported by
+        yfinance (firm, from/to grade, action), indexed by grade date. This
+        is inherently a historical log - each row is a past rating-change
+        event - so there's no forward-looking equivalent the way earnings
+        dates has estimated future rows."""
+        return self._call(lambda: yf.Ticker(symbol).upgrades_downgrades, symbol)
+
+    def get_splits(self, symbol: str) -> pd.Series:
+        """Return `symbol`'s historical stock splits: a Series of split
+        ratio (e.g. 4.0 for a 4-for-1 split, 0.5 for a 1-for-2 reverse
+        split), indexed by split date."""
+        return self._call(lambda: yf.Ticker(symbol).splits, symbol)
+
     def _call(self, fetch: Any, symbol: str) -> Any:
         self._rate_limiter.acquire()
 
