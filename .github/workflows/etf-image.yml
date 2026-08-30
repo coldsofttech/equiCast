@@ -1,0 +1,42 @@
+name: Build ETF Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/etf/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/etf-image.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push equicast-etf (private)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/etf/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/equicast-etf:latest
+            ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ github.sha }}
