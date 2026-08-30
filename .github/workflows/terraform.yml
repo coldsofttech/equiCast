@@ -137,7 +137,7 @@ jobs:
     needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    environment: dev
+    environment: development
     permissions:
       id-token: write
       contents: read
