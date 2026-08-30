@@ -107,26 +107,30 @@ cd ../stock && uv run pytest && uv run mypy src/
 ```
 
 `equicast-dividends`/`equicast-events` are generic (any yfinance
-equity-like symbol), built the same way as `equicast-metrics` — currently
-only `equicast-stock` consumes either. See
+equity-like symbol), built the same way as `equicast-metrics` —
+`equicast-stock` and `equicast-etf` both consume both. See
 [stock-pipeline.md](stock-pipeline.md) for how to run the CLI, smoke-test
 against live data with `scripts/smoke_test.py`, build the Docker image, and
 deploy/execute the scheduled ingestion pipeline.
 
-## ETF packages (`equicast-datafeed`, `equicast-metrics`, `equicast-dividends`, `equicast-etf`)
+## ETF packages (`equicast-datafeed`, `equicast-metrics`, `equicast-dividends`, `equicast-events`, `equicast-etf`)
 
 ```bash
 cd packages/datafeed && uv run pytest && uv run mypy src/
 cd ../metrics && uv run pytest && uv run mypy src/
 cd ../dividends && uv run pytest && uv run mypy src/
+cd ../events && uv run pytest && uv run mypy src/
 cd ../etf && uv run pytest && uv run mypy src/
 ```
 
 `equicast-etf` implements `profile()`, `prices()`, dividends (via the same
 generic `equicast-dividends`' `DividendsClient` that `equicast-stock`
-uses), and risk metrics (via `equicast-metrics`' `MetricsClient.metrics()`,
-not `.fundamentals()` — stock-only) — no events yet, mirroring how
-`equicast-stock` itself started out. See
+uses), events (via the same generic `equicast-events`' `EventsClient` —
+in practice only ever produces `"split"` rows for an ETF, since yfinance
+has no earnings/analyst coverage for a fund), and risk metrics (via
+`equicast-metrics`' `MetricsClient.metrics()`, not `.fundamentals()` —
+stock-only, since valuation ratios don't apply to a fund the way they do a
+company). See
 [etf-pipeline.md](etf-pipeline.md) for how to run the CLI, smoke-test
 against live data with `scripts/smoke_test.py`, build the Docker image, and
 deploy/execute the scheduled ingestion pipeline.
@@ -166,7 +170,8 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
   `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
   `equicast-stock`
 - `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, and `equicast-etf`
+  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
+  `equicast-etf`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
   PR comment; on merge to `main`, `apply-dev` runs automatically and

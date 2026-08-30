@@ -729,6 +729,7 @@ source = { editable = "packages/etf" }
 dependencies = [
     { name = "equicast-datafeed" },
     { name = "equicast-dividends" },
+    { name = "equicast-events" },
     { name = "equicast-metrics" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -748,6 +749,7 @@ dev = [
 requires-dist = [
     { name = "equicast-datafeed", editable = "packages/datafeed" },
     { name = "equicast-dividends", editable = "packages/dividends" },
+    { name = "equicast-events", editable = "packages/events" },
     { name = "equicast-metrics", editable = "packages/metrics" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },

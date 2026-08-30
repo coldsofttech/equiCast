@@ -318,8 +318,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `profile()`, so there was no gap for a `fundamentals()`-style tier to
   fill. `equicast-metrics` is now a dependency of `equicast-etf`
   (`pyproject.toml`, `Dockerfile`, `etf-ci.yml`'s/`etf-image.yml`'s path
-  filters). Only depends on `equicast-datafeed`/`equicast-metrics`/
-  `equicast-dividends` still (no `equicast-events` yet).
+  filters).
+- Wired `equicast-events` into `equicast-etf`: a new `_events_task` in the
+  CLI writes `etf=<TICKER>/year=<YYYY>/events.parquet` per year covered
+  (via a new `write_events_parquet`, using the same pinned pyarrow
+  `_EVENTS_SCHEMA` as `equicast-stock`'s — kept as its own copy since
+  `equicast_stock` isn't a dependency of `equicast_etf`), reusing the same
+  `--full-load` flag as prices/dividends. `EventsClient` is the same
+  generic, symbol-keyed client `equicast-stock` already consumes. Checked
+  live for all 5 configured tickers first: `earnings`/`rating` event types
+  are always empty for an ETF (no earnings reports or analyst coverage for
+  a fund), so `events.parquet` in practice only ever has `"split"` rows —
+  but those are real: VOO (2013), QQQ (2000, 2-for-1), and VTI (2008,
+  2-for-1) each have exactly one in their full yfinance history; AGG and
+  GLD have none. `equicast-events` is now a dependency of `equicast-etf`
+  (`pyproject.toml`, `Dockerfile`, `etf-ci.yml`'s/`etf-image.yml`'s path
+  filters).
 - `equicast-etf-plan`: a second CLI entry point, identical in shape to
   `equicast-stock-plan`, splitting the configured tickers into chunks
   (capped at 256) for the ingestion workflow's matrix.
@@ -328,16 +342,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `packages/etf/scripts/smoke_test.py`, mirroring `equicast-stock`'s: a
   manual QA tool (not part of the automated `pytest` suite) exercising
   `ETFClient.profile()`/`.prices()`, `DividendsClient.dividends()`,
-  `MetricsClient.metrics()`, and the Parquet writers against live Yahoo
-  Finance data, with `--tickers`, `--format json|parquet`, and
-  `--full-load` options.
+  `EventsClient.events()`, `MetricsClient.metrics()`, and the Parquet
+  writers against live Yahoo Finance data, with `--tickers`,
+  `--format json|parquet`, and `--full-load` options.
 - `etf-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
   structured identically to `fx-ingestion.yml`/`stock-ingestion.yml` — a
   `plan` job computing chunks via `equicast-etf-plan` and resolving the
   target environment/bucket, and an `ingest` matrix job uploading the
-  resulting profile/price/dividend/metrics Parquet files to
+  resulting profile/price/dividend/events/metrics Parquet files to
   `s3://equicast-market-data-<env>/etf=<TICKER>/`, with a `full_load` input
-  controlling prices'/dividends' history depth (same shape as
+  controlling prices'/dividends'/events' history depth (same shape as
   `fx-ingestion.yml`'s/`stock-ingestion.yml`'s). Shares the bucket and the
   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
   `fx-ingestion.yml`/`stock-ingestion.yml`. Scheduled at `0 4,10,16,22 * * *`
@@ -345,8 +359,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `0 2,8,14,20 * * *` — so none of the three pipelines overlap even if a run
   takes longer than expected.
 - `etf-ci.yml`: lint/type-check/test for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, and `equicast-etf`, mirroring
-  `stock-ci.yml`.
+  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
+  `equicast-etf`, mirroring `stock-ci.yml`.
 - `docs/etf-pipeline.md`, documenting the ETF pipeline's architecture,
   local/Docker usage, and scheduled-run inputs (mirrors
   `docs/stock-pipeline.md`).
@@ -357,8 +371,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   figure the Stock section uses; dividend.parquet ~4KB for a partial year
   across VOO/QQQ/VTI/AGG — GLD pays none — scaling to ~5KB/year, smaller
   than the Stock section's assumed 10KB/year since ETF distributions here
-  carry no other per-row fields; metrics.parquet ~6.7KB, identical across
-  tickers since the schema is fixed, notably smaller than the Stock
+  carry no other per-row fields; events.parquet ~7.2KB per file that
+  actually exists — modeled as up to 1 accumulated file per ticker rather
+  than one per year like price/dividend, since splits are rare (3 of 5
+  configured tickers have exactly one split ever, not one per year);
+  metrics.parquet ~6.7KB, identical across tickers since the schema is
+  fixed, notably smaller than the Stock
   section's 20KB since it's risk/performance only, no fundamentals) rather
   than a placeholder, following the same real-sample approach the Stock
   section was re-sized to use.

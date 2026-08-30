@@ -1,14 +1,18 @@
-"""CLI: extract a profile, daily prices, dividends, and risk metrics for
-every configured ETF ticker.
+"""CLI: extract a profile, daily prices, dividends, events, and risk
+metrics for every configured ETF ticker.
 
-For each ticker, writes one profile.parquet snapshot, one price.parquet/
-dividend.parquet per year covered (just the current year by default, or the
-ticker's full yfinance history with --full-load), and one metrics.parquet
-snapshot (volatility, Sharpe ratio, max drawdown, CAGR). No events yet,
-unlike equicast-stock, and metrics.parquet only carries
-MetricsClient.metrics() - not .fundamentals(), which is stock-only and
-mostly None/unreliable for ETFs - so there are four tasks per ticker rather
-than five.
+For each ticker, writes one profile.parquet snapshot, one price.parquet,
+dividend.parquet, and events.parquet per year covered (just the current
+year by default, or the ticker's full yfinance history with --full-load),
+and one metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown,
+CAGR). metrics.parquet only carries MetricsClient.metrics() - not
+.fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
+events.parquet in practice only ever has "split" rows for an ETF ticker -
+earnings/analyst-rating events are always empty, since yfinance has no
+earnings or analyst coverage for a fund - but splits are real (e.g. QQQ's
+2000 2-for-1, VTI's 2008 2-for-1). These five fetches for a given ticker
+are independent tasks submitted to the same worker pool, so they run
+concurrently rather than one after the other.
 """
 
 from __future__ import annotations
@@ -22,12 +26,14 @@ from pathlib import Path
 
 from equicast_datafeed import DatafeedClient
 from equicast_dividends import DividendsClient
+from equicast_events import EventsClient
 from equicast_metrics import MetricsClient
 
 from equicast_etf.client import ETFClient
 from equicast_etf.config import ETFTicker, load_etf_tickers, parse_etf_tickers_json
 from equicast_etf.writer import (
     write_dividend_parquet,
+    write_events_parquet,
     write_metrics_parquet,
     write_price_parquet,
     write_profile_parquet,
@@ -38,8 +44,8 @@ logger = logging.getLogger(__name__)
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Extract ETF ticker profiles, daily prices, dividends, and risk metrics, "
-        "writing all four as Parquet."
+        description="Extract ETF ticker profiles, daily prices, dividends, events, and risk "
+        "metrics, writing all five as Parquet."
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--config", type=Path, help="Path to an ETF tickers YAML config.")
@@ -53,14 +59,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--full-load",
         action="store_true",
-        help="Fetch each ticker's entire yfinance history instead of just the current year.",
+        help="Fetch each ticker's entire yfinance history (prices, dividends, and events) "
+        "instead of just the current year.",
     )
     parser.add_argument(
         "--max-workers",
         type=int,
         default=1,
-        help="Profile/price/dividend/metrics fetches run concurrently, up to this many at "
-        "once (default: 1).",
+        help="Profile/price/dividend/events/metrics fetches run concurrently, up to this "
+        "many at once (default: 1).",
     )
     parser.add_argument(
         "--max-calls",
@@ -101,6 +108,13 @@ def _dividends_task(
     return write_dividend_parquet(dividends_client.dividends(full_load=full_load), output_dir)
 
 
+def _events_task(
+    events_client: EventsClient, output_dir: Path, key: str, full_load: bool
+) -> list[Path]:
+    logger.info("Fetching events for %s (full_load=%s)", key, full_load)
+    return write_events_parquet(events_client.events(full_load=full_load), output_dir)
+
+
 def _metrics_task(metrics_client: MetricsClient, output_dir: Path, key: str) -> list[Path]:
     logger.info("Computing metrics for %s", key)
     return [write_metrics_parquet(metrics_client.metrics(), metrics_client.symbol, output_dir)]
@@ -121,18 +135,21 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One ETFClient/DividendsClient/MetricsClient per ticker, shared by that
-    # ticker's profile, prices, dividends, and metrics tasks — all four only
-    # read immutable state and delegate to the (thread-safe) shared
-    # datafeed, so calling them concurrently on one instance is safe.
+    # One ETFClient/DividendsClient/EventsClient/MetricsClient per ticker,
+    # shared by that ticker's profile, prices, dividends, events, and
+    # metrics tasks — all five only read immutable state and delegate to
+    # the (thread-safe) shared datafeed, so calling them concurrently on one
+    # instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
         client = ETFClient(ticker.ticker, datafeed=datafeed)
         dividends_client = DividendsClient(client.symbol, datafeed=datafeed)
+        events_client = EventsClient(client.symbol, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, ticker.key))
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
         tasks.append(partial(_dividends_task, dividends_client, output_dir, ticker.key, full_load))
+        tasks.append(partial(_events_task, events_client, output_dir, ticker.key, full_load))
         tasks.append(partial(_metrics_task, metrics_client, output_dir, ticker.key))
 
     written: list[Path] = []

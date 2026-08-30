@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 from equicast_etf.writer import (
     write_dividend_parquet,
+    write_events_parquet,
     write_metrics_parquet,
     write_price_parquet,
     write_profile_parquet,
@@ -133,6 +134,63 @@ def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) ->
 
 def test_write_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_dividend_parquet([], tmp_path) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def _event_record(event_type: str, date: str, **overrides) -> dict:
+    record = {
+        "ticker": "VOO",
+        "event_type": event_type,
+        "date": date,
+        "eps_estimate": None,
+        "reported_eps": None,
+        "surprise_pct": None,
+        "firm": None,
+        "from_grade": None,
+        "to_grade": None,
+        "action": None,
+        "ratio": None,
+        "last_updated": "2026-08-28T21:29:05+00:00",
+        "source": "yfinance",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+    records = [
+        _event_record("split", "2000-03-20", ratio=2.0),
+        _event_record("split", "2026-06-09", ratio=4.0),
+    ]
+
+    paths = write_events_parquet(records, tmp_path)
+
+    assert set(paths) == {
+        tmp_path / "etf=VOO" / "year=2000" / "events.parquet",
+        tmp_path / "etf=VOO" / "year=2026" / "events.parquet",
+    }
+
+    # Read back via the pyarrow dtype backend, not plain pd.read_parquet's
+    # default numpy backend: a fully-null column (e.g. `firm`, since ETFs
+    # only ever produce "split" rows here) round-trips as float NaN under
+    # the numpy backend regardless of its declared type - a pyarrow/pandas
+    # interop quirk, not something _EVENTS_SCHEMA's pinning is meant to fix
+    # (see its comment). The pyarrow backend preserves real None, which is
+    # what this test cares about.
+    year_2026 = pd.read_parquet(
+        tmp_path / "etf=VOO" / "year=2026" / "events.parquet", dtype_backend="pyarrow"
+    )
+    assert year_2026.to_dict(orient="records") == [records[1]]
+
+    # Plain pd.read_parquet (no dtype_backend override) is the more common
+    # call, so also confirm the documented NaN-not-None quirk actually
+    # happens for an all-null column, rather than just asserting it away.
+    year_2000_default = pd.read_parquet(tmp_path / "etf=VOO" / "year=2000" / "events.parquet")
+    assert pd.isna(year_2000_default["firm"].iloc[0])
+
+
+def test_write_events_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_events_parquet([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
 
 

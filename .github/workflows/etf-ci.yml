@@ -7,6 +7,7 @@ on:
       - "packages/datafeed/**"
       - "packages/metrics/**"
       - "packages/dividends/**"
+      - "packages/events/**"
       - "packages/etf/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -16,6 +17,7 @@ on:
       - "packages/datafeed/**"
       - "packages/metrics/**"
       - "packages/dividends/**"
+      - "packages/events/**"
       - "packages/etf/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -39,7 +41,7 @@ jobs:
         run: uv sync --all-packages --extra dev
 
       - name: Lint
-        run: uv run ruff check packages/datafeed/ packages/metrics/ packages/dividends/ packages/etf/
+        run: uv run ruff check packages/datafeed/ packages/metrics/ packages/dividends/ packages/events/ packages/etf/
 
       - name: Type check equicast-datafeed
         working-directory: packages/datafeed
@@ -51,6 +53,10 @@ jobs:
 
       - name: Type check equicast-dividends
         working-directory: packages/dividends
+        run: uv run mypy src/
+
+      - name: Type check equicast-events
+        working-directory: packages/events
         run: uv run mypy src/
 
       - name: Type check equicast-etf
@@ -67,6 +73,10 @@ jobs:
 
       - name: Test equicast-dividends
         working-directory: packages/dividends
+        run: uv run pytest
+
+      - name: Test equicast-events
+        working-directory: packages/events
         run: uv run pytest
 
       - name: Test equicast-etf

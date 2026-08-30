@@ -14,12 +14,13 @@ packages/etf/config/etfs.yaml       (the tickers to extract)
         ▼
 equicast-etf CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
         │              ├────▶  equicast-dividends (ex-div date + amount)
+        │              ├────▶  equicast-events (earnings/ratings/splits)
         │              └────▶  equicast-metrics (volatility/Sharpe/drawdown/CAGR)
         │                              │
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet, price.parquet, dividend.parquet, metrics.parquet)
+Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet, metrics.parquet)
         │
         ▼
 GitHub Actions (etf-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -32,21 +33,26 @@ passed at runtime via `--tickers-json`, which is how the scheduled workflow
 feeds each parallel chunk its share of the work (see below).
 
 **`profile()`, `prices()`, dividends (via `equicast-dividends`'
-`DividendsClient`), and risk/performance metrics (via `equicast-metrics`'
-`MetricsClient.metrics()`) are all implemented** — no events yet, mirroring
-how `equicast-stock` itself started out. Both `DividendsClient` and
-`MetricsClient` are generic, symbol-keyed clients (not
+`DividendsClient`), events (via `equicast-events`' `EventsClient`), and
+risk/performance metrics (via `equicast-metrics`' `MetricsClient.metrics()`)
+are all implemented.** `DividendsClient`, `EventsClient`, and
+`MetricsClient` are all generic, symbol-keyed clients (not
 `equicast-stock`-specific), already consumed by `equicast-stock` —
 `equicast-etf` reuses the same ones rather than duplicating logic.
 Deliberately **not** `MetricsClient.fundamentals()` — its valuation ratios
 are stock-only and mostly `None`/unreliable for ETFs; see
 [packages/etf/README.md](../packages/etf/README.md#on-metricsparquet) for
-what was actually checked before deciding that.
+what was actually checked before deciding that. `EventsClient` still
+fetches earnings dates and analyst ratings for an ETF ticker, but yfinance
+has neither for a fund, so `events.parquet` in practice only ever has
+`"split"` rows — checked live for all 5 configured tickers, see
+[packages/etf/README.md](../packages/etf/README.md#on-eventsparquet).
 
-Expect three `WARNING` lines near the top of every run's logs — a one-time
+Expect four `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed`/`ETFClient` (data via
 yfinance, educational use only), one from `equicast-dividends` (dividend
-data via yfinance), and one from `equicast-metrics` (metrics calculated by
+data via yfinance), one from `equicast-events` (earnings/rating/split data
+via yfinance), and one from `equicast-metrics` (metrics calculated by
 equicast, not independently verified). Each uses distinct message text, so
 none get deduped away by another having already fired earlier in the same
 process. See the [README's disclaimer section](../README.md#disclaimer) for
@@ -76,29 +82,34 @@ For each ticker this writes:
   price), last updated, source. No `payment_date` — yfinance's dividend
   history has none. Not written for tickers/years with no dividends (e.g.
   `GLD`, a gold trust that pays no distribution).
+- `etf=<TICKER>/year=<YYYY>/events.parquet` — one row per event, for the
+  current year only by default: ticker, event_type, date, plus that type's
+  fields (only `ratio` in practice — see below), last updated, source. Not
+  written for tickers/years with no events.
 - `etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
   risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
   CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
 
 See [packages/etf/README.md](../packages/etf/README.md) for the exact field
 lists, including how the profile differs from `equicast-stock`'s, how
-`website`/`beta`/`inception_date` are derived, and why `metrics.parquet`
-skips `fundamentals()`.
+`website`/`beta`/`inception_date` are derived, why `metrics.parquet` skips
+`fundamentals()`, and why `events.parquet` in practice only has `"split"`
+rows for an ETF.
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for **prices and dividends**, writing one `price.parquet`/`dividend.parquet`
-per year found (current year included). It does not affect
-`profile.parquet`/`metrics.parquet`:
+for **prices, dividends, and events**, writing one
+`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
+year included). It does not affect `profile.parquet`/`metrics.parquet`:
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
 ```
 
-Profile, prices, dividends, and metrics are fetched as independent
+Profile, prices, dividends, events, and metrics are fetched as independent
 concurrent tasks per ticker (shared across one rate-limited
 `DatafeedClient`), tune with:
 
-- `--max-workers` — profile/price/dividend/metrics fetches run concurrently, up to this many at once (default: 1)
+- `--max-workers` — profile/price/dividend/events/metrics fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -112,11 +123,11 @@ docker run --rm -v "$PWD/output:/output" equicast-etf:local \
 ## Manual smoke testing (`scripts/smoke_test.py`)
 
 `packages/etf/scripts/smoke_test.py` exercises `ETFClient.profile()`,
-`.prices()`, `DividendsClient.dividends()`, `MetricsClient.metrics()`, and
-the Parquet writers against **live** Yahoo Finance data — it's a manual QA
-tool, not part of the automated `pytest` suite (a live-network test would
-make CI slow and flaky), so run it by hand whenever you want to
-sanity-check the pipeline end to end.
+`.prices()`, `DividendsClient.dividends()`, `EventsClient.events()`,
+`MetricsClient.metrics()`, and the Parquet writers against **live** Yahoo
+Finance data — it's a manual QA tool, not part of the automated `pytest`
+suite (a live-network test would make CI slow and flaky), so run it by
+hand whenever you want to sanity-check the pipeline end to end.
 
 ```bash
 cd packages/etf
@@ -130,16 +141,17 @@ uv run python scripts/smoke_test.py --tickers VOO,QQQ
 # Write real Parquet files instead (exercises the writer functions too)
 uv run python scripts/smoke_test.py --tickers VOO --format parquet --out ./smoke_output
 
-# Full historical load instead of current-year-only (applies to prices and dividends)
+# Full historical load instead of current-year-only (applies to prices, dividends, and events)
 uv run python scripts/smoke_test.py --tickers VOO --format parquet --out ./smoke_output --full-load
 ```
 
-In `--format json` mode, `profile`, `dividends`, and `metrics` are printed
-in full and `prices` is summarized (row count, date range, first/last row)
-rather than dumped in full — a `--full-load` run can be 20+ years of daily
-rows. `--format parquet` writes the real files via `write_profile_parquet`/
-`write_price_parquet`/`write_dividend_parquet`/`write_metrics_parquet`, so
-you can then inspect them with any Parquet reader (e.g. `pd.read_parquet`).
+In `--format json` mode, `profile`, `dividends`, `events`, and `metrics`
+are printed in full and `prices` is summarized (row count, date range,
+first/last row) rather than dumped in full — a `--full-load` run can be
+20+ years of daily rows. `--format parquet` writes the real files via
+`write_profile_parquet`/`write_price_parquet`/`write_dividend_parquet`/
+`write_events_parquet`/`write_metrics_parquet`, so you can then inspect
+them with any Parquet reader (e.g. `pd.read_parquet`).
 
 It also works inside the Docker image — same file is already copied in by
 `packages/etf/Dockerfile` — by overriding the image's entrypoint:
@@ -192,7 +204,7 @@ workflow*) with these inputs:
 | Input | Default | Meaning |
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
-| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends instead of just the current year |
+| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year |
 | `chunk_size` | `300` | Target ETF tickers per parallel chunk |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
@@ -232,6 +244,7 @@ s3://equicast-market-data-<env>/
 └── etf=VOO/
     ├── profile.parquet
     ├── metrics.parquet
+    ├── year=2013/events.parquet
     ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
     ├── year=2026/price.parquet

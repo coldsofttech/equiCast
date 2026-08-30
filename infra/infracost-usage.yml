@@ -71,33 +71,47 @@ resource_usage:
   #                        ETFs), so notably smaller than the Stock
   #                        section's 20KB metrics.parquet (23 columns,
   #                        risk + fundamentals merged)
-  #   No events yet (mirroring how equicast-stock itself started). Unlike
-  #   profile/metrics, price.parquet/dividend.parquet accumulate one
+  #     events.parquet     ~7.2KB per file that actually exists (measured:
+  #                        one "split" row via a --full-load run). Unlike
+  #                        price/dividend, this is NOT one file per ticker
+  #                        per year — earnings/analyst-rating events are
+  #                        always empty for an ETF (no earnings or analyst
+  #                        coverage), so a file is only ever written for a
+  #                        ticker-year with an actual split. Real full
+  #                        history check: VOO/QQQ/VTI each have exactly one
+  #                        split ever (VOO 2013, QQQ 2000, VTI 2008); AGG/GLD
+  #                        have none. Modeled as up to 1 accumulated events
+  #                        file per ticker (not *20 years like price/
+  #                        dividend) for headroom: 5 tickers * 7KB = 35KB
+  #                        total, not per-ticker.
+  #   Unlike profile/metrics, price.parquet/dividend.parquet accumulate one
   #   year=<YYYY> partition per year rather than being overwritten —
   #   assuming 20 years of accumulated history per ticker (same assumption
   #   as the Stock section): (20+5)KB * 20 years = 500KB/ticker of per-year
   #   files, + 25KB + 7KB one-time snapshots = 532KB/ticker.
-  #   storage:  5 tickers * 532KB = 2,660KB
+  #   storage:  5 tickers * 532KB + 35KB (events, flat) = 2,695KB
   #   schedule: etf-ingestion.yml, cron "0 4,10,16,22 * * *" -> also
   #             ~120 runs/month (4/day, offset 4h from FX and 2h from stock
   #             so none of the three ever overlap)
-  #   requests: 4 files/ticker/run (profile + price + dividend + metrics —
-  #             each run only touches the current year's price/dividend
-  #             file, not the full accumulated history), all PUT
-  #             120 runs * 5 tickers * 4 files = 2,400 PUTs
+  #   requests: 5 files/ticker/run (profile + price + dividend + events +
+  #             metrics — same conservative per-run ceiling the Stock
+  #             section uses, even though events.parquet in particular
+  #             produces an actual upload in only a small fraction of runs
+  #             — most ticker-years have no split), all PUT
+  #             120 runs * 5 tickers * 5 files = 3,000 PUTs
   #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650KB + 2,660KB = 10,490KB (~0.0105GB) -> 0.01GB
+  #   storage:  180KB + 7,650KB + 2,695KB = 10,525KB (~0.01GB) -> 0.01GB
   #             (rounded up). Recompute the accumulated-years assumption in
   #             the stock/ETF sections once actual bucket age approaches (or
   #             exceeds) 20 years, or once --full-load has actually been run
   #             and real multi-year sizes are known instead of the 20-year
   #             projection.
-  #   requests: 1,500 (FX) + 5,400 (stock) + 2,400 (ETF) = 9,300
+  #   requests: 1,500 (FX) + 5,400 (stock) + 3,000 (ETF) = 9,900
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 9300 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400) + ETF (2,400), all every 6h (offset)
+      monthly_tier_1_requests: 9900 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400) + ETF (3,000), all every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

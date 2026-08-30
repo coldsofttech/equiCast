@@ -29,10 +29,10 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   events, and metrics from Yahoo Finance and lands them in the same S3
   bucket as Parquet.
 - **ETF data pipeline (`equicast-datafeed`, `equicast-metrics`,
-  `equicast-dividends`, `equicast-etf`)** — a scheduled pipeline that
-  extracts ETF ticker profiles, daily prices, dividends, and risk metrics
-  from Yahoo Finance and lands them in the same S3 bucket as Parquet. No
-  events yet.
+  `equicast-dividends`, `equicast-events`, `equicast-etf`)** — a scheduled
+  pipeline that extracts ETF ticker profiles, daily prices, dividends,
+  events, and risk metrics from Yahoo Finance and lands them in the same
+  S3 bucket as Parquet.
 
 ## Disclaimer
 
@@ -269,7 +269,7 @@ the two pipelines never overlap.
 ## ETF data products
 
 Each configured ETF ticker (default: VOO, QQQ, VTI, AGG, GLD) yields a
-profile, daily prices, dividends, and risk metrics — no events yet.
+profile, daily prices, dividends, events, and risk metrics.
 
 ```python
 from equicast_etf import ETFClient
@@ -332,6 +332,26 @@ is the same generic client `equicast-stock` uses, not ETF- or
 stock-specific.
 
 ```python
+from equicast_events import EventsClient
+
+EventsClient("QQQ").events(full_load=True)
+# [{"ticker": "QQQ", "event_type": "split", "date": "2000-03-20",
+#   "eps_estimate": None, "reported_eps": None, "surprise_pct": None,
+#   "firm": None, "from_grade": None, "to_grade": None, "action": None,
+#   "ratio": 2.0, "last_updated": "2026-08-30T12:01:50+00:00",
+#   "source": "yfinance"}]
+```
+
+Same generic `EventsClient` `equicast-stock` uses — one record per event
+(earnings report, analyst rating change, or stock split), tagged by
+`event_type`. In practice an ETF ticker only ever produces `"split"` rows:
+yfinance has no earnings or analyst coverage for a fund, checked live
+across all 5 configured tickers. Splits themselves are real — VOO (2013),
+QQQ (2000, 2-for-1), and VTI (2008, 2-for-1) each have exactly one in their
+full history; AGG and GLD have none. Same current-year-only default /
+`full_load=True` option as dividends and prices.
+
+```python
 MetricsClient("VOO").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX/stock
 ```
 
@@ -344,7 +364,7 @@ aggregate-portfolio figure rather than a genuine fund fundamental. The
 figures that matter for an ETF (expense ratio, NAV, AUM, category,
 YTD/3yr/5yr returns) already live in `profile()` — see
 [equicast-etf's README](packages/etf/README.md#on-metricsparquet) for
-details. The pipeline writes all four as Parquet, landing in the same
+details. The pipeline writes all five as Parquet, landing in the same
 bucket as FX/stock data:
 
 ```
@@ -352,6 +372,7 @@ s3://equicast-market-data-<env>/
 └── etf=VOO/
     ├── profile.parquet
     ├── metrics.parquet
+    ├── year=2013/events.parquet
     ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
     ├── year=2026/price.parquet

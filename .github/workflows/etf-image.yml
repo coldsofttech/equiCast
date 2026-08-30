@@ -7,6 +7,7 @@ on:
       - "packages/datafeed/**"
       - "packages/metrics/**"
       - "packages/dividends/**"
+      - "packages/events/**"
       - "packages/etf/**"
       - "pyproject.toml"
       - "uv.lock"

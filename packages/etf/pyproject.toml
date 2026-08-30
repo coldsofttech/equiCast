@@ -8,6 +8,7 @@ dependencies = [
     "equicast-datafeed",
     "equicast-metrics",
     "equicast-dividends",
+    "equicast-events",
     "pandas>=2.2",
     "pyarrow>=17.0",
     "pyyaml>=6.0",
@@ -30,6 +31,7 @@ equicast-etf-plan = "equicast_etf.plan:main"
 equicast-datafeed = { workspace = true }
 equicast-metrics = { workspace = true }
 equicast-dividends = { workspace = true }
+equicast-events = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

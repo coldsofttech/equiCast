@@ -131,7 +131,7 @@ as a full ISO 8601 datetime, same as `last_updated`.
 ## CLI
 
 Reads the ETF tickers listed in a config file, fetches a profile, daily
-prices, dividends, and metrics for each, and writes:
+prices, dividends, events, and metrics for each, and writes:
 
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
@@ -139,6 +139,10 @@ prices, dividends, and metrics for each, and writes:
 - `<out>/etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
   ex-dividend date, for the current year only by default (empty for tickers
   with no dividend history)
+- `<out>/etf=<TICKER>/year=<YYYY>/events.parquet` — one row per event
+  (earnings report, analyst rating change, stock split), for the current
+  year only by default. In practice only ever has `"split"` rows for an
+  ETF — see [On `events.parquet`](#on-eventsparquet) below
 - `<out>/etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
   risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
   CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
@@ -148,9 +152,10 @@ uv run equicast-etf --config config/etfs.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices and dividends, writing one `price.parquet`/`dividend.parquet` per
-year found (current year included) — same as `equicast-stock`'s
-`--full-load`. It does not affect `metrics.parquet`:
+for prices, dividends, and events, writing one
+`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
+year included) — same as `equicast-stock`'s `--full-load`. It does not
+affect `metrics.parquet`:
 
 ```bash
 uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
@@ -159,8 +164,27 @@ uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
 close, average, last_updated, source}` — `currency` comes from a
 `get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
-data). No events yet (unlike `equicast-stock`), mirroring how
-`equicast-stock` itself started out.
+data).
+
+### On `events.parquet`
+
+Written from [`equicast-events`](../events/README.md)' `EventsClient` — a
+generic client (not part of `ETFClient`), the same one `equicast-stock`
+uses, built so it's reusable across asset classes.
+
+Records are shaped `{ticker, event_type, date, eps_estimate, reported_eps,
+surprise_pct, firm, from_grade, to_grade, action, ratio, last_updated,
+source}`, combining three distinct event types into one file per year —
+`event_type` says which, and only that type's fields are populated (the
+rest `None`). **In practice, an ETF ticker only ever produces `"split"`
+rows here**: `EventsClient` still fetches earnings dates and analyst
+ratings the same way it does for a stock, but yfinance has no earnings
+reports or analyst coverage for a fund, so those two event types
+contribute nothing — checked live for all 5 configured tickers before
+relying on this. Splits are real, though: VOO (2013), QQQ (2000, 2-for-1),
+and VTI (2008, 2-for-1) each have exactly one in their full yfinance
+history; AGG and GLD have none. Tickers/years with no events simply
+produce no `events.parquet` file, same as `equicast-stock`.
 
 ### On `metrics.parquet`
 
