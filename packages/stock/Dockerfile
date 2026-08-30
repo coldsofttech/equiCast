@@ -10,6 +10,7 @@ COPY pyproject.toml uv.lock ./
 COPY packages/datafeed/ packages/datafeed/
 COPY packages/metrics/ packages/metrics/
 COPY packages/dividends/ packages/dividends/
+COPY packages/events/ packages/events/
 COPY packages/stock/ packages/stock/
 
 WORKDIR /app/packages/stock

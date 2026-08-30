@@ -20,10 +20,14 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
 - **`equicast-dividends`** — generic dividend history (ex-dividend date,
   amount per share) for any yfinance equity-like symbol, built the same way
   as `equicast-metrics` so a future ETF package can reuse it too.
+- **`equicast-events`** — generic corporate events (earnings reports, analyst
+  rating changes, stock splits) for any yfinance equity-like symbol, built
+  the same way as `equicast-dividends`/`equicast-metrics`.
 - **Stock data pipeline (`equicast-datafeed`, `equicast-metrics`,
-  `equicast-dividends`, `equicast-stock`)** — a scheduled pipeline that
-  extracts stock ticker profiles, daily prices, dividends, and metrics from
-  Yahoo Finance and lands them in the same S3 bucket as Parquet.
+  `equicast-dividends`, `equicast-events`, `equicast-stock`)** — a scheduled
+  pipeline that extracts stock ticker profiles, daily prices, dividends,
+  events, and metrics from Yahoo Finance and lands them in the same S3
+  bucket as Parquet.
 
 ## Disclaimer
 
@@ -38,7 +42,8 @@ validate their accuracy yourself before relying on them. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
 [equicast-fx](packages/fx/README.md#disclaimer),
 [equicast-metrics](packages/metrics/README.md#disclaimer),
-[equicast-dividends](packages/dividends/README.md#disclaimer), and
+[equicast-dividends](packages/dividends/README.md#disclaimer),
+[equicast-events](packages/events/README.md#disclaimer), and
 [equicast-stock](packages/stock/README.md#disclaimer) for the full text;
 each is also logged as a console warning the first time its client is used.
 
@@ -123,7 +128,8 @@ Refreshed every 6 hours automatically.
 ## Stock data products
 
 Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
-TSLA, QCOM, AVGO) yields a profile, daily prices, dividends, and metrics.
+TSLA, QCOM, AVGO) yields a profile, daily prices, dividends, events, and
+metrics.
 
 ```python
 from equicast_stock import StockClient
@@ -184,6 +190,30 @@ any point in history. `equicast-dividends` is generic the same way
 `equicast-stock`-specific, so it's ready to reuse for ETFs later.
 
 ```python
+from equicast_events import EventsClient
+
+EventsClient("AAPL").events()
+# [{"ticker": "AAPL", "event_type": "earnings", "date": "2026-01-30",
+#   "eps_estimate": None, "reported_eps": 2.18, "surprise_pct": -3.5,
+#   "firm": None, "from_grade": None, "to_grade": None, "action": None,
+#   "ratio": None, "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"},
+#  {"ticker": "AAPL", "event_type": "rating", "date": "2026-03-01",
+#   "eps_estimate": None, "reported_eps": None, "surprise_pct": None,
+#   "firm": "Morgan Stanley", "from_grade": "Equal-Weight", "to_grade": "Overweight",
+#   "action": "up", "ratio": None, "last_updated": "2026-08-30T09:00:00+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One record per event — earnings report, analyst rating change, or stock
+split — tagged by `event_type`, with only that type's fields populated (the
+rest `None`), combined into a single list rather than three separate calls.
+Same current-year-only default / `full_load=True` option as dividends and
+prices. `equicast-events` is generic the same way `equicast-dividends` is;
+see [equicast-events's README](packages/events/README.md) for exactly how
+each event type is sourced.
+
+```python
 MetricsClient("AAPL").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX
 MetricsClient("AAPL").fundamentals()
 # {"trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
@@ -201,9 +231,10 @@ called with one. See [equicast-metrics's
 README](packages/metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
 for exactly how each field is sourced/derived.
 
-The pipeline writes all four as Parquet, landing in the same bucket as FX
+The pipeline writes all five as Parquet, landing in the same bucket as FX
 data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
-`fundamentals()` into one row:
+`fundamentals()` into one row, and `year=<YYYY>/events.parquet` combines all
+three event types for that year into one file:
 
 ```
 s3://equicast-market-data-<env>/
@@ -212,8 +243,10 @@ s3://equicast-market-data-<env>/
     ├── metrics.parquet
     ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
+    ├── year=2025/events.parquet
     ├── year=2026/price.parquet
-    └── year=2026/dividend.parquet
+    ├── year=2026/dividend.parquet
+    └── year=2026/events.parquet
 ```
 
 Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so

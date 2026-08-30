@@ -88,6 +88,20 @@ repos:
         pass_filenames: false
         files: ^packages/dividends/
 
+      - id: mypy-events
+        name: mypy (equicast-events)
+        entry: bash -c 'cd packages/events && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/events/.*\.py$
+
+      - id: pytest-events
+        name: pytest (equicast-events, unit)
+        entry: bash -c 'cd packages/events && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/events/
+
       - id: mypy-fx
         name: mypy (equicast-fx)
         entry: bash -c 'cd packages/fx && uv run mypy src/'
