@@ -1,0 +1,84 @@
+name: ETF Packages CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/etf/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/etf-ci.yml"
+  pull_request:
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/etf/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/etf-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --extra dev
+
+      - name: Lint
+        run: uv run ruff check packages/datafeed/ packages/metrics/ packages/dividends/ packages/events/ packages/etf/
+
+      - name: Type check equicast-datafeed
+        working-directory: packages/datafeed
+        run: uv run mypy src/
+
+      - name: Type check equicast-metrics
+        working-directory: packages/metrics
+        run: uv run mypy src/
+
+      - name: Type check equicast-dividends
+        working-directory: packages/dividends
+        run: uv run mypy src/
+
+      - name: Type check equicast-events
+        working-directory: packages/events
+        run: uv run mypy src/
+
+      - name: Type check equicast-etf
+        working-directory: packages/etf
+        run: uv run mypy src/
+
+      - name: Test equicast-datafeed
+        working-directory: packages/datafeed
+        run: uv run pytest
+
+      - name: Test equicast-metrics
+        working-directory: packages/metrics
+        run: uv run pytest
+
+      - name: Test equicast-dividends
+        working-directory: packages/dividends
+        run: uv run pytest
+
+      - name: Test equicast-events
+        working-directory: packages/events
+        run: uv run pytest
+
+      - name: Test equicast-etf
+        working-directory: packages/etf
+        run: uv run pytest

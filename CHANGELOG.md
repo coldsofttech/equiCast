@@ -261,6 +261,125 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `mypy`/`pytest` hooks added to `.pre-commit-config.yaml` and
   `docs/local-setup.md` gaining the stock packages' setup instructions it
   was previously missing.
+- `equicast-etf` (`packages/etf/`): new standalone package, mirroring
+  `equicast-stock`'s design (same starting point `equicast-stock` itself
+  had). `ETFClient(ticker).profile()` returns ticker, name, quote type,
+  exchange, currency, description, category, fund family, website, beta,
+  expense ratio, dividend rate/yield, total assets, NAV price, volume,
+  day/year price range and moving averages, YTD/3yr/5yr average returns,
+  inception date, last updated, and source. Several `equicast-stock`
+  profile fields don't apply to a fund and
+  are dropped (`sector`/`industry`, `market_cap`, `payout_ratio`, `ceos`,
+  `address`/`country`/`region`/`full_time_employees`) or re-sourced from a
+  different yfinance field under the same name (`beta` here comes from
+  yfinance's `beta3Year`, not a plain `beta` — yfinance has none for ETFs;
+  `ipo_date` becomes `inception_date`, sourced from yfinance's
+  `fundInceptionDate` instead of `firstTradeDateMilliseconds`/
+  `firstTradeDateEpochUtc`, though those remain the fallback if
+  `fundInceptionDate` is missing). `website` is the one field not sourced
+  from yfinance at all — yfinance never populates it for ETFs (confirmed
+  empty across Vanguard/iShares/Invesco/State Street/Schwab/BlackRock-issued
+  funds) — so it's looked up from a small static `fund_family` →
+  issuer-website map instead, matched by substring since `fundFamily` itself
+  varies by ticker for the same issuer. Configured via
+  `packages/etf/config/etfs.yaml` (VOO, QQQ, VTI, AGG, GLD by default —
+  diversified across categories/issuers rather than picked for any other
+  reason); its CLI writes `etf=<TICKER>/profile.parquet`, reading tickers
+  from that config or a `--tickers-json` string.
+- `ETFClient.prices()`: one daily OHLC record per trading day (ticker,
+  currency, date, open/high/low/close/average, last updated,
+  source=yfinance), mirroring `StockClient.prices()`/`FXClient.prices()` —
+  current year only by default (`ytd`), or the ticker's entire yfinance
+  history with `full_load=True` (`max`). `currency` isn't already known by
+  `ETFClient`, so `prices()` makes its own `get_info()` call to read it. The
+  CLI writes one `price.parquet` per year covered to
+  `etf=<TICKER>/year=<YYYY>/price.parquet`, alongside profile.parquet, via a
+  new `--full-load` flag (same shape as `equicast-stock`'s).
+- Wired `equicast-dividends` into `equicast-etf`: a new `_dividends_task` in
+  the CLI writes `etf=<TICKER>/year=<YYYY>/dividend.parquet` per year
+  covered (via a new `write_dividend_parquet`), reusing the same
+  `--full-load` flag as prices. `DividendsClient` is the same generic,
+  symbol-keyed client `equicast-stock` already consumes — not duplicated
+  for ETFs — so `equicast-etf` gets dividend history with no new
+  dividend-fetching logic of its own. `equicast-dividends` is now a
+  dependency of `equicast-etf` (`pyproject.toml`, `Dockerfile`,
+  `etf-ci.yml`'s/`etf-image.yml`'s path filters).
+- Wired `equicast-metrics` into `equicast-etf`: a new `_metrics_task` in the
+  CLI writes `etf=<TICKER>/metrics.parquet` (via a new
+  `write_metrics_parquet`, ticker-keyed the same way `equicast-stock`'s is).
+  Only calls `MetricsClient.metrics()` (volatility, Sharpe ratio, max
+  drawdown, CAGR 1/2/3/5/10y) — deliberately **not** `.fundamentals()`,
+  unlike `equicast-stock`: checked live against VOO/QQQ/AGG/GLD first, and
+  12-13 of its 15 valuation fields came back `None` for every one of them,
+  with the couple that didn't (`trailing_pe`, `price_to_book`) being an
+  inconsistent yfinance aggregate-portfolio figure rather than a genuine
+  fund fundamental. The fund-level figures that matter for an ETF (expense
+  ratio, NAV, AUM, category, YTD/3yr/5yr returns) already live in
+  `profile()`, so there was no gap for a `fundamentals()`-style tier to
+  fill. `equicast-metrics` is now a dependency of `equicast-etf`
+  (`pyproject.toml`, `Dockerfile`, `etf-ci.yml`'s/`etf-image.yml`'s path
+  filters).
+- Wired `equicast-events` into `equicast-etf`: a new `_events_task` in the
+  CLI writes `etf=<TICKER>/year=<YYYY>/events.parquet` per year covered
+  (via a new `write_events_parquet`, using the same pinned pyarrow
+  `_EVENTS_SCHEMA` as `equicast-stock`'s — kept as its own copy since
+  `equicast_stock` isn't a dependency of `equicast_etf`), reusing the same
+  `--full-load` flag as prices/dividends. `EventsClient` is the same
+  generic, symbol-keyed client `equicast-stock` already consumes. Checked
+  live for all 5 configured tickers first: `earnings`/`rating` event types
+  are always empty for an ETF (no earnings reports or analyst coverage for
+  a fund), so `events.parquet` in practice only ever has `"split"` rows —
+  but those are real: VOO (2013), QQQ (2000, 2-for-1), and VTI (2008,
+  2-for-1) each have exactly one in their full yfinance history; AGG and
+  GLD have none. `equicast-events` is now a dependency of `equicast-etf`
+  (`pyproject.toml`, `Dockerfile`, `etf-ci.yml`'s/`etf-image.yml`'s path
+  filters).
+- `equicast-etf-plan`: a second CLI entry point, identical in shape to
+  `equicast-stock-plan`, splitting the configured tickers into chunks
+  (capped at 256) for the ingestion workflow's matrix.
+- `packages/etf/Dockerfile`, built and pushed to GHCR as a private image via
+  the new `etf-image.yml` workflow.
+- `packages/etf/scripts/smoke_test.py`, mirroring `equicast-stock`'s: a
+  manual QA tool (not part of the automated `pytest` suite) exercising
+  `ETFClient.profile()`/`.prices()`, `DividendsClient.dividends()`,
+  `EventsClient.events()`, `MetricsClient.metrics()`, and the Parquet
+  writers against live Yahoo Finance data, with `--tickers`,
+  `--format json|parquet`, and `--full-load` options.
+- `etf-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
+  structured identically to `fx-ingestion.yml`/`stock-ingestion.yml` — a
+  `plan` job computing chunks via `equicast-etf-plan` and resolving the
+  target environment/bucket, and an `ingest` matrix job uploading the
+  resulting profile/price/dividend/events/metrics Parquet files to
+  `s3://equicast-market-data-<env>/etf=<TICKER>/`, with a `full_load` input
+  controlling prices'/dividends'/events' history depth (same shape as
+  `fx-ingestion.yml`'s/`stock-ingestion.yml`'s). Shares the bucket and the
+  `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
+  `fx-ingestion.yml`/`stock-ingestion.yml`. Scheduled at `0 4,10,16,22 * * *`
+  — offset 4 hours from FX's `0 */6 * * *` and 2 hours from stock's
+  `0 2,8,14,20 * * *` — so none of the three pipelines overlap even if a run
+  takes longer than expected.
+- `etf-ci.yml`: lint/type-check/test for `equicast-datafeed`,
+  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
+  `equicast-etf`, mirroring `stock-ci.yml`.
+- `docs/etf-pipeline.md`, documenting the ETF pipeline's architecture,
+  local/Docker usage, and scheduled-run inputs (mirrors
+  `docs/stock-pipeline.md`).
+- Added an ETF section to `infra/infracost-usage.yml`'s
+  `module.market_data_bucket.aws_s3_bucket.this` estimate, sized from real
+  per-file measurements (profile.parquet ~22-23KB, rounded to 25KB/ticker;
+  price.parquet ~14KB for a partial year, scaling to ~20KB/year — the same
+  figure the Stock section uses; dividend.parquet ~4KB for a partial year
+  across VOO/QQQ/VTI/AGG — GLD pays none — scaling to ~5KB/year, smaller
+  than the Stock section's assumed 10KB/year since ETF distributions here
+  carry no other per-row fields; events.parquet ~7.2KB per file that
+  actually exists — modeled as up to 1 accumulated file per ticker rather
+  than one per year like price/dividend, since splits are rare (3 of 5
+  configured tickers have exactly one split ever, not one per year);
+  metrics.parquet ~6.7KB, identical across tickers since the schema is
+  fixed, notably smaller than the Stock
+  section's 20KB since it's risk/performance only, no fundamentals) rather
+  than a placeholder, following the same real-sample approach the Stock
+  section was re-sized to use.
 
 ### Changed
 

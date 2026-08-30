@@ -7,6 +7,7 @@ members = [
     "packages/events",
     "packages/fx",
     "packages/stock",
+    "packages/etf",
     "backend",
 ]
 
