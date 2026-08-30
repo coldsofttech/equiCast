@@ -1,11 +1,10 @@
 from django.conf import settings
 from equicast_core import MarketDataClient
+from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-
-from identity.authentication import Auth0JWTAuthentication
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
