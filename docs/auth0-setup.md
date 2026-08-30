@@ -107,26 +107,34 @@ token verified, `sub` claim extracted, DynamoDB upsert succeeded.
 
 ## Troubleshooting
 
-**`Invalid token: Invalid audience`** — the token's `aud` claim doesn't
-match `AUTH0_AUDIENCE`. Usually means the token was requested against a
+Every `401` from a *rejected* token (as opposed to a missing one — see the
+last entry below) returns the same generic `"Invalid or expired token."`
+body on purpose: `Auth0JWTAuthentication` logs the specific PyJWT exception
+server-side (`logger.warning`, visible in
+`aws logs tail /aws/lambda/equicast-backend-<env> --follow` locally or via
+CloudWatch) rather than returning it to the caller, since that text can
+echo back claim values from the token. Check the logs for one of these:
+
+**`Invalid audience`** — the token's `aud` claim doesn't match
+`AUTH0_AUDIENCE`. Usually means the token was requested against a
 different API than the one whose Identifier you configured.
 
-**`Invalid token: Invalid issuer`** — the token's `iss` claim doesn't match
+**`Invalid issuer`** — the token's `iss` claim doesn't match
 `https://<AUTH0_DOMAIN>/`. Check `AUTH0_DOMAIN` has no `https://` prefix or
 trailing slash of its own (the code adds both).
 
-**`Invalid token: Signature has expired`** — the test token from Step 2's
-"Test" tab is short-lived; generate a new one.
+**`Signature has expired`** — the test token from Step 2's "Test" tab is
+short-lived; generate a new one.
 
-**`Invalid token: ...` mentioning an unknown key ID (`kid`)** — the token
-was signed by a different tenant than `AUTH0_DOMAIN` points at (e.g. a
-token from a personal/test tenant used against the project's configured
-one), or the JWKS was rotated and the process's cached keys are stale
-(`Auth0JWTAuthentication`'s `PyJWKClient` caches for the process lifetime —
-restart the backend after rotating signing keys).
+**An unknown key ID (`kid`)** — the token was signed by a different tenant
+than `AUTH0_DOMAIN` points at (e.g. a token from a personal/test tenant
+used against the project's configured one), or the JWKS was rotated and
+the process's cached keys are stale (`Auth0JWTAuthentication`'s
+`PyJWKClient` caches for the process lifetime — restart the backend after
+rotating signing keys).
 
-**`401` with no body / generic "Authentication credentials were not
-provided"** — no `Authorization: Bearer <token>` header was sent at all;
-`Auth0JWTAuthentication` treats a missing header as anonymous, not an
+**`401` with no logged warning / generic "Authentication credentials were
+not provided"** — no `Authorization: Bearer <token>` header was sent at
+all; `Auth0JWTAuthentication` treats a missing header as anonymous, not an
 error, so this 401 comes from `IsAuthenticated` on `MeView`, not from token
-validation.
+validation, and nothing is logged.

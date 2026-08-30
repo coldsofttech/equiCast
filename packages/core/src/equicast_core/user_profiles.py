@@ -21,9 +21,11 @@ DEFAULT_CURRENCY = "GBP"
 class UserProfileClient:
     """Reads and upserts items in one DynamoDB user-profiles table."""
 
-    def __init__(self, table_name: str, resource: Any = None) -> None:
+    def __init__(
+        self, table_name: str, resource: Any = None, region_name: str | None = None
+    ) -> None:
         self._table_name = table_name
-        self._resource = resource or boto3.resource("dynamodb")
+        self._resource = resource or boto3.resource("dynamodb", region_name=region_name)
 
     @cached_property
     def _table(self) -> Any:

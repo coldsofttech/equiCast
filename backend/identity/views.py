@@ -9,7 +9,7 @@ from identity.authentication import Auth0JWTAuthentication
 
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
-_client = UserProfileClient(settings.USER_PROFILES_TABLE)
+_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
 
 
 class MeView(APIView):
