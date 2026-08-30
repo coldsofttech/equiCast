@@ -98,20 +98,19 @@ creates them fresh the first time it runs.
 
 ## Step 3: Configure the GitHub Environments
 
-Three GitHub Environments are in play, across both workflows:
+Two GitHub Environments are in play, shared across both workflows:
 
-- **`development`** (`terraform.yml` only) — no protection rules; `apply-dev`
-  runs automatically on push to `main`. Infra changes are reviewed via the
-  Infracost PR comment (see below) before merge, not via an approval gate.
-- **`deploy-dev`** (`deploy.yml` only) — add **required reviewers**
-  (Settings → Environments → `deploy-dev` → *Required reviewers*) naming the
-  admin(s) who approve dev deploys. Kept separate from plain `dev` on
-  purpose: gating `dev` itself would also block `terraform.yml`'s
-  `apply-dev`, which isn't gated.
-- **`production`** (both workflows) — add required reviewers the same way.
-  Shared by `apply-prod`, `deploy-backend-prod`, and `deploy-frontend-prod`,
-  since all three are "promote to prod" actions gated behind the same
-  approval.
+- **`development`** — add **required reviewers** (Settings → Environments →
+  `development` → *Required reviewers*) naming the admin(s) who approve dev
+  changes. Shared by `terraform.yml`'s `apply-dev` and `deploy.yml`'s
+  `deploy-backend-dev`/`deploy-frontend-dev`. Deliberately gated rather than
+  auto-run: the Infracost PR comment (see below) only *estimates* cost, it
+  doesn't block a merge — without an approval gate, a merged PR would apply
+  infra changes and/or push a new backend build straight to dev on its own,
+  which could spike AWS cost with nobody having actually signed off on it.
+- **`production`** — add required reviewers the same way. Shared by
+  `apply-prod`, `deploy-backend-prod`, and `deploy-frontend-prod`, since all
+  three are "promote to prod" actions gated behind the same approval.
 
 Any job wired to an environment with required reviewers pauses in the
 Actions UI until one of them approves it. This is enforced by GitHub itself,
@@ -146,7 +145,7 @@ only ("cannot be used by the CLI or CI/CD") — don't use it for this.
 uploaded that run — `estimate-backend`/`estimate-frontend` build the image
 and the frontend bundle once, print a rough cost estimate (published AWS
 unit prices, hardcoded and approximate — not looked up live) to the job's
-step summary, and hand that same build to the `deploy-dev`/`production`
+step summary, and hand that same build to the `development`/`production`
 gated jobs. Reviewers can see the estimate in the run's summary before
 approving either gate. `equicast-backend`'s lifecycle policy caps it at the
 2 most recently pushed images, so the ECR storage estimate stays roughly

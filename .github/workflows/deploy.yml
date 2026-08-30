@@ -55,15 +55,19 @@ jobs:
           path: backend/lambda_package.zip
           retention-days: 1
 
-  # Gated behind the "deploy-dev" GitHub Environment's required reviewers
-  # (Settings -> Environments -> deploy-dev). Requires infra/main.tf's
+  # Gated behind the "development" GitHub Environment's required reviewers
+  # (Settings -> Environments -> development) — the same environment
+  # terraform.yml's apply-dev uses, so a required reviewer must approve
+  # before anything (infra or backend code) actually deploys to dev. Kept
+  # deliberately un-automatic: an unreviewed PR merge shouldn't be able to
+  # spike AWS cost in dev on its own. Requires infra/main.tf's
   # backend_lambda module to have already been applied at least once — same
   # class of bootstrap dependency the old ECR flow had (pushing an image
   # needed the repository to exist first).
   deploy-backend-dev:
     needs: build-backend
     runs-on: ubuntu-latest
-    environment: deploy-dev
+    environment: development
     permissions:
       id-token: write
       contents: read
@@ -180,11 +184,11 @@ jobs:
   #         path: frontend/dist
   #         retention-days: 1
   #
-  # # Gated behind the "deploy-dev" GitHub Environment's required reviewers.
+  # # Gated behind the "development" GitHub Environment's required reviewers.
   # deploy-frontend-dev:
   #   needs: estimate-frontend
   #   runs-on: ubuntu-latest
-  #   environment: deploy-dev
+  #   environment: development
   #   permissions:
   #     id-token: write
   #     contents: read
