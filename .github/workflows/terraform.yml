@@ -11,6 +11,16 @@ on:
       - "infra/**"
       - ".github/workflows/terraform.yml"
 
+# A run waiting on development/production's required-reviewer approval
+# doesn't get superseded on its own — an older push's apply-dev can sit
+# waiting indefinitely alongside a newer one for the same branch/PR, which
+# is confusing to review and risks approving stale infra. Scoped to
+# github.ref so concurrent PRs (and pushes to unrelated branches) don't
+# cancel each other, only successive runs for the same ref.
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # Pure HCL cost diff (no terraform plan/state involved) — posts/updates one
   # PR comment showing what this change adds to the dev and prod monthly
