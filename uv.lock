@@ -21,6 +21,7 @@ members = [
     "equicast",
     "equicast-backend",
     "equicast-datafeed",
+    "equicast-dividends",
     "equicast-fx",
     "equicast-metrics",
     "equicast-stock",
@@ -692,6 +693,34 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "equicast-dividends"
+version = "0.1.0"
+source = { editable = "packages/dividends" }
+dependencies = [
+    { name = "equicast-datafeed" },
+    { name = "pandas" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pandas", specifier = ">=2.2" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "equicast-fx"
 version = "0.1.0"
 source = { editable = "packages/fx" }
@@ -761,6 +790,7 @@ version = "0.1.0"
 source = { editable = "packages/stock" }
 dependencies = [
     { name = "equicast-datafeed" },
+    { name = "equicast-dividends" },
     { name = "equicast-metrics" },
     { name = "pandas" },
     { name = "pyarrow" },
@@ -779,6 +809,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "equicast-dividends", editable = "packages/dividends" },
     { name = "equicast-metrics", editable = "packages/metrics" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },

@@ -2,8 +2,9 @@
 # pipeline shares the bucket with equicast-fx). See
 # infra/infracost-usage.yml's module.market_data_bucket.aws_s3_bucket.this
 # comments (Stock section) for the formula — recompute those lines if this
-# list's length changes materially, or once profile.parquet's/metrics.parquet's
-# real sizes are known (currently ~45KB/ticker and ~15KB/ticker placeholders).
+# list's length changes materially, or once profile.parquet's/metrics.parquet's/
+# dividend.parquet's real sizes are known (currently ~45KB/ticker,
+# ~15KB/ticker, and ~2KB/ticker placeholders respectively).
 tickers:
   - AAPL
   - MSFT

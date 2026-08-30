@@ -174,7 +174,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via the new `stock-image.yml` workflow.
 - `packages/stock/scripts/smoke_test.py`, mirroring `equicast-fx`'s: a
   manual QA tool (not part of the automated `pytest` suite) exercising
-  `StockClient.profile()`/`.prices()`,
+  `StockClient.profile()`/`.prices()`, `DividendsClient.dividends()`,
   `MetricsClient.metrics()`/`.fundamentals()`, and the Parquet writers
   against live Yahoo Finance data, with `--tickers`, `--format json|parquet`,
   and `--full-load` options.
@@ -182,16 +182,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   structured identically to `fx-ingestion.yml` — a `plan` job computing
   chunks via `equicast-stock-plan` and resolving the target
   environment/bucket, and an `ingest` matrix job uploading the resulting
-  profile/price/metrics Parquet files to
+  profile/price/dividend/metrics Parquet files to
   `s3://equicast-market-data-<env>/stock=<TICKER>/`, with a `full_load`
-  input controlling prices' history depth (same shape as `fx-ingestion.yml`'s).
-  Shares the bucket and the
+  input controlling prices'/dividends' history depth (same shape as
+  `fx-ingestion.yml`'s). Shares the bucket and the
   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
   `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` — offset 2 hours from
   FX's `0 */6 * * *` — so the two pipelines never overlap even if a run
   takes longer than expected.
 - `stock-ci.yml`: lint/type-check/test for `equicast-datafeed`,
-  `equicast-metrics`, and `equicast-stock`, mirroring `fx-ci.yml`.
+  `equicast-metrics`, `equicast-dividends`, and `equicast-stock`, mirroring
+  `fx-ci.yml`.
 - `docs/stock-pipeline.md`, documenting the stock pipeline's architecture,
   local/Docker usage, and scheduled-run inputs (mirrors
   `docs/fx-pipeline.md`).
@@ -219,6 +220,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `last_updated`/`source` pairs into one of each. `equicast-metrics` is now
   a dependency of `equicast-stock` (`pyproject.toml`, `Dockerfile`,
   `stock-image.yml`'s path filters).
+- `equicast_datafeed.DatafeedClient.get_dividends()`: fetches a symbol's
+  historical dividends (`yf.Ticker(...).dividends`, ex-dividend date to cash
+  amount per share) through the same rate-limit/retry wrapper as the other
+  `get_*` methods.
+- `equicast-dividends` (`packages/dividends/`): a new standalone package,
+  generic across any yfinance equity-like symbol the same way
+  `equicast-metrics`' `MetricsClient` is (not `equicast-stock`-specific, so
+  a future ETF package can reuse it). `DividendsClient(symbol).dividends()`
+  returns one record per ex-dividend date —
+  `{ticker, currency, ex_dividend_date, price, last_updated, source}` —
+  `price` being the dividend cash amount per share, not a stock price.
+  Defaults to the current calendar year only (client-side filtering, since
+  yfinance's dividends call has no period parameter of its own — the full
+  series is always fetched in one call); `dividends(full_load=True)` returns
+  every year instead. Deliberately has no `payment_date` field: yfinance's
+  dividend history (scraped from Yahoo's dividend table) only ever has
+  ex-dividend date and amount, for any ticker, at any point in history.
+  Constructing a `DividendsClient` shows its own `EQUICAST_DIVIDENDS_DISCLAIMER`
+  (distinct text from `equicast-datafeed`'s `YFINANCE_DATA_DISCLAIMER`, unlike
+  `FXClient`/`StockClient` which reuse it) so it's always visible on its own,
+  the same way `equicast-metrics`' disclaimer is, rather than silently
+  deduped away when `DatafeedClient`'s disclaimer already fired earlier in
+  the same process.
+- Wired `equicast-dividends` into `equicast-stock`: a new `_dividends_task`
+  in the CLI writes `stock=<TICKER>/year=<YYYY>/dividend.parquet` per year
+  covered (via a new `write_dividend_parquet`), reusing the same
+  `--full-load` flag as prices. `equicast-dividends` is now a dependency of
+  `equicast-stock` (`pyproject.toml`, `Dockerfile`, `stock-image.yml`'s path
+  filters) and of the root workspace (`pyproject.toml`), with its own
+  `mypy`/`pytest` hooks added to `.pre-commit-config.yaml` and
+  `docs/local-setup.md` gaining the stock packages' setup instructions it
+  was previously missing.
 
 ### Changed
 
@@ -314,3 +347,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `monthly_tier_1_requests` (`3700` → `4800`) now covers both pipelines'
   three files/run each. `packages/stock/config/stocks.yaml` now points back
   at it too.
+- Extended the Stock section again for the new dividend.parquet (~2KB/ticker
+  placeholder — just a handful of rows per year, often none at all):
+  `storage_gb` stays `0.01` (still well under 1GB) but
+  `monthly_tier_1_requests` (`4800` → `5900`) now covers four files/run
+  (profile + price + dividend + metrics) instead of three.

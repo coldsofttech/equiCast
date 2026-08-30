@@ -17,10 +17,13 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
   ticker alike, plus stock-only valuation/fundamental metrics (PE, EPS,
   margins, returns, leverage).
+- **`equicast-dividends`** — generic dividend history (ex-dividend date,
+  amount per share) for any yfinance equity-like symbol, built the same way
+  as `equicast-metrics` so a future ETF package can reuse it too.
 - **Stock data pipeline (`equicast-datafeed`, `equicast-metrics`,
-  `equicast-stock`)** — a scheduled pipeline that extracts stock ticker
-  profiles, daily prices, and metrics from Yahoo Finance and lands them in
-  the same S3 bucket as Parquet.
+  `equicast-dividends`, `equicast-stock`)** — a scheduled pipeline that
+  extracts stock ticker profiles, daily prices, dividends, and metrics from
+  Yahoo Finance and lands them in the same S3 bucket as Parquet.
 
 ## Disclaimer
 
@@ -34,7 +37,8 @@ doesn't provide them directly, not sourced from a licensed provider —
 validate their accuracy yourself before relying on them. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
 [equicast-fx](packages/fx/README.md#disclaimer),
-[equicast-metrics](packages/metrics/README.md#disclaimer), and
+[equicast-metrics](packages/metrics/README.md#disclaimer),
+[equicast-dividends](packages/dividends/README.md#disclaimer), and
 [equicast-stock](packages/stock/README.md#disclaimer) for the full text;
 each is also logged as a console warning the first time its client is used.
 
@@ -119,7 +123,7 @@ Refreshed every 6 hours automatically.
 ## Stock data products
 
 Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
-TSLA, QCOM, AVGO) yields a profile, daily prices, and metrics.
+TSLA, QCOM, AVGO) yields a profile, daily prices, dividends, and metrics.
 
 ```python
 from equicast_stock import StockClient
@@ -162,6 +166,24 @@ historical load (every year available) can be requested the same way as FX
 — see [the stock pipeline docs](docs/stock-pipeline.md).
 
 ```python
+from equicast_dividends import DividendsClient
+
+DividendsClient("AAPL").dividends()
+# [{"ticker": "AAPL", "currency": "USD", "ex_dividend_date": "2026-02-10",
+#   "price": 0.26, "last_updated": "2026-08-30T09:00:00+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One record per ex-dividend date; `price` is the dividend amount per share,
+not a stock price. By default covers the current year only, same
+full-history option as prices. There's no `payment_date` field — yfinance's
+dividend history only has ex-dividend date and amount, for any ticker, at
+any point in history. `equicast-dividends` is generic the same way
+`equicast-metrics` is — built for any yfinance equity-like symbol, not
+`equicast-stock`-specific, so it's ready to reuse for ETFs later.
+
+```python
 MetricsClient("AAPL").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX
 MetricsClient("AAPL").fundamentals()
 # {"trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
@@ -179,7 +201,7 @@ called with one. See [equicast-metrics's
 README](packages/metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
 for exactly how each field is sourced/derived.
 
-The pipeline writes all three as Parquet, landing in the same bucket as FX
+The pipeline writes all four as Parquet, landing in the same bucket as FX
 data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
 `fundamentals()` into one row:
 
@@ -189,7 +211,9 @@ s3://equicast-market-data-<env>/
     ├── profile.parquet
     ├── metrics.parquet
     ├── year=2025/price.parquet
-    └── year=2026/price.parquet
+    ├── year=2025/dividend.parquet
+    ├── year=2026/price.parquet
+    └── year=2026/dividend.parquet
 ```
 
 Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so

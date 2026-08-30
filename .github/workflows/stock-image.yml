@@ -6,6 +6,7 @@ on:
     paths:
       - "packages/datafeed/**"
       - "packages/metrics/**"
+      - "packages/dividends/**"
       - "packages/stock/**"
       - "pyproject.toml"
       - "uv.lock"

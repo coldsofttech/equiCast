@@ -31,26 +31,29 @@ resource_usage:
   #             schedule) — plus metrics.parquet ~15KB (also a placeholder;
   #             combines equicast-metrics' risk/performance fields with its
   #             15 stock-only fundamentals, roughly 3x FX's metrics.parquet
-  #             field count, so sized up from FX's ~10KB accordingly) =
-  #             ~80KB/ticker.
-  #   storage:  9 tickers * 80KB = 720KB
+  #             field count, so sized up from FX's ~10KB accordingly) — plus
+  #             dividend.parquet ~2KB (also a placeholder; just a handful of
+  #             {ticker, currency, ex_dividend_date, price, last_updated,
+  #             source} rows per year - quarterly payers have ~4, many
+  #             tickers have none at all) = ~82KB/ticker.
+  #   storage:  9 tickers * 82KB = 738KB
   #   schedule: stock-ingestion.yml, cron "0 2,8,14,20 * * *" -> also
   #             ~120 runs/month (4/day, offset 2h from FX so they never
   #             overlap)
-  #   requests: 3 files/ticker (profile + price + metrics), all PUT
-  #             120 runs * 9 tickers * 3 files = 3,240 PUTs -> 3,300 (rounded up)
+  #   requests: 4 files/ticker (profile + price + dividend + metrics), all PUT
+  #             120 runs * 9 tickers * 4 files = 4,320 PUTs -> 4,400 (rounded up)
   #
   # --- Totals used below ---
-  #   storage:  180KB + 720KB = 900KB (~0.0009GB) -> 0.01GB (rounded up for
+  #   storage:  180KB + 738KB = 918KB (~0.0009GB) -> 0.01GB (rounded up for
   #             headroom). Neither pipeline's figure accounts for
-  #             price.parquet accumulating additional year=<YYYY> files as
-  #             time passes — bump storage_gb once real multi-year history
-  #             has built up for either pipeline.
-  #   requests: 1,500 (FX) + 3,300 (stock) = 4,800
+  #             price.parquet/dividend.parquet accumulating additional
+  #             year=<YYYY> files as time passes — bump storage_gb once real
+  #             multi-year history has built up for either pipeline.
+  #   requests: 1,500 (FX) + 4,400 (stock) = 5,900
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 4800 # PUT/COPY/POST/LIST — FX (1,500) + stock (3,300), both every 6h (offset)
+      monthly_tier_1_requests: 5900 # PUT/COPY/POST/LIST — FX (1,500) + stock (4,400), both every 6h (offset)
       monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)

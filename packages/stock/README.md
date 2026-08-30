@@ -119,11 +119,14 @@ same as `last_updated` (e.g. `"1980-12-12T14:30:00+00:00"`), not just a date.
 ## CLI
 
 Reads the stock tickers listed in a config file, fetches a profile, daily
-prices, and metrics for each, and writes:
+prices, dividends, and metrics for each, and writes:
 
 - `<out>/stock=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
   for the current year only by default
+- `<out>/stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
+  ex-dividend date, for the current year only by default (empty for tickers
+  with no dividend history)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
@@ -134,9 +137,9 @@ uv run equicast-stock --config config/stocks.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, writing one `price.parquet` per year found (current year
-included) — same as `equicast-fx`'s `--full-load`. It does not affect
-`metrics.parquet`:
+for prices and dividends, writing one `price.parquet`/`dividend.parquet` per
+year found (current year included) — same as `equicast-fx`'s `--full-load`.
+It does not affect `metrics.parquet`:
 
 ```bash
 uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
@@ -146,6 +149,21 @@ uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
 close, average, last_updated, source}` — `currency` comes from a
 `get_info()` call (yfinance doesn't return it alongside `history()`'s OHLC
 data).
+
+### On `dividend.parquet`
+
+Written from [`equicast-dividends`](../dividends/README.md)'
+`DividendsClient` — a generic client (not part of `StockClient`) built the
+same way `equicast-metrics`' `MetricsClient` is, so it's reusable by any
+future asset-class package (e.g. ETFs) rather than living inside
+`equicast-stock` itself.
+
+Records are shaped `{ticker, currency, ex_dividend_date, price,
+last_updated, source}`. `price` is the dividend cash amount per share, not a
+stock price. There's no `payment_date` field — yfinance's dividend history
+only has ex-dividend date and amount, for any ticker, at any point in
+history; see equicast-dividends's README for details. Tickers with no
+dividend history simply produce no `dividend.parquet` file for that year.
 
 ### On `metrics.parquet`
 

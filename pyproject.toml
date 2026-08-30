@@ -3,6 +3,7 @@ members = [
     "packages/equicast",
     "packages/datafeed",
     "packages/metrics",
+    "packages/dividends",
     "packages/fx",
     "packages/stock",
     "backend",

@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths:
       - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
       - "packages/stock/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -12,6 +14,8 @@ on:
   pull_request:
     paths:
       - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
       - "packages/stock/**"
       - "pyproject.toml"
       - "uv.lock"
@@ -35,10 +39,18 @@ jobs:
         run: uv sync --all-packages --extra dev
 
       - name: Lint
-        run: uv run ruff check packages/datafeed/ packages/stock/
+        run: uv run ruff check packages/datafeed/ packages/metrics/ packages/dividends/ packages/stock/
 
       - name: Type check equicast-datafeed
         working-directory: packages/datafeed
+        run: uv run mypy src/
+
+      - name: Type check equicast-metrics
+        working-directory: packages/metrics
+        run: uv run mypy src/
+
+      - name: Type check equicast-dividends
+        working-directory: packages/dividends
         run: uv run mypy src/
 
       - name: Type check equicast-stock
@@ -47,6 +59,14 @@ jobs:
 
       - name: Test equicast-datafeed
         working-directory: packages/datafeed
+        run: uv run pytest
+
+      - name: Test equicast-metrics
+        working-directory: packages/metrics
+        run: uv run pytest
+
+      - name: Test equicast-dividends
+        working-directory: packages/dividends
         run: uv run pytest
 
       - name: Test equicast-stock
