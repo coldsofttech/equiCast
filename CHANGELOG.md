@@ -125,6 +125,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visible before either gate is approved.
 - `infra/modules/ecr`: added an `aws_ecr_lifecycle_policy` capping
   `equicast-backend` at the 2 most recently pushed images.
+- `equicast-stock` (`packages/stock/`): standalone package, mirroring
+  `equicast-fx`'s design, for extracting stock ticker profiles
+  (`StockClient(ticker).profile()`), returning ticker, name, quote type,
+  exchange, currency, description, sector, industry, website, beta, payout
+  ratio, dividend rate/yield, market cap, volume, day
+  open/high/low/close/average, year open/high/low/close/average, 50-/200-day
+  moving averages, address, country, region, full-time employees, CEO(s),
+  IPO date, last updated, and source. The day/year/moving-average fields
+  mirror `equicast-fx`'s `FXClient.profile()` exactly (same yfinance source
+  fields, same midpoint/rounding logic, same trailing-52-week `year_*`
+  window via a `history(period="1y")` call).
+  `address` is formatted from `address1`/`address2`/`city`/`state`/`zip`,
+  kept independent of the separate `country`/`region` fields (yfinance's own
+  keys, not parsed out of the address string) so all three stay filterable.
+  `ceos` is a list of `{"name", "role"}` entries, best-effort and tried in
+  order: `companyOfficers` and `executiveTeam` (both structured — `role` is
+  that person's actual title, e.g. "Chairman, President and CEO"), then a
+  free-text pattern match against `longBusinessSummary` (`role` is always
+  the literal string `"CEO"` there, since prose gives no real title) —
+  yfinance has no dedicated CEO field. In the written Parquet file (not in
+  `profile()`'s return value), `ceos` is JSON-encoded to a plain string
+  column rather than a native list<struct> column — pandas/pyarrow
+  round-trip the struct type fine, but common JS-based Parquet viewers just
+  call `toString()` on nested objects and render `[object Object]` instead
+  of the actual data; a JSON string reads correctly in any viewer.
+  `ipo_date` is similarly best-effort, sourced from
+  `firstTradeDateMilliseconds` (falling back to `firstTradeDateEpochUtc`) —
+  yfinance has no true IPO date field either — formatted as a full ISO 8601
+  datetime, same as `last_updated` (not just a date). Configured via
+  `packages/stock/config/stocks.yaml` (AAPL, MSFT, GOOGL, AMZN, NVDA, META,
+  TSLA, QCOM, AVGO by default); its CLI writes `stock=<TICKER>/profile.parquet`,
+  reading tickers from that config or a `--tickers-json` string.
+- `StockClient.prices()`: one daily OHLC record per trading day (ticker,
+  currency, date, open/high/low/close/average, last updated,
+  source=yfinance), mirroring `FXClient.prices()` — current year only by
+  default (`ytd`), or the ticker's entire yfinance history with
+  `full_load=True` (`max`). Unlike the from/to-currency pairs `equicast-fx`
+  already knows, `currency` isn't available on `StockClient` itself, so
+  `prices()` makes its own `get_info()` call to read it. The CLI writes one
+  `price.parquet` per year covered to
+  `stock=<TICKER>/year=<YYYY>/price.parquet`, alongside profile.parquet, via
+  a new `--full-load` flag (same shape as `equicast-fx`'s). Only depends on
+  `equicast-datafeed` still (no `equicast-metrics` yet — risk/performance
+  metrics aren't implemented for stocks).
+- `equicast-stock-plan`: a second CLI entry point, identical in shape to
+  `equicast-fx-plan`, splitting the configured tickers into chunks (capped
+  at 256) for the ingestion workflow's matrix.
+- `packages/stock/Dockerfile`, built and pushed to GHCR as a private image
+  via the new `stock-image.yml` workflow.
+- `packages/stock/scripts/smoke_test.py`, mirroring `equicast-fx`'s: a
+  manual QA tool (not part of the automated `pytest` suite) exercising
+  `StockClient.profile()`/`.prices()` against live Yahoo Finance data, with
+  `--tickers`, `--format json|parquet`, and `--full-load` options.
+- `stock-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
+  structured identically to `fx-ingestion.yml` — a `plan` job computing
+  chunks via `equicast-stock-plan` and resolving the target
+  environment/bucket, and an `ingest` matrix job uploading the resulting
+  profile/price Parquet files to
+  `s3://equicast-market-data-<env>/stock=<TICKER>/`, with a `full_load`
+  input controlling prices' history depth (same shape as `fx-ingestion.yml`'s).
+  Shares the bucket and the
+  `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
+  `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` — offset 2 hours from
+  FX's `0 */6 * * *` — so the two pipelines never overlap even if a run
+  takes longer than expected.
+- `stock-ci.yml`: lint/type-check/test for `equicast-datafeed` and
+  `equicast-stock`, mirroring `fx-ci.yml`.
+- `docs/stock-pipeline.md`, documenting the stock pipeline's architecture,
+  local/Docker usage, and scheduled-run inputs (mirrors
+  `docs/fx-pipeline.md`).
 
 ### Changed
 

@@ -6,30 +6,48 @@
 #   infracost breakdown --config-file=infracost.yml --sync-usage-file
 version: 0.1
 resource_usage:
-  # FX + on-demand market data lands here (packages/fx, backend cache).
-  # Sized from per-file Parquet estimates (profile.parquet ~15KB,
-  # metrics.parquet ~10KB, price.parquet ~20KB per year) against the 4 pairs
-  # currently configured in packages/fx/config/fx_pairs.yaml — recompute
-  # both numbers below if that pair count changes materially.
+  # FX + stock profile data (and on-demand backend cache reads) lands here.
+  # Two independent scheduled pipelines write into this one bucket — broken
+  # out per pipeline below, then summed into the storage_gb/
+  # monthly_tier_1_requests values actually used. Recompute a pipeline's own
+  # lines if its pair/ticker count or schedule changes materially; the other
+  # pipeline's lines are unaffected.
   #
-  # storage_gb: profile.parquet/metrics.parquet are overwritten in place each
-  # run (one file per pair, don't accumulate); price.parquet is one file per
-  # pair per year and does accumulate. Assumes ~24 years of price history per
-  # pair (matching the year=2003..2026 range in docs/fx-pipeline.md's S3
-  # layout example):
-  #   4 pairs * (15KB + 10KB + 24 * 20KB) = 4 * 505KB = 2,020KB (~0.002GB)
-  # rounded up for headroom.
+  # --- FX (packages/fx/config/fx_pairs.yaml, currently 4 pairs) ---
+  #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
+  #             price.parquet ~20KB (current year only — full_load isn't
+  #             passed on schedule) = ~45KB/pair
+  #   storage:  4 pairs * 45KB = 180KB
+  #   schedule: fx-ingestion.yml, cron "0 */6 * * *" -> ~120 runs/month (4/day)
+  #   requests: 3 files/pair (profile + metrics + price), all PUT
+  #             120 runs * 4 pairs * 3 files = 1,440 PUTs -> 1,500 (rounded up)
   #
-  # monthly_tier_1_requests: fx-ingestion.yml's schedule (cron: "0 */6 * * *")
-  # runs ~120x/month (4/day). Each run uploads 3 files per pair (profile +
-  # metrics + current year's price — full_load isn't passed on schedule):
-  #   120 runs * 4 pairs * 3 files = 1,440 PUTs, rounded up for headroom
-  #   (manual workflow_dispatch runs, --full-load reruns writing extra years)
+  # --- Stock (packages/stock/config/stocks.yaml, currently 9 tickers) ---
+  #   size:     profile.parquet — no real sample yet, assumed ~45KB/ticker as
+  #             a placeholder (same order of magnitude as FX's combined
+  #             per-pair footprint above; replace with a real estimate once
+  #             known) — plus price.parquet ~20KB (current year only, same
+  #             per-year assumption as FX's — full_load isn't passed on
+  #             schedule) = ~65KB/ticker. No metrics yet, unlike FX.
+  #   storage:  9 tickers * 65KB = 585KB
+  #   schedule: stock-ingestion.yml, cron "0 2,8,14,20 * * *" -> also
+  #             ~120 runs/month (4/day, offset 2h from FX so they never
+  #             overlap)
+  #   requests: 2 files/ticker (profile + price), all PUT
+  #             120 runs * 9 tickers * 2 files = 2,160 PUTs -> 2,200 (rounded up)
+  #
+  # --- Totals used below ---
+  #   storage:  180KB + 585KB = 765KB (~0.0007GB) -> 0.01GB (rounded up for
+  #             headroom). Neither pipeline's figure accounts for
+  #             price.parquet accumulating additional year=<YYYY> files as
+  #             time passes — bump storage_gb once real multi-year history
+  #             has built up for either pipeline.
+  #   requests: 1,500 (FX) + 2,200 (stock) = 3,700
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 1500 # PUT/COPY/POST/LIST — fx-ingestion.yml runs every 6h
-      monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from FX pair estimates
+      monthly_tier_1_requests: 3700 # PUT/COPY/POST/LIST — FX (1,500) + stock (2,200), both every 6h (offset)
+      monthly_tier_2_requests: 20000 # GET — backend reads on demand, not sized from pair/ticker estimates
 
   # React static site — small, but re-synced (and re-read by every visitor)
   # on every deploy.

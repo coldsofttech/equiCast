@@ -1,0 +1,16 @@
+# Changing this list changes the market_data_bucket cost estimate (this
+# pipeline shares the bucket with equicast-fx). See
+# infra/infracost-usage.yml's module.market_data_bucket.aws_s3_bucket.this
+# comments (Stock section) for the formula — recompute those lines if this
+# list's length changes materially, or once profile.parquet's real size is
+# known (currently a ~45KB/ticker placeholder).
+tickers:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - NVDA
+  - META
+  - TSLA
+  - QCOM
+  - AVGO

@@ -88,6 +88,20 @@ repos:
         pass_filenames: false
         files: ^packages/fx/
 
+      - id: mypy-stock
+        name: mypy (equicast-stock)
+        entry: bash -c 'cd packages/stock && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/stock/.*\.py$
+
+      - id: pytest-stock
+        name: pytest (equicast-stock, unit)
+        entry: bash -c 'cd packages/stock && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/stock/
+
       - id: eslint-frontend
         name: eslint (React frontend)
         entry: bash -c 'cd frontend && npm run lint'

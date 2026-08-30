@@ -236,3 +236,6 @@ data/*.parquet
 packages/fx/output/
 packages/fx/chunks/
 packages/fx/smoke_output/
+packages/stock/output/
+packages/stock/chunks/
+packages/stock/smoke_output/
