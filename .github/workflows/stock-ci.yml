@@ -1,0 +1,74 @@
+name: Stock Packages CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/stock/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/stock-ci.yml"
+  pull_request:
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/stock/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/stock-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --extra dev
+
+      - name: Lint
+        run: uv run ruff check packages/datafeed/ packages/metrics/ packages/dividends/ packages/stock/
+
+      - name: Type check equicast-datafeed
+        working-directory: packages/datafeed
+        run: uv run mypy src/
+
+      - name: Type check equicast-metrics
+        working-directory: packages/metrics
+        run: uv run mypy src/
+
+      - name: Type check equicast-dividends
+        working-directory: packages/dividends
+        run: uv run mypy src/
+
+      - name: Type check equicast-stock
+        working-directory: packages/stock
+        run: uv run mypy src/
+
+      - name: Test equicast-datafeed
+        working-directory: packages/datafeed
+        run: uv run pytest
+
+      - name: Test equicast-metrics
+        working-directory: packages/metrics
+        run: uv run pytest
+
+      - name: Test equicast-dividends
+        working-directory: packages/dividends
+        run: uv run pytest
+
+      - name: Test equicast-stock
+        working-directory: packages/stock
+        run: uv run pytest

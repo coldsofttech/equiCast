@@ -125,6 +125,133 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   visible before either gate is approved.
 - `infra/modules/ecr`: added an `aws_ecr_lifecycle_policy` capping
   `equicast-backend` at the 2 most recently pushed images.
+- `equicast-stock` (`packages/stock/`): standalone package, mirroring
+  `equicast-fx`'s design, for extracting stock ticker profiles
+  (`StockClient(ticker).profile()`), returning ticker, name, quote type,
+  exchange, currency, description, sector, industry, website, beta, payout
+  ratio, dividend rate/yield, market cap, volume, day
+  open/high/low/close/average, year open/high/low/close/average, 50-/200-day
+  moving averages, address, country, region, full-time employees, CEO(s),
+  IPO date, last updated, and source. The day/year/moving-average fields
+  mirror `equicast-fx`'s `FXClient.profile()` exactly (same yfinance source
+  fields, same midpoint/rounding logic, same trailing-52-week `year_*`
+  window via a `history(period="1y")` call).
+  `address` is formatted from `address1`/`address2`/`city`/`state`/`zip`,
+  kept independent of the separate `country`/`region` fields (yfinance's own
+  keys, not parsed out of the address string) so all three stay filterable.
+  `ceos` is a list of `{"name", "role"}` entries, best-effort and tried in
+  order: `companyOfficers` and `executiveTeam` (both structured — `role` is
+  that person's actual title, e.g. "Chairman, President and CEO"), then a
+  free-text pattern match against `longBusinessSummary` (`role` is always
+  the literal string `"CEO"` there, since prose gives no real title) —
+  yfinance has no dedicated CEO field. In the written Parquet file (not in
+  `profile()`'s return value), `ceos` is JSON-encoded to a plain string
+  column rather than a native list<struct> column — pandas/pyarrow
+  round-trip the struct type fine, but common JS-based Parquet viewers just
+  call `toString()` on nested objects and render `[object Object]` instead
+  of the actual data; a JSON string reads correctly in any viewer.
+  `ipo_date` is similarly best-effort, sourced from
+  `firstTradeDateMilliseconds` (falling back to `firstTradeDateEpochUtc`) —
+  yfinance has no true IPO date field either — formatted as a full ISO 8601
+  datetime, same as `last_updated` (not just a date). Configured via
+  `packages/stock/config/stocks.yaml` (AAPL, MSFT, GOOGL, AMZN, NVDA, META,
+  TSLA, QCOM, AVGO by default); its CLI writes `stock=<TICKER>/profile.parquet`,
+  reading tickers from that config or a `--tickers-json` string.
+- `StockClient.prices()`: one daily OHLC record per trading day (ticker,
+  currency, date, open/high/low/close/average, last updated,
+  source=yfinance), mirroring `FXClient.prices()` — current year only by
+  default (`ytd`), or the ticker's entire yfinance history with
+  `full_load=True` (`max`). Unlike the from/to-currency pairs `equicast-fx`
+  already knows, `currency` isn't available on `StockClient` itself, so
+  `prices()` makes its own `get_info()` call to read it. The CLI writes one
+  `price.parquet` per year covered to
+  `stock=<TICKER>/year=<YYYY>/price.parquet`, alongside profile.parquet, via
+  a new `--full-load` flag (same shape as `equicast-fx`'s).
+- `equicast-stock-plan`: a second CLI entry point, identical in shape to
+  `equicast-fx-plan`, splitting the configured tickers into chunks (capped
+  at 256) for the ingestion workflow's matrix.
+- `packages/stock/Dockerfile`, built and pushed to GHCR as a private image
+  via the new `stock-image.yml` workflow.
+- `packages/stock/scripts/smoke_test.py`, mirroring `equicast-fx`'s: a
+  manual QA tool (not part of the automated `pytest` suite) exercising
+  `StockClient.profile()`/`.prices()`, `DividendsClient.dividends()`,
+  `MetricsClient.metrics()`/`.fundamentals()`, and the Parquet writers
+  against live Yahoo Finance data, with `--tickers`, `--format json|parquet`,
+  and `--full-load` options.
+- `stock-ingestion.yml`: runs every 6 hours (and on demand) as two jobs,
+  structured identically to `fx-ingestion.yml` — a `plan` job computing
+  chunks via `equicast-stock-plan` and resolving the target
+  environment/bucket, and an `ingest` matrix job uploading the resulting
+  profile/price/dividend/metrics Parquet files to
+  `s3://equicast-market-data-<env>/stock=<TICKER>/`, with a `full_load`
+  input controlling prices'/dividends' history depth (same shape as
+  `fx-ingestion.yml`'s). Shares the bucket and the
+  `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variables with
+  `fx-ingestion.yml`. Scheduled at `0 2,8,14,20 * * *` — offset 2 hours from
+  FX's `0 */6 * * *` — so the two pipelines never overlap even if a run
+  takes longer than expected.
+- `stock-ci.yml`: lint/type-check/test for `equicast-datafeed`,
+  `equicast-metrics`, `equicast-dividends`, and `equicast-stock`, mirroring
+  `fx-ci.yml`.
+- `docs/stock-pipeline.md`, documenting the stock pipeline's architecture,
+  local/Docker usage, and scheduled-run inputs (mirrors
+  `docs/fx-pipeline.md`).
+- `equicast_datafeed.DatafeedClient.get_balance_sheet()`/`.get_financials()`:
+  fetch a ticker's annual balance sheet/income statement (`yf.Ticker(...).balance_sheet`/
+  `.financials`), through the same rate-limit/retry wrapper as
+  `get_info()`/`get_history()`.
+- `MetricsClient.fundamentals()` (`equicast-metrics`): stock-only
+  valuation/fundamental metrics — trailing/forward PE, trailing/forward EPS,
+  PEG, price-to-book, price-to-sales, EV/EBITDA, gross/operating/profit
+  margin, return on equity/assets, debt-to-equity, and free cash flow per
+  share. For each field, prefers yfinance's `.info` directly, then a ratio
+  built from other `.info` fields, and only as a last resort a line item
+  pulled from the new `get_balance_sheet()`/`get_financials()` calls
+  (fetched lazily, at most once each, since most tickers resolve every field
+  from `.info` alone). PEG falls back to `trailing_pe / (earningsGrowth * 100)`
+  when yfinance doesn't report `trailingPegRatio`/`pegRatio`. Raises the new
+  `equicast_metrics.UnsupportedSymbolError` for an FX symbol (one ending in
+  `"=X"`) — FX pairs have no earnings or balance sheet, so this is
+  `equicast-stock`-only; `equicast-fx` never calls it.
+- `equicast-stock`'s CLI now also computes metrics: a new `_metrics_task`
+  calls both `MetricsClient.metrics()` and `.fundamentals()` and merges them
+  into one `stock=<TICKER>/metrics.parquet` row (via a new
+  `write_metrics_parquet`), reconciling the two independently-computed
+  `last_updated`/`source` pairs into one of each. `equicast-metrics` is now
+  a dependency of `equicast-stock` (`pyproject.toml`, `Dockerfile`,
+  `stock-image.yml`'s path filters).
+- `equicast_datafeed.DatafeedClient.get_dividends()`: fetches a symbol's
+  historical dividends (`yf.Ticker(...).dividends`, ex-dividend date to cash
+  amount per share) through the same rate-limit/retry wrapper as the other
+  `get_*` methods.
+- `equicast-dividends` (`packages/dividends/`): a new standalone package,
+  generic across any yfinance equity-like symbol the same way
+  `equicast-metrics`' `MetricsClient` is (not `equicast-stock`-specific, so
+  a future ETF package can reuse it). `DividendsClient(symbol).dividends()`
+  returns one record per ex-dividend date —
+  `{ticker, currency, ex_dividend_date, price, last_updated, source}` —
+  `price` being the dividend cash amount per share, not a stock price.
+  Defaults to the current calendar year only (client-side filtering, since
+  yfinance's dividends call has no period parameter of its own — the full
+  series is always fetched in one call); `dividends(full_load=True)` returns
+  every year instead. Deliberately has no `payment_date` field: yfinance's
+  dividend history (scraped from Yahoo's dividend table) only ever has
+  ex-dividend date and amount, for any ticker, at any point in history.
+  Constructing a `DividendsClient` shows its own `EQUICAST_DIVIDENDS_DISCLAIMER`
+  (distinct text from `equicast-datafeed`'s `YFINANCE_DATA_DISCLAIMER`, unlike
+  `FXClient`/`StockClient` which reuse it) so it's always visible on its own,
+  the same way `equicast-metrics`' disclaimer is, rather than silently
+  deduped away when `DatafeedClient`'s disclaimer already fired earlier in
+  the same process.
+- Wired `equicast-dividends` into `equicast-stock`: a new `_dividends_task`
+  in the CLI writes `stock=<TICKER>/year=<YYYY>/dividend.parquet` per year
+  covered (via a new `write_dividend_parquet`), reusing the same
+  `--full-load` flag as prices. `equicast-dividends` is now a dependency of
+  `equicast-stock` (`pyproject.toml`, `Dockerfile`, `stock-image.yml`'s path
+  filters) and of the root workspace (`pyproject.toml`), with its own
+  `mypy`/`pytest` hooks added to `.pre-commit-config.yaml` and
+  `docs/local-setup.md` gaining the stock packages' setup instructions it
+  was previously missing.
 
 ### Changed
 
@@ -212,3 +339,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   6-hourly schedule — see that file's comments for the formula.
   `packages/fx/config/fx_pairs.yaml` now points back at it, so the cost
   estimate isn't forgotten the next time the pair list changes.
+- Extended the same `market_data_bucket` estimate with a Stock section,
+  broken out and summed alongside FX's: profile.parquet (~45KB/ticker
+  placeholder) + price.parquet (~20KB/year) + the new metrics.parquet
+  (~15KB/ticker placeholder) against `packages/stock/config/stocks.yaml`'s
+  9 tickers and `stock-ingestion.yml`'s 6-hourly (offset) schedule —
+  `monthly_tier_1_requests` (`3700` → `4800`) now covers both pipelines'
+  three files/run each. `packages/stock/config/stocks.yaml` now points back
+  at it too.
+- Extended the Stock section again for the new dividend.parquet (~2KB/ticker
+  placeholder — just a handful of rows per year, often none at all):
+  `storage_gb` stays `0.01` (still well under 1GB) but
+  `monthly_tier_1_requests` (`4800` → `5900`) now covers four files/run
+  (profile + price + dividend + metrics) instead of three.

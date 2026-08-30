@@ -15,19 +15,31 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   lands it in S3 as Parquet, ready for downstream analysis.
 - **`equicast-metrics`** — generic risk/performance metrics (volatility,
   Sharpe ratio, max drawdown, CAGR) for any yfinance symbol, FX pair or stock
-  ticker alike.
+  ticker alike, plus stock-only valuation/fundamental metrics (PE, EPS,
+  margins, returns, leverage).
+- **`equicast-dividends`** — generic dividend history (ex-dividend date,
+  amount per share) for any yfinance equity-like symbol, built the same way
+  as `equicast-metrics` so a future ETF package can reuse it too.
+- **Stock data pipeline (`equicast-datafeed`, `equicast-metrics`,
+  `equicast-dividends`, `equicast-stock`)** — a scheduled pipeline that
+  extracts stock ticker profiles, daily prices, dividends, and metrics from
+  Yahoo Finance and lands them in the same S3 bucket as Parquet.
 
 ## Disclaimer
 
-FX profile and price data is sourced via [yfinance](https://github.com/ranaroussi/yfinance)
-(Yahoo Finance) for educational and informational purposes only — not
-financial advice, with no guarantee of accuracy, completeness, or
-timeliness. FX metrics (volatility, Sharpe ratio, max drawdown, CAGR) are
-calculated by equicast, not sourced from a licensed provider — validate
-their accuracy yourself before relying on them. See
+FX and stock profile/price data is sourced via
+[yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
+educational and informational purposes only — not financial advice, with no
+guarantee of accuracy, completeness, or timeliness. FX/stock risk metrics
+(volatility, Sharpe ratio, max drawdown, CAGR) and stock fundamentals (PE,
+EPS, margins, returns, leverage) are calculated by equicast where yfinance
+doesn't provide them directly, not sourced from a licensed provider —
+validate their accuracy yourself before relying on them. See
 [equicast-datafeed](packages/datafeed/README.md#disclaimer),
-[equicast-fx](packages/fx/README.md#disclaimer), and
-[equicast-metrics](packages/metrics/README.md#disclaimer) for the full text;
+[equicast-fx](packages/fx/README.md#disclaimer),
+[equicast-metrics](packages/metrics/README.md#disclaimer),
+[equicast-dividends](packages/dividends/README.md#disclaimer), and
+[equicast-stock](packages/stock/README.md#disclaimer) for the full text;
 each is also logged as a console warning the first time its client is used.
 
 ## FX data products
@@ -108,12 +120,113 @@ s3://equicast-market-data-<env>/
 
 Refreshed every 6 hours automatically.
 
+## Stock data products
+
+Each configured stock ticker (default: AAPL, MSFT, GOOGL, AMZN, NVDA, META,
+TSLA, QCOM, AVGO) yields a profile, daily prices, dividends, and metrics.
+
+```python
+from equicast_stock import StockClient
+
+StockClient("AAPL").profile()
+# {"ticker": "AAPL", "name": "Apple Inc.", "quote_type": "EQUITY",
+#  "exchange": "NMS", "currency": "USD",
+#  "description": "Apple Inc. designs, manufactures, and markets smartphones, ...",
+#  "sector": "Technology", "industry": "Consumer Electronics",
+#  "website": "https://www.apple.com", "beta": 1.2, "payout_ratio": 0.15,
+#  "dividend_rate": 1.0, "dividend_yield": 0.005, "market_cap": 3000000000000,
+#  "volume": 50000000, "day_open": 227.5, "day_high": 229.1, "day_low": 226.8,
+#  "day_close": 228.5, "day_average": 227.95, "year_open": 180.0,
+#  "year_high": 260.1, "year_low": 164.08, "year_close": 228.5,
+#  "year_average": 212.09, "moving_average_50_days": 220.45,
+#  "moving_average_200_days": 200.12,
+#  "address": "One Apple Park Way, Cupertino, CA 95014",
+#  "country": "United States", "region": "North America",
+#  "full_time_employees": 164000,
+#  "ceos": [{"name": "Timothy D. Cook", "role": "CEO & Director"}],
+#  "ipo_date": "1980-12-12T14:30:00+00:00",
+#  "last_updated": "2026-08-29T21:29:05+00:00", "source": "yfinance"}
+```
+
+`ceos` and `ipo_date` are best-effort — yfinance has no dedicated field for
+either; see [equicast-stock's README](packages/stock/README.md) for how
+they're derived.
+
+```python
+StockClient("AAPL").prices()
+# [{"ticker": "AAPL", "currency": "USD", "date": "2026-01-02",
+#   "open": 225.30, "high": 227.32, "low": 224.29, "close": 226.31,
+#   "average": 225.805, "last_updated": "2026-08-29T11:10:39+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One row per trading day. By default covers the current year only; a full
+historical load (every year available) can be requested the same way as FX
+— see [the stock pipeline docs](docs/stock-pipeline.md).
+
+```python
+from equicast_dividends import DividendsClient
+
+DividendsClient("AAPL").dividends()
+# [{"ticker": "AAPL", "currency": "USD", "ex_dividend_date": "2026-02-10",
+#   "price": 0.26, "last_updated": "2026-08-30T09:00:00+00:00",
+#   "source": "yfinance"},
+#  ...]
+```
+
+One record per ex-dividend date; `price` is the dividend amount per share,
+not a stock price. By default covers the current year only, same
+full-history option as prices. There's no `payment_date` field — yfinance's
+dividend history only has ex-dividend date and amount, for any ticker, at
+any point in history. `equicast-dividends` is generic the same way
+`equicast-metrics` is — built for any yfinance equity-like symbol, not
+`equicast-stock`-specific, so it's ready to reuse for ETFs later.
+
+```python
+MetricsClient("AAPL").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX
+MetricsClient("AAPL").fundamentals()
+# {"trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
+#  "forward_eps": 6.75, "peg": 2.05, "price_to_book": 45.2,
+#  "price_to_sales": 8.1, "ev_ebitda": 21.3, "gross_margin": 0.462,
+#  "operating_margin": 0.312, "profit_margin": 0.24,
+#  "return_on_equity": 1.52, "return_on_assets": 0.29,
+#  "debt_to_equity": 148.6, "free_cash_flow_per_share": 6.42,
+#  "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"}
+```
+
+`fundamentals()` is stock-only — valuation/leverage metrics have no meaning
+for an FX pair, so `equicast-metrics` raises `UnsupportedSymbolError` if
+called with one. See [equicast-metrics's
+README](packages/metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
+for exactly how each field is sourced/derived.
+
+The pipeline writes all four as Parquet, landing in the same bucket as FX
+data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
+`fundamentals()` into one row:
+
+```
+s3://equicast-market-data-<env>/
+└── stock=AAPL/
+    ├── profile.parquet
+    ├── metrics.parquet
+    ├── year=2025/price.parquet
+    ├── year=2025/dividend.parquet
+    ├── year=2026/price.parquet
+    └── year=2026/dividend.parquet
+```
+
+Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so
+the two pipelines never overlap.
+
 ## Documentation
 
 - [Local setup](docs/local-setup.md) — get every package running on your machine
 - [FX pipeline: deployment and execution](docs/fx-pipeline.md) — build the image,
   deploy the infrastructure, and run/schedule the ingestion pipeline
+- [Stock pipeline: deployment and execution](docs/stock-pipeline.md) — same,
+  for the stock ticker pipeline
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX ingestion), and how to
-  troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock ingestion), and how
+  to troubleshoot it
 - [Changelog](CHANGELOG.md)

@@ -1,0 +1,41 @@
+name: Build Stock Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/stock/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/stock-image.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push equicast-stock (private)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/stock/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/equicast-stock:latest
+            ghcr.io/${{ github.repository_owner }}/equicast-stock:${{ github.sha }}

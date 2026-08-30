@@ -4,7 +4,9 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 from equicast_datafeed.disclaimers import reset_warned
+from equicast_datafeed.exceptions import DatafeedError
 from equicast_metrics.client import EQUICAST_METRICS_DISCLAIMER, MetricsClient
+from equicast_metrics.exceptions import UnsupportedSymbolError
 
 
 @pytest.fixture(autouse=True)
@@ -100,3 +102,88 @@ def test_metrics_ignores_trailing_nan_close_from_an_incomplete_trading_day() -> 
 
     for value in metrics.values():
         assert not (isinstance(value, float) and value != value)  # not NaN
+
+
+def test_fundamentals_raises_for_fx_symbol() -> None:
+    client = MetricsClient("GBPUSD=X", datafeed=_datafeed({}, pd.DataFrame()))
+
+    with pytest.raises(UnsupportedSymbolError):
+        client.fundamentals()
+
+
+def test_fundamentals_uses_direct_info_fields_and_reports_yfinance_source() -> None:
+    info = {
+        "trailingPE": 30.0,
+        "forwardPE": 25.0,
+        "trailingEps": 6.0,
+        "forwardEps": 7.2,
+        "trailingPegRatio": 2.1,
+        "priceToBook": 45.0,
+        "priceToSalesTrailing12Months": 8.0,
+        "enterpriseToEbitda": 20.0,
+        "grossMargins": 0.45,
+        "operatingMargins": 0.3,
+        "profitMargins": 0.25,
+        "returnOnEquity": 1.5,
+        "returnOnAssets": 0.28,
+        "debtToEquity": 150.0,
+    }
+    fundamentals = MetricsClient("AAPL", datafeed=_datafeed(info, pd.DataFrame())).fundamentals()
+
+    assert fundamentals["trailing_pe"] == 30.0
+    assert fundamentals["peg"] == 2.1
+    # free_cash_flow_per_share has no direct yfinance field, so it's always
+    # a fallback (and None here, with neither freeCashflow nor
+    # operatingCashflow/capitalExpenditures in info) - "source" still comes
+    # out "equicast" as a result.
+    assert fundamentals["free_cash_flow_per_share"] is None
+    assert fundamentals["source"] == "yfinance"
+
+
+def test_fundamentals_falls_back_to_balance_sheet_and_financials() -> None:
+    datafeed = _datafeed({"currentPrice": 100.0, "marketCap": 1000.0}, pd.DataFrame())
+    datafeed.get_financials.return_value = pd.DataFrame(
+        {"2026-12-31": [500.0, 80.0]}, index=["Total Revenue", "Net Income"]
+    )
+    datafeed.get_balance_sheet.return_value = pd.DataFrame(
+        {"2026-12-31": [1000.0, 600.0]}, index=["Total Assets", "Stockholders Equity"]
+    )
+
+    fundamentals = MetricsClient("AAPL", datafeed=datafeed).fundamentals()
+
+    assert fundamentals["profit_margin"] == pytest.approx(80.0 / 500.0)
+    assert fundamentals["return_on_assets"] == pytest.approx(80.0 / 1000.0)
+    assert fundamentals["source"] == "equicast"
+
+
+def test_fundamentals_treats_statement_fetch_failure_as_unavailable() -> None:
+    datafeed = _datafeed({}, pd.DataFrame())
+    datafeed.get_financials.side_effect = DatafeedError("boom")
+    datafeed.get_balance_sheet.side_effect = DatafeedError("boom")
+
+    fundamentals = MetricsClient("AAPL", datafeed=datafeed).fundamentals()
+
+    assert fundamentals["gross_margin"] is None
+    assert fundamentals["return_on_equity"] is None
+
+
+def test_fundamentals_fetches_statements_at_most_once_each() -> None:
+    datafeed = _datafeed({}, pd.DataFrame())
+    datafeed.get_financials.return_value = pd.DataFrame(
+        {"2026-12-31": [500.0, 200.0, 150.0, 80.0]},
+        index=["Total Revenue", "Gross Profit", "Operating Income", "Net Income"],
+    )
+    datafeed.get_balance_sheet.return_value = pd.DataFrame(
+        {"2026-12-31": [1000.0, 400.0, 600.0]},
+        index=["Total Assets", "Total Liabilities Net Minority Interest", "Stockholders Equity"],
+    )
+
+    MetricsClient("AAPL", datafeed=datafeed).fundamentals()
+
+    datafeed.get_financials.assert_called_once_with("AAPL")
+    datafeed.get_balance_sheet.assert_called_once_with("AAPL")
+
+
+def test_fundamentals_includes_last_updated() -> None:
+    fundamentals = MetricsClient("AAPL", datafeed=_datafeed({}, pd.DataFrame())).fundamentals()
+    assert fundamentals["last_updated"]

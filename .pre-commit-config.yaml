@@ -74,6 +74,20 @@ repos:
         pass_filenames: false
         files: ^packages/metrics/
 
+      - id: mypy-dividends
+        name: mypy (equicast-dividends)
+        entry: bash -c 'cd packages/dividends && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/dividends/.*\.py$
+
+      - id: pytest-dividends
+        name: pytest (equicast-dividends, unit)
+        entry: bash -c 'cd packages/dividends && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/dividends/
+
       - id: mypy-fx
         name: mypy (equicast-fx)
         entry: bash -c 'cd packages/fx && uv run mypy src/'
@@ -87,6 +101,20 @@ repos:
         language: system
         pass_filenames: false
         files: ^packages/fx/
+
+      - id: mypy-stock
+        name: mypy (equicast-stock)
+        entry: bash -c 'cd packages/stock && uv run mypy src/'
+        language: system
+        pass_filenames: false
+        files: ^packages/stock/.*\.py$
+
+      - id: pytest-stock
+        name: pytest (equicast-stock, unit)
+        entry: bash -c 'cd packages/stock && uv run pytest'
+        language: system
+        pass_filenames: false
+        files: ^packages/stock/
 
       - id: eslint-frontend
         name: eslint (React frontend)

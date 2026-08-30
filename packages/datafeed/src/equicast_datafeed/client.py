@@ -47,6 +47,20 @@ class DatafeedClient:
             lambda: yf.Ticker(symbol).history(period=period, interval=interval), symbol
         )
 
+    def get_dividends(self, symbol: str) -> pd.Series:
+        """Return `symbol`'s historical dividends: a Series of cash amount per
+        share, indexed by ex-dividend date. yfinance has no payment-date data
+        here - only ex-dividend date and amount."""
+        return self._call(lambda: yf.Ticker(symbol).dividends, symbol)
+
+    def get_balance_sheet(self, symbol: str) -> pd.DataFrame:
+        """Return `symbol`'s annual balance sheet, most-recent period in the first column."""
+        return self._call(lambda: yf.Ticker(symbol).balance_sheet, symbol)
+
+    def get_financials(self, symbol: str) -> pd.DataFrame:
+        """Return `symbol`'s annual income statement, most-recent period in the first column."""
+        return self._call(lambda: yf.Ticker(symbol).financials, symbol)
+
     def _call(self, fetch: Any, symbol: str) -> Any:
         self._rate_limiter.acquire()
 
