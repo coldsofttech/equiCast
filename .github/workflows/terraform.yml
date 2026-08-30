@@ -133,6 +133,11 @@ jobs:
       - run: terraform init -reconfigure -backend-config="key=equicast/dev/terraform.tfstate"
       - run: terraform plan -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
 
+  # Gated behind the "development" GitHub Environment's required reviewers
+  # (Settings -> Environments -> development) — the Infracost PR comment
+  # above only estimates cost, it doesn't block a merge, so this still needs
+  # an explicit approval before actually applying to dev; otherwise a merged
+  # PR could apply an unreviewed change straight to dev on its own.
   apply-dev:
     needs: plan
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -158,9 +163,9 @@ jobs:
       - run: terraform apply -auto-approve -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
 
   # Gated behind the "production" GitHub Environment's required reviewers
-  # (Settings -> Environments -> production) — only an approved reviewer can
-  # let this job proceed, even though apply-dev above runs automatically for
-  # anyone who can merge to main.
+  # (Settings -> Environments -> production) — a separate approval from
+  # apply-dev's, since promoting to prod is a distinct decision from
+  # applying to dev even though both now require sign-off.
   apply-prod:
     needs: apply-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'

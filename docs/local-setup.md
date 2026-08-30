@@ -183,12 +183,12 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
   `equicast-etf`
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
-  PR comment; on merge to `main`, `apply-dev` runs automatically and
-  `apply-prod` waits for approval on the `production` GitHub Environment
+  PR comment; on merge to `main`, `apply-dev` and `apply-prod` each wait for
+  approval on their own GitHub Environment (`development`, `production`)
   (see [terraform-state-setup.md](terraform-state-setup.md))
 - `deploy.yml` — builds the backend image/frontend bundle once, posts a rough
   cost estimate, then `dev` and `prod` deploys each wait for approval on their
-  own GitHub Environment (`deploy-dev`, `production`) before pushing/syncing
+  own GitHub Environment (`development`, `production`) before pushing/syncing
 - `fx-image.yml` / `fx-ingestion.yml` — build the FX pipeline's image and run it on a
   schedule; see [fx-pipeline.md](fx-pipeline.md) for details
 - `stock-image.yml` / `stock-ingestion.yml` — build the stock pipeline's image and run it

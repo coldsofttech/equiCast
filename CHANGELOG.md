@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Collapsed the `deploy-dev` GitHub Environment into `development`:
+  `deploy.yml`'s `deploy-backend-dev`/`deploy-frontend-dev` now gate on
+  `environment: development` (previously `deploy-dev`), the same
+  environment `terraform.yml`'s `apply-dev` already used. `apply-dev` was
+  previously ungated (`development` had no protection rules, relying only
+  on the Infracost PR comment as a soft review); it now requires the same
+  required-reviewer approval as the deploy jobs. Reason: an unreviewed PR
+  merge to `main` was able to both apply infra changes and push a new
+  backend build to dev fully automatically, with no approval gate at
+  all — a real risk of an unintended AWS cost spike in dev.
+  `docs/terraform-state-setup.md` and `docs/local-setup.md` updated to
+  describe two gated GitHub Environments (`development`, `production`)
+  instead of three.
 - `market_data`'s `ProfileView`/`PricesView` now require Auth0 authentication
   (`authentication_classes = [Auth0JWTAuthentication]`,
   `permission_classes = [IsAuthenticated]`), matching `identity.MeView`.
