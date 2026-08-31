@@ -19,4 +19,11 @@ terraform {
 
 provider "aws" {
   region = var.aws_region
+
+  default_tags {
+    tags = {
+      application = "equicast"
+      environment = var.environment == "prod" ? "production" : "development"
+    }
+  }
 }
