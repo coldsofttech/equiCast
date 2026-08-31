@@ -78,6 +78,26 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     actions   = ["s3:GetObject", "s3:PutObject"]
     resources = ["${module.user_data_bucket.bucket_arn}/accounts/*"]
   }
+
+  # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
+  # .../accounts/*) is required alongside s3:GetObject for a key that might
+  # not exist yet: without it, S3 can't tell this role apart from a caller
+  # with no rights to know whether the object exists at all, so a GetObject
+  # on a not-yet-created accounts/<user_id>.json returns AccessDenied
+  # instead of the NoSuchKey AccountsClient._load() catches to mean "no
+  # accounts yet" — see https://repost.aws/knowledge-center/s3-403-error-list-permissions.
+  # The s3:prefix condition keeps this scoped to the accounts/ domain, same
+  # as the GetObject/PutObject statement above.
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [module.user_data_bucket.bucket_arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["accounts/*"]
+    }
+  }
 }
 
 module "backend_lambda" {
