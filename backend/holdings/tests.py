@@ -2,7 +2,13 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 from django.urls import reverse
-from equicast_core import HoldingAlreadyExistsError, HoldingLimitExceededError, HoldingNotFoundError
+from equicast_core import (
+    AccountNotFoundError,
+    HoldingAlreadyExistsError,
+    HoldingLimitExceededError,
+    HoldingNotFoundError,
+    InsufficientSharesError,
+)
 
 AUTH_HEADER = {"HTTP_AUTHORIZATION": "Bearer validtoken"}
 HOLDING = {
@@ -13,6 +19,18 @@ HOLDING = {
     "pie_id": None,
     "watchlist_id": None,
     "timestamp": "2026-01-01T00:00:00+00:00",
+}
+ACCOUNT = {"id": "acc-1", "transaction_type": "TRANSACTION"}
+TRANSACTION = {
+    "id": "t-1",
+    "holding_id": "h-1",
+    "no_of_shares": 10,
+    "average_price": None,
+    "price": 152.5,
+    "date": "2026-01-15",
+    "type": "BUY",
+    "created_at": "2026-01-15T00:00:00+00:00",
+    "updated_at": "2026-01-15T00:00:00+00:00",
 }
 
 
@@ -169,7 +187,7 @@ class HoldingListViewTests(TestCase):
         self, mock_jwks_client, mock_decode, mock_accounts_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_accounts_client.list_accounts.return_value = [{"id": "some-other-account"}]
+        mock_accounts_client.get_account.side_effect = AccountNotFoundError("no such account")
 
         response = self.client.post(
             reverse("holdings-list"),
@@ -206,7 +224,7 @@ class HoldingListViewTests(TestCase):
         self, mock_jwks_client, mock_decode, mock_accounts_client, mock_market_data_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1"}]
+        mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = None
 
         response = self.client.post(
@@ -232,7 +250,7 @@ class HoldingListViewTests(TestCase):
         mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1"}]
+        mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
         mock_client.create_holding.return_value = HOLDING
 
@@ -303,7 +321,7 @@ class HoldingListViewTests(TestCase):
         mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1"}]
+        mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
         mock_client.create_holding.side_effect = HoldingAlreadyExistsError("dup")
 
@@ -330,7 +348,7 @@ class HoldingListViewTests(TestCase):
         mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1"}]
+        mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
         mock_client.create_holding.side_effect = HoldingLimitExceededError("limit")
         mock_client.max_holdings_for_account = 100
@@ -343,6 +361,170 @@ class HoldingListViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 409)
+
+    @patch("holdings.views._transactions_client")
+    @patch("holdings.views._market_data_client")
+    @patch("holdings.views._accounts_client")
+    @patch("holdings.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_nested_transaction_creates_both(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_accounts_client,
+        mock_market_data_client,
+        mock_transactions_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_accounts_client.get_account.return_value = ACCOUNT
+        mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+        mock_client.create_holding.return_value = HOLDING
+        mock_transactions_client.create_transaction.return_value = TRANSACTION
+
+        response = self.client.post(
+            reverse("holdings-list"),
+            data={
+                "ticker": "AAPL",
+                "asset_class": "stock",
+                "account_id": "acc-1",
+                "transaction": {
+                    "no_of_shares": 10,
+                    "price": 152.5,
+                    "date": "2026-01-15",
+                    "type": "BUY",
+                },
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), {**HOLDING, "transaction": TRANSACTION})
+        mock_transactions_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "TRANSACTION",
+            no_of_shares=10,
+            average_price=None,
+            price=152.5,
+            date="2026-01-15",
+            type="BUY",
+        )
+
+    @patch("holdings.views._accounts_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_nested_transaction_returns_400_for_watchlist_holding(
+        self, mock_jwks_client, mock_decode, mock_accounts_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("holdings-list"),
+            data={
+                "ticker": "EURUSD",
+                "asset_class": "fx",
+                "watchlist_id": "watch-1",
+                "transaction": {"no_of_shares": 1, "average_price": 1},
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_accounts_client.get_account.assert_not_called()
+
+    @patch("holdings.views._accounts_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_nested_transaction_returns_400_for_fx_holding(
+        self, mock_jwks_client, mock_decode, mock_accounts_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_accounts_client.get_account.return_value = ACCOUNT
+
+        response = self.client.post(
+            reverse("holdings-list"),
+            data={
+                "ticker": "EURUSD",
+                "asset_class": "fx",
+                "account_id": "acc-1",
+                "transaction": {"no_of_shares": 1, "price": 1, "date": "2026-01-01", "type": "BUY"},
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("holdings.views._market_data_client")
+    @patch("holdings.views._accounts_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_nested_transaction_returns_400_for_wrong_shape(
+        self, mock_jwks_client, mock_decode, mock_accounts_client, mock_market_data_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_accounts_client.get_account.return_value = ACCOUNT
+        mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+
+        response = self.client.post(
+            reverse("holdings-list"),
+            data={
+                "ticker": "AAPL",
+                "asset_class": "stock",
+                "account_id": "acc-1",
+                # TRANSACTION-mode account, but AVERAGE-shaped payload.
+                "transaction": {"no_of_shares": 10, "average_price": 100},
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("holdings.views._transactions_client")
+    @patch("holdings.views._market_data_client")
+    @patch("holdings.views._accounts_client")
+    @patch("holdings.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_nested_transaction_rolls_back_holding_on_failure(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_accounts_client,
+        mock_market_data_client,
+        mock_transactions_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_accounts_client.get_account.return_value = ACCOUNT
+        mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+        mock_client.create_holding.return_value = HOLDING
+        mock_transactions_client.create_transaction.side_effect = InsufficientSharesError("nope")
+
+        response = self.client.post(
+            reverse("holdings-list"),
+            data={
+                "ticker": "AAPL",
+                "asset_class": "stock",
+                "account_id": "acc-1",
+                "transaction": {
+                    "no_of_shares": 10,
+                    "price": 152.5,
+                    "date": "2026-01-15",
+                    "type": "SELL",
+                },
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 409)
+        mock_client.delete_holding.assert_called_once_with("auth0|abc123", "h-1")
 
 
 class HoldingDetailViewTests(TestCase):
@@ -377,16 +559,22 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("holdings.views._transactions_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_removes_the_holding(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_delete_removes_the_holding_and_its_transactions(
+        self, mock_jwks_client, mock_decode, mock_client, mock_transactions_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
 
         response = self.client.delete(reverse("holdings-detail", args=["h-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 204)
         mock_client.delete_holding.assert_called_once_with("auth0|abc123", "h-1")
+        mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
+            "auth0|abc123", ["h-1"]
+        )
 
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -401,11 +589,12 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("holdings.views._transactions_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_returns_400_for_pie_scoped_holding(
-        self, mock_jwks_client, mock_decode, mock_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_transactions_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.delete_holding.side_effect = ValueError("pie-scoped")
@@ -413,3 +602,4 @@ class HoldingDetailViewTests(TestCase):
         response = self.client.delete(reverse("holdings-detail", args=["h-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 400)
+        mock_transactions_client.delete_transactions_for_holdings.assert_not_called()

@@ -1,11 +1,17 @@
 from django.conf import settings
 from equicast_core import (
+    AccountNotFoundError,
     AccountsClient,
     HoldingAlreadyExistsError,
     HoldingLimitExceededError,
     HoldingNotFoundError,
     HoldingsClient,
+    InsufficientSharesError,
     MarketDataClient,
+    TransactionAlreadyExistsError,
+    TransactionAmountError,
+    TransactionLimitExceededError,
+    TransactionsClient,
     WatchlistsClient,
 )
 from identity.authentication import Auth0JWTAuthentication
@@ -13,6 +19,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from transactions.views import build_transaction_fields
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
@@ -46,6 +53,16 @@ _watchlists_client = WatchlistsClient(
 #: allowed to be created — same client market_data/views.py's ProfileView
 #: uses.
 _market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+#: Backs the optional nested "transaction" on HoldingListView.post (create
+#: a holding and record its first transaction in one request) and cascades
+#: a transaction's deletion when its holding is removed directly —
+#: transactions/views.py holds the client actually used for transactions
+#: CRUD.
+_transactions_client = TransactionsClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
+)
 
 
 class HoldingListView(APIView):
@@ -99,11 +116,31 @@ class HoldingListView(APIView):
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
 
+        # Optional: record the holding's first transaction in the same
+        # request rather than a separate POST /api/transactions/ — see
+        # equicast_core.transactions module docstring. Eligibility is
+        # checked here, before the ownership/market-data lookups below,
+        # since it depends only on values already in hand; full shape
+        # validation (which needs the account's transaction_type) happens
+        # once `account` is loaded, still before the holding is created —
+        # a bad transaction payload should never leave an orphaned holding.
+        transaction_data = request.data.get("transaction")
+        if transaction_data is not None:
+            if watchlist_id is not None:
+                return Response(
+                    {"detail": "Transactions aren't supported for watchlist holdings."},
+                    status=400,
+                )
+            if asset_class not in {"stock", "etf"}:
+                return Response(
+                    {"detail": "Transactions aren't supported for fx holdings."}, status=400
+                )
+
+        account = None
         if account_id is not None:
-            caller_account_ids = {
-                a["id"] for a in _accounts_client.list_accounts(request.user.user_id)
-            }
-            if account_id not in caller_account_ids:
+            try:
+                account = _accounts_client.get_account(request.user.user_id, account_id)
+            except AccountNotFoundError:
                 return Response({"detail": "Unknown account_id."}, status=400)
         else:
             caller_watchlist_ids = {
@@ -115,6 +152,20 @@ class HoldingListView(APIView):
         ticker = request.data["ticker"].upper()
         if _market_data_client.get_profile(asset_class, ticker) is None:
             return Response({"detail": f"No {asset_class} data for '{ticker}'."}, status=400)
+
+        transaction_fields = None
+        if transaction_data is not None:
+            # account is never None here: transaction_data implies
+            # watchlist_id is None (checked above), and account_id/
+            # watchlist_id are mutually exclusive, so account_id was set
+            # and the account lookup above either populated `account` or
+            # already returned a 400.
+            assert account is not None
+            transaction_fields, detail = build_transaction_fields(
+                transaction_data, account["transaction_type"]
+            )
+            if detail is not None:
+                return Response({"detail": detail}, status=400)
 
         try:
             holding = _client.create_holding(
@@ -135,7 +186,33 @@ class HoldingListView(APIView):
                 else _client.max_holdings_for_watchlist
             )
             return Response({"detail": f"Holding limit reached here (max {cap})."}, status=409)
-        return Response(holding, status=201)
+
+        if transaction_fields is None:
+            return Response(holding, status=201)
+
+        assert account is not None
+        try:
+            transaction = _transactions_client.create_transaction(
+                request.user.user_id,
+                holding["id"],
+                account["transaction_type"],
+                **transaction_fields,
+            )
+        except (
+            TransactionAmountError,
+            TransactionAlreadyExistsError,
+            TransactionLimitExceededError,
+            InsufficientSharesError,
+        ):
+            # S3 has no cross-object transaction — compensate by removing
+            # the holding just created rather than leaving it orphaned
+            # without the transaction the caller asked to pair it with.
+            _client.delete_holding(request.user.user_id, holding["id"])
+            return Response(
+                {"detail": "Could not record the transaction; holding was not created."},
+                status=409,
+            )
+        return Response({**holding, "transaction": transaction}, status=201)
 
 
 class HoldingDetailView(APIView):
@@ -159,4 +236,5 @@ class HoldingDetailView(APIView):
                 {"detail": "Pie-scoped holdings are removed via PUT /api/pies/<id>/holdings/."},
                 status=400,
             )
+        _transactions_client.delete_transactions_for_holdings(request.user.user_id, [holding_id])
         return Response(status=204)

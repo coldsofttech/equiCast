@@ -24,6 +24,16 @@ from equicast_core.pies import (
     PieNotFoundError,
     PiesClient,
 )
+from equicast_core.transactions import (
+    MAX_TRANSACTIONS_FOR_HOLDING,
+    TRANSACTION_ACTIONS,
+    InsufficientSharesError,
+    TransactionAlreadyExistsError,
+    TransactionAmountError,
+    TransactionLimitExceededError,
+    TransactionNotFoundError,
+    TransactionsClient,
+)
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
     MAX_WATCHLISTS,
@@ -55,6 +65,14 @@ __all__ = [
     "HoldingLimitExceededError",
     "HoldingNotFoundError",
     "HoldingsClient",
+    "MAX_TRANSACTIONS_FOR_HOLDING",
+    "TRANSACTION_ACTIONS",
+    "InsufficientSharesError",
+    "TransactionAlreadyExistsError",
+    "TransactionAmountError",
+    "TransactionLimitExceededError",
+    "TransactionNotFoundError",
+    "TransactionsClient",
     "MarketDataClient",
     "UserProfileClient",
 ]
