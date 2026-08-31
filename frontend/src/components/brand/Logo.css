@@ -1,0 +1,35 @@
+.ec-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+  min-width: 0;
+}
+
+.ec-logo-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--ec-r-8);
+  background: linear-gradient(135deg, var(--ec-accent), var(--ec-purple));
+  color: var(--ec-text-on-accent);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+
+.ec-logo-badge svg {
+  width: 20px;
+  height: 20px;
+}
+
+.ec-logo-wordmark {
+  font-weight: 500;
+  font-size: var(--ec-fs-18);
+  letter-spacing: -0.01em;
+  color: var(--ec-text);
+  white-space: nowrap;
+}
+
+.ec-logo-wordmark b {
+  font-weight: 800;
+  color: var(--ec-accent);
+}
