@@ -103,10 +103,22 @@ class AccountsClient:
         return account
 
     def create_account(
-        self, user_id: str, name: str, description: str, account_type: str, currency: str
+        self,
+        user_id: str,
+        name: str,
+        description: str,
+        account_type: str,
+        currency: str,
+        transaction_type: str,
     ) -> dict[str, Any]:
         """Append a new account, raising `AccountLimitExceededError` if the
-        user is already at this client's `max_accounts`."""
+        user is already at this client's `max_accounts`.
+
+        `transaction_type` (`"AVERAGE"` or `"TRANSACTION"`) governs how
+        every holding under this account — directly, or via one of its
+        pies — records transactions; see `TransactionsClient`. Membership
+        isn't validated here — the caller (the Django view) does that, the
+        same way it validates `account_type`/`currency`."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             accounts, etag = self._load(user_id)
             if len(accounts) >= self._max_accounts:
@@ -120,6 +132,7 @@ class AccountsClient:
                 "description": description,
                 "account_type": account_type,
                 "currency": currency,
+                "transaction_type": transaction_type,
                 "created_at": now,
                 "updated_at": now,
             }

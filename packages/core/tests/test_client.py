@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from io import BytesIO
 
@@ -66,3 +67,101 @@ def test_get_prices_returns_empty_list_when_key_missing(s3_client) -> None:
     client = MarketDataClient(BUCKET, s3_client=s3_client)
 
     assert client.get_prices("etf", "MISSING") == []
+
+
+def _put_catalog(s3_client, asset_class: str, rows: list[dict]) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key=f"catalog/{asset_class}.json",
+        Body=json.dumps({"tickers": rows}).encode("utf-8"),
+        ContentType="application/json",
+    )
+
+
+class TestGetCatalog:
+    def test_returns_the_published_rows(self, s3_client) -> None:
+        rows = [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}]
+        _put_catalog(s3_client, "stock", rows)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_catalog("stock") == rows
+
+    def test_returns_empty_list_when_no_catalog_published_yet(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_catalog("stock") == []
+
+
+class TestSearch:
+    def _seed(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "stock",
+            [
+                {"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5},
+                {"ticker": "NVDA", "name": "NVIDIA Corp", "type": "stock", "current_price": 178.9},
+            ],
+        )
+        _put_catalog(
+            s3_client,
+            "etf",
+            [{"ticker": "VOO", "name": "Vanguard S&P 500", "type": "etf", "current_price": 624.5}],
+        )
+        _put_catalog(
+            s3_client,
+            "fx",
+            [
+                {
+                    "ticker": "GBPUSD",
+                    "name": "British Pound to US Dollar",
+                    "type": "fx",
+                    "current_price": 1.27,
+                }
+            ],
+        )
+
+    def test_matches_ticker_substring_case_insensitively(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo")
+
+        assert [r["ticker"] for r in result] == ["VOO"]
+
+    def test_matches_name_substring(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nvidia")
+
+        assert [r["ticker"] for r in result] == ["NVDA"]
+
+    def test_searches_every_asset_class_by_default(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a")
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "VOO", "GBPUSD"}
+
+    def test_asset_classes_filters_the_scan(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a", asset_classes=["stock"])
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
+
+    def test_results_are_sorted_by_ticker(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a")
+
+        assert [r["ticker"] for r in result] == sorted(r["ticker"] for r in result)
+
+    def test_no_match_returns_empty_list(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.search("zzz") == []

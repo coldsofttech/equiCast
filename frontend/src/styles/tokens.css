@@ -1,0 +1,151 @@
+/**
+ * Design tokens, ported from Resource Planner's tokens.css
+ * (github.com/coldsofttech/resource-planner) — same values, `--ec-*`
+ * prefix instead of `--rp-*`. Palette A from docs/design/palette-options.html
+ * (the "reused as-is" option): accent oklch(0.55 0.18 270), purple
+ * secondary oklch(0.55 0.18 305), same success/warning/danger/info family.
+ *
+ * `data-theme` is always set on `<html>` before first paint by the inline
+ * bootstrap script in index.html (localStorage, falling back to
+ * prefers-color-scheme once) — so, like Resource Planner's own tokens.css,
+ * there's no `@media (prefers-color-scheme)` block here: the attribute is
+ * never absent, `ThemeToggle` only ever flips it between the two values
+ * this file defines.
+ */
+
+:root {
+  /* ----- Type ----- */
+  --ec-font-sans:
+    "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --ec-font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --ec-fs-12: 0.75rem;
+  --ec-fs-13: 0.8125rem;
+  --ec-fs-14: 0.875rem;
+  --ec-fs-15: 0.9375rem;
+  --ec-fs-16: 1rem;
+  --ec-fs-18: 1.125rem;
+  --ec-fs-20: 1.25rem;
+  --ec-fs-24: 1.5rem;
+  --ec-fs-32: 2rem;
+
+  /* ----- Spacing ----- */
+  --ec-s-2: 2px;
+  --ec-s-4: 4px;
+  --ec-s-6: 6px;
+  --ec-s-8: 8px;
+  --ec-s-12: 12px;
+  --ec-s-16: 16px;
+  --ec-s-20: 20px;
+  --ec-s-24: 24px;
+  --ec-s-32: 32px;
+  --ec-s-40: 40px;
+
+  /* ----- Radius ----- */
+  --ec-r-4: 4px;
+  --ec-r-6: 6px;
+  --ec-r-8: 8px;
+  --ec-r-12: 12px;
+  --ec-r-pill: 999px;
+
+  /* ----- Light palette ----- */
+  --ec-bg: oklch(0.985 0.003 250);
+  --ec-bg-elev: #ffffff;
+  --ec-bg-sunken: oklch(0.965 0.005 250);
+  --ec-surface: #ffffff;
+  --ec-surface-2: oklch(0.975 0.004 250);
+  --ec-surface-hover: oklch(0.96 0.005 250);
+
+  --ec-border: oklch(0.91 0.006 250);
+  --ec-border-strong: oklch(0.85 0.008 250);
+  --ec-divider: oklch(0.93 0.005 250);
+
+  --ec-text: oklch(0.22 0.012 260);
+  --ec-text-muted: oklch(0.48 0.012 260);
+  --ec-text-subtle: oklch(0.62 0.012 260);
+  --ec-text-on-accent: #ffffff;
+
+  /* Accents — all share chroma 0.18, lightness 0.55 (hover 0.50) */
+  --ec-accent: oklch(0.55 0.18 270);
+  --ec-accent-hover: oklch(0.5 0.18 270);
+  --ec-accent-soft: oklch(0.95 0.04 270);
+  --ec-accent-soft-text: oklch(0.4 0.18 270);
+
+  --ec-success: oklch(0.58 0.15 150);
+  --ec-success-soft: oklch(0.95 0.05 150);
+  --ec-success-soft-text: oklch(0.4 0.15 150);
+
+  --ec-warning: oklch(0.72 0.17 75);
+  --ec-warning-soft: oklch(0.95 0.07 80);
+  --ec-warning-soft-text: oklch(0.45 0.13 60);
+
+  --ec-danger: oklch(0.58 0.2 25);
+  --ec-danger-soft: oklch(0.95 0.05 25);
+  --ec-danger-soft-text: oklch(0.45 0.18 25);
+
+  --ec-info: oklch(0.6 0.13 230);
+  --ec-info-soft: oklch(0.95 0.04 230);
+  --ec-info-soft-text: oklch(0.4 0.15 230);
+
+  --ec-purple: oklch(0.55 0.18 305);
+  --ec-purple-soft: oklch(0.95 0.04 305);
+  --ec-purple-soft-text: oklch(0.4 0.18 305);
+
+  /* ----- Shadow ----- */
+  --ec-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ec-shadow-md: 0 4px 12px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --ec-shadow-lg: 0 12px 32px rgba(15, 23, 42, 0.1), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --ec-shadow-focus: 0 0 0 3px oklch(0.55 0.18 270 / 0.18);
+
+  /* ----- Layout ----- */
+  --ec-topbar-h: 52px;
+  --ec-menubar-h: 42px;
+  --ec-banner-h: 36px;
+}
+
+[data-theme="dark"] {
+  --ec-bg: oklch(0.18 0.01 260);
+  --ec-bg-elev: oklch(0.22 0.012 260);
+  --ec-bg-sunken: oklch(0.155 0.01 260);
+  --ec-surface: oklch(0.22 0.012 260);
+  --ec-surface-2: oklch(0.25 0.012 260);
+  --ec-surface-hover: oklch(0.28 0.014 260);
+
+  --ec-border: oklch(0.3 0.014 260);
+  --ec-border-strong: oklch(0.38 0.016 260);
+  --ec-divider: oklch(0.28 0.012 260);
+
+  --ec-text: oklch(0.96 0.005 250);
+  --ec-text-muted: oklch(0.72 0.012 250);
+  --ec-text-subtle: oklch(0.58 0.012 250);
+
+  --ec-accent: oklch(0.7 0.16 270);
+  --ec-accent-hover: oklch(0.76 0.16 270);
+  --ec-accent-soft: oklch(0.3 0.08 270);
+  --ec-accent-soft-text: oklch(0.85 0.14 270);
+
+  --ec-success: oklch(0.72 0.16 150);
+  --ec-success-soft: oklch(0.3 0.08 150);
+  --ec-success-soft-text: oklch(0.85 0.14 150);
+
+  --ec-warning: oklch(0.8 0.16 75);
+  --ec-warning-soft: oklch(0.32 0.1 75);
+  --ec-warning-soft-text: oklch(0.85 0.15 75);
+
+  --ec-danger: oklch(0.7 0.18 25);
+  --ec-danger-soft: oklch(0.3 0.1 25);
+  --ec-danger-soft-text: oklch(0.86 0.14 25);
+
+  --ec-info: oklch(0.72 0.13 230);
+  --ec-info-soft: oklch(0.3 0.08 230);
+  --ec-info-soft-text: oklch(0.85 0.12 230);
+
+  --ec-purple: oklch(0.72 0.16 305);
+  --ec-purple-soft: oklch(0.3 0.08 305);
+  --ec-purple-soft-text: oklch(0.85 0.14 305);
+
+  --ec-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --ec-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --ec-shadow-lg: 0 16px 40px rgba(0, 0, 0, 0.55), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --ec-shadow-focus: 0 0 0 3px oklch(0.7 0.16 270 / 0.3);
+}

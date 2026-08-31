@@ -1,0 +1,573 @@
+<title>Palette Options</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --chrome-bg: oklch(0.98 0.002 240);
+    --chrome-surface: oklch(1 0 0);
+    --chrome-surface-2: oklch(0.965 0.003 240);
+    --chrome-border: oklch(0.9 0.004 240);
+    --chrome-text: oklch(0.2 0.006 240);
+    --chrome-text-muted: oklch(0.5 0.006 240);
+    --chrome-text-subtle: oklch(0.62 0.006 240);
+    --chrome-rule: oklch(0.4 0.01 240);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --chrome-bg: oklch(0.15 0.006 240);
+      --chrome-surface: oklch(0.19 0.008 240);
+      --chrome-surface-2: oklch(0.22 0.009 240);
+      --chrome-border: oklch(0.28 0.01 240);
+      --chrome-text: oklch(0.95 0.004 240);
+      --chrome-text-muted: oklch(0.68 0.008 240);
+      --chrome-text-subtle: oklch(0.55 0.008 240);
+      --chrome-rule: oklch(0.75 0.008 240);
+    }
+  }
+  :root[data-theme="dark"] {
+    --chrome-bg: oklch(0.15 0.006 240);
+    --chrome-surface: oklch(0.19 0.008 240);
+    --chrome-surface-2: oklch(0.22 0.009 240);
+    --chrome-border: oklch(0.28 0.01 240);
+    --chrome-text: oklch(0.95 0.004 240);
+    --chrome-text-muted: oklch(0.68 0.008 240);
+    --chrome-text-subtle: oklch(0.55 0.008 240);
+    --chrome-rule: oklch(0.75 0.008 240);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--chrome-bg);
+    color: var(--chrome-text);
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    line-height: 1.55;
+  }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--chrome-rule);
+  }
+  h1 {
+    font-family: "Archivo", sans-serif;
+    font-weight: 800;
+    font-size: clamp(28px, 4vw, 40px);
+    letter-spacing: -0.01em;
+    margin: 10px 0 14px;
+    text-wrap: balance;
+  }
+  .lede {
+    max-width: 62ch;
+    font-size: 16px;
+    color: var(--chrome-text-muted);
+  }
+  .lede b { color: var(--chrome-text); font-weight: 600; }
+
+  .decision-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 2px;
+    padding: 7px 11px;
+    border: 1px solid oklch(0.86 0.08 150);
+    border-radius: 8px;
+    background: oklch(0.96 0.04 150);
+    color: oklch(0.38 0.12 150);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .decision-banner .decision-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: oklch(0.58 0.15 150);
+    flex-shrink: 0;
+  }
+
+  .decision-banner .decision-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  main { margin-top: 48px; display: flex; flex-direction: column; gap: 56px; }
+
+  .palette-block { display: flex; flex-direction: column; gap: 18px; }
+
+  .palette-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .palette-letter {
+    font-family: "Archivo", sans-serif;
+    font-weight: 800;
+    font-size: 13px;
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    flex-shrink: 0;
+  }
+  h2 {
+    font-family: "Archivo", sans-serif;
+    font-weight: 700;
+    font-size: 21px;
+    margin: 0;
+  }
+  .tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--chrome-text-subtle);
+    border: 1px solid var(--chrome-border);
+    border-radius: 999px;
+    padding: 3px 9px;
+  }
+  .rationale {
+    max-width: 68ch;
+    font-size: 14.5px;
+    color: var(--chrome-text-muted);
+    margin: 0;
+  }
+
+  .swatch-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    list-style: none;
+    margin: 4px 0 0;
+    padding: 0;
+  }
+  .swatch-chip {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: var(--chrome-surface);
+    border: 1px solid var(--chrome-border);
+    border-radius: 8px;
+    padding: 6px 10px 6px 8px;
+  }
+  .swatch-dot {
+    width: 15px;
+    height: 15px;
+    border-radius: 5px;
+    flex-shrink: 0;
+    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
+  }
+  .swatch-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--chrome-text);
+  }
+  .swatch-value {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10.5px;
+    color: var(--chrome-text-subtle);
+  }
+
+  .preview-pair {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  @media (max-width: 680px) {
+    .preview-pair { grid-template-columns: 1fr; }
+  }
+
+  .mini-shell {
+    border: 1px solid var(--pv-border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-family: "Plus Jakarta Sans", sans-serif;
+    box-shadow: var(--chrome-border) 0 0 0 1px inset;
+  }
+  .mini-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 11px 14px;
+    background: var(--pv-bg-elev);
+    border-bottom: 1px solid var(--pv-divider);
+  }
+  .mini-wordmark { 
+    font-weight: 800; 
+    font-size: 14.5px; 
+    letter-spacing: -0.01em; 
+    color: var(--pv-wordmark);
+  }
+  .mini-wordmark .accent-part { color: var(--pv-accent); }
+  .mini-theme-tag {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--pv-text-subtle);
+  }
+  .mini-menubar {
+    display: flex;
+    gap: 4px;
+    padding: 7px 14px;
+    background: var(--pv-bg-elev);
+    border-bottom: 1px solid var(--pv-divider);
+  }
+  .mini-menuitem {
+    font-size: 11.5px;
+    font-weight: 600;
+    padding: 5px 9px;
+    border-radius: 6px;
+    color: var(--pv-text-muted);
+  }
+  .mini-menuitem.active { background: var(--pv-accent-soft); color: var(--pv-accent-soft-text); }
+
+  .mini-body {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    background: var(--pv-bg);
+  }
+  .mini-eyebrow {
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--pv-text-subtle);
+  }
+  .mini-title { font-size: 17px; font-weight: 800; margin: 2px 0 0; color: var(--pv-text); }
+
+  .mini-card {
+    background: var(--pv-surface);
+    border: 1px solid var(--pv-border);
+    border-radius: 10px;
+    padding: 13px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .mini-stat-label { font-size: 11.5px; color: var(--pv-text-muted); }
+  .mini-stat-row { display: flex; align-items: baseline; gap: 8px; }
+  .mini-stat-value {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 21px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--pv-text);
+  }
+
+  .mini-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12.5px;
+    padding: 8px 0;
+    border-top: 1px solid var(--pv-divider);
+    color: var(--pv-text);
+  }
+  .mini-row:first-of-type { border-top: 0; }
+  .mini-row-left { display: flex; align-items: center; gap: 8px; }
+  .mini-ticker {
+    font-family: "JetBrains Mono", monospace;
+    font-weight: 600;
+    background: var(--pv-surface-2);
+    border-radius: 6px;
+    padding: 2px 6px;
+    font-size: 11px;
+  }
+  .mini-name { color: var(--pv-text-muted); }
+  .mini-price { font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+
+  .mini-actions { display: flex; gap: 8px; padding-top: 2px; }
+  .mini-btn {
+    height: 29px;
+    padding: 0 11px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--pv-border-strong);
+    background: var(--pv-surface);
+    color: var(--pv-text);
+  }
+  .mini-btn.primary { background: var(--pv-accent); border-color: var(--pv-accent); color: #fff; }
+
+  .mini-badge {
+    font-size: 10.5px;
+    font-weight: 700;
+    padding: 3px 8px;
+    border-radius: 999px;
+  }
+  .mini-badge.success { background: var(--pv-success-soft); color: var(--pv-success-soft-text); }
+  .mini-badge.warning { background: var(--pv-warning-soft); color: var(--pv-warning-soft-text); }
+  .mini-badge.danger { background: var(--pv-danger-soft); color: var(--pv-danger-soft-text); }
+  .mini-badge.info { background: var(--pv-info-soft); color: var(--pv-info-soft-text); }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--chrome-border);
+    font-size: 13.5px;
+    color: var(--chrome-text-muted);
+    max-width: 68ch;
+  }
+</style>
+
+<div class="wrap">
+  <p class="kicker">equiCast — design tokens</p>
+  <h1>Three palettes to choose from</h1>
+
+  <div class="decision-banner">
+    <span class="decision-dot"></span>
+    <span class="decision-label">Finalised</span>
+    <span>Option A — Violet &amp; Plum</span>
+  </div>
+
+  <p class="lede">
+    <b>A — Violet &amp; Plum</b> is the finalised direction, with a familiar, energetic product feel.
+    <b>B — Teal &amp; Amber</b> and <b>C — Indigo &amp; Gold</b> remain alternative directions
+    for comparison. All three keep the same structural system — spacing, radius, type, shadow —
+    so this is a color decision, not a redesign.
+    Each preview below is built from real equiCast UI
+    (topbar, menu, a stat card, a holdings row, buttons, status badges) shown in both
+    light and dark.
+  </p>
+
+  <main id="palettes"></main>
+
+  <footer>
+    Nothing here is final — pick one outright, or mix pieces (e.g. Option A's neutrals with
+    Option B's accent). Whichever direction wins becomes the <code>--ec-*</code> token set
+    for Phase&nbsp;0.
+  </footer>
+</div>
+
+<script>
+  const PALETTES = [
+    {
+      id: "a",
+      letter: "A",
+      name: "Violet & Plum",
+      tag: "finalised",
+      rationale:
+        "A blue-violet accent paired with plum as the secondary highlight. Familiar and energetic, with a clear SaaS/product feel while still working naturally for a financial dashboard.",
+      swatches: [
+        { label: "Accent", value: "oklch(0.55 0.18 270)" },
+        { label: "Secondary", value: "oklch(0.55 0.18 305)" },
+        { label: "Success", value: "oklch(0.58 0.15 150)" },
+        { label: "Warning", value: "oklch(0.72 0.17 75)" },
+        { label: "Danger", value: "oklch(0.58 0.20 25)" },
+        { label: "Info", value: "oklch(0.60 0.13 230)" },
+      ],
+      light: {
+        wordmark: "oklch(0.22 0.012 260)",
+        bg: "oklch(0.985 0.003 250)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 250)",
+        surface: "#ffffff", "surface-2": "oklch(0.975 0.004 250)", "surface-hover": "oklch(0.96 0.005 250)",
+        border: "oklch(0.91 0.006 250)", "border-strong": "oklch(0.85 0.008 250)", divider: "oklch(0.93 0.005 250)",
+        text: "oklch(0.22 0.012 260)", "text-muted": "oklch(0.48 0.012 260)", "text-subtle": "oklch(0.62 0.012 260)",
+        accent: "oklch(0.55 0.18 270)", "accent-soft": "oklch(0.95 0.04 270)", "accent-soft-text": "oklch(0.4 0.18 270)",
+        success: "oklch(0.58 0.15 150)", "success-soft": "oklch(0.95 0.05 150)", "success-soft-text": "oklch(0.4 0.15 150)",
+        warning: "oklch(0.72 0.17 75)", "warning-soft": "oklch(0.95 0.07 80)", "warning-soft-text": "oklch(0.45 0.13 60)",
+        danger: "oklch(0.58 0.20 25)", "danger-soft": "oklch(0.95 0.05 25)", "danger-soft-text": "oklch(0.45 0.18 25)",
+        info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
+      },
+      dark: {
+        wordmark: "oklch(0.96 0.005 250)",
+        bg: "oklch(0.18 0.010 260)", "bg-elev": "oklch(0.22 0.012 260)", "bg-sunken": "oklch(0.155 0.010 260)",
+        surface: "oklch(0.22 0.012 260)", "surface-2": "oklch(0.25 0.012 260)", "surface-hover": "oklch(0.28 0.014 260)",
+        border: "oklch(0.30 0.014 260)", "border-strong": "oklch(0.38 0.016 260)", divider: "oklch(0.28 0.012 260)",
+        text: "oklch(0.96 0.005 250)", "text-muted": "oklch(0.72 0.012 250)", "text-subtle": "oklch(0.58 0.012 250)",
+        accent: "oklch(0.70 0.16 270)", "accent-soft": "oklch(0.30 0.08 270)", "accent-soft-text": "oklch(0.85 0.14 270)",
+        success: "oklch(0.72 0.16 150)", "success-soft": "oklch(0.30 0.08 150)", "success-soft-text": "oklch(0.85 0.14 150)",
+        warning: "oklch(0.80 0.16 75)", "warning-soft": "oklch(0.32 0.10 75)", "warning-soft-text": "oklch(0.85 0.15 75)",
+        danger: "oklch(0.70 0.18 25)", "danger-soft": "oklch(0.30 0.10 25)", "danger-soft-text": "oklch(0.86 0.14 25)",
+        info: "oklch(0.72 0.13 230)", "info-soft": "oklch(0.30 0.08 230)", "info-soft-text": "oklch(0.85 0.12 230)",
+      },
+    },
+    {
+      id: "b",
+      letter: "B",
+      name: "Teal & Amber",
+      tag: "alternative",
+      rationale:
+        "A calmer, more distinctly financial mood. Teal reads as trustworthy without doubling as ‘positive return’ green — a real collision risk if the brand accent itself were green. Amber replaces purple as the secondary highlight.",
+      swatches: [
+        { label: "Accent", value: "oklch(0.55 0.16 197)" },
+        { label: "Secondary", value: "oklch(0.78 0.13 85)" },
+        { label: "Success", value: "oklch(0.58 0.15 150)" },
+        { label: "Warning", value: "oklch(0.72 0.17 75)" },
+        { label: "Danger", value: "oklch(0.58 0.20 25)" },
+        { label: "Info", value: "oklch(0.60 0.13 230)" },
+      ],
+      light: {
+        wordmark: "oklch(0.22 0.012 260)",
+        bg: "oklch(0.985 0.003 200)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 200)",
+        surface: "#ffffff", "surface-2": "oklch(0.975 0.004 200)", "surface-hover": "oklch(0.96 0.005 200)",
+        border: "oklch(0.91 0.006 200)", "border-strong": "oklch(0.85 0.008 200)", divider: "oklch(0.93 0.005 200)",
+        text: "oklch(0.22 0.012 210)", "text-muted": "oklch(0.48 0.012 210)", "text-subtle": "oklch(0.62 0.012 210)",
+        accent: "oklch(0.55 0.16 197)", "accent-soft": "oklch(0.95 0.04 197)", "accent-soft-text": "oklch(0.4 0.16 197)",
+        success: "oklch(0.58 0.15 150)", "success-soft": "oklch(0.95 0.05 150)", "success-soft-text": "oklch(0.4 0.15 150)",
+        warning: "oklch(0.72 0.17 75)", "warning-soft": "oklch(0.95 0.07 80)", "warning-soft-text": "oklch(0.45 0.13 60)",
+        danger: "oklch(0.58 0.20 25)", "danger-soft": "oklch(0.95 0.05 25)", "danger-soft-text": "oklch(0.45 0.18 25)",
+        info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
+      },
+      dark: {
+        wordmark: "oklch(0.96 0.005 250)",
+        bg: "oklch(0.17 0.012 200)", "bg-elev": "oklch(0.21 0.014 200)", "bg-sunken": "oklch(0.145 0.012 200)",
+        surface: "oklch(0.21 0.014 200)", "surface-2": "oklch(0.24 0.014 200)", "surface-hover": "oklch(0.27 0.016 200)",
+        border: "oklch(0.30 0.016 200)", "border-strong": "oklch(0.38 0.018 200)", divider: "oklch(0.28 0.014 200)",
+        text: "oklch(0.96 0.005 200)", "text-muted": "oklch(0.72 0.012 200)", "text-subtle": "oklch(0.58 0.012 200)",
+        accent: "oklch(0.72 0.14 197)", "accent-soft": "oklch(0.30 0.07 197)", "accent-soft-text": "oklch(0.85 0.12 197)",
+        success: "oklch(0.72 0.16 150)", "success-soft": "oklch(0.30 0.08 150)", "success-soft-text": "oklch(0.85 0.14 150)",
+        warning: "oklch(0.80 0.16 75)", "warning-soft": "oklch(0.32 0.10 75)", "warning-soft-text": "oklch(0.85 0.15 75)",
+        danger: "oklch(0.70 0.18 25)", "danger-soft": "oklch(0.30 0.10 25)", "danger-soft-text": "oklch(0.86 0.14 25)",
+        info: "oklch(0.72 0.13 230)", "info-soft": "oklch(0.30 0.08 230)", "info-soft-text": "oklch(0.85 0.12 230)",
+      },
+    },
+    {
+      id: "c",
+      letter: "C",
+      name: "Indigo & Gold",
+      tag: "alternative",
+      rationale:
+        "A deeper, more saturated blue than the baseline's brighter violet, paired with gold in place of purple — the classic private-banking combination. Aims for a more premium, wealth-management mood than a SaaS-tool one.",
+      swatches: [
+        { label: "Accent", value: "oklch(0.50 0.17 255)" },
+        { label: "Secondary", value: "oklch(0.76 0.14 80)" },
+        { label: "Success", value: "oklch(0.58 0.15 150)" },
+        { label: "Warning", value: "oklch(0.72 0.17 75)" },
+        { label: "Danger", value: "oklch(0.58 0.20 25)" },
+        { label: "Info", value: "oklch(0.60 0.13 230)" },
+      ],
+      light: {
+        wordmark: "oklch(0.22 0.012 260)",
+        bg: "oklch(0.985 0.003 255)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 255)",
+        surface: "#ffffff", "surface-2": "oklch(0.975 0.004 255)", "surface-hover": "oklch(0.96 0.005 255)",
+        border: "oklch(0.91 0.006 255)", "border-strong": "oklch(0.85 0.008 255)", divider: "oklch(0.93 0.005 255)",
+        text: "oklch(0.20 0.012 260)", "text-muted": "oklch(0.47 0.012 260)", "text-subtle": "oklch(0.61 0.012 260)",
+        accent: "oklch(0.50 0.17 255)", "accent-soft": "oklch(0.94 0.045 255)", "accent-soft-text": "oklch(0.38 0.17 255)",
+        success: "oklch(0.58 0.15 150)", "success-soft": "oklch(0.95 0.05 150)", "success-soft-text": "oklch(0.4 0.15 150)",
+        warning: "oklch(0.72 0.17 75)", "warning-soft": "oklch(0.95 0.07 80)", "warning-soft-text": "oklch(0.45 0.13 60)",
+        danger: "oklch(0.58 0.20 25)", "danger-soft": "oklch(0.95 0.05 25)", "danger-soft-text": "oklch(0.45 0.18 25)",
+        info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
+      },
+      dark: {
+        wordmark: "oklch(0.96 0.005 250)",
+        bg: "oklch(0.16 0.014 255)", "bg-elev": "oklch(0.20 0.016 255)", "bg-sunken": "oklch(0.135 0.014 255)",
+        surface: "oklch(0.20 0.016 255)", "surface-2": "oklch(0.23 0.016 255)", "surface-hover": "oklch(0.26 0.018 255)",
+        border: "oklch(0.29 0.018 255)", "border-strong": "oklch(0.37 0.02 255)", divider: "oklch(0.27 0.016 255)",
+        text: "oklch(0.96 0.005 255)", "text-muted": "oklch(0.72 0.012 255)", "text-subtle": "oklch(0.58 0.012 255)",
+        accent: "oklch(0.68 0.15 255)", "accent-soft": "oklch(0.30 0.08 255)", "accent-soft-text": "oklch(0.85 0.13 255)",
+        success: "oklch(0.72 0.16 150)", "success-soft": "oklch(0.30 0.08 150)", "success-soft-text": "oklch(0.85 0.14 150)",
+        warning: "oklch(0.80 0.16 75)", "warning-soft": "oklch(0.32 0.10 75)", "warning-soft-text": "oklch(0.85 0.15 75)",
+        danger: "oklch(0.70 0.18 25)", "danger-soft": "oklch(0.30 0.10 25)", "danger-soft-text": "oklch(0.86 0.14 25)",
+        info: "oklch(0.72 0.13 230)", "info-soft": "oklch(0.30 0.08 230)", "info-soft-text": "oklch(0.85 0.12 230)",
+      },
+    },
+  ];
+
+  function miniShell(tokens, themeLabel) {
+    const el = document.createElement("div");
+    el.className = "mini-shell";
+    Object.entries(tokens).forEach(([k, v]) => el.style.setProperty(`--pv-${k}`, v));
+    el.innerHTML = `
+      <div class="mini-topbar">
+        <div class="mini-wordmark">equi<span class="accent-part">Cast</span></div>
+        <div class="mini-theme-tag">${themeLabel}</div>
+      </div>
+      <div class="mini-menubar">
+        <div class="mini-menuitem active">Portfolio</div>
+        <div class="mini-menuitem">Watchlists</div>
+        <div class="mini-menuitem">Search</div>
+      </div>
+      <div class="mini-body">
+        <div>
+          <div class="mini-eyebrow">ISA — Stocks &amp; Shares</div>
+          <div class="mini-title">Core Growth</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-stat-label">Total value</div>
+          <div class="mini-stat-row">
+            <span class="mini-stat-value">£128,450.32</span>
+            <span class="mini-badge success">+2.4%</span>
+          </div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-row">
+            <div class="mini-row-left"><span class="mini-ticker">AAPL</span><span class="mini-name">Apple Inc.</span></div>
+            <div class="mini-row-left"><span class="mini-price">227.52</span><span class="mini-badge success">+0.8%</span></div>
+          </div>
+          <div class="mini-row">
+            <div class="mini-row-left"><span class="mini-ticker">TSLA</span><span class="mini-name">Tesla Inc.</span></div>
+            <div class="mini-row-left"><span class="mini-price">411.90</span><span class="mini-badge danger">-1.6%</span></div>
+          </div>
+          <div class="mini-row">
+            <div class="mini-row-left"><span class="mini-ticker">VOO</span><span class="mini-name">Vanguard S&amp;P 500</span></div>
+            <div class="mini-row-left"><span class="mini-price">624.51</span><span class="mini-badge warning">Pending</span></div>
+          </div>
+        </div>
+        <div class="mini-actions">
+          <button class="mini-btn primary" type="button">Add holding</button>
+          <button class="mini-btn" type="button">Export</button>
+          <span class="mini-badge info" style="align-self:center;">Synced 2m ago</span>
+        </div>
+      </div>
+    `;
+    return el;
+  }
+
+  const root = document.getElementById("palettes");
+  PALETTES.forEach((p) => {
+    const section = document.createElement("section");
+    section.className = "palette-block";
+
+    const head = document.createElement("div");
+    head.className = "palette-head";
+    head.innerHTML = `
+      <span class="palette-letter" style="background:${p.light.accent}">${p.letter}</span>
+      <h2>${p.name}</h2>
+      <span class="tag">${p.tag}</span>
+    `;
+    section.appendChild(head);
+
+    const rationale = document.createElement("p");
+    rationale.className = "rationale";
+    rationale.textContent = p.rationale;
+    section.appendChild(rationale);
+
+    const strip = document.createElement("ul");
+    strip.className = "swatch-strip";
+    strip.innerHTML = p.swatches
+      .map(
+        (s) => `
+      <li class="swatch-chip">
+        <span class="swatch-dot" style="background:${s.value}"></span>
+        <span class="swatch-label">${s.label}</span>
+        <span class="swatch-value">${s.value}</span>
+      </li>`
+      )
+      .join("");
+    section.appendChild(strip);
+
+    const pair = document.createElement("div");
+    pair.className = "preview-pair";
+    pair.appendChild(miniShell(p.light, "Light"));
+    pair.appendChild(miniShell(p.dark, "Dark"));
+    section.appendChild(pair);
+
+    root.appendChild(section);
+  });
+</script>

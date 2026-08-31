@@ -7,7 +7,7 @@ from equicast_core.accounts import (
     AccountNotFoundError,
     AccountsClient,
 )
-from equicast_core.client import MarketDataClient
+from equicast_core.client import ASSET_CLASSES, MarketDataClient
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
     MAX_HOLDINGS_FOR_PIE,
@@ -23,6 +23,16 @@ from equicast_core.pies import (
     PieLimitExceededError,
     PieNotFoundError,
     PiesClient,
+)
+from equicast_core.transactions import (
+    MAX_TRANSACTIONS_FOR_HOLDING,
+    TRANSACTION_ACTIONS,
+    InsufficientSharesError,
+    TransactionAlreadyExistsError,
+    TransactionAmountError,
+    TransactionLimitExceededError,
+    TransactionNotFoundError,
+    TransactionsClient,
 )
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
@@ -55,6 +65,15 @@ __all__ = [
     "HoldingLimitExceededError",
     "HoldingNotFoundError",
     "HoldingsClient",
+    "MAX_TRANSACTIONS_FOR_HOLDING",
+    "TRANSACTION_ACTIONS",
+    "InsufficientSharesError",
+    "TransactionAlreadyExistsError",
+    "TransactionAmountError",
+    "TransactionLimitExceededError",
+    "TransactionNotFoundError",
+    "TransactionsClient",
+    "ASSET_CLASSES",
     "MarketDataClient",
     "UserProfileClient",
 ]

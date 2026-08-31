@@ -39,6 +39,70 @@ than being swallowed.
 Only reads the **current** calendar year's `price.parquet` — no
 cross-year listing/concatenation of full history in this client yet.
 
+`get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
+third, separate piece of the market-data layout: `catalog/<asset_class>.json`
+— a small, pre-built `{ticker, name, type, current_price}` row per
+configured ticker, published by each ingestion pipeline after a run (see
+`equicast_core.catalog` below), not derived from `profile.parquet` on the
+fly. `search()` reads each scanned asset class's catalog once via
+`get_catalog()` and does a case-insensitive substring match against
+`ticker`/`name` in memory — no per-ticker S3 reads, and no live bucket
+listing:
+
+```python
+client.get_catalog("stock")
+# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}, ...]
+# or [] if this asset class has no catalog published yet
+
+client.search("v")
+# every fx/stock/etf catalog row whose ticker or name contains "v",
+# sorted by ticker — e.g. ticker "V" and any name containing a "v"
+client.search("v", asset_classes=["stock"])  # narrow the scan
+```
+
+`get_catalog()` returns `[]` (not an exception) if this asset class's
+pipeline hasn't published a catalog yet, the same "not configured" shape
+`get_prices()` uses. `search()`'s results are only as fresh as the last
+ingestion run that built the catalog — same staleness model as
+`get_profile()`/`get_prices()`, nothing here is live market data.
+
+## `equicast_core.catalog` — building the search catalog (ingestion side)
+
+The write side of the `catalog/<asset_class>.json` contract
+`MarketDataClient.get_catalog`/`.search` read. Deliberately generic across
+all three ingestion pipelines and asset-class-agnostic — every pipeline
+already writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
+local layout before uploading, so this only needs a local directory and an
+`asset_class` string, no per-pipeline config parsing:
+
+```python
+from pathlib import Path
+from equicast_core.catalog import build_catalog_rows, upload_catalog
+
+rows = build_catalog_rows(Path("output"), "stock")
+# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}, ...]
+# — ticker comes from the directory name (stock=AAPL/), not the profile
+# itself, so this works uniformly for fx profiles too, which carry no
+# literal "ticker"/"name" field (from_currency/to_currency/description
+# instead — see equicast_fx.writer)
+
+upload_catalog(bucket="equicast-market-data-dev", asset_class="stock", rows=rows)
+# replaces catalog/stock.json outright (a full rebuild, not a merge)
+```
+
+Also installs as a CLI, `equicast-core-build-catalog --asset-class stock
+--output-dir output --bucket equicast-market-data-dev`, which each
+ingestion workflow (`stock-ingestion.yml`/`etf-ingestion.yml`/
+`fx-ingestion.yml`) runs once per run, in a `build-catalog` job **after**
+every parallel ingest matrix leg finishes — a single leg only ever
+processes its own chunk of the full ticker list (GitHub Actions caps a
+matrix at 256 legs), so the catalog can't be built inside any one leg;
+`build-catalog` downloads every leg's `profile.parquet` files (published
+as a build artifact by each leg) merged into one local directory first.
+This needs no new S3 read permission for the ingestion role — it only
+ever reads the artifacts locally, then uploads the finished catalog with
+the same `s3:PutObject` access ingestion already had.
+
 ## `UserProfileClient` — DynamoDB user profiles
 
 Reads and upserts items in equicast's `user-profiles` DynamoDB table (one
@@ -80,9 +144,10 @@ client.create_account(
     description="Stocks & shares ISA",
     account_type="ISA",
     currency="GBP",
+    transaction_type="TRANSACTION",
 )
 # {"id": "...", "name": "ISA", "description": "Stocks & shares ISA",
-#  "account_type": "ISA", "currency": "GBP",
+#  "account_type": "ISA", "currency": "GBP", "transaction_type": "TRANSACTION",
 #  "created_at": "...", "updated_at": "..."}
 
 client.list_accounts("auth0|65f2c1...")
@@ -103,6 +168,14 @@ from DynamoDB's `ConditionExpression` — S3 has no per-field conditional
 update, only whole-object conditional puts, so a write that loses the race
 is retried against the now-current state rather than clobbering a
 concurrent change.
+
+`transaction_type` (`"AVERAGE"` or `"TRANSACTION"`) governs how every
+holding under this account — directly, or via one of its pies — records
+transactions; see `TransactionsClient` below. Membership isn't validated
+by `AccountsClient` itself — the Django backend's `accounts/views.py` does
+that, the same way it validates `account_type`/`currency`, and also
+rejects a `PATCH` of `transaction_type` once the account has any
+transactions recorded under it.
 
 ## `PiesClient` — S3 JSON user-owned data (pies)
 
@@ -270,6 +343,100 @@ floating-point sum errors. A pie left with zero holdings (everything
 removed) is a valid, unconstrained state; the 100%-sum rule only kicks in
 once it holds anything. Same S3 conditional-write optimistic concurrency as
 `AccountsClient`.
+
+## `TransactionsClient` — S3 JSON user-owned data (transactions)
+
+Unlike every other domain above (one JSON object per user),
+`TransactionsClient` stores **one JSON object per holding**, at
+`transactions/<user_id>/<holding_id>.json`. Every real access pattern here
+— filtering by holding, a `SELL`'s cumulative-shares check, cascading a
+delete when a holding is removed — is already scoped to one holding, so
+partitioning this way means each of those touches exactly one S3 object
+instead of rewriting a whole-user blob on every write; the trade-off is
+that `list_transactions` with no `holding_id` filter has to enumerate and
+read every holding's file (see `_load_all`), fine since that's the
+uncommon path. A transaction always hangs off exactly one `holding_id` —
+never an account/pie/watchlist directly; `TransactionsClient` doesn't
+validate that the holding belongs to the caller, or that it's even
+eligible for transactions at all (fx holdings and watchlist holdings
+aren't) — the Django backend's `transactions/views.py` does that, via
+`HoldingsClient`/`PiesClient`/`AccountsClient`, before calling in. Backs
+the Django backend's Auth0-authenticated `/api/transactions/...` endpoints
+(detail routes nested as `/api/transactions/<holding_id>/<transaction_id>/`
+— an id-only lookup would otherwise have to scan every holding file), and
+the optional nested `transaction` on `POST /api/holdings/`.
+
+```python
+from equicast_core import TransactionsClient
+
+client = TransactionsClient(bucket="equicast-user-data-dev")
+
+# AVERAGE mode (the holding's account has transaction_type="AVERAGE"):
+# a single mutable snapshot per holding.
+client.create_transaction(
+    "auth0|65f2c1...", holding_id, "AVERAGE", no_of_shares=10, average_price=152.5,
+)
+# {"id": "...", "holding_id": "...", "no_of_shares": 10, "average_price": 152.5,
+#  "price": None, "date": None, "type": None, "created_at": "...", "updated_at": "..."}
+client.update_transaction(
+    "auth0|65f2c1...", holding_id, transaction_id, no_of_shares=15, average_price=148
+)
+
+# TRANSACTION mode (transaction_type="TRANSACTION"): an immutable BUY/SELL
+# log, any number of records per holding.
+client.create_transaction(
+    "auth0|65f2c1...", holding_id, "TRANSACTION",
+    no_of_shares=10, price=152.5, date="2026-01-15", type="BUY",
+)
+
+client.list_transactions("auth0|65f2c1...")  # every holding — reads every file
+client.list_transactions("auth0|65f2c1...", holding_id=holding_id)  # one file read
+client.list_transactions("auth0|65f2c1...", holding_id=holding_id, year=2026)
+client.list_transactions("auth0|65f2c1...", date_from="2026-01-01", date_to="2026-06-30")
+client.get_transaction("auth0|65f2c1...", holding_id, transaction_id)
+client.delete_transaction("auth0|65f2c1...", holding_id, transaction_id)
+client.has_transactions_for_holdings("auth0|65f2c1...", [holding_id, ...])  # existence check
+client.delete_transactions_for_holdings("auth0|65f2c1...", [holding_id, ...])  # bulk cleanup
+```
+
+`create_transaction` takes the resolved `mode` (`"AVERAGE"` or
+`"TRANSACTION"`) as an explicit argument rather than looking it up itself
+— resolving it means reading the holding's account, which is the caller's
+job, the same way `PiesClient` leaves account ownership to the Django
+backend. Every record has the same stable six-key shape regardless of
+mode (`no_of_shares`/`average_price`/`price`/`date`/`type` always present,
+`None` where not applicable) — the same reasoning `HoldingsClient` uses
+for its three parent-id fields. Since an `AVERAGE` record's `date` is
+always `None`, it never matches `list_transactions`'s `year`/`date_from`/
+`date_to` filters — the correct behavior for a dateless snapshot, not a bug.
+
+Raises `TransactionAmountError` for a non-positive
+`no_of_shares`/`average_price`/`price`, or a `type` outside `{"BUY",
+"SELL"}`; `TransactionAlreadyExistsError` for a second `AVERAGE`-mode
+record against the same holding (`update_transaction` it instead — and
+`update_transaction` itself raises `ValueError` for a `TRANSACTION`-mode
+record, which is immutable); `TransactionLimitExceededError` past
+`max_transactions_for_holding` — `MAX_TRANSACTIONS_FOR_HOLDING` (500) by
+default, `-1` to disable the cap entirely, overridable the same way
+`HoldingsClient`'s caps are; and `InsufficientSharesError` for a `SELL`
+whose quantity would take the holding's net recorded shares (summed in
+whatever order the records happen to have been created, not date order)
+below zero. `get_transaction`/`update_transaction`/`delete_transaction`
+raise `TransactionNotFoundError` for an unknown `transaction_id`.
+`has_transactions_for_holdings` backs `accounts/views.py`'s guard against
+changing `transaction_type` once an account has recorded transactions —
+a targeted per-holding existence check rather than a full per-user scan.
+`delete_transactions_for_holdings` is a bulk-cleanup helper the Django
+backend uses when a holding (or a pie/account's holdings, force-deleted)
+is removed — it deletes each matching holding's S3 object outright rather
+than rewriting it to an empty list, since there's no concurrent writer to
+race once the holding itself is gone; like
+`HoldingsClient.delete_holdings_for_account`, an empty match is a no-op,
+not an error. `create_transaction`/`update_transaction`/`delete_transaction`
+still use S3 conditional writes for optimistic concurrency, same as every
+other domain here — just scoped to one holding's object instead of the
+whole user's. For now this only stores what the caller provides — no
+computed average price, dividends, or returns.
 
 ## Development
 

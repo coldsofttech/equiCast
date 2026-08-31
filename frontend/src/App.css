@@ -1,0 +1,8 @@
+.ec-placeholder {
+  border: 1px dashed var(--ec-border-strong);
+  border-radius: var(--ec-r-12);
+  padding: var(--ec-s-40);
+  text-align: center;
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-14);
+}
