@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "market_data",
     "identity",
     "accounts",
+    "pies",
 ]
 
 MIDDLEWARE = [
@@ -112,7 +113,15 @@ AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 USER_PROFILES_TABLE = os.environ.get("USER_PROFILES_TABLE")
 
-# Bucket for user-owned JSON data (accounts, and future domains like
+# Bucket for user-owned JSON data (accounts, pies, and future domains like
 # portfolios/watchlists) — see infra/main.tf's user_data_bucket module. No
 # default, same "fail loudly" reasoning as MARKET_DATA_BUCKET.
 USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")
+
+# Product-defined per-user/per-account caps, overridable per environment via
+# GitHub Environment variables (see infra/variables.tf's max_accounts/
+# max_pies and .github/workflows/terraform.yml) rather than a code change —
+# defaults here match equicast_core's own MAX_ACCOUNTS/MAX_PIES defaults, in
+# case the env var is unset (e.g. running locally).
+MAX_ACCOUNTS = int(os.environ.get("MAX_ACCOUNTS", 5))
+MAX_PIES = int(os.environ.get("MAX_PIES", 20))

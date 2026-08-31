@@ -19,7 +19,10 @@ from typing import Any
 
 import boto3
 
-#: Product-defined ceiling on accounts per user (see Phase D req 7).
+#: Default ceiling on accounts per user (see Phase D req 7), used when
+#: `AccountsClient` isn't given an explicit `max_accounts`. Overridable per
+#: deployment via the `MAX_ACCOUNTS` env var (see settings.py) rather than a
+#: code change, so product can tune the cap without a release.
 MAX_ACCOUNTS = 5
 
 #: Bounds retries on a write losing the conditional-put race to a concurrent
@@ -34,15 +37,27 @@ class AccountLimitExceededError(Exception):
 
 
 class AccountNotFoundError(Exception):
-    """Raised by `update_account`/`delete_account` for an unknown account id."""
+    """Raised by `get_account`/`update_account`/`delete_account` for an
+    unknown account id."""
 
 
 class AccountsClient:
     """Reads and writes one user's accounts as a JSON object in S3."""
 
-    def __init__(self, bucket: str, s3_client: Any = None, region_name: str | None = None) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        s3_client: Any = None,
+        region_name: str | None = None,
+        max_accounts: int = MAX_ACCOUNTS,
+    ) -> None:
         self._bucket = bucket
         self._s3 = s3_client or boto3.client("s3", region_name=region_name)
+        self._max_accounts = max_accounts
+
+    @property
+    def max_accounts(self) -> int:
+        return self._max_accounts
 
     def _key(self, user_id: str) -> str:
         return f"accounts/{user_id}.json"
@@ -78,16 +93,25 @@ class AccountsClient:
         accounts, _ = self._load(user_id)
         return accounts
 
+    def get_account(self, user_id: str, account_id: str) -> dict[str, Any]:
+        """Return the account matching `account_id`, raising
+        `AccountNotFoundError` if no such account exists."""
+        accounts, _ = self._load(user_id)
+        account = next((a for a in accounts if a["id"] == account_id), None)
+        if account is None:
+            raise AccountNotFoundError(f"No account '{account_id}' for user '{user_id}'.")
+        return account
+
     def create_account(
         self, user_id: str, name: str, description: str, account_type: str, currency: str
     ) -> dict[str, Any]:
         """Append a new account, raising `AccountLimitExceededError` if the
-        user is already at `MAX_ACCOUNTS`."""
+        user is already at this client's `max_accounts`."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             accounts, etag = self._load(user_id)
-            if len(accounts) >= MAX_ACCOUNTS:
+            if len(accounts) >= self._max_accounts:
                 raise AccountLimitExceededError(
-                    f"User '{user_id}' already has {MAX_ACCOUNTS} accounts."
+                    f"User '{user_id}' already has {self._max_accounts} accounts."
                 )
             now = datetime.now(UTC).isoformat()
             account = {

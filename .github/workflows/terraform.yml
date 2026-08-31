@@ -170,7 +170,7 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - run: terraform init -backend-config="key=equicast/dev/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
+      - run: terraform apply -auto-approve -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }}
 
   # Gated behind the "production" GitHub Environment's required reviewers
   # (Settings -> Environments -> production) — a separate approval from
@@ -198,4 +198,4 @@ jobs:
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
       - run: terraform init -backend-config="key=equicast/prod/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=prod -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }}
+      - run: terraform apply -auto-approve -input=false -var environment=prod -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }}

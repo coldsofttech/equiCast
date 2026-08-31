@@ -52,6 +52,20 @@ def test_create_account_persists_and_returns_the_account(s3_client) -> None:
     assert client.list_accounts("auth0|abc123") == [account]
 
 
+def test_get_account_returns_the_matching_account(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    account = _create(client, "auth0|abc123")
+
+    assert client.get_account("auth0|abc123", account["id"]) == account
+
+
+def test_get_account_raises_for_unknown_id(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+
+    with pytest.raises(AccountNotFoundError):
+        client.get_account("auth0|abc123", "does-not-exist")
+
+
 def test_create_account_raises_once_limit_reached(s3_client) -> None:
     client = AccountsClient(BUCKET, s3_client=s3_client)
     for i in range(MAX_ACCOUNTS):
@@ -59,6 +73,15 @@ def test_create_account_raises_once_limit_reached(s3_client) -> None:
 
     with pytest.raises(AccountLimitExceededError):
         _create(client, "auth0|abc123", name="one too many")
+
+
+def test_create_account_respects_custom_max_accounts(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client, max_accounts=2)
+    _create(client, "auth0|abc123", name="acc0")
+    _create(client, "auth0|abc123", name="acc1")
+
+    with pytest.raises(AccountLimitExceededError):
+        _create(client, "auth0|abc123", name="acc2")
 
 
 def test_create_account_does_not_affect_other_users(s3_client) -> None:

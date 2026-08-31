@@ -60,6 +60,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase D User-owned data (pies): new `backend/pies/` Django app exposing
+  Auth0-authenticated CRUD for a user's pies, nested under one of their
+  accounts — `GET`/`POST /api/pies/` (`GET` takes an optional
+  `?account_id=` filter), `GET`/`PATCH`/`DELETE /api/pies/<id>/`. Backed by
+  a new `equicast_core.PiesClient` (`packages/core/src/equicast_core/pies.py`),
+  same shape as `AccountsClient` — one JSON object per user at
+  `pies/<user_id>.json` (`{"pies": [...]}`), S3 conditional writes for
+  optimistic concurrency, conflict-retry loop. Each pie is
+  `{id (uuid4), account_id, name, description, created_at, updated_at}`;
+  holdings and their target allocation within a pie aren't modeled yet —
+  that's a later phase, so no allocation-validation logic exists to sit
+  unused in the meantime. `account_id` is immutable after creation (a pie
+  doesn't move between accounts). `create_pie` enforces a
+  20-pies-**per-account** cap (not per user) via `PieLimitExceededError`
+  (surfaced as `409`); `get_pie`/`update_pie`/`delete_pie` raise
+  `PieNotFoundError` for an unknown id (surfaced as `404`).
+  `pies/views.py` validates on create that `account_id` is one of the
+  caller's own accounts (via `AccountsClient.list_accounts`) before
+  creating a pie against it — `PiesClient` itself stays generic/
+  self-contained like `AccountsClient` and doesn't know about accounts;
+  ownership is a view-layer concern, the same place the existing
+  required-field checks already live. `accounts/views.py`'s
+  `AccountDetailView` gains a `GET`, returning an account's own fields
+  plus its nested `pies` (via `PiesClient.list_pies(user_id,
+  account_id=...)`); `AccountsClient` gains `get_account` to back it.
+  `AccountDetailView.delete` now refuses to delete an account that still
+  has pies under it (`409`, listing them via the same `list_pies` call)
+  unless the caller passes `?force=true`, in which case it removes those
+  pies first (`PiesClient.delete_pies_for_account`, a new bulk-delete
+  method — one read/write for the whole account rather than looping
+  `delete_pie` per pie) before deleting the account itself. This is a
+  best-effort check-then-act guard, not a cross-object transaction —
+  accounts and pies are two separate S3 objects with no atomic multi-object
+  write available, matching every other guarantee in this domain (S3's
+  conditional writes are already only per-object).
+  New Terraform: the backend Lambda's IAM policy gains a statement scoped
+  to `s3:GetObject`/`s3:PutObject` on `<user_data_bucket_arn>/pies/*`
+  (mirroring the accounts statement, its own review), and the existing
+  `s3:ListBucket` statement's `s3:prefix` condition now covers both
+  `accounts/*` and `pies/*` (still one shared statement — `ListBucket` is
+  bucket-level, so it can't be scoped to a resource ARN per domain the way
+  `GetObject`/`PutObject` are). No new bucket — reuses `user_data_bucket`.
+  `packages/core/tests/test_pies.py` (16 tests) and `backend/pies/tests.py`
+  (17 tests) cover the client and view layer, including per-account (not
+  per-user) cap enforcement and a concurrent-write-conflict regression test
+  mirroring `test_accounts.py`'s; `backend/accounts/tests.py` (now 17 tests)
+  gained coverage for the new `DELETE`-with-pies `409`/`?force=true` paths.
+  `docs/local-setup.md`, `backend/README.md`, and `packages/core/README.md`
+  updated with the new endpoints/client.
+- The accounts/pies caps are now configurable per deployment instead of
+  hardcoded: `AccountsClient`/`PiesClient` take `max_accounts`/
+  `max_pies_per_account` constructor args (still defaulting to the prior
+  hardcoded `MAX_ACCOUNTS`/`MAX_PIES` values, 5/20), and
+  `backend/equicast_api/settings.py` sources them from new `MAX_ACCOUNTS`/
+  `MAX_PIES` env vars (defaulting the same way if unset). `infra/main.tf`
+  plumbs these into the backend Lambda from two new Terraform variables
+  (`infra/variables.tf`'s `max_accounts`/`max_pies`, also defaulted to 5/20
+  so `terraform plan` — which runs outside any GitHub Environment — still
+  works without them). `.github/workflows/terraform.yml`'s `apply-dev`/
+  `apply-prod` pass the real values via `-var max_accounts=${{
+  vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }}`, reading each
+  from that job's own GitHub Environment (`development`/`production`) —
+  product can now retune either cap per environment from GitHub's UI, no
+  code change or release required. `packages/core/tests/test_accounts.py`
+  gained coverage for `get_account` and a custom `max_accounts`.
 - Phase D User-owned data (accounts): new `backend/accounts/` Django app
   exposing Auth0-authenticated CRUD for a user's investment accounts —
   `GET`/`POST /api/accounts/`, `PATCH`/`DELETE /api/accounts/<id>/`. Backed
