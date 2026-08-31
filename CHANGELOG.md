@@ -87,6 +87,142 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rewritten to cover the wordmark, menu item selection, and the theme
   toggle instead. Routing, the API client, Auth0, and real domain pages
   are later phases.
+- `scripts/local-dev.ps1`: a Windows PowerShell script that starts
+  [LocalStack](https://www.localstack.io/) (S3 + DynamoDB), provisions
+  `MARKET_DATA_BUCKET`/`USER_DATA_BUCKET`/`USER_PROFILES_TABLE`, and runs
+  `manage.py runserver` against them — a fully local stand-in for the
+  backend's AWS dependencies, with no real AWS account and (deliberately)
+  no LocalStack account either. Needs no code change: every
+  `equicast-core` client already calls plain
+  `boto3.client(...)`/`boto3.resource(...)`, and the pinned
+  `boto3>=1.35.9` honors the `AWS_ENDPOINT_URL_S3`/
+  `AWS_ENDPOINT_URL_DYNAMODB` env vars the script sets to route those
+  calls at LocalStack instead of real AWS. Pinned to
+  `localstack/localstack:4.14.0`, deliberately not `:latest` — starting
+  with the 2026.03.0 calendar-versioned release, even LocalStack's
+  free-tier image requires a `LOCALSTACK_AUTH_TOKEN` (a free account) just
+  to start, and `4.14.0` is the last semver release before that. `-Stop`
+  and `-Reset` manage the container directly, and the backend run is
+  wrapped in `try/finally` so Ctrl+C tears LocalStack down too rather than
+  leaving it running detached. `-SeedMarketData` (optionally with
+  `-FullLoad`) ingests all three asset classes via their own
+  `equicast-fx`/`equicast-stock`/`equicast-etf` CLI and
+  `packages/*/config/*.yaml`, uploads the output, and builds/uploads each
+  asset class's catalog via `equicast-core-build-catalog` — clearing each
+  pipeline's `./output` first, since `build_catalog_rows` globs everything
+  under it and would otherwise mix in stale tickers left over from an
+  earlier run with a different ticker list. Does not simulate Auth0
+  (`Auth0JWTAuthentication` always talks to a real tenant — and every
+  `/api/...` view requires it, `/api/market/...` included, not just
+  `/api/accounts/...`/etc) or the Lambda/API Gateway deployment shape
+  (runs the identical Django app via `manage.py runserver` instead, for
+  instant reload instead of a zip rebuild/redeploy per change). See
+  `docs/local-setup.md`'s new "Backend against LocalStack" section.
+- `GET /api/market/search/`: ticker/name search, built on the
+  `equicast_core.catalog`-backed `MarketDataClient.search()` (see below) —
+  `?q=` required (at least 1 character), case-insensitive substring match
+  against every scanned asset class's `ticker`/`name`. Optional
+  `?asset_class=` narrows the scan to one of `fx`/`stock`/`etf`. Paginated
+  (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`),
+  returning `{count, page, page_size, total_pages, results}` — pagination
+  is applied in `market_data/views.py` on top of `MarketDataClient.search()`'s
+  already-sorted (by ticker) full match list, not pushed down into the
+  client. `backend/market_data/tests.py` covers the new `SearchView`.
+- Market data search catalog: a new `equicast_core.catalog` module (and
+  `MarketDataClient.get_catalog`/`.search`) builds the read side of a
+  ticker/name search — `catalog/<asset_class>.json`, one small
+  `{ticker, name, type, current_price}` row per configured ticker,
+  published by each ingestion pipeline rather than derived from
+  `profile.parquet` on the fly, so search reads don't fan out into one
+  S3 GetObject per ticker. `build_catalog_rows`/`upload_catalog` are
+  asset-class- and pipeline-agnostic (ticker comes from the local
+  `<asset_class>=<TICKER>/profile.parquet` directory name, not the
+  profile itself, so it works uniformly for stock/etf profiles — which
+  carry a `ticker`/`name` field — and fx profiles, which don't, using
+  `from_currency`+`to_currency`/`description` instead), and also install
+  as a CLI, `equicast-core-build-catalog --asset-class <fx|stock|etf>
+  --output-dir <dir> --bucket <bucket>`. `stock-ingestion.yml`/
+  `etf-ingestion.yml`/`fx-ingestion.yml` each gain a `build-catalog` job
+  that runs after their `ingest` matrix completes: every `ingest` leg now
+  also publishes its chunk's `profile.parquet` files as a 1-day build
+  artifact, and `build-catalog` downloads+merges every leg's artifact into
+  one local tree before running the CLI — necessary because a single
+  ingest leg only ever processes its own chunk of the full ticker list
+  (GitHub Actions caps a matrix at 256 legs), so no leg alone has enough
+  to build a complete catalog. This needs no new S3 permission for the
+  ingestion role (it reads the merged artifacts locally, then uploads with
+  the `s3:PutObject` access `ingest` already had) or for the backend
+  Lambda (already holds bucket-wide `s3:GetObject` on `market_data_bucket`).
+  `packages/core/tests/test_catalog.py` covers the builder/CLI;
+  `packages/core/tests/test_client.py` gained `get_catalog`/`search`
+  coverage. `docs/stock-pipeline.md`/`etf-pipeline.md`/`fx-pipeline.md`
+  updated for the new job and S3 layout addition.
+- Phase D User-owned data (transactions): new `backend/transactions/`
+  Django app exposing Auth0-authenticated CRUD for a holding's
+  transactions — `GET`/`POST /api/transactions/` (`GET` takes optional
+  `?holding_id=`/`?year=`/`?date_from=`/`?date_to=` filters),
+  `GET`/`PATCH`/`DELETE /api/transactions/<holding_id>/<id>/`. Transactions
+  only apply to stock/etf holdings under an account or a pie — never fx,
+  never a watchlist holding. Backed by a new
+  `equicast_core.TransactionsClient`
+  (`packages/core/src/equicast_core/transactions.py`) — unlike every other
+  Phase D domain (one JSON object per user), this one stores **one JSON
+  object per holding**, at `transactions/<user_id>/<holding_id>.json`:
+  every real access pattern here (holding-scoped list, a `SELL`'s
+  cumulative-shares check, cascading a delete when a holding is removed)
+  is already scoped to one holding, so this avoids rewriting a whole-user
+  blob on every write — the trade-off is that listing *every* transaction
+  for a user (no `?holding_id=`) has to enumerate and read every holding's
+  file instead of one read. The detail routes are nested under
+  `holding_id` for the same reason: an id-only lookup would otherwise mean
+  scanning every holding file for the user. Accounts gain a required
+  `transaction_type` field (`AVERAGE` or `TRANSACTION`) governing how
+  every holding under that account — directly, or via one of its pies —
+  records transactions: `AVERAGE` is a single mutable snapshot per holding
+  (`no_of_shares`, `average_price`, no date — `PATCH`-able, since it's
+  corrected over time rather than logged); `TRANSACTION` is an immutable
+  log of `BUY`/`SELL` events (`no_of_shares`, `price`, `date`, `type`),
+  any number per holding (up to `MAX_TRANSACTIONS_FOR_HOLDING`, default
+  `500`, `-1` to disable — this is a safety limit against one holding's
+  file growing unbounded, not a cost control, since `TRANSACTION`-mode
+  history only ever grows), with a `SELL` rejected
+  (`InsufficientSharesError`) if it would take the holding's net recorded
+  shares (summed in recorded order, not date order) below zero. Every
+  record has the same stable six-key shape regardless of mode, `null`
+  where not applicable — the same reasoning `HoldingsClient` uses for its
+  parent-id fields; an `AVERAGE` record's `date` is always `null`, so it
+  never matches the list endpoint's `year`/`date_from`/`date_to` filters.
+  `transaction_type` is locked once the account has any transactions
+  recorded under it (`accounts/views.py`'s `PATCH` now rejects the field
+  with `409` in that case, checked via a new
+  `TransactionsClient.has_transactions_for_holdings` targeted existence
+  check rather than a full per-user scan). A holding can be created with
+  its first transaction in the same request (`POST /api/holdings/`'s
+  optional nested `"transaction"` field, validated before the holding is
+  written and rolled back via `delete_holding` if the paired
+  `create_transaction` fails — S3 has no cross-object transaction of its
+  own) or afterwards via a separate `POST /api/transactions/`; pie-scoped
+  holdings (created via `PUT /api/pies/<id>/holdings/`) only support the
+  latter. Deleting a holding, or force-deleting a pie/account, now
+  cascades into `delete_transactions_for_holdings`, which deletes each
+  matching holding's S3 object outright (no concurrent writer to race once
+  the holding itself is gone) rather than rewriting it to an empty list.
+  For now this only stores what the caller provides — no computed average
+  price, dividends, or returns. `MAX_TRANSACTIONS_FOR_HOLDING` is sourced
+  from a new `infra/variables.tf`'s `max_transactions_for_holding`
+  Terraform variable, passed by `terraform.yml`'s `apply-dev`/`apply-prod`
+  jobs as
+  `-var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }}`.
+  New Terraform: the `backend_lambda` IAM policy gains
+  `s3:GetObject`/`s3:PutObject`/`s3:DeleteObject` on
+  `<user_data_bucket_arn>/transactions/*` (mirroring the
+  accounts/pies/watchlists/holdings statements, its own review, plus
+  `s3:DeleteObject` for the per-holding-object cascade delete above), and
+  the shared `s3:ListBucket` statement's `s3:prefix` condition now also
+  covers `transactions/*`. No new bucket — reuses `user_data_bucket`.
+  `packages/core/tests/test_transactions.py` covers the client;
+  `packages/core/tests/test_accounts.py` updated for the new required
+  `transaction_type` field.
 - Phase D User-owned data (holdings): new `backend/holdings/` Django app
   exposing Auth0-authenticated CRUD for a user's holdings, nested under
   exactly one of an account, a pie, or a watchlist —

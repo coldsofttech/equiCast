@@ -102,15 +102,30 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     resources = ["${module.user_data_bucket.bucket_arn}/holdings/*"]
   }
 
+  # Transactions domain (see TransactionsClient) — same rationale as the
+  # accounts/pies/watchlists/holdings statements above: its own
+  # statement/review, scoped to transactions/* only. Also needs
+  # s3:DeleteObject, unlike the other domains here — TransactionsClient is
+  # partitioned one JSON object per holding rather than per user (see its
+  # module docstring), so removing a holding's transactions outright
+  # deletes that one object instead of rewriting the user's single object
+  # to an empty list the way delete_holdings_for_account/_pies/_watchlist
+  # do.
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
+    resources = ["${module.user_data_bucket.bucket_arn}/transactions/*"]
+  }
+
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
-  # .../accounts/*, .../pies/*, .../watchlists/*, or .../holdings/*) is
-  # required alongside s3:GetObject for a key that might not exist yet:
-  # without it, S3 can't tell this role apart from a caller with no rights
-  # to know whether the object exists at all, so a GetObject on a
-  # not-yet-created accounts/<user_id>.json (or pies/<user_id>.json,
-  # watchlists/<user_id>.json, holdings/<user_id>.json) returns AccessDenied
-  # instead of the NoSuchKey AccountsClient/PiesClient/WatchlistsClient/
-  # HoldingsClient._load() catch to mean "nothing yet" — see
+  # .../accounts/*, .../pies/*, .../watchlists/*, .../holdings/*, or
+  # .../transactions/*) is required alongside s3:GetObject for a key that
+  # might not exist yet: without it, S3 can't tell this role apart from a
+  # caller with no rights to know whether the object exists at all, so a
+  # GetObject on a not-yet-created accounts/<user_id>.json (or
+  # pies/<user_id>.json, watchlists/<user_id>.json, holdings/<user_id>.json,
+  # transactions/<user_id>.json) returns AccessDenied instead of the
+  # NoSuchKey AccountsClient/PiesClient/WatchlistsClient/HoldingsClient/
+  # TransactionsClient._load() catch to mean "nothing yet" — see
   # https://repost.aws/knowledge-center/s3-403-error-list-permissions. The
   # s3:prefix condition keeps this scoped to just the domains that need it
   # — one shared ListBucket statement covering every prefix rather than one
@@ -123,7 +138,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["accounts/*", "pies/*", "watchlists/*", "holdings/*"]
+      values   = ["accounts/*", "pies/*", "watchlists/*", "holdings/*", "transactions/*"]
     }
   }
 }
@@ -144,12 +159,13 @@ module "backend_lambda" {
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
     # Lambda env vars are always strings; settings.py int()-parses these.
-    MAX_ACCOUNTS               = tostring(var.max_accounts)
-    MAX_PIES                   = tostring(var.max_pies)
-    MAX_WATCHLISTS             = tostring(var.max_watchlists)
-    MAX_HOLDINGS_FOR_ACCOUNT   = tostring(var.max_holdings_for_account)
-    MAX_HOLDINGS_FOR_PIE       = tostring(var.max_holdings_for_pie)
-    MAX_HOLDINGS_FOR_WATCHLIST = tostring(var.max_holdings_for_watchlist)
+    MAX_ACCOUNTS                 = tostring(var.max_accounts)
+    MAX_PIES                     = tostring(var.max_pies)
+    MAX_WATCHLISTS               = tostring(var.max_watchlists)
+    MAX_HOLDINGS_FOR_ACCOUNT     = tostring(var.max_holdings_for_account)
+    MAX_HOLDINGS_FOR_PIE         = tostring(var.max_holdings_for_pie)
+    MAX_HOLDINGS_FOR_WATCHLIST   = tostring(var.max_holdings_for_watchlist)
+    MAX_TRANSACTIONS_FOR_HOLDING = tostring(var.max_transactions_for_holding)
     # Previously unset here, silently falling back to settings.py's
     # DEBUG default of "true" for every deployed environment (dev and
     # prod alike) — a real information-disclosure risk in prod, since an
