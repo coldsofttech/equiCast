@@ -238,6 +238,11 @@ function SignInScreen({ onSignIn, error }) {
         </div>
       </section>
 
+      <footer className="ec-landing-foot">
+        <Logo compact />
+        <span>© {new Date().getFullYear()} equiCast</span>
+      </footer>
+
       <section className="ec-disclaimer">
         <h2 className="ec-disclaimer-title">Disclaimer</h2>
         <p>
@@ -254,11 +259,6 @@ function SignInScreen({ onSignIn, error }) {
           decisions.
         </p>
       </section>
-
-      <footer className="ec-landing-foot">
-        <Logo compact />
-        <span>© {new Date().getFullYear()} equiCast</span>
-      </footer>
     </div>
   );
 }
