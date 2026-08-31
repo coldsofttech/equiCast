@@ -1,4 +1,3 @@
-import { useAuth0 } from "@auth0/auth0-react";
 import AppShell from "../components/shell/AppShell.jsx";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import "./DashboardPage.css";
@@ -13,10 +12,10 @@ const MENU_ITEMS = [
  * The one real page this phase has. Its profile card is the end-to-end
  * proof of the whole auth chain (Auth0 login -> access token -> Django
  * ->  DynamoDB -> back into React), not a real dashboard yet — accounts,
- * pies, holdings, and the rest are later phases.
+ * pies, holdings, and the rest are later phases. Sign-out lives in the
+ * Topbar's account menu (see UserMenu.jsx), not here.
  */
 function DashboardPage() {
-  const { logout } = useAuth0();
   const { profile, isLoading, error } = useCurrentUser();
 
   return (
@@ -25,15 +24,6 @@ function DashboardPage() {
       eyebrow="Phase 0"
       title="App shell"
       subtitle="Routing, Auth0, and the API client are wired up — accounts, pies, holdings, and everything else come in later phases."
-      actions={
-        <button
-          type="button"
-          className="ec-logout-btn"
-          onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })}
-        >
-          Log out
-        </button>
-      }
     >
       <div className="ec-profile-card">
         <span className="ec-profile-label">Default currency</span>
