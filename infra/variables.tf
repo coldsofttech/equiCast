@@ -77,3 +77,9 @@ variable "max_holdings_for_watchlist" {
   type        = number
   default     = 20
 }
+
+variable "max_transactions_for_holding" {
+  description = "Max transactions recorded against one holding (TransactionsClient's TransactionLimitExceededError cap)."
+  type        = number
+  default     = 500
+}

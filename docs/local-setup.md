@@ -22,7 +22,8 @@ equiCast/
 │   ├── accounts/        # Django app: user-owned accounts CRUD (S3 JSON via equicast-core)
 │   ├── pies/            # Django app: user-owned pies CRUD, nested under an account (S3 JSON via equicast-core)
 │   ├── watchlists/      # Django app: user-owned watchlists CRUD, user-level (S3 JSON via equicast-core)
-│   └── holdings/        # Django app: user-owned holdings CRUD, nested under an account/pie/watchlist (S3 JSON via equicast-core)
+│   ├── holdings/        # Django app: user-owned holdings CRUD, nested under an account/pie/watchlist (S3 JSON via equicast-core)
+│   └── transactions/    # Django app: user-owned transactions CRUD, nested under a holding (S3 JSON via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -53,7 +54,7 @@ re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
 ## Backend (Django REST) and `equicast-core`
 
-`equicast-core` is a small generic package (boto3, no Django import) with six clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`), `WatchlistsClient` (S3 JSON, same shape, at `watchlists/<user_id>.json`, user-level rather than nested under an account), and `HoldingsClient` (S3 JSON, same shape, at `holdings/<user_id>.json`, each holding nested under exactly one of `account_id`/`pie_id`/`watchlist_id`; pie holdings also carry `allocation_pct` and only ever change via an atomic add/remove/reallocate batch, since a pie's allocations must always sum to exactly 100%) — currently only consumed by the backend, but not backend-specific code itself:
+`equicast-core` is a small generic package (boto3, no Django import) with seven clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`), `WatchlistsClient` (S3 JSON, same shape, at `watchlists/<user_id>.json`, user-level rather than nested under an account), `HoldingsClient` (S3 JSON, same shape, at `holdings/<user_id>.json`, each holding nested under exactly one of `account_id`/`pie_id`/`watchlist_id`; pie holdings also carry `allocation_pct` and only ever change via an atomic add/remove/reallocate batch, since a pie's allocations must always sum to exactly 100%), and `TransactionsClient` (S3 JSON, but one object *per holding* rather than per user, at `transactions/<user_id>/<holding_id>.json` — every real query here is already holding-scoped, so this avoids rewriting a whole-user blob on every write; shaped by the holding's account's `transaction_type` — `AVERAGE`, a single mutable snapshot, or `TRANSACTION`, an immutable `BUY`/`SELL` log) — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
 cd packages/core
@@ -71,9 +72,9 @@ Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MAR
 
 Needs `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` set (no defaults) to use `/api/identity/...` — see [auth0-setup.md](auth0-setup.md) for where the Auth0 values come from. Without them, `/api/market/...` is unaffected, but any `Authorization: Bearer` header fails to authenticate and `/api/identity/me/` always returns `401`.
 
-Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`/`/api/holdings/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
+Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`/`/api/holdings/...`/`/api/transactions/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
 
-`MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`, matching `equicast_core`'s own client defaults) tune the accounts-per-user, pies-per-account, and watchlists-per-user caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/`max_watchlists`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables. `MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_PIE`/`MAX_HOLDINGS_FOR_WATCHLIST` (defaults `100`/`50`/`20`) tune the holdings-per-account/pie/watchlist caps the same way — see `infra/variables.tf`'s `max_holdings_for_account`/`max_holdings_for_pie`/`max_holdings_for_watchlist`.
+`MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`, matching `equicast_core`'s own client defaults) tune the accounts-per-user, pies-per-account, and watchlists-per-user caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/`max_watchlists`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables. `MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_PIE`/`MAX_HOLDINGS_FOR_WATCHLIST` (defaults `100`/`50`/`20`) tune the holdings-per-account/pie/watchlist caps the same way — see `infra/variables.tf`'s `max_holdings_for_account`/`max_holdings_for_pie`/`max_holdings_for_watchlist`. `MAX_TRANSACTIONS_FOR_HOLDING` (default `500`) tunes the transactions-per-holding cap the same way — see `infra/variables.tf`'s `max_transactions_for_holding`.
 
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
@@ -81,9 +82,9 @@ API available at:
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts, each with its nested `pies` (with their own nested `holdings`) and its own direct `holdings`
-- `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
+- `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`, `transaction_type` — `AVERAGE` or `TRANSACTION`); `409` once the caller has `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus the same nested `pies`/`holdings` shape as the list endpoint
-- `PATCH /api/accounts/<id>/` — partially updates an account
+- `PATCH /api/accounts/<id>/` — partially updates an account; `transaction_type` is rejected with `409` once the account has any transactions recorded under it
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
   pies and/or direct holdings — pass `?force=true` to delete those along with the account
 - `GET /api/pies/` — lists the caller's pies; optional `?account_id=` filter
@@ -98,9 +99,14 @@ API available at:
 - `PATCH /api/watchlists/<id>/` — partially updates a watchlist's `name`/`description`
 - `DELETE /api/watchlists/<id>/` — deletes a watchlist; `409` if it still has holdings — pass `?force=true` to delete those along with the watchlist
 - `GET /api/holdings/` — lists the caller's holdings; at most one of `?account_id=`/`?pie_id=`/`?watchlist_id=` may be given
-- `POST /api/holdings/` — creates a holding directly under `account_id` or `watchlist_id` (`ticker`, `asset_class`, and exactly one of the two — pie-scoped holdings go through the pie's batch endpoint instead); `409` for a duplicate ticker in that parent or once it's at its cap
+- `POST /api/holdings/` — creates a holding directly under `account_id` or `watchlist_id` (`ticker`, `asset_class`, and exactly one of the two — pie-scoped holdings go through the pie's batch endpoint instead); `409` for a duplicate ticker in that parent or once it's at its cap. An optional nested `transaction` field records the holding's first transaction in the same request (not supported for watchlist holdings) — shaped by the owning account's `transaction_type`, see below
 - `GET /api/holdings/<id>/` — a holding's details
-- `DELETE /api/holdings/<id>/` — deletes an account-direct or watchlist holding (`400` for a pie-scoped one); no `PATCH`
+- `DELETE /api/holdings/<id>/` — deletes an account-direct or watchlist holding (`400` for a pie-scoped one); no `PATCH`; cascades into deleting the holding's transactions
+- `GET /api/transactions/` — lists the caller's transactions; optional `?holding_id=`, `?year=`, `?date_from=`/`?date_to=` filters (the date filters only ever match `TRANSACTION`-mode records — an `AVERAGE` record has no date). Omitting `?holding_id=` reads every holding's file, since transactions are stored one JSON object per holding — see `packages/core/README.md`
+- `POST /api/transactions/` — records a transaction against an existing `holding_id` (`400` if the holding is fx or watchlist-scoped). `AVERAGE`-mode accounts require `no_of_shares`/`average_price` (`409` for a second record against the same holding — `PATCH` it instead); `TRANSACTION`-mode accounts require `no_of_shares`/`price`/`date`/`type` (`BUY` or `SELL`; `409` if a `SELL` exceeds the holding's net recorded shares, or once the holding is at `MAX_TRANSACTIONS_FOR_HOLDING`)
+- `GET /api/transactions/<holding_id>/<id>/` — a transaction's details (nested under its holding, not a flat id — an id-only lookup would otherwise have to scan every holding's file)
+- `PATCH /api/transactions/<holding_id>/<id>/` — updates an `AVERAGE`-mode record's `no_of_shares`/`average_price`; `400` for a `TRANSACTION`-mode record (immutable)
+- `DELETE /api/transactions/<holding_id>/<id>/` — deletes a transaction
 
 ```bash
 uv run pytest

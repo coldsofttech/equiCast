@@ -11,6 +11,7 @@ ACCOUNT = {
     "description": "Stocks & shares ISA",
     "account_type": "ISA",
     "currency": "GBP",
+    "transaction_type": "TRANSACTION",
     "created_at": "2026-01-01T00:00:00+00:00",
     "updated_at": "2026-01-01T00:00:00+00:00",
 }
@@ -103,6 +104,7 @@ class AccountListViewTests(TestCase):
             "description": "Stocks & shares ISA",
             "account_type": "ISA",
             "currency": "GBP",
+            "transaction_type": "TRANSACTION",
         }
         response = self.client.post(
             reverse("accounts-list"),
@@ -142,7 +144,13 @@ class AccountListViewTests(TestCase):
 
         response = self.client.post(
             reverse("accounts-list"),
-            data={"name": "ISA", "description": "", "account_type": "ISA", "currency": "GBP"},
+            data={
+                "name": "ISA",
+                "description": "",
+                "account_type": "ISA",
+                "currency": "GBP",
+                "transaction_type": "TRANSACTION",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -298,23 +306,39 @@ class AccountDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_not_called()
 
+    @patch("accounts.views._transactions_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_with_force_removes_pies_and_their_holdings_then_the_account(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_transactions_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = [{"id": "pie-1", "account_id": "acc-1"}]
-        mock_holdings_client.list_holdings.return_value = []
+
+        def list_holdings(user_id, account_id=None):
+            if account_id is not None:
+                return []
+            return [{"id": "h-1", "account_id": None, "pie_id": "pie-1"}]
+
+        mock_holdings_client.list_holdings.side_effect = list_holdings
 
         response = self.client.delete(
             f"{reverse('accounts-detail', args=['acc-1'])}?force=true", **AUTH_HEADER
         )
 
         self.assertEqual(response.status_code, 204)
+        mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
+            "auth0|abc123", ["h-1"]
+        )
         mock_holdings_client.delete_holdings_for_pies.assert_called_once_with(
             "auth0|abc123", ["pie-1"]
         )
@@ -322,13 +346,20 @@ class AccountDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
 
+    @patch("accounts.views._transactions_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_with_force_removes_direct_holdings_then_the_account(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_transactions_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = []
@@ -340,6 +371,9 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 204)
         mock_pies_client.delete_pies_for_account.assert_not_called()
+        mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
+            "auth0|abc123", ["h-1"]
+        )
         mock_holdings_client.delete_holdings_for_account.assert_called_once_with(
             "auth0|abc123", "acc-1"
         )

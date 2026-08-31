@@ -278,12 +278,18 @@ class PieDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_pies.assert_not_called()
         mock_client.delete_pie.assert_not_called()
 
+    @patch("pies.views._transactions_client")
     @patch("pies.views._holdings_client")
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_with_force_removes_holdings_then_the_pie(
-        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_holdings_client,
+        mock_transactions_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "pie_id": "pie-1"}]
@@ -293,6 +299,9 @@ class PieDetailViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 204)
+        mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
+            "auth0|abc123", ["h-1"]
+        )
         mock_holdings_client.delete_holdings_for_pies.assert_called_once_with(
             "auth0|abc123", ["pie-1"]
         )

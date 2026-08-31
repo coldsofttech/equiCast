@@ -10,6 +10,7 @@ from equicast_core import (
     PieLimitExceededError,
     PieNotFoundError,
     PiesClient,
+    TransactionsClient,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -51,6 +52,14 @@ _holdings_client = HoldingsClient(
 #: allowed into a pie — same client market_data/views.py's ProfileView and
 #: holdings/views.py use.
 _market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+#: Needed only to cascade-delete a pie's holdings' transactions under
+#: PieDetailView.delete's force path — transactions/views.py holds the
+#: client actually used for transactions CRUD.
+_transactions_client = TransactionsClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
+)
 
 
 class PieListView(APIView):
@@ -122,6 +131,9 @@ class PieDetailView(APIView):
 
         try:
             if force and holdings:
+                _transactions_client.delete_transactions_for_holdings(
+                    request.user.user_id, [h["id"] for h in holdings]
+                )
                 _holdings_client.delete_holdings_for_pies(request.user.user_id, [pie_id])
             _client.delete_pie(request.user.user_id, pie_id)
         except PieNotFoundError:
