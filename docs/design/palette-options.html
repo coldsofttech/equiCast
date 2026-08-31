@@ -172,7 +172,12 @@
     background: var(--pv-bg-elev);
     border-bottom: 1px solid var(--pv-divider);
   }
-  .mini-wordmark { font-weight: 800; font-size: 14.5px; letter-spacing: -0.01em; }
+  .mini-wordmark { 
+    font-weight: 800; 
+    font-size: 14.5px; 
+    letter-spacing: -0.01em; 
+    color: var(--pv-wordmark);
+  }
   .mini-wordmark .accent-part { color: var(--pv-accent); }
   .mini-theme-tag {
     font-family: "IBM Plex Mono", monospace;
@@ -295,11 +300,13 @@
   <p class="kicker">equiCast — design tokens</p>
   <h1>Three palettes to choose from</h1>
   <p class="lede">
-    <b>A</b> reuses Resource Planner's tokens exactly. <b>B</b> and <b>C</b> keep the same
-    structural system — spacing, radius, type, shadow — and only change the hue story, so
-    this is a color decision, not a redesign. Each preview below is built from real
-    equiCast UI (topbar, menu, a stat card, a holdings row, buttons, status badges) shown in
-    both light and dark.
+    <b>A</b> uses a blue-voilet and plum palette with a familiar, energetic product feel.
+    <b>B</b> introduces teal and amber for a calmer, distinctly financial mood, while
+    <b>C</b> pairs deep indigo with gold for a more premium, wealth-management feel.
+    All three keep the same structural system — spacing, radius, type, shadow — so this is 
+    a color decision, not a redesign. Each preview below is built from real equiCast UI 
+    (topbar, menu, a stat card, a holdings row, buttons, status badges) shown in both 
+    light and dark.
   </p>
 
   <main id="palettes"></main>
@@ -316,10 +323,10 @@
     {
       id: "a",
       letter: "A",
-      name: "Resource Planner",
-      tag: "baseline — reused as-is",
+      name: "Violet & Plum",
+      tag: "baseline",
       rationale:
-        "coldsofttech's existing tokens, unchanged: a blue-violet accent with a purple secondary. Zero new decisions — equiCast would read as a sibling product to Resource Planner.",
+        "A blue-violet accent paired with plum as the secondary highlight. Familiar and energetic, with a clear SaaS/product feel while still working naturally for a financial dashboard.",
       swatches: [
         { label: "Accent", value: "oklch(0.55 0.18 270)" },
         { label: "Secondary", value: "oklch(0.55 0.18 305)" },
@@ -329,6 +336,7 @@
         { label: "Info", value: "oklch(0.60 0.13 230)" },
       ],
       light: {
+        wordmark: "oklch(0.22 0.012 260)",
         bg: "oklch(0.985 0.003 250)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 250)",
         surface: "#ffffff", "surface-2": "oklch(0.975 0.004 250)", "surface-hover": "oklch(0.96 0.005 250)",
         border: "oklch(0.91 0.006 250)", "border-strong": "oklch(0.85 0.008 250)", divider: "oklch(0.93 0.005 250)",
@@ -340,6 +348,7 @@
         info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
       },
       dark: {
+        wordmark: "oklch(0.96 0.005 250)",
         bg: "oklch(0.18 0.010 260)", "bg-elev": "oklch(0.22 0.012 260)", "bg-sunken": "oklch(0.155 0.010 260)",
         surface: "oklch(0.22 0.012 260)", "surface-2": "oklch(0.25 0.012 260)", "surface-hover": "oklch(0.28 0.014 260)",
         border: "oklch(0.30 0.014 260)", "border-strong": "oklch(0.38 0.016 260)", divider: "oklch(0.28 0.012 260)",
@@ -367,6 +376,7 @@
         { label: "Info", value: "oklch(0.60 0.13 230)" },
       ],
       light: {
+        wordmark: "oklch(0.22 0.012 260)",
         bg: "oklch(0.985 0.003 200)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 200)",
         surface: "#ffffff", "surface-2": "oklch(0.975 0.004 200)", "surface-hover": "oklch(0.96 0.005 200)",
         border: "oklch(0.91 0.006 200)", "border-strong": "oklch(0.85 0.008 200)", divider: "oklch(0.93 0.005 200)",
@@ -378,6 +388,7 @@
         info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
       },
       dark: {
+        wordmark: "oklch(0.96 0.005 250)",
         bg: "oklch(0.17 0.012 200)", "bg-elev": "oklch(0.21 0.014 200)", "bg-sunken": "oklch(0.145 0.012 200)",
         surface: "oklch(0.21 0.014 200)", "surface-2": "oklch(0.24 0.014 200)", "surface-hover": "oklch(0.27 0.016 200)",
         border: "oklch(0.30 0.016 200)", "border-strong": "oklch(0.38 0.018 200)", divider: "oklch(0.28 0.014 200)",
@@ -405,6 +416,7 @@
         { label: "Info", value: "oklch(0.60 0.13 230)" },
       ],
       light: {
+        wordmark: "oklch(0.22 0.012 260)",
         bg: "oklch(0.985 0.003 255)", "bg-elev": "#ffffff", "bg-sunken": "oklch(0.965 0.005 255)",
         surface: "#ffffff", "surface-2": "oklch(0.975 0.004 255)", "surface-hover": "oklch(0.96 0.005 255)",
         border: "oklch(0.91 0.006 255)", "border-strong": "oklch(0.85 0.008 255)", divider: "oklch(0.93 0.005 255)",
@@ -416,6 +428,7 @@
         info: "oklch(0.60 0.13 230)", "info-soft": "oklch(0.95 0.04 230)", "info-soft-text": "oklch(0.4 0.15 230)",
       },
       dark: {
+        wordmark: "oklch(0.96 0.005 250)",
         bg: "oklch(0.16 0.014 255)", "bg-elev": "oklch(0.20 0.016 255)", "bg-sunken": "oklch(0.135 0.014 255)",
         surface: "oklch(0.20 0.016 255)", "surface-2": "oklch(0.23 0.016 255)", "surface-hover": "oklch(0.26 0.018 255)",
         border: "oklch(0.29 0.018 255)", "border-strong": "oklch(0.37 0.02 255)", divider: "oklch(0.27 0.016 255)",
