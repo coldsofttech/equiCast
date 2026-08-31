@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `backend-ci.yml`/`frontend-ci.yml` gain a `workflow_dispatch` trigger.
+  Surfaced by merging #36 (frontend CD infra): that PR's changes lived
+  entirely under `infra/`, `.github/workflows/deploy.yml`, and `docs/`, so
+  neither CI workflow's path filter matched and neither ran — and since
+  `deploy.yml` only triggers off `Backend CI`/`Frontend CI` completing via
+  `workflow_run`, the frontend build never happened either, leaving the
+  freshly-applied dev CloudFront distribution with nothing synced to its
+  bucket. Any infra- or docs-only merge to `main` hits the same gap.
+  `workflow_dispatch` lets a `main` run be kicked off by hand (Actions tab,
+  or `gh workflow run "Frontend CI" --ref main`) to chain into `deploy.yml`
+  without waiting on a matching code change.
 - Fixed two related backend production-hardening gaps, both surfaced by
   manual testing of the Phase D accounts endpoints: (1) `infra/main.tf`'s
   `backend_lambda` never set `DJANGO_DEBUG`, so every deployed environment

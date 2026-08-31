@@ -9,6 +9,11 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/backend-ci.yml"
+  # Lets a `main` run be triggered manually (Actions tab -> Run workflow,
+  # or `gh workflow run "Backend CI" --ref main`) when a merge to `main`
+  # didn't touch any of the paths above — e.g. an infra-only PR — so
+  # deploy.yml's workflow_run trigger still has something to chain off of.
+  workflow_dispatch:
   pull_request:
     paths:
       - "packages/core/**"
