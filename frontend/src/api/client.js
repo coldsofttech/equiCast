@@ -14,10 +14,13 @@
  * build needs `VITE_API_BASE_URL` pointed at that environment's real API
  * Gateway URL instead — dev and prod are separate backend deployments
  * with different URLs, unlike the Auth0 config in auth0Config.js, which
- * is genuinely the same for both. NOT wired up yet: deploy.yml currently
- * builds the frontend once and promotes the identical artifact to dev and
- * prod, which can't be correct once this needs to differ per environment
- * — see CHANGELOG.md.
+ * is genuinely the same for both. deploy.yml's deploy-frontend-dev/-prod
+ * each build their own copy with this set from that environment's own
+ * `API_URL` GitHub Environment variable (manually kept in sync with
+ * `terraform output backend_api_invoke_url` — see
+ * docs/terraform-state-setup.md's Step 4) — Vite bakes VITE_* in at build
+ * time, so unlike a runtime config file this can't be the same build
+ * promoted to both environments.
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
