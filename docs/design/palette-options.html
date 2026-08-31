@@ -68,6 +68,36 @@
   }
   .lede b { color: var(--chrome-text); font-weight: 600; }
 
+  .decision-banner {
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: 2px;
+    padding: 7px 11px;
+    border: 1px solid oklch(0.86 0.08 150);
+    border-radius: 8px;
+    background: oklch(0.96 0.04 150);
+    color: oklch(0.38 0.12 150);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  .decision-banner .decision-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: oklch(0.58 0.15 150);
+    flex-shrink: 0;
+  }
+
+  .decision-banner .decision-label {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
   main { margin-top: 48px; display: flex; flex-direction: column; gap: 56px; }
 
   .palette-block { display: flex; flex-direction: column; gap: 18px; }
@@ -299,13 +329,20 @@
 <div class="wrap">
   <p class="kicker">equiCast — design tokens</p>
   <h1>Three palettes to choose from</h1>
+
+  <div class="decision-banner">
+    <span class="decision-dot"></span>
+    <span class="decision-label">Finalised</span>
+    <span>Option A — Violet &amp; Plum</span>
+  </div>
+
   <p class="lede">
-    <b>A</b> uses a blue-voilet and plum palette with a familiar, energetic product feel.
-    <b>B</b> introduces teal and amber for a calmer, distinctly financial mood, while
-    <b>C</b> pairs deep indigo with gold for a more premium, wealth-management feel.
-    All three keep the same structural system — spacing, radius, type, shadow — so this is 
-    a color decision, not a redesign. Each preview below is built from real equiCast UI 
-    (topbar, menu, a stat card, a holdings row, buttons, status badges) shown in both 
+    <b>A — Violet &amp; Plum</b> is the finalised direction, with a familiar, energetic product feel.
+    <b>B — Teal &amp; Amber</b> and <b>C — Indigo &amp; Gold</b> remain alternative directions
+    for comparison. All three keep the same structural system — spacing, radius, type, shadow —
+    so this is a color decision, not a redesign.
+    Each preview below is built from real equiCast UI
+    (topbar, menu, a stat card, a holdings row, buttons, status badges) shown in both
     light and dark.
   </p>
 
@@ -324,7 +361,7 @@
       id: "a",
       letter: "A",
       name: "Violet & Plum",
-      tag: "baseline",
+      tag: "finalised",
       rationale:
         "A blue-violet accent paired with plum as the secondary highlight. Familiar and energetic, with a clear SaaS/product feel while still working naturally for a financial dashboard.",
       swatches: [
