@@ -144,3 +144,54 @@ jobs:
 
       - name: Upload FX profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
+
+      # Feeds build-catalog below — that job needs every chunk's
+      # profile.parquet files in one place to build a complete catalog, and
+      # a matrix leg only ever sees its own chunk. Short retention: this
+      # artifact only exists to hand off within this run, not for later
+      # reference (see equicast_core.catalog's module docstring for why the
+      # catalog can't be built inside this per-chunk job at all).
+      - name: Publish this chunk's profiles for the catalog build
+        uses: actions/upload-artifact@v4
+        with:
+          name: fx-profiles-${{ strategy.job-index }}
+          path: output/fx=*/profile.parquet
+          retention-days: 1
+
+  # Rebuilds catalog/fx.json (see equicast_core.catalog) from every
+  # chunk's freshly-fetched profiles, merged back together here since no
+  # single ingest leg above ever sees the full pair list. Needs no new S3
+  # permission beyond what ingest already has (s3:PutObject) — it reads the
+  # profiles locally, from the downloaded artifacts, not back from S3.
+  build-catalog:
+    needs: [plan, ingest]
+    if: needs.plan.outputs.has_chunks == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Download every chunk's profiles
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fx-profiles-*
+          path: output
+          merge-multiple: true
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Build and upload the FX search catalog
+        working-directory: packages/core
+        run: |
+          uv run equicast-core-build-catalog \
+            --asset-class fx \
+            --output-dir "${{ github.workspace }}/output" \
+            --bucket "${{ needs.plan.outputs.bucket }}"
