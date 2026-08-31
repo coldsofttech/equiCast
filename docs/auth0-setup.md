@@ -85,6 +85,21 @@ tokens someone else obtained), but it's not sensitive either: an SPA's
 client ID is visible in every browser network request it makes, by
 design — PKCE is exactly what makes a public client ID safe to ship.
 
+Also authorize this Application against the Step 2 API: Dashboard →
+**Applications → APIs → equiCast API → Application Access** tab, find
+`equiCast Web`'s row, click **Edit**, and on the **User-Delegated Access**
+sub-tab click **Grant Access** (this tenant's API has "Per-app
+authorization" as its access policy — Application Access tab's banner —
+so every application needs an explicit grant here before it can request
+tokens for this API, even via the ordinary login/PKCE flow, not just
+client-credentials). Skipping it makes `loginWithRedirect`'s `audience`
+param fail with `invalid_request: Client "..." is not authorized to
+access resource server "https://api.equicast.app"`, surfaced by the
+frontend as a generic "Something went wrong signing in" (see
+`RequireAuth.jsx`). Note this tab may be named differently ("Machine to
+Machine Applications") on older Auth0 dashboards — same underlying
+concept either way: an explicit per-application grant against the API.
+
 ## Step 4: Wire the values into the repo
 
 ### GitHub repo variables, not secrets

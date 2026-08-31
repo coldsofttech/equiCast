@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
+  `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
+  existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With
+  `-StartFrontend`, the three values are now exported as
+  `VITE_AUTH0_DOMAIN`/`VITE_AUTH0_CLIENT_ID`/`VITE_AUTH0_AUDIENCE` into the
+  spawned `npm run dev` process — Vite gives an already-set environment
+  variable priority over `frontend/.env.local`, so the frontend's real
+  Auth0 login flow now works out of the box against LocalStack without
+  hand-creating that file. Previously only the backend's `AUTH0_DOMAIN`/
+  `AUTH0_AUDIENCE` were wired up this way, leaving `RequireAuth` stuck on
+  its "not configured" state for anyone running the script as documented.
+  `docs/auth0-setup.md`'s Step 3 also gains a step easy to miss on a fresh
+  tenant: the frontend Application needs an explicit **User-Delegated
+  Access** grant against the API (Application Access tab) before
+  `loginWithRedirect`'s `audience` param works — without it Auth0 returns
+  `invalid_request: Client "..." is not authorized to access resource
+  server "..."`, surfaced by the frontend as a generic "Something went
+  wrong signing in" (`RequireAuth.jsx`).
 - `backend-ci.yml`/`frontend-ci.yml` gain a `workflow_dispatch` trigger.
   Surfaced by merging #36 (frontend CD infra): that PR's changes lived
   entirely under `infra/`, `.github/workflows/deploy.yml`, and `docs/`, so
