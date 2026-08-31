@@ -244,7 +244,6 @@ function SignInScreen({ onSignIn, error }) {
       </footer>
 
       <section className="ec-disclaimer">
-        <h2 className="ec-disclaimer-title">Disclaimer</h2>
         <p>
           Market, dividend and corporate-events data referenced on this page is sourced via Yahoo
           Finance (through the open-source yfinance library), for educational and informational

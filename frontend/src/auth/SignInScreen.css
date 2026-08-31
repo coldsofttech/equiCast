@@ -487,27 +487,15 @@
 /* ----- Disclaimer ----- */
 .ec-disclaimer {
   padding: var(--ec-s-24) var(--ec-s-32);
-  max-width: 860px;
-  width: 100%;
-  margin: 0 auto;
   box-sizing: border-box;
-  border-top: 1px solid var(--ec-divider);
-}
-
-.ec-disclaimer-title {
-  margin: 0 0 var(--ec-s-8);
-  color: var(--ec-text-subtle);
-  font-size: var(--ec-fs-12);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  text-align: right;
 }
 
 .ec-disclaimer p {
   margin: 0;
   color: var(--ec-text-subtle);
   font-size: var(--ec-fs-12);
-  line-height: 1.65;
+  line-height: 1.5;
 }
 
 /* ----- Footer ----- */
