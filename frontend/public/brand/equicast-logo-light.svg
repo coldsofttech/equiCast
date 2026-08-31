@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 210 40" width="210" height="40" role="img" aria-label="equiCast">
+  <title>equiCast</title>
+  <desc>For light backgrounds (e.g. an email on a white background).</desc>
+  <defs>
+    <linearGradient id="ec-logo-light-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4B65D9"/>
+      <stop offset="100%" stop-color="#8B4EC4"/>
+    </linearGradient>
+  </defs>
+  <rect width="40" height="40" rx="11" fill="url(#ec-logo-light-grad)"/>
+  <g transform="translate(8 8)" fill="#FFFFFF">
+    <line x1="5.5" y1="14" x2="5.5" y2="19.5" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/>
+    <rect x="4" y="15" width="3" height="3.4" rx="0.6"/>
+    <line x1="11" y1="9" x2="11" y2="19.5" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/>
+    <rect x="9.5" y="11" width="3" height="6.6" rx="0.6"/>
+    <line x1="16.5" y1="17" x2="16.5" y2="19.5" stroke="#FFFFFF" stroke-width="1" stroke-linecap="round"/>
+    <rect x="15" y="8" width="3" height="9" rx="0.6"/>
+    <polygon points="15.6,8 17.4,8 16.5,2"/>
+  </g>
+  <text x="56" y="26" font-family="'Plus Jakarta Sans', 'Segoe UI', Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#171B20">equi<tspan font-weight="800" fill="#4B65D9">Cast</tspan></text>
+</svg>
