@@ -194,6 +194,72 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   default `GITHUB_TOKEN` workflows get can't call that API at all — which
   is a new credential to create/rotate for not much saved effort at this
   project's current scale.
+- Phase D User-owned data (transactions): new `backend/transactions/`
+  Django app exposing Auth0-authenticated CRUD for a holding's
+  transactions — `GET`/`POST /api/transactions/` (`GET` takes optional
+  `?holding_id=`/`?year=`/`?date_from=`/`?date_to=` filters),
+  `GET`/`PATCH`/`DELETE /api/transactions/<holding_id>/<id>/`. Transactions
+  only apply to stock/etf holdings under an account or a pie — never fx,
+  never a watchlist holding. Backed by a new
+  `equicast_core.TransactionsClient`
+  (`packages/core/src/equicast_core/transactions.py`) — unlike every other
+  Phase D domain (one JSON object per user), this one stores **one JSON
+  object per holding**, at `transactions/<user_id>/<holding_id>.json`:
+  every real access pattern here (holding-scoped list, a `SELL`'s
+  cumulative-shares check, cascading a delete when a holding is removed)
+  is already scoped to one holding, so this avoids rewriting a whole-user
+  blob on every write — the trade-off is that listing *every* transaction
+  for a user (no `?holding_id=`) has to enumerate and read every holding's
+  file instead of one read. The detail routes are nested under
+  `holding_id` for the same reason: an id-only lookup would otherwise mean
+  scanning every holding file for the user. Accounts gain a required
+  `transaction_type` field (`AVERAGE` or `TRANSACTION`) governing how
+  every holding under that account — directly, or via one of its pies —
+  records transactions: `AVERAGE` is a single mutable snapshot per holding
+  (`no_of_shares`, `average_price`, no date — `PATCH`-able, since it's
+  corrected over time rather than logged); `TRANSACTION` is an immutable
+  log of `BUY`/`SELL` events (`no_of_shares`, `price`, `date`, `type`),
+  any number per holding (up to `MAX_TRANSACTIONS_FOR_HOLDING`, default
+  `500`, `-1` to disable — this is a safety limit against one holding's
+  file growing unbounded, not a cost control, since `TRANSACTION`-mode
+  history only ever grows), with a `SELL` rejected
+  (`InsufficientSharesError`) if it would take the holding's net recorded
+  shares (summed in recorded order, not date order) below zero. Every
+  record has the same stable six-key shape regardless of mode, `null`
+  where not applicable — the same reasoning `HoldingsClient` uses for its
+  parent-id fields; an `AVERAGE` record's `date` is always `null`, so it
+  never matches the list endpoint's `year`/`date_from`/`date_to` filters.
+  `transaction_type` is locked once the account has any transactions
+  recorded under it (`accounts/views.py`'s `PATCH` now rejects the field
+  with `409` in that case, checked via a new
+  `TransactionsClient.has_transactions_for_holdings` targeted existence
+  check rather than a full per-user scan). A holding can be created with
+  its first transaction in the same request (`POST /api/holdings/`'s
+  optional nested `"transaction"` field, validated before the holding is
+  written and rolled back via `delete_holding` if the paired
+  `create_transaction` fails — S3 has no cross-object transaction of its
+  own) or afterwards via a separate `POST /api/transactions/`; pie-scoped
+  holdings (created via `PUT /api/pies/<id>/holdings/`) only support the
+  latter. Deleting a holding, or force-deleting a pie/account, now
+  cascades into `delete_transactions_for_holdings`, which deletes each
+  matching holding's S3 object outright (no concurrent writer to race once
+  the holding itself is gone) rather than rewriting it to an empty list.
+  For now this only stores what the caller provides — no computed average
+  price, dividends, or returns. `MAX_TRANSACTIONS_FOR_HOLDING` is sourced
+  from a new `infra/variables.tf`'s `max_transactions_for_holding`
+  Terraform variable, passed by `terraform.yml`'s `apply-dev`/`apply-prod`
+  jobs as
+  `-var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }}`.
+  New Terraform: the `backend_lambda` IAM policy gains
+  `s3:GetObject`/`s3:PutObject`/`s3:DeleteObject` on
+  `<user_data_bucket_arn>/transactions/*` (mirroring the
+  accounts/pies/watchlists/holdings statements, its own review, plus
+  `s3:DeleteObject` for the per-holding-object cascade delete above), and
+  the shared `s3:ListBucket` statement's `s3:prefix` condition now also
+  covers `transactions/*`. No new bucket — reuses `user_data_bucket`.
+  `packages/core/tests/test_transactions.py` covers the client;
+  `packages/core/tests/test_accounts.py` updated for the new required
+  `transaction_type` field.
 - Phase D User-owned data (holdings): new `backend/holdings/` Django app
   exposing Auth0-authenticated CRUD for a user's holdings, nested under
   exactly one of an account, a pie, or a watchlist —
