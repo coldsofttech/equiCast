@@ -1,0 +1,508 @@
+<title>Logo — Finalised</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+  :root {
+    --chrome-bg: oklch(0.98 0.002 240);
+    --chrome-surface: oklch(1 0 0);
+    --chrome-border: oklch(0.9 0.004 240);
+    --chrome-text: oklch(0.2 0.006 240);
+    --chrome-text-muted: oklch(0.5 0.006 240);
+    --chrome-text-subtle: oklch(0.62 0.006 240);
+    --chrome-rule: oklch(0.4 0.01 240);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --chrome-bg: oklch(0.15 0.006 240);
+      --chrome-surface: oklch(0.19 0.008 240);
+      --chrome-border: oklch(0.28 0.01 240);
+      --chrome-text: oklch(0.95 0.004 240);
+      --chrome-text-muted: oklch(0.68 0.008 240);
+      --chrome-text-subtle: oklch(0.55 0.008 240);
+      --chrome-rule: oklch(0.75 0.008 240);
+    }
+  }
+  :root[data-theme="dark"] {
+    --chrome-bg: oklch(0.15 0.006 240);
+    --chrome-surface: oklch(0.19 0.008 240);
+    --chrome-border: oklch(0.28 0.01 240);
+    --chrome-text: oklch(0.95 0.004 240);
+    --chrome-text-muted: oklch(0.68 0.008 240);
+    --chrome-text-subtle: oklch(0.55 0.008 240);
+    --chrome-rule: oklch(0.75 0.008 240);
+  }
+
+  /* Fixed, hard-coded logo colors — the whole point is that these do NOT
+     depend on CSS custom properties, since the SVG exports (email, etc.)
+     can't rely on them. Exact OKLCH->sRGB conversions of Palette A —
+     "Violet & Plum" — from palette-options.html, not eyeballed. */
+  :root {
+    --lg-accent: #4B65D9;
+    --lg-secondary: #8B4EC4;
+    --lg-accent-dark: #7896FF;
+    --lg-secondary-dark: #B682ED;
+    --lg-text-light: #171B20;
+    --lg-muted-light: #5A5E65;
+    --lg-text-dark: #EFF2F5;
+    --lg-muted-dark: #9FA5AC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--chrome-bg);
+    color: var(--chrome-text);
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 56px 24px 80px; }
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--chrome-rule);
+  }
+  h1 {
+    font-family: "Archivo", sans-serif; font-weight: 800;
+    font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.01em; margin: 10px 0 14px;
+    text-wrap: balance;
+  }
+
+  .decision-banner {
+    display: inline-flex; align-items: center; gap: 9px; margin-top: 2px;
+    padding: 7px 11px; border: 1px solid oklch(0.86 0.08 150); border-radius: 8px;
+    background: oklch(0.96 0.04 150); color: oklch(0.38 0.12 150);
+    font-size: 12px; font-weight: 600;
+  }
+  .decision-banner .decision-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: oklch(0.58 0.15 150); flex-shrink: 0;
+  }
+  .decision-banner .decision-label {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 500;
+    letter-spacing: 0.05em; text-transform: uppercase;
+  }
+
+  .lede { max-width: 66ch; font-size: 16px; color: var(--chrome-text-muted); margin-top: 14px; }
+  .lede a { color: var(--chrome-text); }
+  .lede code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.9em;
+    background: var(--chrome-surface); border: 1px solid var(--chrome-border);
+    border-radius: 4px; padding: 1px 5px;
+  }
+
+  section.block { margin-top: 56px; }
+  h2 {
+    font-family: "Archivo", sans-serif; font-weight: 700; font-size: 20px; margin: 0 0 6px;
+  }
+  .block-note { max-width: 68ch; font-size: 14px; color: var(--chrome-text-muted); margin: 0 0 20px; }
+
+  /* ---- lockup preview panels ---- */
+  .lockup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 700px) { .lockup-grid { grid-template-columns: 1fr; } }
+  .lockup-panel {
+    border-radius: 12px; padding: 32px; display: flex; flex-direction: column;
+    gap: 6px; justify-content: center; min-height: 140px;
+  }
+  .lockup-panel.on-light { background: #ffffff; border: 1px solid var(--chrome-border); }
+  .lockup-panel.on-dark { background: #14161A; }
+  .lockup-row { display: flex; align-items: center; gap: 14px; }
+  .lockup-text { display: flex; flex-direction: column; gap: 3px; }
+  .wordmark { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 500; font-size: 26px; letter-spacing: -0.01em; }
+  .wordmark b { font-weight: 800; }
+  .tagline { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 500; font-size: 12.5px; letter-spacing: 0.01em; }
+
+  /* ---- mark-only scale test ---- */
+  .scale-row { display: flex; align-items: flex-end; gap: 28px; flex-wrap: wrap; }
+  .scale-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .scale-item span {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--chrome-text-subtle);
+  }
+  .scale-item .swatch-bg {
+    background: #14161A; border-radius: 8px; padding: 10px; display: inline-flex;
+  }
+
+  /* ---- CSS web component demo ---- */
+  .css-demo { display: flex; gap: 16px; flex-wrap: wrap; }
+  .css-demo-panel {
+    flex: 1; min-width: 260px; border-radius: 10px; padding: 16px 18px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .css-demo-panel.on-light { background: #fff; border: 1px solid var(--chrome-border); }
+  .css-demo-panel.on-dark { background: #14161A; }
+  .ec-badge {
+    width: 34px; height: 34px; border-radius: 9px; flex-shrink: 0;
+    display: grid; place-items: center;
+  }
+  .ec-badge svg { width: 21px; height: 21px; }
+  .ec-wordmark-css { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 500; font-size: 19px; }
+  .ec-wordmark-css b { font-weight: 800; }
+
+  /* ---- alternative icon directions ---- */
+  .alt-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px;
+  }
+  .alt-card {
+    background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: 10px;
+    padding: 14px; display: flex; gap: 12px; align-items: flex-start;
+  }
+  .alt-swatch {
+    background: #14161A; border-radius: 8px; padding: 8px; flex-shrink: 0; display: inline-flex;
+  }
+  .alt-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .alt-name-row { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+  .alt-name { font-weight: 700; font-size: 13.5px; }
+  .alt-round {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: 0.05em;
+    text-transform: uppercase; color: var(--chrome-text-subtle);
+  }
+  .alt-note { font-size: 12.5px; color: var(--chrome-text-muted); }
+  .alt-tag {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 500;
+    color: var(--chrome-text-subtle); border: 1px solid var(--chrome-border); border-radius: 999px;
+    padding: 2px 8px;
+  }
+  .alt-tag.chosen {
+    color: oklch(0.38 0.12 150); border-color: oklch(0.86 0.08 150); background: oklch(0.96 0.04 150);
+  }
+
+  /* ---- alternative taglines ---- */
+  .tagline-list { display: flex; flex-direction: column; gap: 12px; }
+  .tagline-card {
+    background: var(--chrome-surface); border: 1px solid var(--chrome-border); border-radius: 10px;
+    padding: 14px 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px;
+    flex-wrap: wrap;
+  }
+  .tagline-left { display: flex; flex-direction: column; gap: 4px; }
+  .tagline-tone {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase;
+    color: var(--chrome-text-subtle);
+  }
+  .tagline-text { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 600; font-size: 16px; color: var(--chrome-text); }
+  .tagline-rationale { font-size: 13px; color: var(--chrome-text-muted); max-width: 46ch; }
+
+  footer {
+    margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--chrome-border);
+    font-size: 13.5px; color: var(--chrome-text-muted); max-width: 68ch;
+  }
+</style>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="grad-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4B65D9"/>
+      <stop offset="100%" stop-color="#8B4EC4"/>
+    </linearGradient>
+    <linearGradient id="grad-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7896FF"/>
+      <stop offset="100%" stop-color="#B682ED"/>
+    </linearGradient>
+
+    <!-- FINAL: Candlestick Spear — 3 real OHLC candles, tallest wick sharpened into a spearpoint -->
+    <symbol id="icon-spear" viewBox="0 0 24 24">
+      <line x1="5.5" y1="14" x2="5.5" y2="19.5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+      <rect x="4" y="15" width="3" height="3.4" rx="0.6" fill="#fff"/>
+      <line x1="11" y1="9" x2="11" y2="19.5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+      <rect x="9.5" y="11" width="3" height="6.6" rx="0.6" fill="#fff"/>
+      <line x1="16.5" y1="17" x2="16.5" y2="19.5" stroke="#fff" stroke-width="1" stroke-linecap="round"/>
+      <rect x="15" y="8" width="3" height="9" rx="0.6" fill="#fff"/>
+      <polygon points="15.6,8 17.4,8 16.5,2" fill="#fff"/>
+    </symbol>
+
+    <!-- Alternative: Round 1 & Round 2 variant 1 — Bars & Ping -->
+    <symbol id="icon-bars" viewBox="0 0 24 24">
+      <rect x="4" y="15" width="3" height="6" rx="1" fill="#fff"/>
+      <rect x="9.5" y="10.5" width="3" height="10.5" rx="1" fill="#fff"/>
+      <rect x="15" y="6" width="3" height="15" rx="1" fill="#fff"/>
+      <circle cx="19.3" cy="5.2" r="1.1" fill="#fff"/>
+      <path d="M21 7A2.4 2.4 0 0 0 21 3.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- Alternative: Round 2 variant 2 — Trend & Signal -->
+    <symbol id="icon-trend" viewBox="0 0 24 24">
+      <path d="M3 17 L9 11 L13 14 L20 5" stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M15 5.5 L20.5 4.3 L19.3 9.8" stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M22.5 7.5 A3.2 3.2 0 0 0 22.5 1" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+      <path d="M21.3 5.8 A1.6 1.6 0 0 0 21.3 2.7" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+    </symbol>
+
+    <!-- Alternative: Round 2 variant 3 — Orbit & Satellite -->
+    <symbol id="icon-orbit" viewBox="0 0 24 24">
+      <circle cx="11.5" cy="12.5" r="7.2" fill="none" stroke="#fff" stroke-width="2.2"
+        stroke-linecap="round" pathLength="100" stroke-dasharray="76 24"/>
+      <path d="M17.6 8.3 Q19.4 7.3 20.3 5.3" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+      <circle cx="20.7" cy="4.6" r="1.35" fill="#fff"/>
+    </symbol>
+
+    <!-- Alternative: Round 3 variant 1 — Price Bolt -->
+    <symbol id="icon-bolt" viewBox="0 0 24 24">
+      <polygon points="13,2 4,14 11,14 9,22 20,10 12,10" fill="#fff" transform="rotate(18 12 12)"/>
+    </symbol>
+
+    <!-- Alternative: Round 3 variant 3 — Target Dart -->
+    <symbol id="icon-target" viewBox="0 0 24 24">
+      <circle cx="10" cy="14" r="6" fill="none" stroke="#fff" stroke-width="2"/>
+      <circle cx="10" cy="14" r="1.5" fill="#fff"/>
+      <path d="M2.4 17.8 L5 20.3 L2.6 22" stroke="#fff" stroke-width="1.3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <line x1="4" y1="20" x2="16" y2="8" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      <path d="M15 6.3 L19.3 4.7 L18 9.5" stroke="#fff" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+
+    <!-- Alternative: Round 3 variant 4 — Breakout Flag -->
+    <symbol id="icon-flag" viewBox="0 0 24 24">
+      <line x1="3" y1="9" x2="8" y2="9" stroke="#fff" stroke-width="1.3" stroke-linecap="round" opacity="0.6"/>
+      <line x1="17" y1="9" x2="21" y2="9" stroke="#fff" stroke-width="1.3" stroke-linecap="round" opacity="0.6"/>
+      <line x1="11" y1="20" x2="11" y2="5.2" stroke="#fff" stroke-width="2" stroke-linecap="round"/>
+      <polygon points="11,6 18.5,9.3 11,12.6" fill="#fff"/>
+      <path d="M8.1 7.4 L11 4.4 L13.9 7.4" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <p class="kicker">equiCast — brand mark</p>
+  <h1>Icon, wordmark, and tagline</h1>
+
+  <div class="decision-banner">
+    <span class="decision-dot"></span>
+    <span class="decision-label">Finalised</span>
+    <span>Candlestick Spear + &ldquo;Cast your equity forward.&rdquo;</span>
+  </div>
+
+  <p class="lede">
+    The mark is <b>Candlestick Spear</b> — three real OHLC candlesticks (body + wick)
+    ascending, the tallest candle's upper wick sharpened into a spearpoint breaking past
+    the frame. The tagline is <b>&ldquo;Cast your equity forward.&rdquo;</b> Colors are Palette
+    A — Violet &amp; Plum — see <a href="palette-options.html">palette-options.html</a> for
+    the full color rationale. The alternative icon directions and taglines considered are
+    recapped further down. Colors below are hard-coded
+    hex (<code>#4B65D9</code> etc.), exact OKLCH→sRGB conversions of the token values, not
+    eyeballed — the SVG exports can't rely on <code>oklch()</code> or CSS variables the way
+    the live app can.
+  </p>
+
+  <section class="block">
+    <h2>Full lockup — light &amp; dark</h2>
+    <p class="block-note">The two SVG exports: icon + wordmark + tagline, sized for a light or dark host surface respectively.</p>
+    <div class="lockup-grid">
+      <div class="lockup-panel on-light">
+        <div class="lockup-row">
+          <svg viewBox="0 0 40 40" width="44" height="44">
+            <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+            <use href="#icon-spear" x="8" y="8" width="24" height="24"/>
+          </svg>
+          <div class="lockup-text">
+            <div class="wordmark" style="color:var(--lg-text-light)">equi<b style="color:var(--lg-accent)">Cast</b></div>
+            <div class="tagline" style="color:var(--lg-muted-light)">Cast your equity forward.</div>
+          </div>
+        </div>
+      </div>
+      <div class="lockup-panel on-dark">
+        <div class="lockup-row">
+          <svg viewBox="0 0 40 40" width="44" height="44">
+            <rect width="40" height="40" rx="11" fill="url(#grad-dark)"/>
+            <use href="#icon-spear" x="8" y="8" width="24" height="24"/>
+          </svg>
+          <div class="lockup-text">
+            <div class="wordmark" style="color:var(--lg-text-dark)">equi<b style="color:var(--lg-accent-dark)">Cast</b></div>
+            <div class="tagline" style="color:var(--lg-muted-dark)">Cast your equity forward.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Compact mark — mobile / favicon / app icon</h2>
+    <p class="block-note">One self-contained file (solid gradient badge, works on any background) — this is the third export. Shown here at real target sizes to check it still reads at favicon scale.</p>
+    <div class="scale-row">
+      <div class="scale-item">
+        <div class="swatch-bg">
+          <svg viewBox="0 0 40 40" width="64" height="64">
+            <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+            <use href="#icon-spear" x="8" y="8" width="24" height="24"/>
+          </svg>
+        </div>
+        <span>64px — app icon</span>
+      </div>
+      <div class="scale-item">
+        <div class="swatch-bg">
+          <svg viewBox="0 0 40 40" width="32" height="32">
+            <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+            <use href="#icon-spear" x="8" y="8" width="24" height="24"/>
+          </svg>
+        </div>
+        <span>32px — favicon</span>
+      </div>
+      <div class="scale-item">
+        <div class="swatch-bg">
+          <svg viewBox="0 0 40 40" width="16" height="16">
+            <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+            <use href="#icon-spear" x="8" y="8" width="24" height="24"/>
+          </svg>
+        </div>
+        <span>16px — tab</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>CSS web version</h2>
+    <p class="block-note">
+      Same design, rendered instantly with no image request: badge sizing/gradient/layout
+      via CSS, the icon glyph as a small inlined SVG, wordmark as styled text — this is what
+      would sit in the app's topbar, reading <code>var(--ec-accent)</code> etc. so it flips
+      with the theme toggle for free (mocked here with two fixed backgrounds instead).
+    </p>
+    <div class="css-demo">
+      <div class="css-demo-panel on-light">
+        <div class="ec-badge" style="background:linear-gradient(135deg, var(--lg-accent), var(--lg-secondary))">
+          <svg viewBox="0 0 24 24"><use href="#icon-spear"/></svg>
+        </div>
+        <div class="ec-wordmark-css" style="color:var(--lg-text-light)">equi<b style="color:var(--lg-accent)">Cast</b></div>
+      </div>
+      <div class="css-demo-panel on-dark">
+        <div class="ec-badge" style="background:linear-gradient(135deg, var(--lg-accent-dark), var(--lg-secondary-dark))">
+          <svg viewBox="0 0 24 24"><use href="#icon-spear"/></svg>
+        </div>
+        <div class="ec-wordmark-css" style="color:var(--lg-text-dark)">equi<b style="color:var(--lg-accent-dark)">Cast</b></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Alternative icon directions</h2>
+    <p class="block-note">
+      The six other icon directions explored across three rounds, kept here for reference.
+      Candlestick Spear was chosen for being the most literal "trading" glyph of the set —
+      real OHLC candles, not an invented metaphor — while still landing the "cast forward"
+      idea in the spearpoint.
+    </p>
+    <div class="alt-grid">
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-bars" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Bars &amp; Ping</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 1 &amp; 2</span>
+          <span class="alt-note">Literal bar chart with a broadcast ping — read too generically "analytics dashboard," not trading-specific.</span>
+        </div>
+      </div>
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-trend" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Trend &amp; Signal</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 2</span>
+          <span class="alt-note">Ascending line with radiating arcs — fluid, but the arcs read closer to a wifi/broadcast icon than trading.</span>
+        </div>
+      </div>
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-orbit" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Orbit &amp; Satellite</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 2</span>
+          <span class="alt-note">Abstract open ring — most minimal of the set, but too abstract; no trading or "cast" cue on its own.</span>
+        </div>
+      </div>
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-bolt" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Price Bolt</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 3</span>
+          <span class="alt-note">Diagonal lightning bolt — graphically punchy, but read as generic "fast/power" rather than trading.</span>
+        </div>
+      </div>
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-target" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Target Dart</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 3</span>
+          <span class="alt-note">Bullseye pierced by a dart — strong "hit your target" idea, but the most visually busy of the four.</span>
+        </div>
+      </div>
+      <div class="alt-card">
+        <div class="alt-swatch">
+          <svg viewBox="0 0 40 40" width="28" height="28"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-flag" x="8" y="8" width="24" height="24"/></svg>
+        </div>
+        <div class="alt-text">
+          <div class="alt-name-row"><span class="alt-name">Breakout Flag</span><span class="alt-tag">alternative</span></div>
+          <span class="alt-round">Round 3</span>
+          <span class="alt-note">Real flag/pennant continuation pattern — a nice insider nod, but less legible at favicon scale.</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <h2>Alternative taglines</h2>
+    <p class="block-note">
+      The full six-candidate shortlist from Round 1, spanning three tones. &ldquo;Cast your
+      equity forward.&rdquo; was chosen for leaning on the name itself — &ldquo;equity&rdquo;
+      and &ldquo;cast/forecast&rdquo; in one line, ownable in a way the more generic
+      candidates weren't.
+    </p>
+    <div class="tagline-list">
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Functional</span>
+          <span class="tagline-text">Track your portfolio. Forecast what's next.</span>
+          <span class="tagline-rationale">States the two core jobs plainly — tracking and forecasting.</span>
+        </div>
+        <span class="alt-tag">alternative</span>
+      </div>
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Functional</span>
+          <span class="tagline-text">Clear tracking. Confident forecasts.</span>
+          <span class="tagline-rationale">Same territory, tighter two-beat rhythm.</span>
+        </div>
+        <span class="alt-tag">alternative</span>
+      </div>
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Wordplay</span>
+          <span class="tagline-text">Cast your equity forward.</span>
+          <span class="tagline-rationale">Leans on the name itself — "equity" and "cast/forecast" in one line, ownable.</span>
+        </div>
+        <span class="alt-tag chosen">chosen</span>
+      </div>
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Wordplay</span>
+          <span class="tagline-text">Your equity, forecasted.</span>
+          <span class="tagline-rationale">Tighter still; plays on "your future, forecasted" but grounded in equity.</span>
+        </div>
+        <span class="alt-tag">alternative</span>
+      </div>
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Punchy</span>
+          <span class="tagline-text">Invest with foresight.</span>
+          <span class="tagline-rationale">Short, confident, no explicit pun — reads well at favicon-adjacent sizes too.</span>
+        </div>
+        <span class="alt-tag">alternative</span>
+      </div>
+      <div class="tagline-card">
+        <div class="tagline-left">
+          <span class="tagline-tone">Punchy</span>
+          <span class="tagline-text">See further. Grow smarter.</span>
+          <span class="tagline-rationale">Most aspirational of the six — least tied to the literal feature set.</span>
+        </div>
+        <span class="alt-tag">alternative</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Nothing here is exported yet — the three real files
+    (<code>equicast-logo-light.svg</code>, <code>equicast-logo-dark.svg</code>,
+    <code>equicast-mark.svg</code>, self-contained, no external font/CSS dependency) plus the
+    React/CSS component are still to be produced from this finalised lockup.
+  </footer>
+</div>

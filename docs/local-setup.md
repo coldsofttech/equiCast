@@ -26,6 +26,7 @@ equiCast/
 │   └── transactions/    # Django app: user-owned transactions CRUD, nested under a holding (S3 JSON via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
+├── scripts/             # Repo-wide dev tooling (e.g. local-dev.ps1 — LocalStack)
 ├── data/                # Local Parquet cache (gitignored)
 ├── docs/                # This directory
 └── .github/workflows/   # CI/CD pipelines
@@ -80,6 +81,7 @@ API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1 character), case-insensitive substring match against every published catalog's `ticker`/`name` (see `equicast_core.catalog`) — results are only as fresh as the last ingestion run, not a live bucket scan. Optional `?asset_class=` narrows to one of `fx`/`stock`/`etf`. Paginated (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`), returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts, each with its nested `pies` (with their own nested `holdings`) and its own direct `holdings`
 - `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`, `transaction_type` — `AVERAGE` or `TRANSACTION`); `409` once the caller has `MAX_ACCOUNTS`
@@ -112,6 +114,93 @@ API available at:
 uv run pytest
 uv run mypy . --ignore-missing-imports
 ```
+
+## Full local stack: LocalStack + backend + frontend (optional — no real AWS account needed)
+
+`scripts/local-dev.ps1` (Windows PowerShell) starts [LocalStack](https://www.localstack.io/)
+(S3 + DynamoDB), provisions the
+`MARKET_DATA_BUCKET`/`USER_DATA_BUCKET`/`USER_PROFILES_TABLE` the backend needs,
+and runs the backend (`manage.py runserver`) and the frontend (`npm run dev`)
+against them — an end-to-end local loop (accounts, pies, watchlists,
+holdings, transactions, and market data) with no real AWS credentials or
+bucket required, and no LocalStack account/signup either. The backend and
+frontend each open in their own PowerShell window so their logs stay
+readable; the window you ran the script from just waits and tears everything
+down — both spawned windows and the LocalStack container — on Ctrl+C.
+Pinned to `localstack/localstack:4.14.0`, deliberately not `:latest` — starting
+with the 2026.03.0 calendar-versioned release, even LocalStack's free tier
+requires a `LOCALSTACK_AUTH_TOKEN` (a free account) just to start the image;
+`4.14.0` is the last semver release before that requirement, so this stays
+genuinely account-free at the cost of no further LocalStack updates beyond it.
+It works with no code changes: every
+`equicast-core` client just calls plain `boto3.client(...)`/`boto3.resource(...)`,
+and boto3 (pinned `>=1.35.9`) already honors the `AWS_ENDPOINT_URL_S3`/
+`AWS_ENDPOINT_URL_DYNAMODB` env vars the script sets to route those calls at
+LocalStack instead of real AWS.
+
+```powershell
+.\scripts\local-dev.ps1                        # start LocalStack + the backend + the frontend
+.\scripts\local-dev.ps1 -StartLocalStack -StartBackend  # skip the frontend
+.\scripts\local-dev.ps1 -StartFrontend         # just the frontend dev server (no Docker/AWS CLI/uv checks)
+.\scripts\local-dev.ps1 -StartBackend          # just the backend, against a LocalStack already running from a previous invocation
+.\scripts\local-dev.ps1 -SeedMarketData        # also ingest fx/stock/etf (per their packages/*/config/*.yaml) so /api/market/... has data
+.\scripts\local-dev.ps1 -SeedMarketData -FullLoad  # same, but full price history instead of just the current year (slower, more network calls)
+.\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app  # let the backend verify real Auth0 tokens
+.\scripts\local-dev.ps1 -Stop                  # stop and remove the LocalStack container
+.\scripts\local-dev.ps1 -Reset                 # wipe the LocalStack container/data and start fresh
+```
+
+`-StartLocalStack`/`-StartBackend`/`-StartFrontend` select which of the three
+to start; passing none of them starts all three (the default above). Combine
+any subset — e.g. `-StartBackend -StartFrontend` skips LocalStack entirely,
+useful if it's already running from an earlier `-StartLocalStack` invocation.
+
+`-Auth0Domain`/`-Auth0Audience` only matter when the backend is part of this
+run (`-StartBackend`, including the default all-three run) — they're passed
+straight through as `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` env vars into the
+backend's spawned window, the same two settings `equicast_api/settings.py`
+reads in every environment. Both default to `$env:AUTH0_DOMAIN`/
+`$env:AUTH0_AUDIENCE`, so if those are already set in your shell you can omit
+the flags entirely. Leave both unset and the script just warns and starts
+the backend anyway — every `/api/...` request then `401`s for lack of a
+verifiable token (see the Auth0 bullet below); it's only required once you
+actually need to call the API with a real token.
+
+`-SeedMarketData` runs the real `equicast-fx`/`equicast-stock`/`equicast-etf` CLIs
+against live Yahoo Finance data (see [fx-pipeline.md](fx-pipeline.md)/
+[stock-pipeline.md](stock-pipeline.md)/[etf-pipeline.md](etf-pipeline.md)) — the
+LocalStack part is fully local, but this specific step makes real network calls.
+Ctrl+C stops the backend/frontend windows and tears down the LocalStack container
+(nothing persists across sessions — pass `-SeedMarketData` again next time you
+want data in it).
+
+Two things it deliberately does **not** simulate:
+
+- **Auth0** — `Auth0JWTAuthentication` always talks to a real Auth0 tenant (JWKS
+  verification isn't something LocalStack can stand in for). Every `/api/...`
+  view sets `permission_classes = [IsAuthenticated]` — including
+  `/api/market/...` (`ProfileView`/`PricesView`/`SearchView`), not just
+  `/api/accounts/...`/etc — so a request with no Bearer token `401`s
+  regardless of whether `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` are set server-side.
+  Only `/health/` and the Django admin work with no token at all. Pass
+  `-Auth0Domain`/`-Auth0Audience` (or export `$env:AUTH0_DOMAIN`/
+  `$env:AUTH0_AUDIENCE` first) so the server can *verify* a token — see
+  [auth0-setup.md](auth0-setup.md) for how to register a tenant/app — but you
+  still need a genuine Auth0-issued token in hand (e.g. via the frontend's
+  real login flow) to call anything under `/api/...` at all, LocalStack or not.
+- **Lambda + API Gateway** — prod/dev deploy the backend as a Lambda behind
+  API Gateway (`infra/main.tf`'s `backend_lambda`/`backend_api_gateway`
+  modules), but the script runs the identical Django app via
+  `manage.py runserver` instead, so edits reload instantly rather than needing
+  a zip rebuild/redeploy per change. Only relevant if you're specifically
+  debugging the packaging/handler/gateway-integration layer itself, which
+  this script isn't meant to cover.
+
+By default the script also starts the frontend for you — open
+`http://localhost:5173` to drive it from the browser (proxying `/api` to the
+backend, same as normal). Note that the frontend's Auth0 login screen and the
+accounts/pies pages currently live on `feat/frontend-routing-auth`, not
+`main` yet — check that branch out if you're testing that flow end to end.
 
 ## Frontend (React + Vite)
 

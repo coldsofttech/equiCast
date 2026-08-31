@@ -224,7 +224,7 @@ real bucket, not dev. The `environment` input only applies to manual
 `workflow_dispatch` runs, where it defaults to `dev` so an ad-hoc run
 doesn't write to production by accident.
 
-The workflow has two jobs, structured identically to
+The workflow has three jobs, structured identically to
 `fx-ingestion.yml`/`stock-ingestion.yml`'s:
 
 1. **plan** — runs `equicast-etf-plan` to split the configured tickers into
@@ -234,13 +234,25 @@ The workflow has two jobs, structured identically to
    `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
-   `--tickers-json`, and uploads the resulting Parquet files to
-   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved).
+   `--tickers-json`, uploads the resulting Parquet files to
+   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved),
+   and publishes just its `profile.parquet` files as a short-lived (1 day)
+   build artifact for the `build-catalog` job below.
+3. **build-catalog** — downloads and merges every leg's artifact from
+   **ingest** into one local directory (no single leg ever sees the full
+   ticker list, so the catalog can't be built inside one), then runs
+   `equicast-core-build-catalog --asset-class etf` to rebuild
+   `catalog/etf.json` — the search catalog `MarketDataClient.search()`
+   reads (see [packages/core/README.md](../packages/core/README.md)).
+   Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
+   it reads the profiles from the downloaded artifacts, not back from S3.
 
 ### S3 layout produced
 
 ```
 s3://equicast-market-data-<env>/
+├── catalog/
+│   └── etf.json
 └── etf=VOO/
     ├── profile.parquet
     ├── metrics.parquet
