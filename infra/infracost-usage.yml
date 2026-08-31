@@ -123,6 +123,19 @@ resource_usage:
       monthly_tier_1_requests: 500 # one `aws s3 sync` per deploy
       monthly_tier_2_requests: 50000 # page loads
 
+  # CloudFront distribution fronting frontend_bucket (no custom domain yet
+  # — see docs/local-setup.md). Same 50,000 page-loads/month planning
+  # scenario as frontend_bucket's own monthly_tier_2_requests above;
+  # assumes a ~1.5MB average cached bundle weight and that most repeat
+  # visits are served from the browser/edge cache rather than
+  # re-transferred -> ~30GB/month egress, rounded up for headroom. Well
+  # within CloudFront's 1TB/10M-request AWS Free Tier for a new account's
+  # first 12 months regardless.
+  aws_cloudfront_distribution.frontend:
+    monthly_data_transfer_out_gb: 30
+    monthly_http_requests: 5000
+    monthly_https_requests: 50000
+
   # --- Backend Lambda + API Gateway (no real traffic yet — nothing is wired
   # to call these in production). Sized against the illustrative planning
   # scenario worked out for this architecture: 500 monthly active users,

@@ -231,6 +231,16 @@ is the topbar + mega-menu shell, and `src/components/brand/` is the
 the same tokens so it flips with the theme too. Routing, the API client,
 Auth0, and real domain pages are later phases, not built yet.
 
+Deployed via `deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod`
+(gated the same way as backend deploys — see
+[terraform-state-setup.md](terraform-state-setup.md)) to a private S3
+bucket served by CloudFront (`infra/main.tf`'s `frontend_bucket` +
+`aws_cloudfront_distribution.frontend`) — Origin Access Control, not S3
+website hosting, so the bucket itself is never public. No custom domain
+yet: the live URL is CloudFront's own `*.cloudfront.net` hostname
+(`terraform output frontend_url` after apply); revisit once a domain is
+registered (Route53 + ACM + `aliases` on the distribution).
+
 ## FX packages (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)
 
 ```bash

@@ -2,7 +2,8 @@
 
 How GitHub Actions authenticates to AWS — for `terraform.yml` (managing
 infrastructure), `deploy.yml` (backend deployment package to Lambda via S3,
-frontend to S3), and `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`
+frontend to S3 + CloudFront invalidation), and
+`fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`
 (FX/stock/ETF Parquet files to S3, same bucket). This is the detailed reference;
 [fx-pipeline.md](fx-pipeline.md) has the quick-start version.
 
@@ -144,6 +145,12 @@ rather than broad account-wide access:
         "arn:aws:apigateway:*::/apis",
         "arn:aws:apigateway:*::/apis/*"
       ]
+    },
+    {
+      "Sid": "CloudFrontManagement",
+      "Effect": "Allow",
+      "Action": "cloudfront:*",
+      "Resource": "*"
     }
   ]
 }
@@ -194,6 +201,21 @@ integrations, stages — authorizes against `/apis/{api-id}`, matched by
 `/apis/*`. Terraform's own `plan`/`refresh` needs the latter even before
 `apply` creates anything, so both must be present from the start.
 
+**On `CloudFrontManagement`'s `Resource: "*"`**: like API Gateway above, a
+distribution's and an OAC's ARNs are only known after they're created —
+there's no `equicast-*` naming convention to scope against the way S3,
+Lambda, DynamoDB, and the IAM role statement do, and Terraform's `plan`
+needs to read them before `apply` creates anything on a from-scratch run.
+Unlike API Gateway, CloudFront has no parent-collection path (`/apis`) to
+scope to either, so this is `Resource: "*"` outright — the widest
+statement in this policy, though still narrowed to the `cloudfront:`
+action namespace, and this account has no other CloudFront distributions
+for it to reach. Covers both Terraform managing
+`aws_cloudfront_distribution.frontend`/
+`aws_cloudfront_origin_access_control.frontend` and `deploy.yml`'s
+`deploy-frontend-dev`/`deploy-frontend-prod` calling
+`cloudfront:CreateInvalidation` after syncing a build to S3.
+
 **On `LambdaLogsManagement`'s extra `log-group::log-stream:` resource**:
 `logs:DescribeLogGroups` is a list action — CloudWatch Logs doesn't expose
 resource-level permissions for it the normal way, and AWS's own
@@ -234,10 +256,10 @@ job is missing `permissions: id-token: write`. This must be set explicitly
 on every job that assumes the role; it isn't part of the default permission
 set.
 
-**`AccessDenied` on a specific S3/Lambda/DynamoDB/API Gateway action** — the
-resource name doesn't match the `equicast-*` pattern the permissions policy
-scopes to, or it's a service/action outside what's granted (e.g. EC2 — this
-role has none).
+**`AccessDenied` on a specific S3/Lambda/DynamoDB/API Gateway/CloudFront
+action** — the resource name doesn't match the `equicast-*` pattern the
+permissions policy scopes to, or it's a service/action outside what's
+granted (e.g. EC2 — this role has none).
 
 ## Security notes
 
@@ -245,7 +267,10 @@ role has none).
   not the whole GitHub org or arbitrary repos.
 - Permissions are scoped to `equicast-*` named S3 buckets, Lambda functions,
   DynamoDB tables, CloudWatch log groups, and IAM roles — plus HTTP APIs in
-  API Gateway, which can't be name-scoped the same way (see the note above).
-  Nothing else in the account is reachable.
+  API Gateway and CloudFront distributions, neither of which can be
+  name-scoped the same way (see the notes above); CloudFront in particular
+  has no naming-convention scoping available at all, so it's granted on
+  `Resource: "*"` rather than `equicast-*`. Nothing else in the account is
+  reachable.
 - No credentials are stored anywhere: each workflow run gets its own
   short-lived token (~1 hour), and a new one is issued fresh on every run.
