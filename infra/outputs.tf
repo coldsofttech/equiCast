@@ -14,6 +14,10 @@ output "user_profiles_table_name" {
   value = module.user_profiles_table.table_name
 }
 
+output "user_data_bucket_name" {
+  value = module.user_data_bucket.bucket_name
+}
+
 # Commented out along with the module in main.tf.
 #
 # output "frontend_bucket_name" {

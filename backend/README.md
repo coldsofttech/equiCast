@@ -24,12 +24,21 @@ still starts and `/api/market/...` is unaffected, but any request with an
 `Authorization: Bearer` header fails to authenticate, and
 `/api/identity/me/` always returns `401`.
 
+Set `USER_DATA_BUCKET` (e.g. `equicast-user-data-dev`), plus the same Auth0
+settings above, to use `/api/accounts/...`.
+
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;
   returns the caller's profile (`user_id`, `default_currency`), creating it
   with `default_currency: "GBP"` on first login
+- `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists
+  the caller's accounts
+- `POST /api/accounts/` — creates an account (`name`, `description`,
+  `account_type`, `currency`); `409` once the caller has 5
+- `PATCH /api/accounts/<id>/` — partially updates an account
+- `DELETE /api/accounts/<id>/` — deletes an account
 
 ## Lambda packaging
 

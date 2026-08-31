@@ -40,6 +40,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase D User-owned data (accounts): new `backend/accounts/` Django app
+  exposing Auth0-authenticated CRUD for a user's investment accounts —
+  `GET`/`POST /api/accounts/`, `PATCH`/`DELETE /api/accounts/<id>/`. Backed
+  by a new `equicast_core.AccountsClient`
+  (`packages/core/src/equicast_core/accounts.py`), which stores each user's
+  accounts as a single JSON object in S3 at `accounts/<user_id>.json`
+  (`{"accounts": [...]}`) rather than DynamoDB — DynamoDB stays reserved for
+  the small, identity-keyed profile record (`UserProfileClient`), while
+  every other user-owned domain (accounts now; portfolios/watchlists/
+  holdings later) lives as JSON in S3, one object per user per domain. Each
+  account record is `{id (uuid4), name, description, account_type,
+  currency, created_at, updated_at}`; `account_type` is free text for now
+  (no server-side enum) — the frontend is expected to offer a dropdown of
+  suggested values. `create_account` enforces the product-defined
+  5-accounts-per-user cap, raising `AccountLimitExceededError` (surfaced by
+  the view as `409`); `update_account`/`delete_account` raise
+  `AccountNotFoundError` for an unknown id (surfaced as `404`). Reads/writes
+  use S3's conditional-write support (`IfNoneMatch="*"` on first create,
+  `IfMatch=<etag>` thereafter) for the same optimistic-concurrency guarantee
+  `UserProfileClient` gets from DynamoDB's `ConditionExpression` — S3 has no
+  per-field conditional update, only whole-object conditional puts, so a
+  write that loses the race (another tab/process wrote first) is retried
+  against the now-current state rather than silently clobbering it. Requires
+  `boto3>=1.35.9` (bumped from `>=1.34` in both `packages/core/pyproject.toml`
+  and `backend/pyproject.toml`) — S3 conditional writes were only added to
+  botocore in 1.35.2.
+  New Terraform: `infra/main.tf`'s `user_data_bucket` module provisions
+  `equicast-user-data-<env>` — deliberately a new, separate bucket from
+  `market_data_bucket` (a read-only ingestion-pipeline artifact store; the
+  Lambda only holds `s3:GetObject` on it) rather than folding accounts in
+  there, to avoid broadening that bucket's IAM footprint and blurring two
+  unrelated lifecycles. One bucket is shared across all of Phase D's
+  domains, with domain-prefixed keys (`accounts/<user_id>.json`, ...)
+  rather than a bucket per domain. The backend Lambda's IAM policy gains a
+  statement scoped to `s3:GetObject`/`s3:PutObject` on
+  `<bucket_arn>/accounts/*` specifically (not the whole bucket), so each
+  future domain gets its own reviewed statement as it's added; new
+  `USER_DATA_BUCKET` env var (no default, same "fail loudly" precedent as
+  `MARKET_DATA_BUCKET`/`USER_PROFILES_TABLE`) plumbed through
+  `infra/main.tf`'s `backend_lambda` module and a new
+  `user_data_bucket_name` output. `infra/infracost-usage.yml` gained a
+  usage estimate for the new bucket (rough, same "nothing calls this yet"
+  caveat as `user_profiles_table`'s entry, sized against the same 500-MAU
+  planning scenario).
+  `packages/core/tests/test_accounts.py` (9 tests) and
+  `backend/accounts/tests.py` (10 tests) cover the client and view layer
+  respectively, including a test that simulates a concurrent write losing
+  the conditional-write race and asserts the retry lands on the merged
+  state rather than raising or overwriting it. `docs/local-setup.md`,
+  `backend/README.md`, and `packages/core/README.md` updated with the new
+  endpoints/client/env var.
 - Phase C Identity: Auth0-based authentication for the backend.
   `equicast_core.UserProfileClient` (`packages/core/src/equicast_core/user_profiles.py`),
   a DynamoDB client mirroring `MarketDataClient`'s shape, reads/upserts one
