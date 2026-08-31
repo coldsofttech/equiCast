@@ -76,9 +76,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rather than a bucket per domain. The backend Lambda's IAM policy gains a
   statement scoped to `s3:GetObject`/`s3:PutObject` on
   `<bucket_arn>/accounts/*` specifically (not the whole bucket), so each
-  future domain gets its own reviewed statement as it's added; new
-  `USER_DATA_BUCKET` env var (no default, same "fail loudly" precedent as
-  `MARKET_DATA_BUCKET`/`USER_PROFILES_TABLE`) plumbed through
+  future domain gets its own reviewed statement as it's added, plus a
+  separate `s3:ListBucket` statement on the bucket itself (a bucket-level
+  action, so it can't be scoped to `.../accounts/*` the way `GetObject`/
+  `PutObject` are — a `StringLike` condition on `s3:prefix` keeps it
+  restricted to the `accounts/` domain instead). `ListBucket` is required
+  alongside `GetObject` for a key that might not exist yet: without it, S3
+  can't distinguish this role from a caller with no rights to know whether
+  the object exists at all, so a first-time user's `GetObject` on their
+  not-yet-created `accounts/<user_id>.json` returned `AccessDenied` instead
+  of the `NoSuchKey` `AccountsClient._load()` catches to mean "no accounts
+  yet". New `USER_DATA_BUCKET` env var (no default, same "fail loudly"
+  precedent as `MARKET_DATA_BUCKET`/`USER_PROFILES_TABLE`) plumbed through
   `infra/main.tf`'s `backend_lambda` module and a new
   `user_data_bucket_name` output. `infra/infracost-usage.yml` gained a
   usage estimate for the new bucket (rough, same "nothing calls this yet"
