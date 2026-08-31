@@ -2,6 +2,7 @@ import { useRef } from "react";
 import Logo from "../components/brand/Logo.jsx";
 import CandlestickSpearIcon from "../components/brand/CandlestickSpearIcon.jsx";
 import ThemeToggle from "../components/shell/ThemeToggle.jsx";
+import DemoChart from "./DemoChart.jsx";
 import "./SignInScreen.css";
 
 const FEATURES = [
@@ -18,7 +19,7 @@ const FEATURES = [
   },
   {
     title: "Live equity & FX data",
-    desc: "Pricing for stocks, ETFs and FX pairs, sourced from Yahoo Finance and kept ready to query.",
+    desc: "Pricing for stocks, ETFs and FX pairs, kept ready to query.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
         <path
@@ -33,7 +34,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "Forecasting & risk metrics",
+    title: "Risk & valuation metrics",
     desc: "Volatility, Sharpe ratio, max drawdown and CAGR — computed for every ticker you follow.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
@@ -66,56 +67,43 @@ const FEATURES = [
       </svg>
     ),
   },
-  {
-    title: "Secured by Auth0",
-    desc: "Your accounts and holdings are gated behind real authentication — yours alone to see.",
-    icon: (
-      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
-        <path
-          d="M10 2.5l6 2.2v4.6c0 4-2.6 6.8-6 8.2-3.4-1.4-6-4.2-6-8.2V4.7z"
-          stroke="currentColor"
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-        <path d="M7.5 10l1.8 1.8L13 8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    ),
-  },
 ];
 
 // The fuller product vision — what equiCast is being built toward, not what's
-// live today (see FEATURES above for that). Grouped around the three tools
-// people already track markets with, so "why should I switch" has an answer.
+// live today (see FEATURES above for that). Each group's items are the
+// visualisation/analysis layer on top of data equiCast already collects, not
+// a restatement of the raw-data items in FEATURES — deliberately kept
+// distinct so the two sections don't repeat each other.
 const ROADMAP = [
   {
-    tag: "Like Google Finance",
+    tag: "Data & news",
     title: "Markets, at a glance",
     items: [
-      "Live pricing for stocks, ETFs and FX pairs",
-      "A news feed tailored to your holdings",
-      "A calendar for earnings, splits and macro events",
+      "Market indices, sector and top-mover overviews",
+      "A news feed curated to your holdings",
+      "A calendar for macro events — rate decisions, inflation prints and more",
     ],
   },
   {
-    tag: "Like Yahoo Finance",
+    tag: "Analysis tools",
     title: "Fundamentals & screening",
     items: [
-      "Fundamentals, financials and valuation metrics",
-      "Volatility, Sharpe ratio, CAGR and max drawdown",
-      "Top-performer screeners and educational suggestions",
+      "Company fundamentals, financials and key statistics",
+      "Analyst ratings and price targets",
+      "Screeners to surface top performers by sector or growth",
     ],
   },
   {
-    tag: "Like DivTracker",
-    title: "Dividend income tracking",
+    tag: "Income tracking",
+    title: "Dividend income",
     items: [
-      "Past and upcoming dividend history",
       "A payout calendar with 5-year income projections",
-      "Corporate events — splits, earnings, rating changes",
+      "Dividend growth history and yield tracking",
+      "Cumulative income visualised across your whole portfolio",
     ],
   },
   {
-    tag: "Only in equiCast",
+    tag: "Unique to equiCast",
     title: "Portfolio intelligence",
     items: [
       "Custom “pies” to visualise portfolio composition",
@@ -150,11 +138,11 @@ function SignInScreen({ onSignIn, error }) {
 
         <div className="ec-hero-grid">
           <div className="ec-hero-copy">
-            <span className="ec-hero-eyebrow">Equity + FX forecasting</span>
+            <span className="ec-hero-eyebrow">Forecasting</span>
             <h1 className="ec-hero-title">Cast your equity forward.</h1>
             <p className="ec-hero-sub">
-              One place to track multi-currency portfolios, live equity &amp; FX data, and
-              forecasts built on real risk metrics — not spreadsheets.
+              One place to track multi-currency portfolios, live equity &amp; FX data, and the
+              risk metrics behind every ticker you follow — with forecasting on the way.
             </p>
             {error ? (
               <p className="ec-signin-error" role="alert">
@@ -187,6 +175,9 @@ function SignInScreen({ onSignIn, error }) {
             <span className="ec-hero-chip ec-hero-chip--1">Stocks</span>
             <span className="ec-hero-chip ec-hero-chip--2">ETFs</span>
             <span className="ec-hero-chip ec-hero-chip--3">FX</span>
+            <span className="ec-hero-chip ec-hero-chip--4">Portfolios</span>
+            <span className="ec-hero-chip ec-hero-chip--5">Forecasting</span>
+            <span className="ec-hero-chip ec-hero-chip--6">Analytics</span>
             <div className="ec-hero-badge">
               <CandlestickSpearIcon size={40} />
             </div>
@@ -223,11 +214,13 @@ function SignInScreen({ onSignIn, error }) {
         </div>
       </section>
 
+      <DemoChart />
+
       <section className="ec-roadmap">
         <span className="ec-section-eyebrow">Coming next</span>
         <h2 className="ec-features-title">The best of the tools you already use, in one place.</h2>
         <p className="ec-roadmap-sub">
-          Core accounts, market data and forecasting are live today — here&rsquo;s everywhere
+          Core accounts, market data and risk metrics are live today — here&rsquo;s everywhere
           equiCast is headed next.
         </p>
         <div className="ec-roadmap-grid">
@@ -243,6 +236,23 @@ function SignInScreen({ onSignIn, error }) {
             </div>
           ))}
         </div>
+      </section>
+
+      <section className="ec-disclaimer">
+        <h2 className="ec-disclaimer-title">Disclaimer</h2>
+        <p>
+          Market, dividend and corporate-events data referenced on this page is sourced via Yahoo
+          Finance (through the open-source yfinance library), for educational and informational
+          purposes only — this is not financial advice, and equiCast is not a registered
+          investment adviser or broker-dealer. Risk and valuation metrics such as volatility,
+          Sharpe ratio, max drawdown and CAGR are calculated by equiCast itself where Yahoo
+          Finance doesn&rsquo;t provide them directly, and are not sourced from a licensed data
+          provider — validate their accuracy independently before relying on them. Nothing on
+          this page is a recommendation to buy, sell or hold any security or currency, and past
+          performance or illustrative figures are not indicative of future results. Always do
+          your own research or consult a licensed financial advisor before making investment
+          decisions.
+        </p>
       </section>
 
       <footer className="ec-landing-foot">

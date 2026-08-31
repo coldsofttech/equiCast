@@ -245,6 +245,24 @@
   animation-delay: -4s;
 }
 
+.ec-hero-chip--4 {
+  top: 44%;
+  left: 0;
+  animation-delay: -1.5s;
+}
+
+.ec-hero-chip--5 {
+  top: 50%;
+  right: 0;
+  animation-delay: -3s;
+}
+
+.ec-hero-chip--6 {
+  top: 62%;
+  left: 22%;
+  animation-delay: -5.5s;
+}
+
 .ec-hero-quote {
   position: absolute;
   bottom: 0;
@@ -466,6 +484,32 @@
   background: var(--ec-purple);
 }
 
+/* ----- Disclaimer ----- */
+.ec-disclaimer {
+  padding: var(--ec-s-24) var(--ec-s-32);
+  max-width: 860px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  border-top: 1px solid var(--ec-divider);
+}
+
+.ec-disclaimer-title {
+  margin: 0 0 var(--ec-s-8);
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.ec-disclaimer p {
+  margin: 0;
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-12);
+  line-height: 1.65;
+}
+
 /* ----- Footer ----- */
 .ec-landing-foot {
   display: flex;
@@ -501,13 +545,20 @@
   .ec-hero-visual {
     min-height: 260px;
   }
+
+  .ec-hero-chip--4,
+  .ec-hero-chip--5,
+  .ec-hero-chip--6 {
+    display: none;
+  }
 }
 
 @media (max-width: 520px) {
   .ec-landing-bar,
   .ec-hero-grid,
   .ec-features,
-  .ec-roadmap {
+  .ec-roadmap,
+  .ec-disclaimer {
     padding-left: var(--ec-s-16);
     padding-right: var(--ec-s-16);
   }
