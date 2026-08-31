@@ -4,16 +4,108 @@ module "market_data_bucket" {
   bucket_name = "${var.project_name}-market-data-${var.environment}"
 }
 
-# Frontend isn't ready to deploy yet — commented out to avoid paying for the
-# S3 bucket (and its stored objects) until there's something worth deploying.
-# Uncomment when that changes.
-#
-# module "frontend_bucket" {
-#   source = "./modules/s3_bucket"
-#
-#   bucket_name = "${var.project_name}-frontend-${var.environment}"
-#   static_site = true
-# }
+# React static site bundle. NOT static_site=true (S3 website hosting) —
+# that requires the bucket to be public over plain HTTP with no CDN/TLS in
+# front of it. Instead this stays fully private (default
+# block_public_access) and is only ever read by CloudFront below, via
+# Origin Access Control — see the bucket policy after the distribution.
+# SPA client-side routing is handled by CloudFront's custom_error_response
+# blocks (unknown paths -> /index.html), not S3's error_document, since a
+# private REST-endpoint origin doesn't have one.
+module "frontend_bucket" {
+  source = "./modules/s3_bucket"
+
+  bucket_name = "${var.project_name}-frontend-${var.environment}"
+}
+
+# Lets CloudFront (and only CloudFront, via the bucket policy's
+# AWS:SourceArn condition below) read the private frontend bucket — the
+# standard OAC pattern, replacing the older "Origin Access Identity" one.
+resource "aws_cloudfront_origin_access_control" "frontend" {
+  name                              = "${var.project_name}-frontend-${var.environment}"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+# No custom domain for now (see docs/local-setup.md) — no `aliases`, and
+# `viewer_certificate` uses CloudFront's own shared *.cloudfront.net
+# certificate rather than an ACM one. Revisit both together once a domain
+# is registered.
+resource "aws_cloudfront_distribution" "frontend" {
+  enabled             = true
+  default_root_object = "index.html"
+  comment             = "${var.project_name} frontend (${var.environment})"
+
+  # US/Canada/Europe edge locations only — the cheapest class. Widen to
+  # PriceClass_All if/when users outside those regions matter enough to be
+  # worth the extra edge-location cost.
+  price_class = "PriceClass_100"
+
+  origin {
+    domain_name              = module.frontend_bucket.bucket_regional_domain_name
+    origin_id                = "frontend-s3"
+    origin_access_control_id = aws_cloudfront_origin_access_control.frontend.id
+  }
+
+  default_cache_behavior {
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    target_origin_id       = "frontend-s3"
+    viewer_protocol_policy = "redirect-to-https"
+
+    # AWS managed "CachingOptimized" policy — a static SPA bundle needs no
+    # custom cache-key/TTL behavior, so no reason to hand-roll one.
+    cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
+  }
+
+  # A React Router client-side route (e.g. /accounts/123) has no matching
+  # S3 key, so S3 (via OAC) returns 403 for it — CloudFront rewrites that
+  # (and a real 404) to index.html with a 200, and the SPA's own router
+  # takes it from there.
+  custom_error_response {
+    error_code         = 403
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+
+  restrictions {
+    geo_restriction {
+      restriction_type = "none"
+    }
+  }
+
+  viewer_certificate {
+    cloudfront_default_certificate = true
+  }
+}
+
+resource "aws_s3_bucket_policy" "frontend" {
+  bucket = module.frontend_bucket.bucket_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid       = "AllowCloudFrontServicePrincipal"
+        Effect    = "Allow"
+        Principal = { Service = "cloudfront.amazonaws.com" }
+        Action    = "s3:GetObject"
+        Resource  = "${module.frontend_bucket.bucket_arn}/*"
+        Condition = {
+          StringEquals = {
+            "AWS:SourceArn" = aws_cloudfront_distribution.frontend.arn
+          }
+        }
+      }
+    ]
+  })
+}
 
 # Stages the backend's zip deployment package for Lambda to read from —
 # needed either way since the real zip is well over the 50MB direct-upload
