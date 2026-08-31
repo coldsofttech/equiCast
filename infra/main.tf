@@ -37,6 +37,19 @@ module "user_profiles_table" {
   hash_key   = "user_id"
 }
 
+# Everything else in Phase D (accounts, and later portfolios/watchlists/
+# holdings) — one bucket, domain-prefixed keys (accounts/<user_id>.json,
+# ...), rather than a bucket per domain. Kept separate from
+# market_data_bucket, which is a read-only ingestion-pipeline artifact store
+# (the Lambda only holds s3:GetObject on it) — mixing in writable
+# user-owned data would broaden that bucket's IAM footprint and blur two
+# unrelated lifecycles.
+module "user_data_bucket" {
+  source = "./modules/s3_bucket"
+
+  bucket_name = "${var.project_name}-user-data-${var.environment}"
+}
+
 # Generated rather than left at the code's insecure hardcoded dev default —
 # stored in Terraform state (already S3-backed, encrypted, access-controlled
 # via the same OIDC role as everything else here), not a full secrets
@@ -56,6 +69,15 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [module.user_profiles_table.table_arn]
   }
+
+  # Scoped to accounts/* rather than the whole bucket, so each Phase D
+  # domain (portfolios, watchlists, ...) gets its own statement — and its
+  # own review — as it's added, instead of one blanket grant covering
+  # domains that don't exist yet.
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${module.user_data_bucket.bucket_arn}/accounts/*"]
+  }
 }
 
 module "backend_lambda" {
@@ -70,6 +92,7 @@ module "backend_lambda" {
     MARKET_DATA_BUCKET  = module.market_data_bucket.bucket_name
     DJANGO_SECRET_KEY   = random_password.django_secret_key.result
     USER_PROFILES_TABLE = module.user_profiles_table.table_name
+    USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
   }

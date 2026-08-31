@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "market_data",
     "identity",
+    "accounts",
 ]
 
 MIDDLEWARE = [
@@ -99,3 +100,8 @@ AWS_REGION = os.environ.get("AWS_REGION", "eu-west-1")
 AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 USER_PROFILES_TABLE = os.environ.get("USER_PROFILES_TABLE")
+
+# Bucket for user-owned JSON data (accounts, and future domains like
+# portfolios/watchlists) — see infra/main.tf's user_data_bucket module. No
+# default, same "fail loudly" reasoning as MARKET_DATA_BUCKET.
+USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")

@@ -18,7 +18,8 @@ equiCast/
 │   └── etf/             # equicast-etf: ETF ticker data extraction, containerized, pushed to GHCR
 ├── backend/             # Django REST API (uv workspace member, depends on equicast-core); zip-packaged for Lambda
 │   ├── market_data/     # Django app exposing real market data (reads S3 via equicast-core)
-│   └── identity/        # Django app: Auth0 JWT verification, first-login DynamoDB profile upsert
+│   ├── identity/        # Django app: Auth0 JWT verification, first-login DynamoDB profile upsert
+│   └── accounts/        # Django app: user-owned accounts CRUD (S3 JSON via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -49,7 +50,7 @@ re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
 ## Backend (Django REST) and `equicast-core`
 
-`equicast-core` is a small generic package (boto3, no Django import) with two clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout) and `UserProfileClient` (DynamoDB user profiles) — currently only consumed by the backend, but not backend-specific code itself:
+`equicast-core` is a small generic package (boto3, no Django import) with three clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), and `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes) — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
 cd packages/core
@@ -67,11 +68,17 @@ Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MAR
 
 Needs `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` set (no defaults) to use `/api/identity/...` — see [auth0-setup.md](auth0-setup.md) for where the Auth0 values come from. Without them, `/api/market/...` is unaffected, but any `Authorization: Bearer` header fails to authenticate and `/api/identity/me/` always returns `401`.
 
+Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
+
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
+- `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts
+- `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`); `409` once the caller has 5
+- `PATCH /api/accounts/<id>/` — partially updates an account
+- `DELETE /api/accounts/<id>/` — deletes an account
 
 ```bash
 uv run pytest

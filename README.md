@@ -7,7 +7,9 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
 - **`equicast`** — core Python package: pulls historical price data from
   yfinance and caches it as Parquet.
 - **Backend (Django REST API)** — exposes market data over HTTP, backed by
-  `equicast`, for the frontend to consume.
+  `equicast`, for the frontend to consume. Also exposes Auth0-authenticated
+  user-owned data: a profile (DynamoDB) and CRUD for a user's investment
+  accounts (S3 JSON, capped at 5 per user).
 - **Frontend (React)** — a UI for looking up ticker history through the
   backend API.
 - **FX data pipeline (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)**

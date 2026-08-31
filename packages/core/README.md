@@ -61,6 +61,42 @@ app-level default) via a conditional put
 a profile the user has already started customizing; on that race, the
 loser re-fetches and returns the winning write instead.
 
+## `AccountsClient` — S3 JSON user-owned data (accounts)
+
+Reads and writes one user's accounts as a single JSON object in equicast's
+user-data S3 bucket, at `accounts/<user_id>.json`. The first of Phase D's
+S3-JSON domains (portfolios/watchlists/holdings are expected to follow the
+same shape). Backs the Django backend's Auth0-authenticated
+`/api/accounts/...` endpoints.
+
+```python
+from equicast_core import AccountsClient
+
+client = AccountsClient(bucket="equicast-user-data-dev")
+
+client.create_account(
+    "auth0|65f2c1...", name="ISA", description="Stocks & shares ISA",
+    account_type="ISA", currency="GBP",
+)
+# {"id": "...", "name": "ISA", "description": "Stocks & shares ISA",
+#  "account_type": "ISA", "currency": "GBP",
+#  "created_at": "...", "updated_at": "..."}
+
+client.list_accounts("auth0|65f2c1...")
+client.update_account("auth0|65f2c1...", account_id, name="Renamed ISA")
+client.delete_account("auth0|65f2c1...", account_id)
+```
+
+`create_account` raises `AccountLimitExceededError` once a user already has
+`MAX_ACCOUNTS` (5) accounts; `update_account`/`delete_account` raise
+`AccountNotFoundError` for an unknown `account_id`. Writes use S3
+conditional requests (`IfNoneMatch`/`IfMatch` on the object's ETag) for the
+same optimistic-concurrency guarantee `UserProfileClient` gets from
+DynamoDB's `ConditionExpression` — S3 has no per-field conditional update,
+only whole-object conditional puts, so a write that loses the race is
+retried against the now-current state rather than clobbering a concurrent
+change.
+
 ## Development
 
 ```bash

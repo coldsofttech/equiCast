@@ -1,11 +1,14 @@
 [project]
 name = "equicast-core"
 version = "0.1.0"
-description = "Shared AWS storage clients for equicast (S3 market-data reads via pyarrow, DynamoDB user-profile storage), for any consumer (Django backend, Lambda, scripts)."
+description = "Shared AWS storage clients for equicast (S3 market-data reads via pyarrow, DynamoDB user-profile storage, S3 JSON user-owned data), for any consumer (Django backend, Lambda, scripts)."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "boto3>=1.34",
+    # >=1.35.9: AccountsClient's optimistic-concurrency writes need S3
+    # conditional-write support (IfMatch/IfNoneMatch on PutObject), added in
+    # botocore 1.35.2.
+    "boto3>=1.35.9",
     "pyarrow>=17.0",
 ]
 
