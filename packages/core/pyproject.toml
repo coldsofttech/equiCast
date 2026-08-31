@@ -21,6 +21,9 @@ dev = [
     "mypy>=1.11",
 ]
 
+[project.scripts]
+equicast-core-build-catalog = "equicast_core.catalog:main"
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"

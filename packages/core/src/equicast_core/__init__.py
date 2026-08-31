@@ -7,7 +7,7 @@ from equicast_core.accounts import (
     AccountNotFoundError,
     AccountsClient,
 )
-from equicast_core.client import MarketDataClient
+from equicast_core.client import ASSET_CLASSES, MarketDataClient
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
     MAX_HOLDINGS_FOR_PIE,
@@ -73,6 +73,7 @@ __all__ = [
     "TransactionLimitExceededError",
     "TransactionNotFoundError",
     "TransactionsClient",
+    "ASSET_CLASSES",
     "MarketDataClient",
     "UserProfileClient",
 ]

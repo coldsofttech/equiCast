@@ -60,6 +60,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Market data search catalog: a new `equicast_core.catalog` module (and
+  `MarketDataClient.get_catalog`/`.search`) builds the read side of a
+  ticker/name search — `catalog/<asset_class>.json`, one small
+  `{ticker, name, type, current_price}` row per configured ticker,
+  published by each ingestion pipeline rather than derived from
+  `profile.parquet` on the fly, so search reads don't fan out into one
+  S3 GetObject per ticker. `build_catalog_rows`/`upload_catalog` are
+  asset-class- and pipeline-agnostic (ticker comes from the local
+  `<asset_class>=<TICKER>/profile.parquet` directory name, not the
+  profile itself, so it works uniformly for stock/etf profiles — which
+  carry a `ticker`/`name` field — and fx profiles, which don't, using
+  `from_currency`+`to_currency`/`description` instead), and also install
+  as a CLI, `equicast-core-build-catalog --asset-class <fx|stock|etf>
+  --output-dir <dir> --bucket <bucket>`. `stock-ingestion.yml`/
+  `etf-ingestion.yml`/`fx-ingestion.yml` each gain a `build-catalog` job
+  that runs after their `ingest` matrix completes: every `ingest` leg now
+  also publishes its chunk's `profile.parquet` files as a 1-day build
+  artifact, and `build-catalog` downloads+merges every leg's artifact into
+  one local tree before running the CLI — necessary because a single
+  ingest leg only ever processes its own chunk of the full ticker list
+  (GitHub Actions caps a matrix at 256 legs), so no leg alone has enough
+  to build a complete catalog. This needs no new S3 permission for the
+  ingestion role (it reads the merged artifacts locally, then uploads with
+  the `s3:PutObject` access `ingest` already had) or for the backend
+  Lambda (already holds bucket-wide `s3:GetObject` on `market_data_bucket`).
+  `packages/core/tests/test_catalog.py` covers the builder/CLI;
+  `packages/core/tests/test_client.py` gained `get_catalog`/`search`
+  coverage. `docs/stock-pipeline.md`/`etf-pipeline.md`/`fx-pipeline.md`
+  updated for the new job and S3 layout addition.
 - Phase D User-owned data (transactions): new `backend/transactions/`
   Django app exposing Auth0-authenticated CRUD for a holding's
   transactions — `GET`/`POST /api/transactions/` (`GET` takes optional
