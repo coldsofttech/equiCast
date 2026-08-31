@@ -1,5 +1,10 @@
 from django.conf import settings
-from equicast_core import AccountLimitExceededError, AccountNotFoundError, AccountsClient
+from equicast_core import (
+    MAX_ACCOUNTS,
+    AccountLimitExceededError,
+    AccountNotFoundError,
+    AccountsClient,
+)
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -38,8 +43,13 @@ class AccountListView(APIView):
                 account_type=request.data["account_type"],
                 currency=request.data["currency"],
             )
-        except AccountLimitExceededError as exc:
-            return Response({"detail": str(exc)}, status=409)
+        except AccountLimitExceededError:
+            # A static, caller-agnostic message rather than str(exc) — the
+            # exception text embeds the caller's own user_id, and echoing
+            # exception content back into a response is exactly the pattern
+            # CodeQL's py/stack-trace-exposure flags, regardless of whether
+            # this particular message is sensitive.
+            return Response({"detail": f"Account limit reached (max {MAX_ACCOUNTS})."}, status=409)
         return Response(account, status=201)
 
 
