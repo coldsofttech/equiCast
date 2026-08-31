@@ -60,6 +60,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend Phase 1 (Accounts & Pies): the first real domain pages, plus a
+  core component library scoped to what they need — `frontend/src/components/core/`
+  gains `Button`, `Card`, `Badge`, `Alert`, `Modal`/`ConfirmDialog`, the
+  `TextField`/`SelectField`/`TextAreaField` trio (`Field.jsx`), and
+  `EmptyState`, all built on the Phase 0 design tokens (no new colors or
+  spacing values introduced). New `frontend/src/api/accounts.js`/`pies.js`
+  wrap the backend's account/pie/pie-holdings endpoints
+  (`backend/accounts/views.py`, `backend/pies/views.py`). Routes:
+  `/accounts` (`AccountsListPage` — create/list, with `transaction_type`
+  as a first-class field), `/accounts/:accountId` (`AccountDetailPage` —
+  edit/delete the account, create/delete its pies, force-delete cascading
+  into pies/holdings/transactions the same way the backend does), and
+  `/accounts/:accountId/pies/:pieId` (`PieDetailPage` — edit/delete the
+  pie, plus `AllocationEditor`, the add/remove/reallocate batch editor for
+  `PUT /api/pies/<id>/holdings/`: local row state diffs against the
+  loaded holdings to build the minimal `{add, remove, reallocate}` body,
+  keeps `allocation_pct` as a string end-to-end so JS number handling
+  never touches a value the backend parses via `Decimal`, and disables
+  Save until the active rows sum to exactly 100%, mirroring
+  `equicast_core.holdings`'s own invariant). `MenuBar` gains an optional
+  per-item `to` — an item with one renders as a real `NavLink` (active by
+  URL prefix, so a pie's page still shows "Portfolio" active); items
+  without one keep Phase 0's local-only placeholder behavior
+  (Watchlists/Search). `/` now redirects to `/accounts` instead of
+  rendering the Phase 0 profile-card page, which is retired
+  (`DashboardPage.jsx`); its one real proof — the signed-in user's
+  `default_currency` from `useCurrentUser()` — and the log out button
+  both move into `Topbar`, visible on every authenticated page instead of
+  just one.
 - Frontend Phase 0 (design tokens + app shell): `frontend/src/styles/tokens.css`
   ports [Resource Planner](https://github.com/coldsofttech/resource-planner)'s
   OKLCH design tokens as `--ec-*` custom properties — same values (Palette A,

@@ -1,0 +1,44 @@
+.ec-allocation-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-16);
+}
+
+.ec-allocation-empty {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+}
+
+.ec-allocation-table {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+}
+
+.ec-allocation-row {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr auto;
+  gap: var(--ec-s-8);
+  align-items: center;
+}
+
+.ec-allocation-header {
+  font-size: var(--ec-fs-12);
+  font-weight: 600;
+  color: var(--ec-text-muted);
+}
+
+.ec-allocation-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ec-allocation-total {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-muted);
+  font-variant-numeric: tabular-nums;
+}

@@ -1,0 +1,59 @@
+.ec-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-6);
+}
+
+.ec-field-label {
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.ec-field-required {
+  color: var(--ec-danger);
+}
+
+.ec-field-hint {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-field-error {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-danger);
+}
+
+.ec-input,
+.ec-select,
+.ec-textarea {
+  height: 36px;
+  padding: 0 var(--ec-s-12);
+  border-radius: var(--ec-r-6);
+  border: 1px solid var(--ec-border-strong);
+  background: var(--ec-bg-elev);
+  color: var(--ec-text);
+  font-size: var(--ec-fs-14);
+  width: 100%;
+}
+
+.ec-textarea {
+  height: auto;
+  min-height: 80px;
+  padding: var(--ec-s-8) var(--ec-s-12);
+  resize: vertical;
+}
+
+.ec-input:focus-visible,
+.ec-select:focus-visible,
+.ec-textarea:focus-visible {
+  outline: none;
+  border-color: var(--ec-accent);
+  box-shadow: var(--ec-shadow-focus);
+}
+
+.ec-input.has-error,
+.ec-select.has-error,
+.ec-textarea.has-error {
+  border-color: var(--ec-danger);
+}

@@ -1,0 +1,45 @@
+.ec-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--ec-s-8);
+  border-radius: var(--ec-r-pill);
+  font-size: var(--ec-fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ec-badge-neutral {
+  background: var(--ec-surface-2);
+  color: var(--ec-text-muted);
+}
+
+.ec-badge-accent {
+  background: var(--ec-accent-soft);
+  color: var(--ec-accent-soft-text);
+}
+
+.ec-badge-success {
+  background: var(--ec-success-soft);
+  color: var(--ec-success-soft-text);
+}
+
+.ec-badge-warning {
+  background: var(--ec-warning-soft);
+  color: var(--ec-warning-soft-text);
+}
+
+.ec-badge-danger {
+  background: var(--ec-danger-soft);
+  color: var(--ec-danger-soft-text);
+}
+
+.ec-badge-info {
+  background: var(--ec-info-soft);
+  color: var(--ec-info-soft-text);
+}
+
+.ec-badge-purple {
+  background: var(--ec-purple-soft);
+  color: var(--ec-purple-soft-text);
+}
