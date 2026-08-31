@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Fixed two related backend production-hardening gaps, both surfaced by
+  manual testing of the Phase D accounts endpoints: (1) `infra/main.tf`'s
+  `backend_lambda` never set `DJANGO_DEBUG`, so every deployed environment
+  — dev and prod alike — silently fell back to `settings.py`'s
+  `DEBUG="true"` default; an unhandled exception in prod would have
+  rendered Django's full debug traceback page back to the caller instead
+  of a generic 500. Now set explicitly per environment
+  (`var.environment == "prod" ? "false" : "true"`) rather than left to the
+  code default. (2) `backend/equicast_api/settings.py` gains
+  `APPEND_SLASH = False`: a `POST`/`PATCH`/`DELETE` missing its trailing
+  slash (e.g. `POST /api/accounts` instead of `/api/accounts/`) previously
+  raised an unhandled `RuntimeError` — `CommonMiddleware` refuses to
+  redirect a non-safe method with a body, since doing so risks dropping it
+  — which combined with (1) meant that traceback was visible to the
+  caller in prod too. Every `urls.py` pattern already ends in a trailing
+  slash and every documented endpoint is written with one, so the
+  redirect-on-`GET` behavior `APPEND_SLASH` exists for isn't useful here
+  either; disabling it makes a missing trailing slash a plain `404` for
+  every HTTP method instead. `backend/accounts/tests.py` gains a
+  regression test asserting `404`, not `500`, for a slash-less `POST`.
 - `terraform.yml` now sets `concurrency: { group: terraform-${{ github.ref }},
   cancel-in-progress: true }`. Since `development`/`production` gained
   required-reviewer approval, a run left `waiting` on an unapproved gate

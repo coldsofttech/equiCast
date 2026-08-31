@@ -7,6 +7,17 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-key-change-me")
 DEBUG = os.environ.get("DJANGO_DEBUG", "true").lower() == "true"
 ALLOWED_HOSTS = [h for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",") if h]
 
+# Every urls.py pattern already ends in a trailing slash, and every
+# documented endpoint (docs/local-setup.md, backend/README.md) is written
+# with one — this is a JSON API with no browser navigation to accommodate,
+# so Django's default redirect-on-GET-without-slash isn't useful here, and
+# for non-safe methods it's actively harmful: CommonMiddleware refuses to
+# redirect a POST/PUT/PATCH/DELETE missing its trailing slash (redirecting
+# would risk dropping the body) and raises RuntimeError instead, which
+# surfaces to the caller as an unhandled 500. False makes every method
+# behave the same way for a missing slash: a plain 404.
+APPEND_SLASH = False
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",

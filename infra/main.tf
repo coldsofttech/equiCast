@@ -115,6 +115,13 @@ module "backend_lambda" {
     USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
+    # Previously unset here, silently falling back to settings.py's
+    # DEBUG default of "true" for every deployed environment (dev and
+    # prod alike) — a real information-disclosure risk in prod, since an
+    # unhandled exception renders Django's full debug traceback page back
+    # to the caller instead of a generic 500. Explicit per-environment now:
+    # verbose locally/in dev, off in prod.
+    DJANGO_DEBUG = var.environment == "prod" ? "false" : "true"
   }
 }
 
