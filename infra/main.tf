@@ -79,15 +79,25 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     resources = ["${module.user_data_bucket.bucket_arn}/accounts/*"]
   }
 
+  # Pies domain (see PiesClient) — same rationale as the accounts statement
+  # above: its own statement/review, scoped to pies/* only.
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${module.user_data_bucket.bucket_arn}/pies/*"]
+  }
+
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
-  # .../accounts/*) is required alongside s3:GetObject for a key that might
-  # not exist yet: without it, S3 can't tell this role apart from a caller
-  # with no rights to know whether the object exists at all, so a GetObject
-  # on a not-yet-created accounts/<user_id>.json returns AccessDenied
-  # instead of the NoSuchKey AccountsClient._load() catches to mean "no
-  # accounts yet" — see https://repost.aws/knowledge-center/s3-403-error-list-permissions.
-  # The s3:prefix condition keeps this scoped to the accounts/ domain, same
-  # as the GetObject/PutObject statement above.
+  # .../accounts/* or .../pies/*) is required alongside s3:GetObject for a
+  # key that might not exist yet: without it, S3 can't tell this role apart
+  # from a caller with no rights to know whether the object exists at all,
+  # so a GetObject on a not-yet-created accounts/<user_id>.json (or
+  # pies/<user_id>.json) returns AccessDenied instead of the NoSuchKey
+  # AccountsClient/PiesClient._load() catch to mean "nothing yet" — see
+  # https://repost.aws/knowledge-center/s3-403-error-list-permissions. The
+  # s3:prefix condition keeps this scoped to just the domains that need it
+  # — one shared ListBucket statement covering every prefix rather than one
+  # per domain, since it's a single bucket-level action with no per-object
+  # resource to scope by statement the way GetObject/PutObject are above.
   statement {
     actions   = ["s3:ListBucket"]
     resources = [module.user_data_bucket.bucket_arn]
@@ -95,7 +105,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["accounts/*"]
+      values   = ["accounts/*", "pies/*"]
     }
   }
 }
@@ -115,6 +125,9 @@ module "backend_lambda" {
     USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
+    # Lambda env vars are always strings; settings.py int()-parses these.
+    MAX_ACCOUNTS = tostring(var.max_accounts)
+    MAX_PIES     = tostring(var.max_pies)
     # Previously unset here, silently falling back to settings.py's
     # DEBUG default of "true" for every deployed environment (dev and
     # prod alike) — a real information-disclosure risk in prod, since an

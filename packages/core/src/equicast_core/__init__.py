@@ -8,6 +8,12 @@ from equicast_core.accounts import (
     AccountsClient,
 )
 from equicast_core.client import MarketDataClient
+from equicast_core.pies import (
+    MAX_PIES,
+    PieLimitExceededError,
+    PieNotFoundError,
+    PiesClient,
+)
 from equicast_core.user_profiles import UserProfileClient
 
 __version__ = "0.1.0"
@@ -17,6 +23,10 @@ __all__ = [
     "AccountLimitExceededError",
     "AccountNotFoundError",
     "AccountsClient",
+    "MAX_PIES",
+    "PieLimitExceededError",
+    "PieNotFoundError",
+    "PiesClient",
     "MarketDataClient",
     "UserProfileClient",
 ]

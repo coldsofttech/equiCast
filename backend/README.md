@@ -25,7 +25,13 @@ still starts and `/api/market/...` is unaffected, but any request with an
 `/api/identity/me/` always returns `401`.
 
 Set `USER_DATA_BUCKET` (e.g. `equicast-user-data-dev`), plus the same Auth0
-settings above, to use `/api/accounts/...`.
+settings above, to use `/api/accounts/...`/`/api/pies/...`.
+
+Set `MAX_ACCOUNTS`/`MAX_PIES` (defaults `5`/`20`) to tune the accounts-per-user
+and pies-per-account caps without a code change — see
+`infra/variables.tf`'s `max_accounts`/`max_pies`, set per-environment via the
+`development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`
+variables.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
@@ -36,9 +42,19 @@ settings above, to use `/api/accounts/...`.
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists
   the caller's accounts
 - `POST /api/accounts/` — creates an account (`name`, `description`,
-  `account_type`, `currency`); `409` once the caller has 5
+  `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
+- `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
 - `PATCH /api/accounts/<id>/` — partially updates an account
-- `DELETE /api/accounts/<id>/` — deletes an account
+- `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
+  pies — pass `?force=true` to delete those pies along with the account
+- `GET /api/pies/` — lists the caller's pies; optional `?account_id=` filter
+- `POST /api/pies/` — creates a pie under `account_id` (`name`,
+  `description`, `account_id`); `400` if `account_id` isn't one of the
+  caller's own accounts; `409` once that account has `MAX_PIES`
+- `GET /api/pies/<id>/` — a pie's details
+- `PATCH /api/pies/<id>/` — partially updates a pie's `name`/`description`
+  (`account_id` is immutable)
+- `DELETE /api/pies/<id>/` — deletes a pie
 
 ## Lambda packaging
 
