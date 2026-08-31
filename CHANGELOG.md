@@ -60,6 +60,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `scripts/local-dev.ps1`: a Windows PowerShell script that starts
+  [LocalStack](https://www.localstack.io/) (S3 + DynamoDB), provisions
+  `MARKET_DATA_BUCKET`/`USER_DATA_BUCKET`/`USER_PROFILES_TABLE`, and runs
+  `manage.py runserver` against them — a fully local stand-in for the
+  backend's AWS dependencies, with no real AWS account and (deliberately)
+  no LocalStack account either. Needs no code change: every
+  `equicast-core` client already calls plain
+  `boto3.client(...)`/`boto3.resource(...)`, and the pinned
+  `boto3>=1.35.9` honors the `AWS_ENDPOINT_URL_S3`/
+  `AWS_ENDPOINT_URL_DYNAMODB` env vars the script sets to route those
+  calls at LocalStack instead of real AWS. Pinned to
+  `localstack/localstack:4.14.0`, deliberately not `:latest` — starting
+  with the 2026.03.0 calendar-versioned release, even LocalStack's
+  free-tier image requires a `LOCALSTACK_AUTH_TOKEN` (a free account) just
+  to start, and `4.14.0` is the last semver release before that. `-Stop`
+  and `-Reset` manage the container directly, and the backend run is
+  wrapped in `try/finally` so Ctrl+C tears LocalStack down too rather than
+  leaving it running detached. `-SeedMarketData` (optionally with
+  `-FullLoad`) ingests all three asset classes via their own
+  `equicast-fx`/`equicast-stock`/`equicast-etf` CLI and
+  `packages/*/config/*.yaml`, uploads the output, and builds/uploads each
+  asset class's catalog via `equicast-core-build-catalog` — clearing each
+  pipeline's `./output` first, since `build_catalog_rows` globs everything
+  under it and would otherwise mix in stale tickers left over from an
+  earlier run with a different ticker list. Does not simulate Auth0
+  (`Auth0JWTAuthentication` always talks to a real tenant — and every
+  `/api/...` view requires it, `/api/market/...` included, not just
+  `/api/accounts/...`/etc) or the Lambda/API Gateway deployment shape
+  (runs the identical Django app via `manage.py runserver` instead, for
+  instant reload instead of a zip rebuild/redeploy per change). See
+  `docs/local-setup.md`'s new "Backend against LocalStack" section.
 - `GET /api/market/search/`: ticker/name search, built on the
   `equicast_core.catalog`-backed `MarketDataClient.search()` (see below) —
   `?q=` required (at least 1 character), case-insensitive substring match
