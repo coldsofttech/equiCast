@@ -165,12 +165,15 @@ class PieHoldingsView(APIView):
             return Response(
                 {"detail": "remove/reallocate referenced an unknown holding id."}, status=400
             )
-        except HoldingAlreadyExistsError as exc:
-            return Response({"detail": str(exc)}, status=409)
+        except HoldingAlreadyExistsError:
+            # Static, caller-agnostic message rather than str(exc) — same
+            # py/stack-trace-exposure reasoning as AccountListView.post's
+            # 409 (see accounts/views.py).
+            return Response({"detail": "Ticker is already held in this pie."}, status=409)
         except HoldingLimitExceededError:
             cap = _holdings_client.max_holdings_for_pie
             return Response({"detail": f"Pie holding limit reached (max {cap})."}, status=409)
-        except AllocationError as exc:
-            return Response({"detail": str(exc)}, status=400)
+        except AllocationError:
+            return Response({"detail": "Pie holdings must sum to exactly 100%."}, status=400)
 
         return Response({**pie, "holdings": holdings})
