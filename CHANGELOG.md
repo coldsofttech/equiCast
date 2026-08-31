@@ -60,6 +60,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend CD, S3 + CloudFront, no custom domain yet: `infra/main.tf`'s
+  `frontend_bucket` module is stood up for real, but no longer as a public
+  S3 static-hosting bucket (`static_site = true`) — it now stays fully
+  private (default `block_public_access`), readable only by a new
+  `aws_cloudfront_distribution.frontend` via Origin Access Control
+  (`aws_cloudfront_origin_access_control.frontend` + a bucket policy
+  scoped to that one distribution's `AWS:SourceArn`). SPA client-side
+  routing (e.g. `/accounts/123`, no matching S3 key) is handled by two
+  `custom_error_response` blocks rewriting 403/404 to `/index.html` with a
+  200, since a private REST-endpoint origin has no `error_document` the
+  way S3 website hosting did. No `aliases`/ACM/Route53 — `viewer_certificate`
+  uses CloudFront's own shared `*.cloudfront.net` certificate, so the live
+  URL is that generated hostname (`terraform output frontend_url`) until a
+  domain is registered. `price_class = "PriceClass_100"` (US/Canada/Europe
+  edge locations only, the cheapest class) and the AWS-managed
+  `CachingOptimized` cache policy, rather than a hand-rolled one — a static
+  SPA bundle needs no custom cache-key/TTL behavior. New outputs:
+  `frontend_bucket_name`, `frontend_url`, and
+  `frontend_cloudfront_distribution_id` (the last one isn't predictable
+  the way the bucket name is — AWS generates it at apply time — so it has
+  to be read after apply and set as each GitHub Environment's own
+  `CLOUDFRONT_DISTRIBUTION_ID` variable; see
+  `docs/terraform-state-setup.md`'s new Step 4).
+
+  `deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod` jobs are
+  uncommented and live (previously replaced by a `frontend-paused`
+  placeholder pending exactly this work) — sync the build to S3, then
+  `aws cloudfront create-invalidation --paths "/*"` so a deploy is visible
+  immediately instead of waiting out the cache TTL (including a stale
+  `index.html` referencing since-deleted hashed asset filenames).
+  `estimate-frontend`'s job-summary cost estimate still only covers S3
+  (storage + PUT), same as before; a note now points at
+  `infra/infracost-usage.yml`'s new `aws_cloudfront_distribution.frontend`
+  usage estimate (30GB/month transfer, sized off the same 50,000
+  page-loads/month planning scenario `frontend_bucket`'s own estimate
+  uses) for the CloudFront side, rather than trying to fold CloudFront's
+  cache-hit-ratio-dependent cost into the same shell arithmetic.
+
+  Note for whoever runs the first `apply-dev` after this: `equicast-frontend-dev`
+  already exists in AWS from before `frontend_bucket` was commented out
+  (see `docs/terraform-state-setup.md`), so that apply will destroy its
+  `aws_s3_bucket_website_configuration` and re-block public access — both
+  expected, not drift to investigate. Also unverified from this repo alone:
+  whether the GitHub Actions deploy role (`secrets.AWS_ROLE_ARN`, not
+  Terraform-managed here) already has `s3:PutObject`/`s3:DeleteObject` on
+  the frontend buckets and `cloudfront:CreateInvalidation` — confirm
+  before relying on `deploy-frontend-dev`/`-prod` to actually succeed.
 - Phase D User-owned data (holdings): new `backend/holdings/` Django app
   exposing Auth0-authenticated CRUD for a user's holdings, nested under
   exactly one of an account, a pie, or a watchlist —

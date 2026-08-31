@@ -12,16 +12,6 @@ permissions:
   contents: read
 
 jobs:
-  # Frontend isn't ready to deploy yet (infra/main.tf's frontend_bucket
-  # module is still commented out) — placeholder so this workflow stays
-  # valid/green for Frontend CI completions in the meantime. Uncomment the
-  # frontend jobs below (and that module) when that changes.
-  frontend-paused:
-    if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo "Frontend deploy pipeline paused — see infra/main.tf and this file's commented-out jobs."
-
   # Builds the zip once so its real size is known before anyone approves a
   # spend, and hands that exact artifact to both deploy-backend-dev and (by
   # promoting the same S3 object version, not rebuilding) deploy-backend-prod.
@@ -134,98 +124,129 @@ jobs:
             --s3-key backend.zip \
             --s3-object-version "$VERSION_ID"
 
-  # # Builds the frontend once so its real size is known before anyone is
-  # # asked to approve a spend, and hands that exact build to both
-  # # deploy-frontend-dev and deploy-frontend-prod.
-  # estimate-frontend:
-  #   if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #
-  #     - uses: actions/setup-node@v4
-  #       with:
-  #         node-version: "22"
-  #
-  #     - name: Build frontend
-  #       working-directory: frontend
-  #       run: |
-  #         npm ci
-  #         npm run build
-  #
-  #     - name: Estimate incremental cost
-  #       working-directory: frontend
-  #       run: |
-  #         SIZE_BYTES=$(du -sb dist | cut -f1)
-  #         SIZE_GB=$(awk "BEGIN { printf \"%.6f\", $SIZE_BYTES / 1000000000 }")
-  #         FILE_COUNT=$(find dist -type f | wc -l)
-  #         # Rough, region-approximate S3 rates (eu-west-1) — verify against
-  #         # https://aws.amazon.com/s3/pricing/ if this needs to be precise.
-  #         S3_GB_MONTH_USD=0.023
-  #         S3_PUT_PER_1000_USD=0.005
-  #         STORAGE_COST=$(awk "BEGIN { printf \"%.6f\", $SIZE_GB * $S3_GB_MONTH_USD }")
-  #         PUT_COST=$(awk "BEGIN { printf \"%.6f\", $FILE_COUNT / 1000 * $S3_PUT_PER_1000_USD }")
-  #         {
-  #           echo "### Frontend deploy cost estimate"
-  #           echo ""
-  #           echo "| Metric | Value |"
-  #           echo "|---|---|"
-  #           echo "| Build size | ${SIZE_GB} GB across ${FILE_COUNT} files |"
-  #           echo "| Added monthly storage cost | ~\$${STORAGE_COST}/month (at \$${S3_GB_MONTH_USD}/GB-month) |"
-  #           echo "| One-time upload (PUT) cost | ~\$${PUT_COST} (at \$${S3_PUT_PER_1000_USD}/1,000 requests) |"
-  #           echo ""
-  #           echo "⚠️ Rough estimate only, per environment this is synced to"
-  #           echo "(dev and prod each pay this independently)."
-  #         } >> "$GITHUB_STEP_SUMMARY"
-  #
-  #     - uses: actions/upload-artifact@v4
-  #       with:
-  #         name: frontend-dist
-  #         path: frontend/dist
-  #         retention-days: 1
-  #
-  # # Gated behind the "development" GitHub Environment's required reviewers.
-  # deploy-frontend-dev:
-  #   needs: estimate-frontend
-  #   runs-on: ubuntu-latest
-  #   environment: development
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         name: frontend-dist
-  #         path: frontend-dist
-  #
-  #     - uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-  #
-  #     - name: Sync to S3
-  #       run: aws s3 sync frontend-dist s3://equicast-frontend-dev --delete
-  #
-  # # Gated behind the "production" GitHub Environment's required reviewers.
-  # # Reuses the exact build estimate-frontend produced instead of rebuilding,
-  # # so what's promoted to prod is byte-for-byte what ran in dev.
-  # deploy-frontend-prod:
-  #   needs: deploy-frontend-dev
-  #   runs-on: ubuntu-latest
-  #   environment: production
-  #   permissions:
-  #     id-token: write
-  #     contents: read
-  #   steps:
-  #     - uses: actions/download-artifact@v4
-  #       with:
-  #         name: frontend-dist
-  #         path: frontend-dist
-  #
-  #     - uses: aws-actions/configure-aws-credentials@v4
-  #       with:
-  #         role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-  #         aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
-  #
-  #     - name: Sync to S3
-  #       run: aws s3 sync frontend-dist s3://equicast-frontend-prod --delete
+  # Builds the frontend once so its real size is known before anyone is
+  # asked to approve a spend, and hands that exact build to both
+  # deploy-frontend-dev and deploy-frontend-prod.
+  estimate-frontend:
+    if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Estimate incremental cost
+        working-directory: frontend
+        run: |
+          SIZE_BYTES=$(du -sb dist | cut -f1)
+          SIZE_GB=$(awk "BEGIN { printf \"%.6f\", $SIZE_BYTES / 1000000000 }")
+          FILE_COUNT=$(find dist -type f | wc -l)
+          # Rough, region-approximate S3/CloudFront rates (eu-west-1 origin,
+          # PriceClass_100 edge locations) — verify against
+          # https://aws.amazon.com/s3/pricing/ and
+          # https://aws.amazon.com/cloudfront/pricing/ if this needs to be
+          # precise. Doesn't attempt to estimate CloudFront's own data
+          # transfer/request cost (unlike S3, it depends on cache hit ratio
+          # and visitor count, not build size) — see
+          # infra/infracost-usage.yml for that side instead, and note both
+          # are comfortably inside CloudFront's 1TB/10M-request AWS Free
+          # Tier for a new account's first 12 months regardless.
+          S3_GB_MONTH_USD=0.023
+          S3_PUT_PER_1000_USD=0.005
+          STORAGE_COST=$(awk "BEGIN { printf \"%.6f\", $SIZE_GB * $S3_GB_MONTH_USD }")
+          PUT_COST=$(awk "BEGIN { printf \"%.6f\", $FILE_COUNT / 1000 * $S3_PUT_PER_1000_USD }")
+          {
+            echo "### Frontend deploy cost estimate"
+            echo ""
+            echo "| Metric | Value |"
+            echo "|---|---|"
+            echo "| Build size | ${SIZE_GB} GB across ${FILE_COUNT} files |"
+            echo "| Added monthly storage cost | ~\$${STORAGE_COST}/month (at \$${S3_GB_MONTH_USD}/GB-month) |"
+            echo "| One-time upload (PUT) cost | ~\$${PUT_COST} (at \$${S3_PUT_PER_1000_USD}/1,000 requests) |"
+            echo ""
+            echo "⚠️ S3 side only, rough estimate, per environment this is synced to"
+            echo "(dev and prod each pay this independently). Excludes CloudFront's"
+            echo "own usage-based cost — see infra/infracost-usage.yml."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 1
+
+  # Gated behind the "development" GitHub Environment's required reviewers.
+  # Needs that Environment's CLOUDFRONT_DISTRIBUTION_ID variable set to
+  # `terraform output frontend_cloudfront_distribution_id`'s value — the ID
+  # is generated by AWS at apply time, so unlike the frontend bucket name
+  # (predictable from project_name/environment) it can't be hardcoded here.
+  deploy-frontend-dev:
+    needs: estimate-frontend
+    runs-on: ubuntu-latest
+    environment: development
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Sync to S3
+        run: aws s3 sync frontend-dist s3://equicast-frontend-dev --delete
+
+      # Without this, CloudFront keeps serving cached (stale) responses —
+      # including a stale index.html referencing since-deleted hashed
+      # asset filenames — for up to the cache policy's TTL after a sync.
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
+
+  # Gated behind the "production" GitHub Environment's required reviewers.
+  # Reuses the exact build estimate-frontend produced instead of rebuilding,
+  # so what's promoted to prod is byte-for-byte what ran in dev. Needs its
+  # own CLOUDFRONT_DISTRIBUTION_ID set on the "production" Environment —
+  # dev and prod are separate Terraform applies (see terraform.yml), so
+  # separate distributions with different IDs.
+  deploy-frontend-prod:
+    needs: deploy-frontend-dev
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend-dist
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Sync to S3
+        run: aws s3 sync frontend-dist s3://equicast-frontend-prod --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"

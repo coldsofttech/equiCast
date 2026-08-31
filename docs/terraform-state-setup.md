@@ -96,6 +96,19 @@ There's nothing to import for prod: `equicast-market-data-prod` and
 (gated behind the `production` GitHub Environment's required reviewers)
 creates them fresh the first time it runs.
 
+**Frontend bucket, since moving to CloudFront (no custom domain yet — see
+[local-setup.md](local-setup.md)):** `frontend_bucket` no longer sets
+`static_site = true` — the bucket is fully private now, only readable via
+CloudFront's Origin Access Control. The *next* `terraform apply -var
+environment=dev` against the already-bootstrapped dev state above will
+therefore destroy `module.frontend_bucket.aws_s3_bucket_website_configuration.this[0]`
+and re-enable that bucket's public access block (both expected — that's
+the point of the move, see `main.tf`'s `frontend_bucket` comment), and
+create `aws_cloudfront_origin_access_control.frontend`,
+`aws_cloudfront_distribution.frontend`, and `aws_s3_bucket_policy.frontend`
+fresh. No manual `terraform import` needed for those three — they don't
+exist yet in AWS either way, dev or prod.
+
 ## Step 3: Configure the GitHub Environments
 
 Two GitHub Environments are in play, shared across both workflows:
@@ -115,6 +128,31 @@ Two GitHub Environments are in play, shared across both workflows:
 Any job wired to an environment with required reviewers pauses in the
 Actions UI until one of them approves it. This is enforced by GitHub itself,
 independent of what the workflow YAML says.
+
+## Step 4: Set each Environment's CLOUDFRONT_DISTRIBUTION_ID
+
+`deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod` invalidate the
+CloudFront cache after every sync — without that, CloudFront would keep
+serving stale cached responses (including an `index.html` referencing
+since-deleted hashed asset filenames) for up to the cache policy's TTL.
+That needs each environment's distribution ID, which AWS generates at
+apply time — it can't be hardcoded the way the bucket name can (that's
+just `equicast-frontend-<env>`, predictable from `project_name`/
+`environment`).
+
+After `apply-dev`/`apply-prod` has run at least once (creating
+`aws_cloudfront_distribution.frontend`):
+
+```bash
+terraform output -raw frontend_cloudfront_distribution_id
+```
+
+Settings → Environments → `development` (then again for `production`) →
+*Environment variables* → *New variable* → name `CLOUDFRONT_DISTRIBUTION_ID`,
+paste the value **from that environment's own apply** — dev and prod are
+separate Terraform states (see the `-backend-config="key=..."` split
+above), so separate distributions with different IDs; don't reuse one
+environment's value for the other.
 
 ## Cost estimation (Infracost)
 
