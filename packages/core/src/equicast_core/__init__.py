@@ -8,6 +8,16 @@ from equicast_core.accounts import (
     AccountsClient,
 )
 from equicast_core.client import MarketDataClient
+from equicast_core.holdings import (
+    MAX_HOLDINGS_FOR_ACCOUNT,
+    MAX_HOLDINGS_FOR_PIE,
+    MAX_HOLDINGS_FOR_WATCHLIST,
+    AllocationError,
+    HoldingAlreadyExistsError,
+    HoldingLimitExceededError,
+    HoldingNotFoundError,
+    HoldingsClient,
+)
 from equicast_core.pies import (
     MAX_PIES,
     PieLimitExceededError,
@@ -37,6 +47,14 @@ __all__ = [
     "WatchlistLimitExceededError",
     "WatchlistNotFoundError",
     "WatchlistsClient",
+    "MAX_HOLDINGS_FOR_ACCOUNT",
+    "MAX_HOLDINGS_FOR_PIE",
+    "MAX_HOLDINGS_FOR_WATCHLIST",
+    "AllocationError",
+    "HoldingAlreadyExistsError",
+    "HoldingLimitExceededError",
+    "HoldingNotFoundError",
+    "HoldingsClient",
     "MarketDataClient",
     "UserProfileClient",
 ]

@@ -1,5 +1,10 @@
 from django.conf import settings
-from equicast_core import WatchlistLimitExceededError, WatchlistNotFoundError, WatchlistsClient
+from equicast_core import (
+    HoldingsClient,
+    WatchlistLimitExceededError,
+    WatchlistNotFoundError,
+    WatchlistsClient,
+)
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -17,6 +22,16 @@ _client = WatchlistsClient(
     settings.USER_DATA_BUCKET,
     region_name=settings.AWS_REGION,
     max_watchlists=settings.MAX_WATCHLISTS,
+)
+#: Needed to nest a watchlist's holdings under WatchlistDetailView.get and
+#: to guard/force-delete them under WatchlistDetailView.delete —
+#: holdings/views.py holds the client actually used for holdings CRUD.
+_holdings_client = HoldingsClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_holdings_for_account=settings.MAX_HOLDINGS_FOR_ACCOUNT,
+    max_holdings_for_pie=settings.MAX_HOLDINGS_FOR_PIE,
+    max_holdings_for_watchlist=settings.MAX_HOLDINGS_FOR_WATCHLIST,
 )
 
 
@@ -57,7 +72,8 @@ class WatchlistDetailView(APIView):
             watchlist = _client.get_watchlist(request.user.user_id, watchlist_id)
         except WatchlistNotFoundError:
             return Response(status=404)
-        return Response(watchlist)
+        holdings = _holdings_client.list_holdings(request.user.user_id, watchlist_id=watchlist_id)
+        return Response({**watchlist, "holdings": holdings})
 
     def patch(self, request: Request, watchlist_id: str) -> Response:
         fields = {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
@@ -68,7 +84,20 @@ class WatchlistDetailView(APIView):
         return Response(watchlist)
 
     def delete(self, request: Request, watchlist_id: str) -> Response:
+        force = request.query_params.get("force", "").lower() == "true"
+        holdings = _holdings_client.list_holdings(request.user.user_id, watchlist_id=watchlist_id)
+        if holdings and not force:
+            return Response(
+                {
+                    "detail": "Watchlist has holdings; remove them first, "
+                    "or retry with ?force=true to delete them along with the watchlist."
+                },
+                status=409,
+            )
+
         try:
+            if force and holdings:
+                _holdings_client.delete_holdings_for_watchlist(request.user.user_id, watchlist_id)
             _client.delete_watchlist(request.user.user_id, watchlist_id)
         except WatchlistNotFoundError:
             return Response(status=404)

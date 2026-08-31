@@ -59,3 +59,21 @@ variable "max_watchlists" {
   type        = number
   default     = 5
 }
+
+variable "max_holdings_for_account" {
+  description = "Max holdings directly under one account, not counting pie-scoped ones (HoldingsClient's HoldingLimitExceededError cap)."
+  type        = number
+  default     = 100
+}
+
+variable "max_holdings_for_pie" {
+  description = "Max holdings in one pie (HoldingsClient's HoldingLimitExceededError cap)."
+  type        = number
+  default     = 50
+}
+
+variable "max_holdings_for_watchlist" {
+  description = "Max holdings in one watchlist (HoldingsClient's HoldingLimitExceededError cap)."
+  type        = number
+  default     = 20
+}

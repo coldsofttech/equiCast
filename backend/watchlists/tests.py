@@ -113,18 +113,26 @@ class WatchlistDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("watchlists.views._holdings_client")
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_the_watchlist(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_get_returns_the_watchlist_with_its_holdings(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_watchlist.return_value = WATCHLIST
+        holding = {"id": "h-1", "ticker": "AAPL", "watchlist_id": "watch-1"}
+        mock_holdings_client.list_holdings.return_value = [holding]
 
         response = self.client.get(reverse("watchlists-detail", args=["watch-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), WATCHLIST)
+        self.assertEqual(response.json(), {**WATCHLIST, "holdings": [holding]})
         mock_client.get_watchlist.assert_called_once_with("auth0|abc123", "watch-1")
+        mock_holdings_client.list_holdings.assert_called_once_with(
+            "auth0|abc123", watchlist_id="watch-1"
+        )
 
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -178,28 +186,88 @@ class WatchlistDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("watchlists.views._holdings_client")
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_removes_the_watchlist(
-        self, mock_jwks_client, mock_decode, mock_client
+    def test_delete_removes_the_watchlist_when_it_has_no_holdings(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.list_holdings.return_value = []
+
+        response = self.client.delete(reverse("watchlists-detail", args=["watch-1"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 204)
+        mock_holdings_client.list_holdings.assert_called_once_with(
+            "auth0|abc123", watchlist_id="watch-1"
+        )
+        mock_holdings_client.delete_holdings_for_watchlist.assert_not_called()
+        mock_client.delete_watchlist.assert_called_once_with("auth0|abc123", "watch-1")
+
+    @patch("watchlists.views._holdings_client")
+    @patch("watchlists.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_returns_409_when_watchlist_has_holdings_and_not_forced(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "watchlist_id": "watch-1"}]
+
+        response = self.client.delete(reverse("watchlists-detail", args=["watch-1"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 409)
+        mock_holdings_client.delete_holdings_for_watchlist.assert_not_called()
+        mock_client.delete_watchlist.assert_not_called()
+
+    @patch("watchlists.views._holdings_client")
+    @patch("watchlists.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_with_force_removes_holdings_then_the_watchlist(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "watchlist_id": "watch-1"}]
 
         response = self.client.delete(
-            reverse("watchlists-detail", args=["watch-1"]), **AUTH_HEADER
+            f"{reverse('watchlists-detail', args=['watch-1'])}?force=true", **AUTH_HEADER
         )
 
         self.assertEqual(response.status_code, 204)
+        mock_holdings_client.delete_holdings_for_watchlist.assert_called_once_with(
+            "auth0|abc123", "watch-1"
+        )
         mock_client.delete_watchlist.assert_called_once_with("auth0|abc123", "watch-1")
 
+    @patch("watchlists.views._holdings_client")
+    @patch("watchlists.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_with_force_and_no_holdings_skips_the_bulk_delete(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.list_holdings.return_value = []
+
+        response = self.client.delete(
+            f"{reverse('watchlists-detail', args=['watch-1'])}?force=true", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_holdings_client.delete_holdings_for_watchlist.assert_not_called()
+        mock_client.delete_watchlist.assert_called_once_with("auth0|abc123", "watch-1")
+
+    @patch("watchlists.views._holdings_client")
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_returns_404_for_unknown_watchlist(
-        self, mock_jwks_client, mock_decode, mock_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.list_holdings.return_value = []
         mock_client.delete_watchlist.side_effect = WatchlistNotFoundError("no such watchlist")
 
         response = self.client.delete(reverse("watchlists-detail", args=["missing"]), **AUTH_HEADER)

@@ -21,7 +21,8 @@ equiCast/
 │   ├── identity/        # Django app: Auth0 JWT verification, first-login DynamoDB profile upsert
 │   ├── accounts/        # Django app: user-owned accounts CRUD (S3 JSON via equicast-core)
 │   ├── pies/            # Django app: user-owned pies CRUD, nested under an account (S3 JSON via equicast-core)
-│   └── watchlists/      # Django app: user-owned watchlists CRUD, user-level (S3 JSON via equicast-core)
+│   ├── watchlists/      # Django app: user-owned watchlists CRUD, user-level (S3 JSON via equicast-core)
+│   └── holdings/        # Django app: user-owned holdings CRUD, nested under an account/pie/watchlist (S3 JSON via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -52,7 +53,7 @@ re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
 ## Backend (Django REST) and `equicast-core`
 
-`equicast-core` is a small generic package (boto3, no Django import) with five clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`), and `WatchlistsClient` (S3 JSON, same shape, at `watchlists/<user_id>.json`, user-level rather than nested under an account) — currently only consumed by the backend, but not backend-specific code itself:
+`equicast-core` is a small generic package (boto3, no Django import) with six clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`), `WatchlistsClient` (S3 JSON, same shape, at `watchlists/<user_id>.json`, user-level rather than nested under an account), and `HoldingsClient` (S3 JSON, same shape, at `holdings/<user_id>.json`, each holding nested under exactly one of `account_id`/`pie_id`/`watchlist_id`; pie holdings also carry `allocation_pct` and only ever change via an atomic add/remove/reallocate batch, since a pie's allocations must always sum to exactly 100%) — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
 cd packages/core
@@ -70,31 +71,36 @@ Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MAR
 
 Needs `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` set (no defaults) to use `/api/identity/...` — see [auth0-setup.md](auth0-setup.md) for where the Auth0 values come from. Without them, `/api/market/...` is unaffected, but any `Authorization: Bearer` header fails to authenticate and `/api/identity/me/` always returns `401`.
 
-Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
+Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`/`/api/holdings/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
 
-`MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`, matching `equicast_core`'s own client defaults) tune the accounts-per-user, pies-per-account, and watchlists-per-user caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/`max_watchlists`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables.
+`MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`, matching `equicast_core`'s own client defaults) tune the accounts-per-user, pies-per-account, and watchlists-per-user caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/`max_watchlists`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables. `MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_PIE`/`MAX_HOLDINGS_FOR_WATCHLIST` (defaults `100`/`50`/`20`) tune the holdings-per-account/pie/watchlist caps the same way — see `infra/variables.tf`'s `max_holdings_for_account`/`max_holdings_for_pie`/`max_holdings_for_watchlist`.
 
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
-- `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts
+- `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts, each with its nested `pies` (with their own nested `holdings`) and its own direct `holdings`
 - `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
-- `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
+- `GET /api/accounts/<id>/` — an account's details plus the same nested `pies`/`holdings` shape as the list endpoint
 - `PATCH /api/accounts/<id>/` — partially updates an account
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
-  pies — pass `?force=true` to delete those pies along with the account
+  pies and/or direct holdings — pass `?force=true` to delete those along with the account
 - `GET /api/pies/` — lists the caller's pies; optional `?account_id=` filter
 - `POST /api/pies/` — creates a pie under `account_id` (`name`, `description`, `account_id`); `400` if `account_id` isn't one of the caller's own accounts; `409` once that account has `MAX_PIES`
-- `GET /api/pies/<id>/` — a pie's details
+- `GET /api/pies/<id>/` — a pie's details plus its nested `holdings`
 - `PATCH /api/pies/<id>/` — partially updates a pie's `name`/`description` (`account_id` is immutable)
-- `DELETE /api/pies/<id>/` — deletes a pie
+- `DELETE /api/pies/<id>/` — deletes a pie; `409` if it still has holdings — pass `?force=true` to delete those along with the pie
+- `PUT /api/pies/<id>/holdings/` — the only way to add/remove/reallocate a pie's holdings (`{"add": [...], "remove": [...], "reallocate": [...]}`), validated atomically so the resulting holdings always sum to exactly 100% — see `backend/README.md`
 - `GET /api/watchlists/` — lists the caller's watchlists (user-level, not nested under an account)
 - `POST /api/watchlists/` — creates a watchlist (`name`, `description`); `409` once the caller has `MAX_WATCHLISTS`
-- `GET /api/watchlists/<id>/` — a watchlist's details
+- `GET /api/watchlists/<id>/` — a watchlist's details plus its nested `holdings`
 - `PATCH /api/watchlists/<id>/` — partially updates a watchlist's `name`/`description`
-- `DELETE /api/watchlists/<id>/` — deletes a watchlist
+- `DELETE /api/watchlists/<id>/` — deletes a watchlist; `409` if it still has holdings — pass `?force=true` to delete those along with the watchlist
+- `GET /api/holdings/` — lists the caller's holdings; at most one of `?account_id=`/`?pie_id=`/`?watchlist_id=` may be given
+- `POST /api/holdings/` — creates a holding directly under `account_id` or `watchlist_id` (`ticker`, `asset_class`, and exactly one of the two — pie-scoped holdings go through the pie's batch endpoint instead); `409` for a duplicate ticker in that parent or once it's at its cap
+- `GET /api/holdings/<id>/` — a holding's details
+- `DELETE /api/holdings/<id>/` — deletes an account-direct or watchlist holding (`400` for a pie-scoped one); no `PATCH`
 
 ```bash
 uv run pytest
