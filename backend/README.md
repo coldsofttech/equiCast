@@ -44,6 +44,13 @@ transactions-per-holding cap — see `infra/variables.tf`'s
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1
+  character), case-insensitive substring match against every published
+  catalog's `ticker`/`name` (see `equicast_core.catalog`), so results are
+  only as fresh as the last ingestion run — not a live bucket scan. Optional
+  `?asset_class=` narrows to one of `fx`/`stock`/`etf`. Paginated
+  (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`),
+  returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;
   returns the caller's profile (`user_id`, `default_currency`), creating it
   with `default_currency: "GBP"` on first login

@@ -60,6 +60,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `GET /api/market/search/`: ticker/name search, built on the
+  `equicast_core.catalog`-backed `MarketDataClient.search()` (see below) —
+  `?q=` required (at least 1 character), case-insensitive substring match
+  against every scanned asset class's `ticker`/`name`. Optional
+  `?asset_class=` narrows the scan to one of `fx`/`stock`/`etf`. Paginated
+  (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`),
+  returning `{count, page, page_size, total_pages, results}` — pagination
+  is applied in `market_data/views.py` on top of `MarketDataClient.search()`'s
+  already-sorted (by ticker) full match list, not pushed down into the
+  client. `backend/market_data/tests.py` covers the new `SearchView`.
 - Market data search catalog: a new `equicast_core.catalog` module (and
   `MarketDataClient.get_catalog`/`.search`) builds the read side of a
   ticker/name search — `catalog/<asset_class>.json`, one small
