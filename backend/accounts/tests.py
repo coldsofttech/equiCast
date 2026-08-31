@@ -27,6 +27,19 @@ class AccountListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    def test_post_without_trailing_slash_returns_404_not_500(self) -> None:
+        """Regression test for APPEND_SLASH: CommonMiddleware refuses to
+        redirect a POST missing its trailing slash (redirecting risks
+        dropping the body) and raises RuntimeError instead, which — with
+        Django's default APPEND_SLASH=True — surfaces as an unhandled 500.
+        APPEND_SLASH=False (settings.py) makes this a plain 404 instead,
+        for every HTTP method."""
+        response = self.client.post(
+            "/api/accounts", data={}, content_type="application/json", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 404)
+
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
