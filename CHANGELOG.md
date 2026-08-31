@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `frontend/public/brand/equicast-mark.png`: a 512x512 PNG export of the
+  existing `equicast-mark.svg` (same gradient badge + Candlestick Spear
+  icon), rasterized via `sharp`. Auth0's Application **Logo URL** field
+  needs an image URI, not an SVG — once this is deployed and reachable at
+  `<frontend_url>/brand/equicast-mark.png` (see `infra/main.tf`'s
+  `frontend_bucket`/CloudFront distribution), that URL can be set as the
+  `equiCast Web` Application's logo in the Auth0 dashboard.
+
 ### Changed
 
 - `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
