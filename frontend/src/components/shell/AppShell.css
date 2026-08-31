@@ -1,0 +1,52 @@
+.ec-app {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.ec-page {
+  flex: 1;
+  padding: var(--ec-s-24);
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+.ec-page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  flex-wrap: wrap;
+  margin-bottom: var(--ec-s-24);
+}
+
+.ec-eyebrow {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  margin-bottom: var(--ec-s-4);
+}
+
+.ec-page-title {
+  font-size: var(--ec-fs-24);
+  font-weight: 800;
+  margin: 0;
+  color: var(--ec-text);
+}
+
+.ec-page-sub {
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-muted);
+  margin: var(--ec-s-4) 0 0;
+}
+
+.ec-page-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  flex-shrink: 0;
+}

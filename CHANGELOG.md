@@ -60,6 +60,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend Phase 0 (design tokens + app shell): `frontend/src/styles/tokens.css`
+  ports [Resource Planner](https://github.com/coldsofttech/resource-planner)'s
+  OKLCH design tokens as `--ec-*` custom properties — same values (Palette A,
+  the "reused as-is" option from `docs/design/palette-options.html`), same
+  type/spacing/radius/shadow scale, `data-theme` on `<html>` switching
+  light/dark. `index.html` gains an inline bootstrap script that sets
+  `data-theme` synchronously (localStorage, falling back to
+  `prefers-color-scheme` once) before any stylesheet paints, so — like
+  Resource Planner's own tokens.css — `tokens.css` only defines `:root`
+  (light) and `[data-theme="dark"]`, no media-query fallback; a new
+  `ThemeToggle` component (`frontend/src/components/shell/`) flips the
+  attribute after that and persists the choice. New topbar + mega-menu
+  app shell (`Topbar`, `MenuBar`, `AppShell`) — `MenuBar` collapses to a
+  hamburger toggle under 640px, matching Resource Planner's own responsive
+  behavior; no routing wired up yet, so menu items track an "active" item
+  locally rather than navigating. New brand components
+  (`frontend/src/components/brand/`): `Logo` (gradient badge + the
+  "equi**Cast**" wordmark, CSS-driven — no image request, reads the same
+  tokens so it flips with the theme for free) and `CandlestickSpearIcon`,
+  the finalized mark from `docs/design/logo-concepts-round3-final.html`
+  (three ascending OHLC candlesticks, the tallest candle's wick sharpened
+  into a spearpoint) — see `docs/design/README.md` for the full brand
+  decision history. `App.jsx` now renders the shell with placeholder page
+  content instead of the old ticker-fetch smoke test; `App.test.jsx`
+  rewritten to cover the wordmark, menu item selection, and the theme
+  toggle instead. Routing, the API client, Auth0, and real domain pages
+  are later phases.
 - Phase D User-owned data (holdings): new `backend/holdings/` Django app
   exposing Auth0-authenticated CRUD for a user's holdings, nested under
   exactly one of an account, a pie, or a watchlist —

@@ -1,30 +1,24 @@
-import { useState } from "react";
+import AppShell from "./components/shell/AppShell.jsx";
+import "./App.css";
+
+const MENU_ITEMS = [
+  { id: "portfolio", label: "Portfolio" },
+  { id: "watchlists", label: "Watchlists" },
+  { id: "search", label: "Search" },
+];
 
 function App() {
-  const [ticker, setTicker] = useState("AAPL");
-  const [history, setHistory] = useState([]);
-  const [error, setError] = useState(null);
-
-  const fetchHistory = async () => {
-    setError(null);
-    try {
-      const response = await fetch(`/api/market-data/${ticker}/`);
-      if (!response.ok) throw new Error(`Request failed: ${response.status}`);
-      const data = await response.json();
-      setHistory(data.results);
-    } catch (err) {
-      setError(err.message);
-    }
-  };
-
   return (
-    <main>
-      <h1>equiCast</h1>
-      <input value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())} />
-      <button onClick={fetchHistory}>Fetch history</button>
-      {error && <p role="alert">{error}</p>}
-      <p>{history.length} rows loaded</p>
-    </main>
+    <AppShell
+      menuItems={MENU_ITEMS}
+      eyebrow="Phase 0"
+      title="App shell"
+      subtitle="Design tokens and the topbar/menubar shell are wired up — accounts, pies, holdings, and everything else come in later phases."
+    >
+      <div className="ec-placeholder">
+        <p>Domain pages aren&rsquo;t built yet.</p>
+      </div>
+    </AppShell>
   );
 }
 

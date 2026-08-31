@@ -122,6 +122,20 @@ npm run lint
 npm run test -- --run
 ```
 
+Phase 0 (design tokens + app shell) is in place: `src/styles/tokens.css` ports
+[Resource Planner](https://github.com/coldsofttech/resource-planner)'s OKLCH
+design tokens as `--ec-*` custom properties (Palette A from
+`docs/design/palette-options.html` — reused as-is), switched via
+`data-theme` on `<html>` (set synchronously by an inline script in
+`index.html`, before first paint, to avoid a flash of the wrong theme —
+`ThemeToggle` flips it after that and persists the choice to
+`localStorage`). `src/components/shell/` (`Topbar`, `MenuBar`, `AppShell`)
+is the topbar + mega-menu shell, and `src/components/brand/` is the
+`equiCast` wordmark + the finalized Candlestick Spear icon (see
+`docs/design/README.md`) as a CSS-driven logo — no image request, reads
+the same tokens so it flips with the theme too. Routing, the API client,
+Auth0, and real domain pages are later phases, not built yet.
+
 ## FX packages (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)
 
 ```bash
