@@ -83,6 +83,48 @@ const FEATURES = [
   },
 ];
 
+// The fuller product vision — what equiCast is being built toward, not what's
+// live today (see FEATURES above for that). Grouped around the three tools
+// people already track markets with, so "why should I switch" has an answer.
+const ROADMAP = [
+  {
+    tag: "Like Google Finance",
+    title: "Markets, at a glance",
+    items: [
+      "Live pricing for stocks, ETFs and FX pairs",
+      "A news feed tailored to your holdings",
+      "A calendar for earnings, splits and macro events",
+    ],
+  },
+  {
+    tag: "Like Yahoo Finance",
+    title: "Fundamentals & screening",
+    items: [
+      "Fundamentals, financials and valuation metrics",
+      "Volatility, Sharpe ratio, CAGR and max drawdown",
+      "Top-performer screeners and educational suggestions",
+    ],
+  },
+  {
+    tag: "Like DivTracker",
+    title: "Dividend income tracking",
+    items: [
+      "Past and upcoming dividend history",
+      "A payout calendar with 5-year income projections",
+      "Corporate events — splits, earnings, rating changes",
+    ],
+  },
+  {
+    tag: "Only in equiCast",
+    title: "Portfolio intelligence",
+    items: [
+      "Custom “pies” to visualise portfolio composition",
+      "Forecasts and a future-value growth simulator",
+      "A performance heatmap across every holding",
+    ],
+  },
+];
+
 /**
  * `onSignIn` is `loginWithRedirect` from useAuth0(), passed in by
  * RequireAuth rather than called here directly — keeps this component
@@ -168,6 +210,7 @@ function SignInScreen({ onSignIn, error }) {
       </div>
 
       <section className="ec-features" ref={featuresRef}>
+        <span className="ec-section-eyebrow">Live today</span>
         <h2 className="ec-features-title">Everything your portfolio needs, one login away.</h2>
         <div className="ec-feature-grid">
           {FEATURES.map((feature) => (
@@ -175,6 +218,28 @@ function SignInScreen({ onSignIn, error }) {
               <span className="ec-feature-icon">{feature.icon}</span>
               <h3>{feature.title}</h3>
               <p>{feature.desc}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="ec-roadmap">
+        <span className="ec-section-eyebrow">Coming next</span>
+        <h2 className="ec-features-title">The best of the tools you already use, in one place.</h2>
+        <p className="ec-roadmap-sub">
+          Core accounts, market data and forecasting are live today — here&rsquo;s everywhere
+          equiCast is headed next.
+        </p>
+        <div className="ec-roadmap-grid">
+          {ROADMAP.map((group) => (
+            <div className="ec-roadmap-card" key={group.title}>
+              <span className="ec-roadmap-tag">{group.tag}</span>
+              <h3>{group.title}</h3>
+              <ul className="ec-roadmap-list">
+                {group.items.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
             </div>
           ))}
         </div>

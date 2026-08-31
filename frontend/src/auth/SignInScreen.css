@@ -81,7 +81,8 @@
   gap: var(--ec-s-16);
 }
 
-.ec-hero-eyebrow {
+.ec-hero-eyebrow,
+.ec-section-eyebrow {
   display: inline-flex;
   align-items: center;
   height: 26px;
@@ -92,6 +93,12 @@
   font-size: var(--ec-fs-12);
   font-weight: 700;
   letter-spacing: 0.02em;
+}
+
+.ec-section-eyebrow {
+  display: flex;
+  width: fit-content;
+  margin: 0 auto var(--ec-s-12);
 }
 
 .ec-hero-title {
@@ -366,6 +373,99 @@
   color: var(--ec-text-muted);
 }
 
+/* ----- Roadmap ----- */
+.ec-roadmap {
+  position: relative;
+  padding: var(--ec-s-40) var(--ec-s-32);
+  max-width: 1120px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  text-align: center;
+  border-top: 1px solid var(--ec-divider);
+}
+
+.ec-roadmap-sub {
+  margin: 0 auto var(--ec-s-24);
+  max-width: 56ch;
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-14);
+}
+
+.ec-roadmap-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--ec-s-16);
+  text-align: left;
+}
+
+.ec-roadmap-card {
+  padding: var(--ec-s-20);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface-2);
+  transition:
+    transform 0.15s,
+    box-shadow 0.15s,
+    border-color 0.15s;
+}
+
+.ec-roadmap-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--ec-shadow-md);
+  border-color: var(--ec-purple);
+}
+
+.ec-roadmap-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 var(--ec-s-8);
+  border-radius: var(--ec-r-pill);
+  background: var(--ec-purple-soft);
+  color: var(--ec-purple-soft-text);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.ec-roadmap-card h3 {
+  margin: var(--ec-s-12) 0 var(--ec-s-8);
+  font-size: var(--ec-fs-15);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-roadmap-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ec-roadmap-list li {
+  position: relative;
+  padding-left: var(--ec-s-16);
+  margin-bottom: var(--ec-s-8);
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  line-height: 1.5;
+}
+
+.ec-roadmap-list li:last-child {
+  margin-bottom: 0;
+}
+
+.ec-roadmap-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--ec-purple);
+}
+
 /* ----- Footer ----- */
 .ec-landing-foot {
   display: flex;
@@ -406,7 +506,8 @@
 @media (max-width: 520px) {
   .ec-landing-bar,
   .ec-hero-grid,
-  .ec-features {
+  .ec-features,
+  .ec-roadmap {
     padding-left: var(--ec-s-16);
     padding-right: var(--ec-s-16);
   }
