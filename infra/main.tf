@@ -86,13 +86,22 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     resources = ["${module.user_data_bucket.bucket_arn}/pies/*"]
   }
 
+  # Watchlists domain (see WatchlistsClient) — same rationale as the
+  # accounts/pies statements above: its own statement/review, scoped to
+  # watchlists/* only.
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${module.user_data_bucket.bucket_arn}/watchlists/*"]
+  }
+
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
-  # .../accounts/* or .../pies/*) is required alongside s3:GetObject for a
-  # key that might not exist yet: without it, S3 can't tell this role apart
-  # from a caller with no rights to know whether the object exists at all,
-  # so a GetObject on a not-yet-created accounts/<user_id>.json (or
-  # pies/<user_id>.json) returns AccessDenied instead of the NoSuchKey
-  # AccountsClient/PiesClient._load() catch to mean "nothing yet" — see
+  # .../accounts/*, .../pies/*, or .../watchlists/*) is required alongside
+  # s3:GetObject for a key that might not exist yet: without it, S3 can't
+  # tell this role apart from a caller with no rights to know whether the
+  # object exists at all, so a GetObject on a not-yet-created
+  # accounts/<user_id>.json (or pies/<user_id>.json, watchlists/<user_id>.json)
+  # returns AccessDenied instead of the NoSuchKey AccountsClient/PiesClient/
+  # WatchlistsClient._load() catch to mean "nothing yet" — see
   # https://repost.aws/knowledge-center/s3-403-error-list-permissions. The
   # s3:prefix condition keeps this scoped to just the domains that need it
   # — one shared ListBucket statement covering every prefix rather than one
@@ -105,7 +114,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["accounts/*", "pies/*"]
+      values   = ["accounts/*", "pies/*", "watchlists/*"]
     }
   }
 }
@@ -126,8 +135,9 @@ module "backend_lambda" {
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
     # Lambda env vars are always strings; settings.py int()-parses these.
-    MAX_ACCOUNTS = tostring(var.max_accounts)
-    MAX_PIES     = tostring(var.max_pies)
+    MAX_ACCOUNTS   = tostring(var.max_accounts)
+    MAX_PIES       = tostring(var.max_pies)
+    MAX_WATCHLISTS = tostring(var.max_watchlists)
     # Previously unset here, silently falling back to settings.py's
     # DEBUG default of "true" for every deployed environment (dev and
     # prod alike) — a real information-disclosure risk in prod, since an

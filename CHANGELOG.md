@@ -60,6 +60,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase D User-owned data (watchlists): new `backend/watchlists/` Django app
+  exposing Auth0-authenticated CRUD for a user's watchlists —
+  `GET`/`POST /api/watchlists/`, `GET`/`PATCH`/`DELETE /api/watchlists/<id>/`.
+  Backed by a new `equicast_core.WatchlistsClient`
+  (`packages/core/src/equicast_core/watchlists.py`), same shape as
+  `AccountsClient` — one JSON object per user at `watchlists/<user_id>.json`
+  (`{"watchlists": [...]}`), S3 conditional writes for optimistic
+  concurrency, conflict-retry loop. Each watchlist is `{id (uuid4), name,
+  description, created_at, updated_at}`; holdings within a watchlist aren't
+  modeled yet — that's a later phase. Unlike pies, a watchlist is
+  **user-level, not nested under an account** — a user shouldn't need to
+  create an account just to watchlist a few holdings — so there's no
+  `account_id` field, no ownership validation against `AccountsClient`, and
+  `accounts/views.py` is untouched (no nesting on `AccountDetailView.get`,
+  no delete guard: deleting an account has no bearing on a user's
+  watchlists). `create_watchlist` enforces a 5-watchlists-**per-user** cap
+  via `WatchlistLimitExceededError` (surfaced as `409`);
+  `get_watchlist`/`update_watchlist`/`delete_watchlist` raise
+  `WatchlistNotFoundError` for an unknown id (surfaced as `404`). The cap is
+  configurable the same way `MAX_ACCOUNTS`/`MAX_PIES` are: a new
+  `MAX_WATCHLISTS` env var (default `5`), sourced from a new
+  `infra/variables.tf`'s `max_watchlists` Terraform variable, passed by
+  `.github/workflows/terraform.yml`'s `apply-dev`/`apply-prod` via
+  `-var max_watchlists=${{ vars.MAX_WATCHLISTS }}`. New Terraform: the
+  backend Lambda's IAM policy gains a statement scoped to
+  `s3:GetObject`/`s3:PutObject` on `<user_data_bucket_arn>/watchlists/*`
+  (mirroring the accounts/pies statements, its own review), and the
+  existing `s3:ListBucket` statement's `s3:prefix` condition now also
+  covers `watchlists/*`. No new bucket — reuses `user_data_bucket`.
+  `packages/core/tests/test_watchlists.py` (12 tests) and
+  `backend/watchlists/tests.py` (14 tests) cover the client and view layer,
+  mirroring `test_accounts.py`/`accounts/tests.py`'s per-user cap coverage
+  and concurrent-write-conflict regression test. `docs/local-setup.md`,
+  `backend/README.md`, and `packages/core/README.md` updated with the new
+  endpoints/client.
 - Phase D User-owned data (pies): new `backend/pies/` Django app exposing
   Auth0-authenticated CRUD for a user's pies, nested under one of their
   accounts — `GET`/`POST /api/pies/` (`GET` takes an optional

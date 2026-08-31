@@ -15,6 +15,12 @@ from equicast_core.pies import (
     PiesClient,
 )
 from equicast_core.user_profiles import UserProfileClient
+from equicast_core.watchlists import (
+    MAX_WATCHLISTS,
+    WatchlistLimitExceededError,
+    WatchlistNotFoundError,
+    WatchlistsClient,
+)
 
 __version__ = "0.1.0"
 
@@ -27,6 +33,10 @@ __all__ = [
     "PieLimitExceededError",
     "PieNotFoundError",
     "PiesClient",
+    "MAX_WATCHLISTS",
+    "WatchlistLimitExceededError",
+    "WatchlistNotFoundError",
+    "WatchlistsClient",
     "MarketDataClient",
     "UserProfileClient",
 ]

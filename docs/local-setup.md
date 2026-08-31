@@ -20,7 +20,8 @@ equiCast/
 │   ├── market_data/     # Django app exposing real market data (reads S3 via equicast-core)
 │   ├── identity/        # Django app: Auth0 JWT verification, first-login DynamoDB profile upsert
 │   ├── accounts/        # Django app: user-owned accounts CRUD (S3 JSON via equicast-core)
-│   └── pies/            # Django app: user-owned pies CRUD, nested under an account (S3 JSON via equicast-core)
+│   ├── pies/            # Django app: user-owned pies CRUD, nested under an account (S3 JSON via equicast-core)
+│   └── watchlists/      # Django app: user-owned watchlists CRUD, user-level (S3 JSON via equicast-core)
 ├── frontend/            # React (Vite) UI
 ├── infra/               # Terraform for AWS (S3 data lake, ECR, static site bucket)
 ├── data/                # Local Parquet cache (gitignored)
@@ -51,7 +52,7 @@ re-run `uv sync` per package, just `cd` into it and `uv run ...`.
 
 ## Backend (Django REST) and `equicast-core`
 
-`equicast-core` is a small generic package (boto3, no Django import) with four clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), and `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`) — currently only consumed by the backend, but not backend-specific code itself:
+`equicast-core` is a small generic package (boto3, no Django import) with five clients — `MarketDataClient` (pyarrow, reads the ingestion pipelines' S3 Parquet layout), `UserProfileClient` (DynamoDB user profiles), `AccountsClient` (S3 JSON, one object per user at `accounts/<user_id>.json`, optimistic concurrency via S3 conditional writes), `PiesClient` (S3 JSON, same shape, at `pies/<user_id>.json`, each pie nested under an `account_id`), and `WatchlistsClient` (S3 JSON, same shape, at `watchlists/<user_id>.json`, user-level rather than nested under an account) — currently only consumed by the backend, but not backend-specific code itself:
 
 ```bash
 cd packages/core
@@ -69,9 +70,9 @@ Needs `MARKET_DATA_BUCKET` set (no default) to actually serve data — e.g. `MAR
 
 Needs `AUTH0_DOMAIN`, `AUTH0_AUDIENCE`, and `USER_PROFILES_TABLE` set (no defaults) to use `/api/identity/...` — see [auth0-setup.md](auth0-setup.md) for where the Auth0 values come from. Without them, `/api/market/...` is unaffected, but any `Authorization: Bearer` header fails to authenticate and `/api/identity/me/` always returns `401`.
 
-Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
+Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...` — e.g. `USER_DATA_BUCKET=equicast-user-data-dev`.
 
-`MAX_ACCOUNTS`/`MAX_PIES` (defaults `5`/`20`, matching `equicast_core`'s own client defaults) tune the accounts-per-user and pies-per-account caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES` variables.
+`MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`, matching `equicast_core`'s own client defaults) tune the accounts-per-user, pies-per-account, and watchlists-per-user caps without a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/`max_watchlists`, set per-environment via the `development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables.
 
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
@@ -89,6 +90,11 @@ API available at:
 - `GET /api/pies/<id>/` — a pie's details
 - `PATCH /api/pies/<id>/` — partially updates a pie's `name`/`description` (`account_id` is immutable)
 - `DELETE /api/pies/<id>/` — deletes a pie
+- `GET /api/watchlists/` — lists the caller's watchlists (user-level, not nested under an account)
+- `POST /api/watchlists/` — creates a watchlist (`name`, `description`); `409` once the caller has `MAX_WATCHLISTS`
+- `GET /api/watchlists/<id>/` — a watchlist's details
+- `PATCH /api/watchlists/<id>/` — partially updates a watchlist's `name`/`description`
+- `DELETE /api/watchlists/<id>/` — deletes a watchlist
 
 ```bash
 uv run pytest

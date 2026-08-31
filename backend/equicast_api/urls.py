@@ -14,4 +14,5 @@ urlpatterns = [
     path("api/identity/", include("identity.urls")),
     path("api/accounts/", include("accounts.urls")),
     path("api/pies/", include("pies.urls")),
+    path("api/watchlists/", include("watchlists.urls")),
 ]

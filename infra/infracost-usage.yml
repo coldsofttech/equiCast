@@ -143,21 +143,22 @@ resource_usage:
     monthly_read_request_units: 10000
     storage_gb: 0.01
 
-  # User-owned data bucket (accounts, pies; later portfolios/watchlists/
+  # User-owned data bucket (accounts, pies, watchlists; later portfolios/
   # holdings). Nothing calls this yet either — same "no real traffic" caveat
   # as user_profiles_table, sized against the same 500 MAU / ~20
   # sessions/month planning scenario. One JSON object per user per domain:
   # accounts capped at 5 (~200 bytes each -> ~1KB/user object), pies capped
-  # at 20 per account (~150 bytes each -> up to a few KB/user object). 500
-  # users * ~2KB combined -> 1MB -> still 0.01GB (rounded up, same floor as
-  # market_data_bucket). Most sessions only GET a list/detail; PUT only
-  # happens on create/update/delete, so weighted well below the 50,000 GET
-  # figure used for Lambda/API Gateway.
+  # at 20 per account (~150 bytes each -> up to a few KB/user object),
+  # watchlists capped at 5 per user (~150 bytes each -> under 1KB/user
+  # object). 500 users * ~2KB combined -> 1MB -> still 0.01GB (rounded up,
+  # same floor as market_data_bucket). Most sessions only GET a list/detail;
+  # PUT only happens on create/update/delete, so weighted well below the
+  # 50,000 GET figure used for Lambda/API Gateway.
   module.user_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 8000 # PUT — account/pie create/update/delete
-      monthly_tier_2_requests: 45000 # GET — account/pie list/detail loads
+      monthly_tier_1_requests: 9000 # PUT — account/pie/watchlist create/update/delete
+      monthly_tier_2_requests: 45000 # GET — account/pie/watchlist list/detail loads
 
   # Backend deploy artifacts bucket. Real measurement: Phase A's
   # scripts/build_lambda_package.sh produced a 76.2MB zip. Versioned (so

@@ -25,13 +25,13 @@ still starts and `/api/market/...` is unaffected, but any request with an
 `/api/identity/me/` always returns `401`.
 
 Set `USER_DATA_BUCKET` (e.g. `equicast-user-data-dev`), plus the same Auth0
-settings above, to use `/api/accounts/...`/`/api/pies/...`.
+settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`.
 
-Set `MAX_ACCOUNTS`/`MAX_PIES` (defaults `5`/`20`) to tune the accounts-per-user
-and pies-per-account caps without a code change — see
-`infra/variables.tf`'s `max_accounts`/`max_pies`, set per-environment via the
-`development`/`production` GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`
-variables.
+Set `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`) to tune
+the accounts-per-user, pies-per-account, and watchlists-per-user caps without
+a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/
+`max_watchlists`, set per-environment via the `development`/`production`
+GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
@@ -55,6 +55,14 @@ variables.
 - `PATCH /api/pies/<id>/` — partially updates a pie's `name`/`description`
   (`account_id` is immutable)
 - `DELETE /api/pies/<id>/` — deletes a pie
+- `GET /api/watchlists/` — lists the caller's watchlists (user-level, not
+  nested under an account)
+- `POST /api/watchlists/` — creates a watchlist (`name`, `description`);
+  `409` once the caller has `MAX_WATCHLISTS`
+- `GET /api/watchlists/<id>/` — a watchlist's details
+- `PATCH /api/watchlists/<id>/` — partially updates a watchlist's
+  `name`/`description`
+- `DELETE /api/watchlists/<id>/` — deletes a watchlist
 
 ## Lambda packaging
 

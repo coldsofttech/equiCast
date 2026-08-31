@@ -65,9 +65,9 @@ loser re-fetches and returns the winning write instead.
 
 Reads and writes one user's accounts as a single JSON object in equicast's
 user-data S3 bucket, at `accounts/<user_id>.json`. The first of Phase D's
-S3-JSON domains (portfolios/watchlists/holdings are expected to follow the
-same shape). Backs the Django backend's Auth0-authenticated
-`/api/accounts/...` endpoints.
+S3-JSON domains (pies and watchlists follow the same shape; portfolios/
+holdings are expected to as well). Backs the Django backend's
+Auth0-authenticated `/api/accounts/...` endpoints.
 
 ```python
 from equicast_core import AccountsClient
@@ -145,6 +145,43 @@ single target the way `delete_pie` treats an unknown id). Same S3
 conditional-write optimistic concurrency as `AccountsClient`. Holdings
 (and their target allocation within a pie) aren't modeled yet — a pie is
 currently just `{id, account_id, name, description, created_at,
+updated_at}` — that arrives in a later phase.
+
+## `WatchlistsClient` — S3 JSON user-owned data (watchlists)
+
+Same shape as `AccountsClient`: reads and writes one user's watchlists as a
+single JSON object in the user-data S3 bucket, at
+`watchlists/<user_id>.json`. Unlike `PiesClient`, a watchlist is **not**
+nested under an account — it's user-level, since a user shouldn't need to
+create an account just to watchlist a few holdings. Backs the Django
+backend's Auth0-authenticated `/api/watchlists/...` endpoints.
+
+```python
+from equicast_core import WatchlistsClient
+
+client = WatchlistsClient(bucket="equicast-user-data-dev")
+
+client.create_watchlist(
+    "auth0|65f2c1...", name="Tech Watch", description="Big tech names",
+)
+# {"id": "...", "name": "Tech Watch", "description": "Big tech names",
+#  "created_at": "...", "updated_at": "..."}
+
+client.list_watchlists("auth0|65f2c1...")
+client.get_watchlist("auth0|65f2c1...", watchlist_id)
+client.update_watchlist("auth0|65f2c1...", watchlist_id, name="Renamed watchlist")
+client.delete_watchlist("auth0|65f2c1...", watchlist_id)
+```
+
+`create_watchlist` raises `WatchlistLimitExceededError` once a user already
+has `max_watchlists` watchlists — `MAX_WATCHLISTS` (5) by default,
+overridable per `WatchlistsClient` instance via its `max_watchlists`
+constructor arg (sourced from the `MAX_WATCHLISTS` env var the same way
+`AccountsClient.max_accounts` is). `get_watchlist`/`update_watchlist`/
+`delete_watchlist` raise `WatchlistNotFoundError` for an unknown
+`watchlist_id`. Same S3 conditional-write optimistic concurrency as
+`AccountsClient`. Holdings within a watchlist aren't modeled yet — a
+watchlist is currently just `{id, name, description, created_at,
 updated_at}` — that arrives in a later phase.
 
 ## Development
