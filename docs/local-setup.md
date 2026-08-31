@@ -228,8 +228,15 @@ design tokens as `--ec-*` custom properties (Palette A from
 is the topbar + mega-menu shell, and `src/components/brand/` is the
 `equiCast` wordmark + the finalized Candlestick Spear icon (see
 `docs/design/README.md`) as a CSS-driven logo — no image request, reads
-the same tokens so it flips with the theme too. Routing, the API client,
-Auth0, and real domain pages are later phases, not built yet.
+the same tokens so it flips with the theme too.
+
+Routing (`react-router-dom`), Auth0 (`@auth0/auth0-react`, see
+[auth0-setup.md](auth0-setup.md)'s frontend Application section), and a
+typed (JSDoc, not TypeScript) API client are wired up too — `App.jsx` is
+now just routes, `RequireAuth`/`SignInScreen` gate the one real page
+(`pages/DashboardPage.jsx`) behind login, and `src/api/client.js` injects
+the Auth0 access token as a Bearer header. Real domain pages (accounts,
+pies, holdings, ...) are still later phases.
 
 Deployed via `deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod`
 (gated the same way as backend deploys — see
@@ -239,7 +246,10 @@ bucket served by CloudFront (`infra/main.tf`'s `frontend_bucket` +
 website hosting, so the bucket itself is never public. No custom domain
 yet: the live URL is CloudFront's own `*.cloudfront.net` hostname
 (`terraform output frontend_url` after apply); revisit once a domain is
-registered (Route53 + ACM + `aliases` on the distribution).
+registered (Route53 + ACM + `aliases` on the distribution). Unlike the
+Auth0 config (one shared tenant/API for both dev and prod), the backend
+API URL genuinely differs per environment — see `deploy.yml`'s
+`API_URL`/`VITE_API_BASE_URL` handling below.
 
 ## FX packages (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)
 

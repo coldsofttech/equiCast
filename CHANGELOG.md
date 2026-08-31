@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
+  `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
+  existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With
+  `-StartFrontend`, the three values are now exported as
+  `VITE_AUTH0_DOMAIN`/`VITE_AUTH0_CLIENT_ID`/`VITE_AUTH0_AUDIENCE` into the
+  spawned `npm run dev` process — Vite gives an already-set environment
+  variable priority over `frontend/.env.local`, so the frontend's real
+  Auth0 login flow now works out of the box against LocalStack without
+  hand-creating that file. Previously only the backend's `AUTH0_DOMAIN`/
+  `AUTH0_AUDIENCE` were wired up this way, leaving `RequireAuth` stuck on
+  its "not configured" state for anyone running the script as documented.
+  `docs/auth0-setup.md`'s Step 3 also gains a step easy to miss on a fresh
+  tenant: the frontend Application needs an explicit **User-Delegated
+  Access** grant against the API (Application Access tab) before
+  `loginWithRedirect`'s `audience` param works — without it Auth0 returns
+  `invalid_request: Client "..." is not authorized to access resource
+  server "..."`, surfaced by the frontend as a generic "Something went
+  wrong signing in" (`RequireAuth.jsx`).
 - `backend-ci.yml`/`frontend-ci.yml` gain a `workflow_dispatch` trigger.
   Surfaced by merging #36 (frontend CD infra): that PR's changes lived
   entirely under `infra/`, `.github/workflows/deploy.yml`, and `docs/`, so
@@ -71,6 +89,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend Phase 0 (design tokens + app shell): `frontend/src/styles/tokens.css`
+  ports [Resource Planner](https://github.com/coldsofttech/resource-planner)'s
+  OKLCH design tokens as `--ec-*` custom properties — same values (Palette A,
+  the "reused as-is" option from `docs/design/palette-options.html`), same
+  type/spacing/radius/shadow scale, `data-theme` on `<html>` switching
+  light/dark. `index.html` gains an inline bootstrap script that sets
+  `data-theme` synchronously (localStorage, falling back to
+  `prefers-color-scheme` once) before any stylesheet paints, so — like
+  Resource Planner's own tokens.css — `tokens.css` only defines `:root`
+  (light) and `[data-theme="dark"]`, no media-query fallback; a new
+  `ThemeToggle` component (`frontend/src/components/shell/`) flips the
+  attribute after that and persists the choice. New topbar + mega-menu
+  app shell (`Topbar`, `MenuBar`, `AppShell`) — `MenuBar` collapses to a
+  hamburger toggle under 640px, matching Resource Planner's own responsive
+  behavior; no routing wired up yet, so menu items track an "active" item
+  locally rather than navigating. New brand components
+  (`frontend/src/components/brand/`): `Logo` (gradient badge + the
+  "equi**Cast**" wordmark, CSS-driven — no image request, reads the same
+  tokens so it flips with the theme for free) and `CandlestickSpearIcon`,
+  the finalized mark from `docs/design/logo-concepts-round3-final.html`
+  (three ascending OHLC candlesticks, the tallest candle's wick sharpened
+  into a spearpoint) — see `docs/design/README.md` for the full brand
+  decision history. `App.jsx` now renders the shell with placeholder page
+  content instead of the old ticker-fetch smoke test; `App.test.jsx`
+  rewritten to cover the wordmark, menu item selection, and the theme
+  toggle instead. Routing, the API client, Auth0, and real domain pages
+  are later phases.
 - Frontend CD, S3 + CloudFront, no custom domain yet: `infra/main.tf`'s
   `frontend_bucket` module is stood up for real, but no longer as a public
   S3 static-hosting bucket (`static_site = true`) — it now stays fully
@@ -118,33 +163,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Terraform-managed here) already has `s3:PutObject`/`s3:DeleteObject` on
   the frontend buckets and `cloudfront:CreateInvalidation` — confirm
   before relying on `deploy-frontend-dev`/`-prod` to actually succeed.
-- Frontend Phase 0 (design tokens + app shell): `frontend/src/styles/tokens.css`
-  ports [Resource Planner](https://github.com/coldsofttech/resource-planner)'s
-  OKLCH design tokens as `--ec-*` custom properties — same values (Palette A,
-  the "reused as-is" option from `docs/design/palette-options.html`), same
-  type/spacing/radius/shadow scale, `data-theme` on `<html>` switching
-  light/dark. `index.html` gains an inline bootstrap script that sets
-  `data-theme` synchronously (localStorage, falling back to
-  `prefers-color-scheme` once) before any stylesheet paints, so — like
-  Resource Planner's own tokens.css — `tokens.css` only defines `:root`
-  (light) and `[data-theme="dark"]`, no media-query fallback; a new
-  `ThemeToggle` component (`frontend/src/components/shell/`) flips the
-  attribute after that and persists the choice. New topbar + mega-menu
-  app shell (`Topbar`, `MenuBar`, `AppShell`) — `MenuBar` collapses to a
-  hamburger toggle under 640px, matching Resource Planner's own responsive
-  behavior; no routing wired up yet, so menu items track an "active" item
-  locally rather than navigating. New brand components
-  (`frontend/src/components/brand/`): `Logo` (gradient badge + the
-  "equi**Cast**" wordmark, CSS-driven — no image request, reads the same
-  tokens so it flips with the theme for free) and `CandlestickSpearIcon`,
-  the finalized mark from `docs/design/logo-concepts-round3-final.html`
-  (three ascending OHLC candlesticks, the tallest candle's wick sharpened
-  into a spearpoint) — see `docs/design/README.md` for the full brand
-  decision history. `App.jsx` now renders the shell with placeholder page
-  content instead of the old ticker-fetch smoke test; `App.test.jsx`
-  rewritten to cover the wordmark, menu item selection, and the theme
-  toggle instead. Routing, the API client, Auth0, and real domain pages
-  are later phases.
+- Frontend Phase 0 continued: routing, Auth0, a typed API client, and the
+  brand SVG exports. `react-router-dom` (v7) — `App.jsx` is now just
+  `<Routes>` (`/` -> the gated dashboard, `*` -> redirect to `/`) instead
+  of rendering the shell directly; that moved to the new
+  `pages/DashboardPage.jsx`. `@auth0/auth0-react` wired in via
+  `Auth0ProviderWithNavigate` (inside `BrowserRouter` in `main.jsx`, so
+  its `onRedirectCallback` can use `useNavigate`) and a new `RequireAuth`,
+  which gates children behind `isAuthenticated` — an unauthenticated
+  visitor gets a real `SignInScreen` (the brand `Logo` + tagline + a
+  `loginWithRedirect` button), not a silent auto-redirect. No frontend
+  Auth0 Application existed before this (`docs/auth0-setup.md` had
+  explicitly deferred it) — new **Step 3** there covers registering one
+  (SPA type, PKCE) and its Client ID becomes a new `AUTH0_CLIENT_ID` repo
+  variable; the old Step 3 (wiring values into the repo) is now Step 4.
+  If `VITE_AUTH0_*` isn't set, `RequireAuth` shows a clear "not
+  configured" message without ever calling `useAuth0()`, rather than
+  depending on the SDK's behavior against a missing Provider.
+
+  Typed API client — JSDoc, not TypeScript (the frontend has no TS
+  tooling, and introducing it was judged a bigger, harder-to-reverse
+  change than this phase called for): `api/client.js` is a
+  framework-agnostic `fetch` wrapper (bearer token injection, JSON
+  encode/decode, an `ApiError` carrying `.status`), `api/useApi.js` binds
+  Auth0's `getAccessTokenSilently` into it, and `api/identity.js` +
+  `api/useCurrentUser.js` wire up the one real endpoint so far
+  (`GET /api/identity/me/`) — `DashboardPage` renders its
+  `default_currency` as an end-to-end proof of the whole chain (Auth0
+  login -> access token -> Django -> DynamoDB -> back into React).
+
+  Brand SVG exports (`frontend/public/brand/`): `equicast-mark.svg`
+  (wired in as the favicon), `equicast-logo-light.svg`,
+  `equicast-logo-dark.svg` — self-contained, hard-coded hex (not
+  `oklch()`/CSS variables, which the email/other non-web contexts these
+  are for can't rely on), matching the finalized Candlestick Spear icon.
+
+  `MenuBar`/`ThemeToggle` gained their own direct tests (previously only
+  covered indirectly through `App.test.jsx`, which now tests routing
+  instead).
+
+  Also closes the CD entry above's "known gap": `deploy-frontend-dev`/
+  `-prod` each now build the frontend themselves, with that environment's
+  own `VITE_API_BASE_URL` (from a new per-environment `API_URL` GitHub
+  Environment variable, manually kept in sync with `terraform output
+  backend_api_invoke_url` — see `docs/terraform-state-setup.md`'s Step 4,
+  now also covering this alongside `CLOUDFRONT_DISTRIBUTION_ID`) and
+  `VITE_AUTH0_CLIENT_ID`/`VITE_AUTH0_DOMAIN`/`VITE_AUTH0_AUDIENCE` baked
+  in at build time, instead of `estimate-frontend` building once and both
+  environments promoting that identical artifact — Vite inlines
+  `import.meta.env.VITE_*` at build time, so one build can't correctly
+  serve two environments with different backend URLs the way the backend
+  Lambda zip can. `estimate-frontend` still builds once (with no
+  environment config) purely for the pre-approval job-summary cost
+  estimate; `deploy-frontend-prod`'s `needs: deploy-frontend-dev` is now
+  ordering-only ("prod only after dev approves"), not an artifact
+  promotion. Deliberately manual rather than automatic: the automatic
+  alternative (`terraform.yml` running `gh variable set` after every
+  apply) needs a personal access token with `Variables: write` — the
+  default `GITHUB_TOKEN` workflows get can't call that API at all — which
+  is a new credential to create/rotate for not much saved effort at this
+  project's current scale.
 - `scripts/local-dev.ps1`: a Windows PowerShell script that starts
   [LocalStack](https://www.localstack.io/) (S3 + DynamoDB), provisions
   `MARKET_DATA_BUCKET`/`USER_DATA_BUCKET`/`USER_PROFILES_TABLE`, and runs

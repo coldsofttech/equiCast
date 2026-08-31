@@ -20,9 +20,14 @@
       not just accounts/pies/watchlists/holdings/transactions/identity. Only
       /health/ and the admin work with no token at all. Pass
       -Auth0Domain/-Auth0Audience (or export $env:AUTH0_DOMAIN/
-      $env:AUTH0_AUDIENCE first) so the server can verify a token - but you
-      still need a genuine Auth0-issued token in hand (e.g. via the frontend's
-      real login flow) to call anything under /api/... regardless.
+      $env:AUTH0_AUDIENCE first) so the server can verify a token. With
+      -StartFrontend, the same values plus -Auth0ClientId (or
+      $env:AUTH0_CLIENT_ID) are exported as VITE_AUTH0_DOMAIN/
+      VITE_AUTH0_CLIENT_ID/VITE_AUTH0_AUDIENCE for the frontend's spawned
+      process too - Vite gives an already-set environment variable priority
+      over any .env.local, so no file is needed just for local dev - letting
+      you log in for real through the frontend and obtain a genuine
+      Auth0-issued token end to end.
     - The backend runs via `manage.py runserver`, the same Django app
       `equicast_api.lambda_handler.handler` wraps in prod - Lambda/API
       Gateway themselves aren't part of this loop, so iteration stays
@@ -85,7 +90,7 @@
 .EXAMPLE
   .\scripts\local-dev.ps1 -SeedMarketData -FullLoad
 .EXAMPLE
-  .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app
+  .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app -Auth0ClientId <client-id>
 .EXAMPLE
   .\scripts\local-dev.ps1 -Stop
 #>
@@ -100,6 +105,7 @@ param(
     [switch]$Stop,
     [string]$Auth0Domain = $env:AUTH0_DOMAIN,
     [string]$Auth0Audience = $env:AUTH0_AUDIENCE,
+    [string]$Auth0ClientId = $env:AUTH0_CLIENT_ID,
     [string]$Region = "eu-west-1",
     [string]$MarketDataBucket = "equicast-market-data-dev",
     [string]$UserDataBucket = "equicast-user-data-dev",
@@ -212,6 +218,20 @@ if ($StartBackend) {
     } else {
         $env:AUTH0_DOMAIN = $Auth0Domain
         $env:AUTH0_AUDIENCE = $Auth0Audience
+    }
+}
+
+if ($StartFrontend) {
+    if (-not $Auth0Domain -or -not $Auth0Audience -or -not $Auth0ClientId) {
+        Write-Warning "VITE_AUTH0_DOMAIN/VITE_AUTH0_CLIENT_ID/VITE_AUTH0_AUDIENCE not set: RequireAuth will show a 'not configured' message instead of a login button. Pass -Auth0Domain/-Auth0Audience/-Auth0ClientId, or set AUTH0_DOMAIN/AUTH0_AUDIENCE/AUTH0_CLIENT_ID in your shell first (or create frontend/.env.local yourself) - see docs/auth0-setup.md."
+    } else {
+        # Vite gives an already-set environment variable priority over
+        # frontend/.env.local, so the spawned `npm run dev` process picks
+        # these up with no file needed - same tenant/API as the backend
+        # above (see frontend/src/auth/auth0Config.js).
+        $env:VITE_AUTH0_DOMAIN = $Auth0Domain
+        $env:VITE_AUTH0_CLIENT_ID = $Auth0ClientId
+        $env:VITE_AUTH0_AUDIENCE = $Auth0Audience
     }
 }
 

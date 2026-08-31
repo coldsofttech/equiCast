@@ -5,6 +5,14 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>equiCast</title>
     <!--
+      The mobile/compact export from docs/design/README.md's brand
+      decisions — a solid gradient badge, so it works as a favicon
+      regardless of the page's own light/dark theme. No .ico fallback
+      (Safari's the only real holdout on SVG favicons, and degrades to no
+      icon rather than a broken one).
+    -->
+    <link rel="icon" type="image/svg+xml" href="/brand/equicast-mark.svg" />
+    <!--
       Runs synchronously, before any stylesheet paints, so `data-theme` is
       already correct on first frame — same reasoning as Resource Planner's
       theme-init.min.js. tokens.css only defines `:root` (light) and

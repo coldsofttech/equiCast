@@ -1,24 +1,20 @@
-import AppShell from "./components/shell/AppShell.jsx";
-import "./App.css";
-
-const MENU_ITEMS = [
-  { id: "portfolio", label: "Portfolio" },
-  { id: "watchlists", label: "Watchlists" },
-  { id: "search", label: "Search" },
-];
+import { Navigate, Route, Routes } from "react-router-dom";
+import RequireAuth from "./auth/RequireAuth.jsx";
+import DashboardPage from "./pages/DashboardPage.jsx";
 
 function App() {
   return (
-    <AppShell
-      menuItems={MENU_ITEMS}
-      eyebrow="Phase 0"
-      title="App shell"
-      subtitle="Design tokens and the topbar/menubar shell are wired up — accounts, pies, holdings, and everything else come in later phases."
-    >
-      <div className="ec-placeholder">
-        <p>Domain pages aren&rsquo;t built yet.</p>
-      </div>
-    </AppShell>
+    <Routes>
+      <Route
+        path="/"
+        element={
+          <RequireAuth>
+            <DashboardPage />
+          </RequireAuth>
+        }
+      />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 

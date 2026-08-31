@@ -53,7 +53,54 @@ actually log users in and obtain tokens against this API is a separate,
 later step — out of scope for this backend-only phase, since the backend
 only needs to *verify* tokens, not issue them.
 
-## Step 3: Wire the values into the repo
+## Step 3: Register the frontend Application
+
+The step Step 2 deferred — `frontend/src/auth/`'s `@auth0/auth0-react`
+integration needs its own Auth0 Application (not the API from Step 2) to
+actually run the login flow. Dashboard → **Applications → Applications →
+Create Application**:
+
+- **Name**: `equiCast Web` (display only)
+- **Application type**: **Single Page Application** — this is what makes
+  Auth0 use the PKCE flow (no client secret; a SPA can't keep one
+  confidential, unlike a server-side app)
+
+In the new Application's **Settings** tab, set (comma-separated, no
+spaces, if entering more than one):
+
+- **Allowed Callback URLs**: `http://localhost:5173` for local dev, plus
+  each deployed environment's CloudFront URL (`terraform output
+  frontend_url` — see [terraform-state-setup.md](terraform-state-setup.md))
+  once one exists
+- **Allowed Logout URLs**: the same list — `Auth0ProviderWithNavigate`
+  passes `returnTo: window.location.origin` to `logout()`, i.e. back to
+  wherever the app is running
+- **Allowed Web Origins**: the same list again — needed for Auth0's
+  silent-auth (`getAccessTokenSilently`) iframe checks
+
+The **Client ID** on this same Settings tab becomes `AUTH0_CLIENT_ID`
+below — unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE`, this one has no backend
+equivalent (the backend never authenticates *as* a client, only verifies
+tokens someone else obtained), but it's not sensitive either: an SPA's
+client ID is visible in every browser network request it makes, by
+design — PKCE is exactly what makes a public client ID safe to ship.
+
+Also authorize this Application against the Step 2 API: Dashboard →
+**Applications → APIs → equiCast API → Application Access** tab, find
+`equiCast Web`'s row, click **Edit**, and on the **User-Delegated Access**
+sub-tab click **Grant Access** (this tenant's API has "Per-app
+authorization" as its access policy — Application Access tab's banner —
+so every application needs an explicit grant here before it can request
+tokens for this API, even via the ordinary login/PKCE flow, not just
+client-credentials). Skipping it makes `loginWithRedirect`'s `audience`
+param fail with `invalid_request: Client "..." is not authorized to
+access resource server "https://api.equicast.app"`, surfaced by the
+frontend as a generic "Something went wrong signing in" (see
+`RequireAuth.jsx`). Note this tab may be named differently ("Machine to
+Machine Applications") on older Auth0 dashboards — same underlying
+concept either way: an explicit per-application grant against the API.
+
+## Step 4: Wire the values into the repo
 
 ### GitHub repo variables, not secrets
 
@@ -63,20 +110,26 @@ Settings → Secrets and variables → Actions → **Variables** tab (same tier
 - **`AUTH0_DOMAIN`** = your tenant domain, e.g. `equicast.eu.auth0.com`
 - **`AUTH0_AUDIENCE`** = the API Identifier from Step 2, e.g.
   `https://api.equicast.app`
+- **`AUTH0_CLIENT_ID`** = the frontend Application's Client ID from Step 3
+  — only the frontend build reads this one (`deploy.yml`'s
+  `deploy-frontend-dev`/`-prod` map it to `VITE_AUTH0_CLIENT_ID`), the
+  backend has no use for it
 
-Neither value is actually sensitive: the domain is a public
-JWKS/authorization-server hostname, and the audience is embedded in every
-issued access token's `aud` claim (and has to be hardcoded into the
-frontend's Auth0 config too, to request tokens in the first place). This
-phase introduces **no real secret** — the backend only verifies tokens
-against Auth0's public JWKS, it never authenticates itself to Auth0, so
-there's no Client Secret to store anywhere. (A later phase calling Auth0's
-Management API would need one, via `secrets.*`, not Terraform state.)
+None of the three is actually sensitive: the domain is a public
+JWKS/authorization-server hostname, the audience is embedded in every
+issued access token's `aud` claim, and a SPA's client ID is visible in
+every request it makes (see Step 3). This phase introduces **no real
+secret** — the backend only verifies tokens against Auth0's public JWKS,
+and the frontend is a public PKCE client, so there's no Client Secret to
+store anywhere for either. (A later phase calling Auth0's Management API
+would need one, via `secrets.*`, not Terraform state.)
 
-`terraform.yml`'s `plan`/`apply-dev`/`apply-prod` steps read these as
-`vars.AUTH0_DOMAIN`/`vars.AUTH0_AUDIENCE` and pass them to Terraform as
+`terraform.yml`'s `plan`/`apply-dev`/`apply-prod` steps read the first two
+as `vars.AUTH0_DOMAIN`/`vars.AUTH0_AUDIENCE` and pass them to Terraform as
 `-var auth0_domain=... -var auth0_audience=...`, which `infra/main.tf` wires
-straight into the backend Lambda's environment.
+straight into the backend Lambda's environment. `AUTH0_CLIENT_ID` is
+frontend-only, read directly by `deploy.yml`, not passed through Terraform
+at all.
 
 ### Local development
 
@@ -87,6 +140,13 @@ Export the same two values before running the backend locally (see
 export AUTH0_DOMAIN=equicast.eu.auth0.com
 export AUTH0_AUDIENCE=https://api.equicast.app
 ```
+
+For the frontend, copy `frontend/.env.example` to `frontend/.env.local`
+(gitignored) and fill in `VITE_AUTH0_DOMAIN`/`VITE_AUTH0_CLIENT_ID`/
+`VITE_AUTH0_AUDIENCE` with the same tenant domain, the Step 3 Application's
+Client ID, and the same audience. Without it, `RequireAuth` shows a
+"not configured" message instead of a login button — see
+`frontend/src/auth/auth0Config.js`.
 
 ## Verifying it end-to-end
 

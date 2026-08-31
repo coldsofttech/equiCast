@@ -1,0 +1,40 @@
+.ec-signin {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ec-s-24);
+  padding: var(--ec-s-24);
+  text-align: center;
+}
+
+.ec-signin-tagline {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-15);
+  margin: 0;
+  max-width: 32ch;
+}
+
+.ec-signin-btn {
+  height: 36px;
+  padding: 0 var(--ec-s-20);
+  border-radius: var(--ec-r-6);
+  border: 1px solid var(--ec-accent);
+  background: var(--ec-accent);
+  color: var(--ec-text-on-accent);
+  font-weight: 600;
+  font-size: var(--ec-fs-14);
+  cursor: pointer;
+}
+
+.ec-signin-btn:hover {
+  background: var(--ec-accent-hover);
+  border-color: var(--ec-accent-hover);
+}
+
+.ec-signin-error {
+  color: var(--ec-danger);
+  font-size: var(--ec-fs-13);
+  max-width: 40ch;
+}

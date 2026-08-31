@@ -129,30 +129,56 @@ Any job wired to an environment with required reviewers pauses in the
 Actions UI until one of them approves it. This is enforced by GitHub itself,
 independent of what the workflow YAML says.
 
-## Step 4: Set each Environment's CLOUDFRONT_DISTRIBUTION_ID
+## Step 4: Set each Environment's CLOUDFRONT_DISTRIBUTION_ID and API_URL
 
-`deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod` invalidate the
-CloudFront cache after every sync — without that, CloudFront would keep
-serving stale cached responses (including an `index.html` referencing
+Two more values `deploy.yml`'s `deploy-frontend-dev`/`deploy-frontend-prod`
+need, neither predictable ahead of time the way the frontend bucket name
+is (`equicast-frontend-<env>`, from `project_name`/`environment`) — both
+are generated/assigned by AWS at apply time, so both have to be read from
+`terraform output` after the fact and pasted in manually. This is a
+manual, repeat-after-every-relevant-apply step by design (see the "Lets
+create variables and update docs" decision in the session this was
+written from) rather than an automatic sync — the alternative, having
+`terraform.yml` write these via `gh variable set` after every apply,
+needs a personal access token with `Variables: write` (the default
+`GITHUB_TOKEN` workflows get can't call that API at all), which is a new
+credential to create and rotate for not that much saved effort at this
+project's scale.
+
+**`CLOUDFRONT_DISTRIBUTION_ID`** — without it, `deploy-frontend-dev`/`-prod`
+can't invalidate the CloudFront cache after a sync, so CloudFront would
+keep serving stale cached responses (including an `index.html` referencing
 since-deleted hashed asset filenames) for up to the cache policy's TTL.
-That needs each environment's distribution ID, which AWS generates at
-apply time — it can't be hardcoded the way the bucket name can (that's
-just `equicast-frontend-<env>`, predictable from `project_name`/
-`environment`).
 
-After `apply-dev`/`apply-prod` has run at least once (creating
-`aws_cloudfront_distribution.frontend`):
+**`API_URL`** — the backend API Gateway's invoke URL, baked into the
+frontend build as `VITE_API_BASE_URL` (see `frontend/src/api/client.js`)
+since Vite inlines `import.meta.env.VITE_*` at build time, not something
+the built SPA can read at runtime. Unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE`
+(one shared Auth0 tenant/API — the *same* value works for both
+Environments), dev and prod have genuinely different backend deployments,
+so this one has to be set separately per Environment and kept in sync
+after each apply that changes it.
+
+After `apply-dev`/`apply-prod` has run at least once:
 
 ```bash
 terraform output -raw frontend_cloudfront_distribution_id
+terraform output -raw backend_api_invoke_url
 ```
 
 Settings → Environments → `development` (then again for `production`) →
-*Environment variables* → *New variable* → name `CLOUDFRONT_DISTRIBUTION_ID`,
-paste the value **from that environment's own apply** — dev and prod are
-separate Terraform states (see the `-backend-config="key=..."` split
-above), so separate distributions with different IDs; don't reuse one
-environment's value for the other.
+*Environment variables* → *New variable*:
+
+- `CLOUDFRONT_DISTRIBUTION_ID` = the first command's output
+- `API_URL` = the second command's output
+
+Both **from that environment's own apply** — dev and prod are separate
+Terraform states (see the `-backend-config="key=..."` split above), so
+separate distributions/API Gateways with different values; don't reuse
+one environment's value for the other. Re-run both commands and update
+the Environment variables again any time either resource is recreated
+(a distribution/API Gateway replacement, not just a routine `apply` with
+no changes to either).
 
 ## Cost estimation (Infracost)
 
