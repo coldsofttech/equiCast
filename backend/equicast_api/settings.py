@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "accounts",
     "pies",
     "watchlists",
+    "holdings",
 ]
 
 MIDDLEWARE = [
@@ -114,17 +115,22 @@ AUTH0_DOMAIN = os.environ.get("AUTH0_DOMAIN")
 AUTH0_AUDIENCE = os.environ.get("AUTH0_AUDIENCE")
 USER_PROFILES_TABLE = os.environ.get("USER_PROFILES_TABLE")
 
-# Bucket for user-owned JSON data (accounts, pies, watchlists, and future
-# domains like portfolios) — see infra/main.tf's user_data_bucket module. No
-# default, same "fail loudly" reasoning as MARKET_DATA_BUCKET.
+# Bucket for user-owned JSON data (accounts, pies, watchlists, holdings, and
+# future domains like transactions) — see infra/main.tf's user_data_bucket
+# module. No default, same "fail loudly" reasoning as MARKET_DATA_BUCKET.
 USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")
 
-# Product-defined per-user/per-account caps, overridable per environment via
-# GitHub Environment variables (see infra/variables.tf's max_accounts/
-# max_pies/max_watchlists and .github/workflows/terraform.yml) rather than a
-# code change — defaults here match equicast_core's own MAX_ACCOUNTS/
-# MAX_PIES/MAX_WATCHLISTS defaults, in case the env var is unset (e.g.
-# running locally).
+# Product-defined per-user/per-account/per-pie/per-watchlist caps,
+# overridable per environment via GitHub Environment variables (see
+# infra/variables.tf's max_accounts/max_pies/max_watchlists/
+# max_holdings_for_account/max_holdings_for_pie/max_holdings_for_watchlist
+# and .github/workflows/terraform.yml) rather than a code change — defaults
+# here match equicast_core's own MAX_ACCOUNTS/MAX_PIES/MAX_WATCHLISTS/
+# MAX_HOLDINGS_FOR_ACCOUNT/MAX_HOLDINGS_FOR_PIE/MAX_HOLDINGS_FOR_WATCHLIST
+# defaults, in case the env var is unset (e.g. running locally).
 MAX_ACCOUNTS = int(os.environ.get("MAX_ACCOUNTS", 5))
 MAX_PIES = int(os.environ.get("MAX_PIES", 20))
 MAX_WATCHLISTS = int(os.environ.get("MAX_WATCHLISTS", 5))
+MAX_HOLDINGS_FOR_ACCOUNT = int(os.environ.get("MAX_HOLDINGS_FOR_ACCOUNT", 100))
+MAX_HOLDINGS_FOR_PIE = int(os.environ.get("MAX_HOLDINGS_FOR_PIE", 50))
+MAX_HOLDINGS_FOR_WATCHLIST = int(os.environ.get("MAX_HOLDINGS_FOR_WATCHLIST", 20))

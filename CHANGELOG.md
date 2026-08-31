@@ -60,6 +60,104 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Phase D User-owned data (holdings): new `backend/holdings/` Django app
+  exposing Auth0-authenticated CRUD for a user's holdings, nested under
+  exactly one of an account, a pie, or a watchlist —
+  `GET`/`POST /api/holdings/` (`GET` takes at most one of `?account_id=`/
+  `?pie_id=`/`?watchlist_id=`), `GET`/`DELETE /api/holdings/<id>/` (no
+  `PATCH` — a holding's fields are immutable; to change one, delete and
+  re-add). Backed by a new `equicast_core.HoldingsClient`
+  (`packages/core/src/equicast_core/holdings.py`), same shape as
+  `PiesClient`/`WatchlistsClient` — one JSON object per user at
+  `holdings/<user_id>.json` (`{"holdings": [...]}`), S3 conditional writes,
+  conflict-retry loop. Each holding is `{id (uuid4), ticker, asset_class,
+  account_id, pie_id, watchlist_id, timestamp}`, with exactly one of the
+  three parent fields set and the other two `null` (a stable shape rather
+  than sometimes-absent keys). `ticker`/`asset_class` (`fx`/`stock`/`etf`)
+  must have market data in equicast-market-data-* — validated via
+  `MarketDataClient.get_profile`, the same client `market_data/views.py`'s
+  `ProfileView` uses — before a holding is allowed to exist; the frontend's
+  ticker search (a later phase) is expected to resolve `asset_class` for
+  the caller, the same way it already has to pick which asset class a
+  search result came from. A ticker can't repeat within the same parent
+  instance (`HoldingAlreadyExistsError`, `409`) but can freely repeat
+  across different parents/instances (two different pies, a pie and a
+  watchlist, ...). `account_id`/`watchlist_id` ownership is validated the
+  same way `pies/views.py` validates a pie's `account_id` — these are
+  free-form string fields on the holding record, not structurally scoped
+  to the caller, so `holdings/views.py` checks them against
+  `AccountsClient.list_accounts`/`WatchlistsClient.list_watchlists` before
+  creating.
+
+  Pie holdings are different: a pie represents a 100%-allocated slice of an
+  account, so each pie holding also carries `allocation_pct`, and the sum
+  across a pie's holdings must always be exactly 100% once it holds
+  anything (an empty pie is a valid, unconstrained state) — not just
+  capped, exact. A standalone single-item create/delete can't maintain
+  that invariant once a pie already holds something, so pie holdings never
+  go through the plain `POST`/`DELETE` above (both explicitly reject
+  `pie_id`, returning `400` and pointing at the endpoint below instead).
+  `PieHoldingsView` (new: `pies/views.py`,
+  `PUT /api/pies/<id>/holdings/`) is the only way to mutate a pie's
+  holdings — one batch request can add tickers (with their `allocation_pct`),
+  remove existing holdings by id, and reallocate existing holdings'
+  `allocation_pct`, all together. Backed by a new
+  `HoldingsClient.sync_pie_holdings`, which validates the *resulting* state
+  before writing anything — every `add` ticker has market data and isn't
+  already held in the pie (existing or duplicated within `add` itself),
+  every `remove`/`reallocate` id actually belongs to the pie
+  (`HoldingNotFoundError`, `400`), the resulting count stays under
+  `MAX_HOLDINGS_FOR_PIE` (`HoldingLimitExceededError`, `409`), and the
+  resulting non-empty holdings sum to exactly 100%
+  (`AllocationError`, `400`) — parsed via `Decimal` rather than `float` to
+  avoid reintroducing binary floating-point sum errors right before the
+  exactness check they exist to avoid. Any failure writes nothing; success
+  is one S3 conditional put, same conflict-retry pattern as everywhere else
+  in this domain.
+
+  `create_holding`/`sync_pie_holdings` enforce three separate per-parent
+  caps — `MAX_HOLDINGS_FOR_ACCOUNT` (100, direct account holdings only, not
+  pie-scoped ones), `MAX_HOLDINGS_FOR_PIE` (50), `MAX_HOLDINGS_FOR_WATCHLIST`
+  (20) — each configurable the same way `MAX_ACCOUNTS`/`MAX_PIES`/
+  `MAX_WATCHLISTS` are: env vars sourced from new
+  `infra/variables.tf` Terraform variables (`max_holdings_for_account`/
+  `max_holdings_for_pie`/`max_holdings_for_watchlist`), passed by
+  `.github/workflows/terraform.yml`'s `apply-dev`/`apply-prod`. New
+  Terraform: the backend Lambda's IAM policy gains a statement scoped to
+  `s3:GetObject`/`s3:PutObject` on `<user_data_bucket_arn>/holdings/*`
+  (mirroring the accounts/pies/watchlists statements, its own review), and
+  the existing `s3:ListBucket` statement's `s3:prefix` condition now also
+  covers `holdings/*`. No new bucket — reuses `user_data_bucket`.
+
+  Every other Phase D domain gained holdings-awareness: `pies/views.py`'s
+  `PieDetailView.get` now nests `holdings`; its `delete` gained the same
+  `409`-unless-`?force=true` guard `AccountDetailView.delete` already had
+  for pies, cascading into a new `HoldingsClient.delete_holdings_for_pies`
+  bulk method. `watchlists/views.py`'s `WatchlistDetailView.get`/`delete`
+  gained the identical treatment, via `delete_holdings_for_watchlist`.
+  `accounts/views.py`'s `AccountListView.get` (previously bare) and
+  `AccountDetailView.get` now both return each account with its `pies`
+  (each carrying its own `holdings`) and the account's own direct
+  `holdings` — still a constant number of S3 reads regardless of how many
+  accounts/pies/holdings exist, since `PiesClient`/`HoldingsClient` each
+  return their whole per-user JSON object in one read and the nesting is
+  grouped in memory (`accounts/views.py`'s new `_nest_pies_and_holdings`
+  helper). `AccountDetailView.delete`'s guard now also blocks on direct
+  account holdings (pie-nested holdings are already covered transitively
+  by the existing "has pies" check); its force path cascades through both,
+  via `delete_holdings_for_pies`/`delete_holdings_for_account`. As before,
+  this is a best-effort check-then-act guard, not a cross-object
+  transaction — matching every other guarantee in this domain.
+
+  `packages/core/tests/test_holdings.py` (32 tests) and
+  `backend/holdings/tests.py` cover the client and view layer, including
+  per-parent cap/uniqueness enforcement, the pie batch endpoint's
+  validation paths, and a concurrent-write-conflict regression test
+  mirroring `test_pies.py`'s; `backend/accounts/tests.py`,
+  `backend/pies/tests.py`, and `backend/watchlists/tests.py` gained
+  coverage for the new nesting/force-delete behavior.
+  `docs/local-setup.md`, `backend/README.md`, and `packages/core/README.md`
+  updated with the new endpoints/client.
 - Phase D User-owned data (watchlists): new `backend/watchlists/` Django app
   exposing Auth0-authenticated CRUD for a user's watchlists —
   `GET`/`POST /api/watchlists/`, `GET`/`PATCH`/`DELETE /api/watchlists/<id>/`.

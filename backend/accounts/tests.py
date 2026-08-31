@@ -40,20 +40,56 @@ class AccountListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("accounts.views._holdings_client")
+    @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_the_users_accounts(
-        self, mock_jwks_client, mock_decode, mock_client
+    def test_get_returns_the_users_accounts_bare_when_nothing_nested(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_accounts.return_value = [ACCOUNT]
+        mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.get(reverse("accounts-list"), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [ACCOUNT])
+        self.assertEqual(response.json(), [{**ACCOUNT, "pies": [], "holdings": []}])
         mock_client.list_accounts.assert_called_once_with("auth0|abc123")
+        mock_pies_client.list_pies.assert_called_once_with("auth0|abc123")
+        mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
+
+    @patch("accounts.views._holdings_client")
+    @patch("accounts.views._pies_client")
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_get_nests_pies_with_their_holdings_and_direct_account_holdings(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
+        pie_holding = {"id": "h-1", "ticker": "VOO", "pie_id": "pie-1", "account_id": None}
+        direct_holding = {"id": "h-2", "ticker": "AAPL", "pie_id": None, "account_id": "acc-1"}
+        mock_client.list_accounts.return_value = [ACCOUNT]
+        mock_pies_client.list_pies.return_value = [pie]
+        mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
+
+        response = self.client.get(reverse("accounts-list"), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {
+                    **ACCOUNT,
+                    "pies": [{**pie, "holdings": [pie_holding]}],
+                    "holdings": [direct_holding],
+                }
+            ],
+        )
 
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -125,24 +161,32 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_the_account_with_its_pies(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+    def test_get_returns_the_account_with_its_pies_and_holdings(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_account.return_value = ACCOUNT
         pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
+        pie_holding = {"id": "h-1", "ticker": "VOO", "pie_id": "pie-1", "account_id": None}
+        direct_holding = {"id": "h-2", "ticker": "AAPL", "pie_id": None, "account_id": "acc-1"}
         mock_pies_client.list_pies.return_value = [pie]
+        mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
 
         response = self.client.get(reverse("accounts-detail", args=["acc-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {**ACCOUNT, "pies": [pie]})
+        self.assertEqual(
+            response.json(),
+            {**ACCOUNT, "pies": [{**pie, "holdings": [pie_holding]}], "holdings": [direct_holding]},
+        )
         mock_client.get_account.assert_called_once_with("auth0|abc123", "acc-1")
         mock_pies_client.list_pies.assert_called_once_with("auth0|abc123", account_id="acc-1")
+        mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
 
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -194,32 +238,41 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_removes_the_account_when_it_has_no_pies(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+    def test_delete_removes_the_account_when_it_has_no_pies_or_holdings(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.delete(reverse("accounts-detail", args=["acc-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 204)
         mock_pies_client.list_pies.assert_called_once_with("auth0|abc123", account_id="acc-1")
+        mock_holdings_client.list_holdings.assert_called_once_with(
+            "auth0|abc123", account_id="acc-1"
+        )
         mock_pies_client.delete_pies_for_account.assert_not_called()
+        mock_holdings_client.delete_holdings_for_pies.assert_not_called()
+        mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
 
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_returns_409_when_account_has_pies_and_not_forced(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = [{"id": "pie-1", "account_id": "acc-1"}]
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.delete(reverse("accounts-detail", args=["acc-1"]), **AUTH_HEADER)
 
@@ -227,33 +280,59 @@ class AccountDetailViewTests(TestCase):
         mock_pies_client.delete_pies_for_account.assert_not_called()
         mock_client.delete_account.assert_not_called()
 
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_with_force_removes_pies_then_the_account(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+    def test_delete_returns_409_when_account_has_direct_holdings_and_not_forced(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "account_id": "acc-1"}]
+
+        response = self.client.delete(reverse("accounts-detail", args=["acc-1"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 409)
+        mock_holdings_client.delete_holdings_for_account.assert_not_called()
+        mock_client.delete_account.assert_not_called()
+
+    @patch("accounts.views._holdings_client")
+    @patch("accounts.views._pies_client")
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_with_force_removes_pies_and_their_holdings_then_the_account(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = [{"id": "pie-1", "account_id": "acc-1"}]
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.delete(
             f"{reverse('accounts-detail', args=['acc-1'])}?force=true", **AUTH_HEADER
         )
 
         self.assertEqual(response.status_code, 204)
+        mock_holdings_client.delete_holdings_for_pies.assert_called_once_with(
+            "auth0|abc123", ["pie-1"]
+        )
         mock_pies_client.delete_pies_for_account.assert_called_once_with("auth0|abc123", "acc-1")
+        mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
 
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_with_force_and_no_pies_skips_the_bulk_delete(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+    def test_delete_with_force_removes_direct_holdings_then_the_account(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "account_id": "acc-1"}]
 
         response = self.client.delete(
             f"{reverse('accounts-detail', args=['acc-1'])}?force=true", **AUTH_HEADER
@@ -261,17 +340,44 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 204)
         mock_pies_client.delete_pies_for_account.assert_not_called()
+        mock_holdings_client.delete_holdings_for_account.assert_called_once_with(
+            "auth0|abc123", "acc-1"
+        )
         mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
 
+    @patch("accounts.views._holdings_client")
+    @patch("accounts.views._pies_client")
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_with_force_and_nothing_nested_skips_the_bulk_deletes(
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
+
+        response = self.client.delete(
+            f"{reverse('accounts-detail', args=['acc-1'])}?force=true", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_pies_client.delete_pies_for_account.assert_not_called()
+        mock_holdings_client.delete_holdings_for_pies.assert_not_called()
+        mock_holdings_client.delete_holdings_for_account.assert_not_called()
+        mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
+
+    @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_returns_404_for_unknown_account(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
         mock_client.delete_account.side_effect = AccountNotFoundError("no such account")
 
         response = self.client.delete(reverse("accounts-detail", args=["missing"]), **AUTH_HEADER)

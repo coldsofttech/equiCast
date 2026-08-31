@@ -83,9 +83,7 @@ class MeViewTests(TestCase):
         response = self.client.get(reverse("me"), HTTP_AUTHORIZATION="Bearer validtoken")
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(), {"user_id": "auth0|abc123", "default_currency": "GBP"}
-        )
+        self.assertEqual(response.json(), {"user_id": "auth0|abc123", "default_currency": "GBP"})
         mock_client.get_or_create_profile.assert_called_once_with("auth0|abc123")
 
     @patch("identity.views._client")

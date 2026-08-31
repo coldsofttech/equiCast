@@ -1,6 +1,12 @@
 from django.conf import settings
 from equicast_core import (
     AccountsClient,
+    AllocationError,
+    HoldingAlreadyExistsError,
+    HoldingLimitExceededError,
+    HoldingNotFoundError,
+    HoldingsClient,
+    MarketDataClient,
     PieLimitExceededError,
     PieNotFoundError,
     PiesClient,
@@ -30,6 +36,21 @@ _client = PiesClient(
 _accounts_client = AccountsClient(
     settings.USER_DATA_BUCKET, region_name=settings.AWS_REGION, max_accounts=settings.MAX_ACCOUNTS
 )
+#: Needed to nest a pie's holdings under PieDetailView.get, guard/force-
+#: delete them under PieDetailView.delete, and back PieHoldingsView's
+#: add/remove/reallocate batch — holdings/views.py holds the client actually
+#: used for account-direct/watchlist holdings CRUD.
+_holdings_client = HoldingsClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_holdings_for_account=settings.MAX_HOLDINGS_FOR_ACCOUNT,
+    max_holdings_for_pie=settings.MAX_HOLDINGS_FOR_PIE,
+    max_holdings_for_watchlist=settings.MAX_HOLDINGS_FOR_WATCHLIST,
+)
+#: Validates an added holding's ticker actually has market data before it's
+#: allowed into a pie — same client market_data/views.py's ProfileView and
+#: holdings/views.py use.
+_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
 
 
 class PieListView(APIView):
@@ -76,7 +97,8 @@ class PieDetailView(APIView):
             pie = _client.get_pie(request.user.user_id, pie_id)
         except PieNotFoundError:
             return Response(status=404)
-        return Response(pie)
+        holdings = _holdings_client.list_holdings(request.user.user_id, pie_id=pie_id)
+        return Response({**pie, "holdings": holdings})
 
     def patch(self, request: Request, pie_id: str) -> Response:
         fields = {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
@@ -87,8 +109,71 @@ class PieDetailView(APIView):
         return Response(pie)
 
     def delete(self, request: Request, pie_id: str) -> Response:
+        force = request.query_params.get("force", "").lower() == "true"
+        holdings = _holdings_client.list_holdings(request.user.user_id, pie_id=pie_id)
+        if holdings and not force:
+            return Response(
+                {
+                    "detail": "Pie has holdings; remove them first, "
+                    "or retry with ?force=true to delete them along with the pie."
+                },
+                status=409,
+            )
+
         try:
+            if force and holdings:
+                _holdings_client.delete_holdings_for_pies(request.user.user_id, [pie_id])
             _client.delete_pie(request.user.user_id, pie_id)
         except PieNotFoundError:
             return Response(status=404)
         return Response(status=204)
+
+
+class PieHoldingsView(APIView):
+    """Adds/removes/reallocates a pie's holdings in one atomic batch — the
+    only way to mutate a pie's holdings, since a standalone single-item
+    create/delete can't keep a pie's allocation_pct summing to exactly
+    100%. See `HoldingsClient.sync_pie_holdings`."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def put(self, request: Request, pie_id: str) -> Response:
+        try:
+            pie = _client.get_pie(request.user.user_id, pie_id)
+        except PieNotFoundError:
+            return Response(status=404)
+
+        add = request.data.get("add", [])
+        remove = request.data.get("remove", [])
+        reallocate = request.data.get("reallocate", [])
+
+        for entry in add:
+            asset_class = entry.get("asset_class")
+            if asset_class not in {"fx", "stock", "etf"}:
+                return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+            ticker = str(entry.get("ticker", "")).upper()
+            entry["ticker"] = ticker
+            if _market_data_client.get_profile(asset_class, ticker) is None:
+                return Response({"detail": f"No {asset_class} data for '{ticker}'."}, status=400)
+
+        try:
+            holdings = _holdings_client.sync_pie_holdings(
+                request.user.user_id, pie_id, add=add, remove=remove, reallocate=reallocate
+            )
+        except HoldingNotFoundError:
+            return Response(
+                {"detail": "remove/reallocate referenced an unknown holding id."}, status=400
+            )
+        except HoldingAlreadyExistsError:
+            # Static, caller-agnostic message rather than str(exc) — same
+            # py/stack-trace-exposure reasoning as AccountListView.post's
+            # 409 (see accounts/views.py).
+            return Response({"detail": "Ticker is already held in this pie."}, status=409)
+        except HoldingLimitExceededError:
+            cap = _holdings_client.max_holdings_for_pie
+            return Response({"detail": f"Pie holding limit reached (max {cap})."}, status=409)
+        except AllocationError:
+            return Response({"detail": "Pie holdings must sum to exactly 100%."}, status=400)
+
+        return Response({**pie, "holdings": holdings})

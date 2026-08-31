@@ -25,13 +25,18 @@ still starts and `/api/market/...` is unaffected, but any request with an
 `/api/identity/me/` always returns `401`.
 
 Set `USER_DATA_BUCKET` (e.g. `equicast-user-data-dev`), plus the same Auth0
-settings above, to use `/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`.
+settings above, to use
+`/api/accounts/...`/`/api/pies/...`/`/api/watchlists/...`/`/api/holdings/...`.
 
 Set `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` (defaults `5`/`20`/`5`) to tune
 the accounts-per-user, pies-per-account, and watchlists-per-user caps without
 a code change — see `infra/variables.tf`'s `max_accounts`/`max_pies`/
 `max_watchlists`, set per-environment via the `development`/`production`
 GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables.
+Set `MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_PIE`/
+`MAX_HOLDINGS_FOR_WATCHLIST` (defaults `100`/`50`/`20`) the same way to tune
+the holdings-per-account/pie/watchlist caps — see `infra/variables.tf`'s
+`max_holdings_for_account`/`max_holdings_for_pie`/`max_holdings_for_watchlist`.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
@@ -44,25 +49,54 @@ GitHub Environments' `MAX_ACCOUNTS`/`MAX_PIES`/`MAX_WATCHLISTS` variables.
 - `POST /api/accounts/` — creates an account (`name`, `description`,
   `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
+  (each with its own nested `holdings`) and the account's own direct
+  `holdings`
 - `PATCH /api/accounts/<id>/` — partially updates an account
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
-  pies — pass `?force=true` to delete those pies along with the account
+  pies and/or direct holdings — pass `?force=true` to delete those along
+  with the account
 - `GET /api/pies/` — lists the caller's pies; optional `?account_id=` filter
 - `POST /api/pies/` — creates a pie under `account_id` (`name`,
   `description`, `account_id`); `400` if `account_id` isn't one of the
   caller's own accounts; `409` once that account has `MAX_PIES`
-- `GET /api/pies/<id>/` — a pie's details
+- `GET /api/pies/<id>/` — a pie's details plus its nested `holdings`
 - `PATCH /api/pies/<id>/` — partially updates a pie's `name`/`description`
   (`account_id` is immutable)
-- `DELETE /api/pies/<id>/` — deletes a pie
+- `DELETE /api/pies/<id>/` — deletes a pie; `409` if it still has holdings —
+  pass `?force=true` to delete those holdings along with the pie
+- `PUT /api/pies/<id>/holdings/` — the only way to add/remove/reallocate a
+  pie's holdings, since a standalone single-item write can't keep a pie's
+  allocations summing to exactly 100%; body is
+  `{"add": [{"ticker", "asset_class", "allocation_pct"}, ...], "remove":
+  [holding_id, ...], "reallocate": [{"id", "allocation_pct"}, ...]}`
+  (each key optional). Validated atomically — every `add` ticker must have
+  market data and not already be held in the pie, every `remove`/
+  `reallocate` id must belong to the pie, and the resulting holdings (once
+  non-empty) must sum to exactly 100%; any failure writes nothing.
 - `GET /api/watchlists/` — lists the caller's watchlists (user-level, not
   nested under an account)
 - `POST /api/watchlists/` — creates a watchlist (`name`, `description`);
   `409` once the caller has `MAX_WATCHLISTS`
-- `GET /api/watchlists/<id>/` — a watchlist's details
+- `GET /api/watchlists/<id>/` — a watchlist's details plus its nested
+  `holdings`
 - `PATCH /api/watchlists/<id>/` — partially updates a watchlist's
   `name`/`description`
-- `DELETE /api/watchlists/<id>/` — deletes a watchlist
+- `DELETE /api/watchlists/<id>/` — deletes a watchlist; `409` if it still has
+  holdings — pass `?force=true` to delete those holdings along with the
+  watchlist
+- `GET /api/holdings/` — lists the caller's holdings; at most one of
+  `?account_id=`/`?pie_id=`/`?watchlist_id=` may be given
+- `POST /api/holdings/` — creates a holding directly under `account_id` or
+  `watchlist_id` (`ticker`, `asset_class` — one of `fx`/`stock`/`etf` —
+  and exactly one of `account_id`/`watchlist_id`; pie-scoped holdings go
+  through `PUT /api/pies/<id>/holdings/` instead); `400` if the ticker has
+  no market data or the account/watchlist isn't the caller's own; `409` for
+  a duplicate ticker in that parent or once it's at its cap
+  (`MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_WATCHLIST`)
+- `GET /api/holdings/<id>/` — a holding's details
+- `DELETE /api/holdings/<id>/` — deletes an account-direct or watchlist
+  holding (`400` for a pie-scoped one — use the pie's batch endpoint
+  instead); no `PATCH` — a holding's fields are immutable
 
 ## Lambda packaging
 
