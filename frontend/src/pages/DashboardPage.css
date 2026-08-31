@@ -23,19 +23,3 @@
   color: var(--ec-danger);
   font-size: var(--ec-fs-13);
 }
-
-.ec-logout-btn {
-  height: 32px;
-  padding: 0 var(--ec-s-12);
-  border-radius: var(--ec-r-6);
-  border: 1px solid var(--ec-border-strong);
-  background: var(--ec-surface);
-  color: var(--ec-text);
-  font-weight: 600;
-  font-size: var(--ec-fs-13);
-  cursor: pointer;
-}
-
-.ec-logout-btn:hover {
-  background: var(--ec-surface-hover);
-}
