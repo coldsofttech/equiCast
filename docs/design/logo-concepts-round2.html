@@ -1,0 +1,289 @@
+<title>Logo System</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap">
+<style>
+  :root {
+    --chrome-bg: oklch(0.98 0.002 240);
+    --chrome-surface: oklch(1 0 0);
+    --chrome-border: oklch(0.9 0.004 240);
+    --chrome-text: oklch(0.2 0.006 240);
+    --chrome-text-muted: oklch(0.5 0.006 240);
+    --chrome-text-subtle: oklch(0.62 0.006 240);
+    --chrome-rule: oklch(0.4 0.01 240);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --chrome-bg: oklch(0.15 0.006 240);
+      --chrome-surface: oklch(0.19 0.008 240);
+      --chrome-border: oklch(0.28 0.01 240);
+      --chrome-text: oklch(0.95 0.004 240);
+      --chrome-text-muted: oklch(0.68 0.008 240);
+      --chrome-text-subtle: oklch(0.55 0.008 240);
+      --chrome-rule: oklch(0.75 0.008 240);
+    }
+  }
+  :root[data-theme="dark"] {
+    --chrome-bg: oklch(0.15 0.006 240);
+    --chrome-surface: oklch(0.19 0.008 240);
+    --chrome-border: oklch(0.28 0.01 240);
+    --chrome-text: oklch(0.95 0.004 240);
+    --chrome-text-muted: oklch(0.68 0.008 240);
+    --chrome-text-subtle: oklch(0.55 0.008 240);
+    --chrome-rule: oklch(0.75 0.008 240);
+  }
+
+  :root {
+    --lg-accent: #4B65D9;
+    --lg-secondary: #8B4EC4;
+    --lg-accent-dark: #7896FF;
+    --lg-secondary-dark: #B682ED;
+    --lg-text-light: #171B20;
+    --lg-muted-light: #5A5E65;
+    --lg-text-dark: #EFF2F5;
+    --lg-muted-dark: #9FA5AC;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--chrome-bg);
+    color: var(--chrome-text);
+    font-family: "IBM Plex Sans", -apple-system, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 56px 24px 80px; }
+  .kicker {
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 12px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--chrome-rule);
+  }
+  h1 {
+    font-family: "Archivo", sans-serif; font-weight: 800;
+    font-size: clamp(28px, 4vw, 40px); letter-spacing: -0.01em; margin: 10px 0 14px;
+    text-wrap: balance;
+  }
+  .lede { max-width: 68ch; font-size: 16px; color: var(--chrome-text-muted); }
+  .lede code {
+    font-family: "IBM Plex Mono", monospace; font-size: 0.9em;
+    background: var(--chrome-surface); border: 1px solid var(--chrome-border);
+    border-radius: 4px; padding: 1px 5px;
+  }
+
+  .variant-block {
+    margin-top: 52px; padding-top: 40px; border-top: 1px solid var(--chrome-border);
+  }
+  .variant-block:first-of-type { border-top: 0; }
+  .variant-head { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
+  .variant-letter {
+    font-family: "Archivo", sans-serif; font-weight: 800; font-size: 13px;
+    width: 26px; height: 26px; border-radius: 7px; display: inline-flex;
+    align-items: center; justify-content: center; color: #fff; flex-shrink: 0;
+    background: linear-gradient(135deg, var(--lg-accent), var(--lg-secondary));
+  }
+  h2 { font-family: "Archivo", sans-serif; font-weight: 700; font-size: 20px; margin: 0; }
+  .variant-note { max-width: 70ch; font-size: 14px; color: var(--chrome-text-muted); margin: 0 0 22px; }
+
+  .lockup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 22px; }
+  @media (max-width: 700px) { .lockup-grid { grid-template-columns: 1fr; } }
+  .lockup-panel {
+    border-radius: 12px; padding: 30px 32px; display: flex; align-items: center; gap: 16px;
+    min-height: 100px;
+  }
+  .lockup-panel.on-light { background: #ffffff; border: 1px solid var(--chrome-border); }
+  .lockup-panel.on-dark { background: #14161A; }
+  .lockup-text { display: flex; flex-direction: column; gap: 3px; }
+  .wordmark { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 500; font-size: 25px; letter-spacing: -0.01em; }
+  .wordmark b { font-weight: 800; }
+  .tagline { font-family: "Plus Jakarta Sans", sans-serif; font-weight: 500; font-size: 12.5px; letter-spacing: 0.01em; }
+
+  .scale-row { display: flex; align-items: flex-end; gap: 24px; flex-wrap: wrap; }
+  .scale-item { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .scale-item span {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--chrome-text-subtle);
+  }
+  .scale-item .swatch-bg {
+    background: #14161A; border-radius: 8px; padding: 10px; display: inline-flex;
+  }
+
+  footer {
+    margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--chrome-border);
+    font-size: 13.5px; color: var(--chrome-text-muted); max-width: 68ch;
+  }
+</style>
+
+<svg width="0" height="0" style="position:absolute">
+  <defs>
+    <linearGradient id="grad-light" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#4B65D9"/>
+      <stop offset="100%" stop-color="#8B4EC4"/>
+    </linearGradient>
+    <linearGradient id="grad-dark" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7896FF"/>
+      <stop offset="100%" stop-color="#B682ED"/>
+    </linearGradient>
+
+    <!-- Variant 1: ascending bars + broadcast ping -->
+    <symbol id="icon-v1" viewBox="0 0 24 24">
+      <rect x="4" y="15" width="3" height="6" rx="1" fill="#fff"/>
+      <rect x="9.5" y="10.5" width="3" height="10.5" rx="1" fill="#fff"/>
+      <rect x="15" y="6" width="3" height="15" rx="1" fill="#fff"/>
+      <circle cx="19.3" cy="5.2" r="1.1" fill="#fff"/>
+      <path d="M21 7A2.4 2.4 0 0 0 21 3.4" stroke="#fff" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+    </symbol>
+
+    <!-- Variant 2: ascending trend arrow + radiating signal arcs -->
+    <symbol id="icon-v2" viewBox="0 0 24 24">
+      <path d="M3 17 L9 11 L13 14 L20 5" stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M15 5.5 L20.5 4.3 L19.3 9.8" stroke="#fff" stroke-width="2.1" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M22.5 7.5 A3.2 3.2 0 0 0 22.5 1" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+      <path d="M21.3 5.8 A1.6 1.6 0 0 0 21.3 2.7" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+    </symbol>
+
+    <!-- Variant 3: open orbit ring ("C") + satellite -->
+    <symbol id="icon-v3" viewBox="0 0 24 24">
+      <circle cx="11.5" cy="12.5" r="7.2" fill="none" stroke="#fff" stroke-width="2.2"
+        stroke-linecap="round" pathLength="100" stroke-dasharray="76 24"/>
+      <path d="M17.6 8.3 Q19.4 7.3 20.3 5.3" stroke="#fff" stroke-width="1.1" fill="none" stroke-linecap="round" opacity="0.85"/>
+      <circle cx="20.7" cy="4.6" r="1.35" fill="#fff"/>
+    </symbol>
+  </defs>
+</svg>
+
+<div class="wrap">
+  <p class="kicker">equiCast — brand mark, round 2</p>
+  <h1>Three icon directions</h1>
+  <p class="lede">
+    Same badge system, same Palette&nbsp;A colors, same wordmark — only the glyph inside
+    changes. Tagline is locked: <b style="color:var(--chrome-text)">"Cast your equity
+    forward."</b> baked into every lockup below.
+  </p>
+
+  <!-- VARIANT 1 -->
+  <section class="variant-block">
+    <div class="variant-head">
+      <span class="variant-letter">1</span>
+      <h2>Bars &amp; Ping</h2>
+    </div>
+    <p class="variant-note">Literal bar chart, three ascending bars, with a small broadcast ping off the tallest one. Blocky, geometric — reads as "analytics dashboard."</p>
+    <div class="lockup-grid">
+      <div class="lockup-panel on-light">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+          <use href="#icon-v1" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-light)">equi<b style="color:var(--lg-accent)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-light)">Cast your equity forward.</div>
+        </div>
+      </div>
+      <div class="lockup-panel on-dark">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-dark)"/>
+          <use href="#icon-v1" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-dark)">equi<b style="color:var(--lg-accent-dark)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-dark)">Cast your equity forward.</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-row">
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="32" height="32"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v1" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>32px</span>
+      </div>
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="16" height="16"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v1" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>16px</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- VARIANT 2 -->
+  <section class="variant-block">
+    <div class="variant-head">
+      <span class="variant-letter">2</span>
+      <h2>Trend &amp; Signal</h2>
+    </div>
+    <p class="variant-note">A single ascending trend line ending in an arrowhead, with radiating signal arcs at the tip. Fluid, one continuous gesture — reads as "trajectory / momentum," more dynamic than Variant 1.</p>
+    <div class="lockup-grid">
+      <div class="lockup-panel on-light">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+          <use href="#icon-v2" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-light)">equi<b style="color:var(--lg-accent)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-light)">Cast your equity forward.</div>
+        </div>
+      </div>
+      <div class="lockup-panel on-dark">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-dark)"/>
+          <use href="#icon-v2" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-dark)">equi<b style="color:var(--lg-accent-dark)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-dark)">Cast your equity forward.</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-row">
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="32" height="32"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v2" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>32px</span>
+      </div>
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="16" height="16"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v2" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>16px</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- VARIANT 3 -->
+  <section class="variant-block">
+    <div class="variant-head">
+      <span class="variant-letter">3</span>
+      <h2>Orbit &amp; Satellite</h2>
+    </div>
+    <p class="variant-note">An open ring — half chart-orbit, half a soft "C" for Cast — with a small satellite escaping the gap. Abstract rather than literal, the most minimal of the three; no chart pictogram at all.</p>
+    <div class="lockup-grid">
+      <div class="lockup-panel on-light">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-light)"/>
+          <use href="#icon-v3" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-light)">equi<b style="color:var(--lg-accent)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-light)">Cast your equity forward.</div>
+        </div>
+      </div>
+      <div class="lockup-panel on-dark">
+        <svg viewBox="0 0 40 40" width="44" height="44">
+          <rect width="40" height="40" rx="11" fill="url(#grad-dark)"/>
+          <use href="#icon-v3" x="8" y="8" width="24" height="24"/>
+        </svg>
+        <div class="lockup-text">
+          <div class="wordmark" style="color:var(--lg-text-dark)">equi<b style="color:var(--lg-accent-dark)">Cast</b></div>
+          <div class="tagline" style="color:var(--lg-muted-dark)">Cast your equity forward.</div>
+        </div>
+      </div>
+    </div>
+    <div class="scale-row">
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="32" height="32"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v3" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>32px</span>
+      </div>
+      <div class="scale-item">
+        <div class="swatch-bg"><svg viewBox="0 0 40 40" width="16" height="16"><rect width="40" height="40" rx="11" fill="url(#grad-light)"/><use href="#icon-v3" x="8" y="8" width="24" height="24"/></svg></div>
+        <span>16px</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Pick one (or ask for tweaks — e.g. Variant 2's arrow angle, Variant 3's gap position).
+    Once locked, I'll produce the three self-contained export files
+    (<code>equicast-logo-light.svg</code>, <code>equicast-logo-dark.svg</code>,
+    <code>equicast-mark.svg</code>) plus the CSS/React component, and commit them.
+  </footer>
+</div>
