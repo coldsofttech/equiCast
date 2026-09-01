@@ -1,13 +1,14 @@
 import { useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { seededRandom } from "../../utils/deterministicRandom.js";
-import "./AccountPriceChart.css";
+import "./PriceChart.css";
 
 /**
  * Standard index benchmarks offered in the "Compare against" picker,
- * alongside this account's own portfolios (pies) — see `pies` prop. Purely
- * illustrative (see module docstring below): no real benchmark data is
- * fetched.
+ * alongside the other portfolios passed in via `pies` (an account's own
+ * pies, or a pie's sibling pies in the same account — see AccountDetailPage/
+ * PieDetailPage). Purely illustrative (see module docstring below): no
+ * real benchmark data is fetched.
  */
 const BENCHMARKS = [
   { id: "sp500", name: "S&P 500" },
@@ -96,15 +97,20 @@ const HEIGHT = 260;
 const PADDING = 24;
 
 /**
- * A hand-rolled SVG chart consolidating every holding under this account
- * (pies + direct) into one illustrative price trend — same "no API hits,
- * synthetic data" approach as SignInScreen's DemoChart, extended with an
- * Area chart type, the full 1D..MAX range set, and an optional "compare
- * against" overlay (another portfolio in this account, or a standard
- * index benchmark) — the overlay series is equally synthetic; wiring up
- * real comparisons is a later phase.
+ * A hand-rolled SVG chart consolidating every holding under `seedKey`'s
+ * subject (an account's pies + direct holdings, or one pie's own holdings)
+ * into one illustrative price trend — same "no API hits, synthetic data"
+ * approach as SignInScreen's DemoChart, extended with an Area chart type,
+ * the full 1D..MAX range set, and an optional "compare against" overlay
+ * (another portfolio, or a standard index benchmark) — the overlay series
+ * is equally synthetic; wiring up real comparisons is a later phase.
+ *
+ * `seedKey` must be unique per subject (e.g. `account:<id>` / `pie:<id>`)
+ * so different accounts/pies don't render the exact same illustrative
+ * shape. `subjectLabel` names that subject in the legend/caption/aria-label
+ * ("This account" vs "This portfolio").
  */
-function AccountPriceChart({ pies = [] }) {
+function PriceChart({ pies = [], seedKey, subjectLabel = "This account" }) {
   const [chartType, setChartType] = useState("candle");
   const [rangeId, setRangeId] = useState("1y");
   const [compareId, setCompareId] = useState("");
@@ -114,7 +120,7 @@ function AccountPriceChart({ pies = [] }) {
   const range = RANGES.find((r) => r.id === rangeId) ?? RANGES[0];
   const count = rangeBarCount(range);
 
-  const closes = useMemo(() => buildCloses(count, `account:${rangeId}`), [count, rangeId]);
+  const closes = useMemo(() => buildCloses(count, `${seedKey}:${rangeId}`), [count, seedKey, rangeId]);
   const bars = useMemo(() => buildBars(closes), [closes]);
   const labels = useMemo(() => trailingLabels(count, range), [count, range]);
 
@@ -233,7 +239,7 @@ function AccountPriceChart({ pies = [] }) {
       <div className="ec-pchart-legend">
         <span className="ec-pchart-legend-item">
           <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
-          This account
+          {subjectLabel}
           <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
             {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
           </span>
@@ -256,7 +262,7 @@ function AccountPriceChart({ pies = [] }) {
         onMouseMove={handleMove}
         onMouseLeave={() => setHoverIndex(null)}
         role="img"
-        aria-label={`Illustrative consolidated ${chartType} chart for this account's holdings`}
+        aria-label={`Illustrative consolidated ${chartType} chart for ${subjectLabel.toLowerCase()}'s holdings`}
       >
         {[0.25, 0.5, 0.75].map((frac) => (
           <line
@@ -316,11 +322,11 @@ function AccountPriceChart({ pies = [] }) {
 
       <p className="ec-chart-caption">
         Illustrative sample data, indexed to 100 at the start of the period — consolidates every
-        pie and direct holding under this account into one trend, not real prices. Comparison
+        holding under {subjectLabel.toLowerCase()} into one trend, not real prices. Comparison
         series are equally synthetic; real portfolio/benchmark comparisons are a later phase.
       </p>
     </Card>
   );
 }
 
-export default AccountPriceChart;
+export default PriceChart;

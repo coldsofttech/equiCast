@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
+import TickerSearchField from "./TickerSearchField.jsx";
 import "./AllocationEditor.css";
-
-const ASSET_CLASSES = ["stock", "etf", "fx"];
 
 let nextTempKey = 0;
 
@@ -19,34 +18,65 @@ function holdingsToRows(holdings) {
   }));
 }
 
-function blankRow() {
-  return {
-    key: `new-${nextTempKey++}`,
-    id: undefined,
-    ticker: "",
-    asset_class: "stock",
-    allocation_pct: "",
-    removed: false,
-  };
+/**
+ * A small ring showing progress toward 100% allocation — green at exactly
+ * 100%, red once over, amber otherwise. Visually clamped at a full circle
+ * past 100% (the color communicates "over", not an impossible >360° arc).
+ */
+function AllocationRing({ pct }) {
+  const clamped = Math.min(Math.max(pct, 0), 100);
+  const radius = 15;
+  const circumference = 2 * Math.PI * radius;
+  const dash = (clamped / 100) * circumference;
+  const tone =
+    pct > 100 ? "var(--ec-danger)" : pct === 100 ? "var(--ec-success)" : "var(--ec-warning)";
+
+  return (
+    <svg
+      width="36"
+      height="36"
+      viewBox="0 0 36 36"
+      className="ec-allocation-ring"
+      role="img"
+      aria-label={`${pct}% allocated${pct > 100 ? ", over 100%" : ""}`}
+    >
+      <circle cx="18" cy="18" r={radius} fill="none" stroke="var(--ec-surface-2)" strokeWidth="4" />
+      <circle
+        cx="18"
+        cy="18"
+        r={radius}
+        fill="none"
+        stroke={tone}
+        strokeWidth="4"
+        strokeDasharray={`${dash} ${circumference}`}
+        strokeLinecap="round"
+        transform="rotate(-90 18 18)"
+      />
+    </svg>
+  );
 }
 
 /**
  * The add/remove/reallocate batch editor for one pie's holdings — the
  * only way to mutate them (see backend/pies/views.py's PieHoldingsView.put
- * and equicast_core.holdings.sync_pie_holdings). Local `rows` state tracks
- * every existing holding plus any newly-added blank rows; `removed` marks
- * an existing row for the `remove` list rather than splicing it out
- * immediately, so its allocation still counts toward "what the total would
- * be if you saved this" — a freshly-added row IS spliced out on remove
- * since it was never real to begin with.
+ * and equicast_core.holdings.sync_pie_holdings). Ticker/asset_class are
+ * always picked via TickerSearchField (the real catalog search), never
+ * typed by hand — every row's ticker is fixed once added; only its
+ * allocation % stays editable. Local `rows` state tracks every existing
+ * holding plus any newly-added rows; `removed` marks an existing row for
+ * the `remove` list rather than splicing it out immediately, so its
+ * allocation still counts toward "what the total would be if you saved
+ * this" — a freshly-added row IS spliced out on remove since it was never
+ * real to begin with.
  *
  * `holdings` resets local edits whenever it changes (a fresh load, or the
- * parent replacing it with the server's post-save state) — mid-edit,
- * PieDetailPage only updates it on those two occasions, so this doesn't
- * clobber in-progress typing.
+ * caller replacing it with the server's post-save state) — mid-edit, the
+ * caller only updates it on those two occasions, so this doesn't clobber
+ * in-progress typing.
  */
 function AllocationEditor({ holdings, onSave, isSaving, error }) {
   const [rows, setRows] = useState(() => holdingsToRows(holdings));
+  const [duplicateError, setDuplicateError] = useState(null);
 
   useEffect(() => {
     setRows(holdingsToRows(holdings));
@@ -62,14 +92,33 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
         .filter((row) => row.id || !row.removed)
     );
 
-  const addRow = () => setRows((current) => [...current, blankRow()]);
-
   const activeRows = rows.filter((row) => !row.removed);
+
+  const handleTickerSelected = ({ ticker, asset_class }) => {
+    if (activeRows.some((row) => row.ticker === ticker)) {
+      setDuplicateError(`${ticker} is already in this pie.`);
+      return;
+    }
+    setDuplicateError(null);
+    setRows((current) => [
+      ...current,
+      {
+        key: `new-${nextTempKey++}`,
+        id: undefined,
+        ticker,
+        asset_class,
+        allocation_pct: "",
+        removed: false,
+      },
+    ]);
+  };
+
   const total = activeRows.reduce((sum, row) => sum + (parseFloat(row.allocation_pct) || 0), 0);
-  const totalTone = activeRows.length === 0 ? "neutral" : total === 100 ? "success" : "warning";
+  const totalTone =
+    activeRows.length === 0 ? "neutral" : total === 100 ? "success" : total > 100 ? "danger" : "warning";
 
   const hasInvalidRow = activeRows.some(
-    (row) => !row.ticker.trim() || !row.allocation_pct.trim() || Number(row.allocation_pct) <= 0
+    (row) => !row.allocation_pct.trim() || Number(row.allocation_pct) <= 0
   );
   const isDirty =
     rows.some((row) => row.removed && row.id) ||
@@ -84,7 +133,7 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
     const add = activeRows
       .filter((row) => !row.id)
       .map((row) => ({
-        ticker: row.ticker.trim().toUpperCase(),
+        ticker: row.ticker,
         asset_class: row.asset_class,
         allocation_pct: row.allocation_pct,
       }));
@@ -103,8 +152,16 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
     <div className="ec-allocation-editor">
       {error && <Alert tone="danger">{error}</Alert>}
 
+      <div className="ec-allocation-summary">
+        <AllocationRing pct={total} />
+        <div className="ec-allocation-summary-text">
+          <span className="ec-allocation-total-label">Total allocated</span>
+          <Badge tone={totalTone}>{total}%</Badge>
+        </div>
+      </div>
+
       {activeRows.length === 0 ? (
-        <p className="ec-allocation-empty">No holdings yet — add one below.</p>
+        <p className="ec-allocation-empty">No holdings yet — search below to add one.</p>
       ) : (
         <div className="ec-allocation-table">
           <div className="ec-allocation-row ec-allocation-header">
@@ -113,55 +170,33 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
             <span>Allocation %</span>
             <span />
           </div>
-          {rows
-            .filter((row) => !row.removed)
-            .map((row) => (
-              <div className="ec-allocation-row" key={row.key}>
-                <input
-                  className="ec-input"
-                  value={row.ticker}
-                  placeholder="AAPL"
-                  disabled={Boolean(row.id)}
-                  onChange={(event) => updateRow(row.key, "ticker", event.target.value)}
-                  aria-label="Ticker"
-                />
-                <select
-                  className="ec-select"
-                  value={row.asset_class}
-                  disabled={Boolean(row.id)}
-                  onChange={(event) => updateRow(row.key, "asset_class", event.target.value)}
-                  aria-label="Asset class"
-                >
-                  {ASSET_CLASSES.map((assetClass) => (
-                    <option key={assetClass} value={assetClass}>
-                      {assetClass}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="ec-input"
-                  value={row.allocation_pct}
-                  placeholder="0"
-                  inputMode="decimal"
-                  onChange={(event) => updateRow(row.key, "allocation_pct", event.target.value)}
-                  aria-label="Allocation percent"
-                />
-                <Button variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
-                  Remove
-                </Button>
-              </div>
-            ))}
+          {activeRows.map((row) => (
+            <div className="ec-allocation-row" key={row.key}>
+              <span className="ec-allocation-ticker">{row.ticker}</span>
+              <Badge tone="neutral">{row.asset_class}</Badge>
+              <input
+                className="ec-input"
+                value={row.allocation_pct}
+                placeholder="0"
+                inputMode="decimal"
+                onChange={(event) => updateRow(row.key, "allocation_pct", event.target.value)}
+                aria-label="Allocation percent"
+              />
+              <Button variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
+                Remove
+              </Button>
+            </div>
+          ))}
         </div>
       )}
 
-      <div className="ec-allocation-footer">
-        <Button variant="secondary" size="sm" onClick={addRow}>
-          Add holding
-        </Button>
-        <div className="ec-allocation-total">
-          <span>Total</span>
-          <Badge tone={totalTone}>{total}%</Badge>
-        </div>
+      <div className="ec-allocation-add">
+        {duplicateError && (
+          <p className="ec-ticker-search-error" role="alert">
+            {duplicateError}
+          </p>
+        )}
+        <TickerSearchField onSelect={handleTickerSelected} />
       </div>
 
       <div className="ec-form-actions">

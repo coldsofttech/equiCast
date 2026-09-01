@@ -71,3 +71,11 @@
 .ec-detail-delete-error {
   margin-top: var(--ec-s-16);
 }
+
+/** Spacing above a detail page's bottom-of-page sections (diversification
+ * charts, holdings heatmap, on both AccountDetailPage and PieDetailPage) —
+ * they follow a Drawer/Modal/ConfirmDialog-free content flow, so only
+ * margin-top is needed, not margin-bottom too. */
+.ec-detail-section {
+  margin-top: var(--ec-s-24);
+}

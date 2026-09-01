@@ -4,6 +4,30 @@
   gap: var(--ec-s-16);
 }
 
+.ec-allocation-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+}
+
+.ec-allocation-ring {
+  flex-shrink: 0;
+}
+
+.ec-allocation-summary-text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+}
+
+.ec-allocation-total-label {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+}
+
 .ec-allocation-empty {
   color: var(--ec-text-muted);
   font-size: var(--ec-fs-13);
@@ -28,17 +52,17 @@
   color: var(--ec-text-muted);
 }
 
-.ec-allocation-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+.ec-allocation-ticker {
+  font-family: var(--ec-font-mono);
+  font-weight: 700;
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text);
 }
 
-.ec-allocation-total {
+.ec-allocation-add {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: var(--ec-s-8);
-  font-size: var(--ec-fs-13);
-  color: var(--ec-text-muted);
-  font-variant-numeric: tabular-nums;
+  padding-top: var(--ec-s-8);
+  border-top: 1px dashed var(--ec-divider);
 }

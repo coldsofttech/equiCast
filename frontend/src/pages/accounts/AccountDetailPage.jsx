@@ -6,50 +6,20 @@ import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
-import Modal from "../../components/core/Modal.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import AccountForm from "./AccountForm.jsx";
-import AccountPriceChart from "./AccountPriceChart.jsx";
+import PriceChart from "./PriceChart.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
-import PieForm from "../pies/PieForm.jsx";
+import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import { useApi } from "../../api/useApi.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
-import { createPie, deletePie } from "../../api/pies.js";
+import { deletePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
+import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
 import "./AccountDetailPage.css";
-
-/**
- * Fully synthetic sector/industry breakdowns and a diversification score —
- * equiCast has no real sector/industry classification source yet (that
- * needs market-data enrichment beyond this phase), so these are fixed
- * placeholder samples rather than derived from this account's actual
- * holdings. See DiversificationChart's `caption` prop for the on-page
- * disclosure.
- */
-const SECTOR_DATA = [
-  { label: "Technology", pct: 34 },
-  { label: "Healthcare", pct: 18 },
-  { label: "Financials", pct: 14 },
-  { label: "Consumer Discretionary", pct: 12 },
-  { label: "Industrials", pct: 9 },
-  { label: "Energy", pct: 7 },
-  { label: "Other", pct: 6 },
-];
-const SECTOR_SCORE = 72;
-
-const INDUSTRY_DATA = [
-  { label: "Software", pct: 22 },
-  { label: "Semiconductors", pct: 16 },
-  { label: "Banks", pct: 13 },
-  { label: "Pharmaceuticals", pct: 12 },
-  { label: "E-commerce", pct: 10 },
-  { label: "Insurance", pct: 8 },
-  { label: "Utilities", pct: 7 },
-  { label: "Other", pct: 12 },
-];
 
 function AccountDetailPage() {
   const { accountId } = useParams();
@@ -68,9 +38,7 @@ function AccountDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
-  const [isPieModalOpen, setIsPieModalOpen] = useState(false);
-  const [isPieSaving, setIsPieSaving] = useState(false);
-  const [pieSaveError, setPieSaveError] = useState(null);
+  const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
 
   const [deletingPieId, setDeletingPieId] = useState(null);
   const [pieDeleteError, setPieDeleteError] = useState(null);
@@ -109,16 +77,15 @@ function AccountDetailPage() {
       .finally(() => setIsDeleting(false));
   };
 
-  const handleCreatePie = (values) => {
-    setIsPieSaving(true);
-    setPieSaveError(null);
-    createPie(api, { ...values, account_id: accountId })
-      .then((pie) => {
-        setAccount((current) => ({ ...current, pies: [...(current.pies ?? []), pie] }));
-        setIsPieModalOpen(false);
-      })
-      .catch((err) => setPieSaveError(err.message ?? "Couldn't create the pie."))
-      .finally(() => setIsPieSaving(false));
+  const handlePortfolioCreated = (pie) => {
+    setAccount((current) => ({ ...current, pies: [...(current.pies ?? []), pie] }));
+  };
+
+  const handlePortfolioHoldingsSaved = (updatedPie) => {
+    setAccount((current) => ({
+      ...current,
+      pies: current.pies.map((p) => (p.id === updatedPie.id ? updatedPie : p)),
+    }));
   };
 
   const handleDeletePie = (pie) => {
@@ -188,12 +155,13 @@ function AccountDetailPage() {
         <StatTile label="Profit / loss %" value="—" hint="Coming soon" />
       </div>
 
-      <AccountPriceChart pies={account.pies ?? []} />
+      <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />
 
       <div className="ec-section-head">
         <h2 className="ec-section-title">Portfolios</h2>
-        <Button variant="primary" size="sm" onClick={() => setIsPieModalOpen(true)}>
-          New pie
+        <Button variant="primary" size="sm" onClick={() => setIsCreatePortfolioOpen(true)}>
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+          Create portfolio
         </Button>
       </div>
 
@@ -204,8 +172,8 @@ function AccountDetailPage() {
           title="No portfolios yet"
           description="A pie holds a 100%-allocated slice of this account across one or more tickers."
           action={
-            <Button variant="primary" onClick={() => setIsPieModalOpen(true)}>
-              New pie
+            <Button variant="primary" onClick={() => setIsCreatePortfolioOpen(true)}>
+              Create portfolio
             </Button>
           }
         />
@@ -312,24 +280,13 @@ function AccountDetailPage() {
         />
       </Drawer>
 
-      <Modal
-        open={isPieModalOpen}
-        onClose={() => {
-          setIsPieModalOpen(false);
-          setPieSaveError(null);
-        }}
-        title="New pie"
-      >
-        <PieForm
-          onSubmit={handleCreatePie}
-          onCancel={() => {
-            setIsPieModalOpen(false);
-            setPieSaveError(null);
-          }}
-          isSubmitting={isPieSaving}
-          error={pieSaveError}
-        />
-      </Modal>
+      <CreatePortfolioDrawer
+        open={isCreatePortfolioOpen}
+        accountId={accountId}
+        onClose={() => setIsCreatePortfolioOpen(false)}
+        onCreated={handlePortfolioCreated}
+        onHoldingsSaved={handlePortfolioHoldingsSaved}
+      />
 
       <ConfirmDialog
         open={isDeleteOpen}

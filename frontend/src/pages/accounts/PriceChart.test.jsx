@@ -1,15 +1,15 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import AccountPriceChart from "./AccountPriceChart.jsx";
+import PriceChart from "./PriceChart.jsx";
 
 const PIES = [
   { id: "p-1", name: "Growth" },
   { id: "p-2", name: "Income" },
 ];
 
-describe("AccountPriceChart", () => {
+describe("PriceChart", () => {
   it("renders with Candles and 1Y active by default", () => {
-    render(<AccountPriceChart pies={PIES} />);
+    render(<PriceChart pies={PIES} seedKey="account:test" />);
 
     expect(screen.getByRole("button", { name: "Candles" })).toHaveClass("is-active");
     expect(screen.getByRole("button", { name: "1Y" })).toHaveClass("is-active");
@@ -17,7 +17,7 @@ describe("AccountPriceChart", () => {
   });
 
   it("switches chart type on click", () => {
-    render(<AccountPriceChart pies={PIES} />);
+    render(<PriceChart pies={PIES} seedKey="account:test" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Area" }));
 
@@ -28,7 +28,7 @@ describe("AccountPriceChart", () => {
   it.each(["1D", "5D", "1M", "6M", "YTD", "2Y", "3Y", "5Y", "10Y", "MAX"])(
     "switches to the %s range without crashing",
     (label) => {
-      render(<AccountPriceChart pies={PIES} />);
+      render(<PriceChart pies={PIES} seedKey="account:test" />);
 
       fireEvent.click(screen.getByRole("button", { name: label }));
 
@@ -37,7 +37,7 @@ describe("AccountPriceChart", () => {
   );
 
   it("lists this account's other portfolios and benchmarks in the compare picker", () => {
-    render(<AccountPriceChart pies={PIES} />);
+    render(<PriceChart pies={PIES} seedKey="account:test" />);
 
     const select = screen.getByLabelText("Compare against");
     const optionLabels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
@@ -48,7 +48,7 @@ describe("AccountPriceChart", () => {
   });
 
   it("shows a compare legend entry once a benchmark is selected", () => {
-    render(<AccountPriceChart pies={PIES} />);
+    render(<PriceChart pies={PIES} seedKey="account:test" />);
 
     fireEvent.change(screen.getByLabelText("Compare against"), {
       target: { value: "benchmark:sp500" },
@@ -59,7 +59,7 @@ describe("AccountPriceChart", () => {
   });
 
   it("works with no portfolios to compare against", () => {
-    render(<AccountPriceChart pies={[]} />);
+    render(<PriceChart pies={[]} seedKey="account:test" />);
 
     const select = screen.getByLabelText("Compare against");
     const optionLabels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);

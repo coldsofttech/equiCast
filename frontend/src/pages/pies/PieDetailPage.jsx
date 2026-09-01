@@ -4,20 +4,35 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import Card from "../../components/core/Card.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
-import Modal from "../../components/core/Modal.jsx";
+import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
+import StatTile from "../../components/core/StatTile.jsx";
 import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
+import PriceChart from "../accounts/PriceChart.jsx";
+import DiversificationChart from "../accounts/DiversificationChart.jsx";
+import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
-import { deletePie, getPie, syncPieHoldings, updatePie } from "../../api/pies.js";
+import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
+import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
 
+/**
+ * One portfolio's own overview page — same shape as AccountDetailPage
+ * (placeholder stats, a consolidated price chart, a holdings section,
+ * bottom-of-page diversification/heatmap), scoped to this pie's own
+ * holdings instead of the whole account's. The holdings section reuses
+ * AllocationEditor exactly as before (add/remove/reallocate — the only way
+ * to mutate a pie's holdings), now with ticker search + the allocation
+ * ring built in.
+ */
 function PieDetailPage() {
   const { accountId, pieId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
 
   const [pie, setPie] = useState(null);
+  const [siblingPies, setSiblingPies] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -40,6 +55,15 @@ function PieDetailPage() {
       .catch((err) => setLoadError(err.message ?? "Couldn't load this pie."))
       .finally(() => setIsLoading(false));
   }, [api, pieId]);
+
+  useEffect(() => {
+    // Non-critical for the page to function — if this fails, the price
+    // chart's compare picker just offers benchmarks only, so no error
+    // state is surfaced for it.
+    listPies(api, { accountId })
+      .then((pies) => setSiblingPies(pies.filter((p) => p.id !== pieId)))
+      .catch(() => {});
+  }, [api, accountId, pieId]);
 
   const handleUpdate = (values) => {
     setIsSaving(true);
@@ -87,6 +111,8 @@ function PieDetailPage() {
     );
   }
 
+  const tickers = (pie.holdings ?? []).map((h) => h.ticker);
+
   return (
     <AppShell
       menuItems={MENU_ITEMS}
@@ -107,6 +133,18 @@ function PieDetailPage() {
         </>
       }
     >
+      <div className="ec-stat-grid">
+        <StatTile label="Total invested" value="—" hint="Coming soon" />
+        <StatTile label="Profit / loss" value="—" hint="Coming soon" />
+        <StatTile label="Profit / loss %" value="—" hint="Coming soon" />
+      </div>
+
+      <PriceChart pies={siblingPies} seedKey={`pie:${pieId}`} subjectLabel="This portfolio" />
+
+      <div className="ec-section-head">
+        <h2 className="ec-section-title">Holdings</h2>
+      </div>
+
       <Card>
         <AllocationEditor
           holdings={pie.holdings ?? []}
@@ -116,7 +154,22 @@ function PieDetailPage() {
         />
       </Card>
 
-      <Modal
+      <DiversificationChart
+        title="Sector diversification"
+        score={SECTOR_SCORE}
+        data={SECTOR_DATA}
+        caption="Illustrative sample data — sector classification isn't wired up to real holdings yet."
+      />
+
+      <DiversificationChart
+        title="Industry diversification"
+        data={INDUSTRY_DATA}
+        caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
+      />
+
+      <HoldingsHeatmap tickers={tickers} />
+
+      <Drawer
         open={isEditOpen}
         onClose={() => {
           setIsEditOpen(false);
@@ -134,7 +187,7 @@ function PieDetailPage() {
           isSubmitting={isSaving}
           error={saveError}
         />
-      </Modal>
+      </Drawer>
 
       <ConfirmDialog
         open={isDeleteOpen}
