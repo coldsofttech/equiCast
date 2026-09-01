@@ -50,3 +50,29 @@
   gap: var(--ec-s-8);
   flex-shrink: 0;
 }
+
+.ec-page-with-sidebar {
+  display: flex;
+  gap: var(--ec-s-24);
+  align-items: flex-start;
+}
+
+.ec-page-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.ec-page-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .ec-page-with-sidebar {
+    flex-direction: column;
+  }
+
+  .ec-page-sidebar {
+    width: 100%;
+  }
+}

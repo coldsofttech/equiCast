@@ -18,16 +18,18 @@
 /**
  * GET /api/market/search/?q=... — see backend/market_data/views.py's
  * SearchView. Ticker/name search across the published catalog (stock/etf/
- * fx), used by TickerSearchField to let a caller pick a real ticker rather
- * than typing one blind. Triggered explicitly (Enter/a Search click), not
- * on every keystroke — see TickerSearchField.jsx.
+ * fx). Used by TickerSearchField (a portfolio/account holdings picker,
+ * triggered explicitly on Enter/a Search click, not on every keystroke —
+ * see TickerSearchField.jsx) and by SearchPage (the full results page,
+ * with `assetClass`/`page` for its Type filter and "Load more").
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ pageSize?: number }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number }} [options]
  * @returns {Promise<SearchResponse>}
  */
-export function searchTickers(api, query, { pageSize = 10 } = {}) {
-  const params = new URLSearchParams({ q: query, page_size: String(pageSize) });
+export function searchTickers(api, query, { assetClass, page = 1, pageSize = 10 } = {}) {
+  const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) });
+  if (assetClass) params.set("asset_class", assetClass);
   return /** @type {Promise<SearchResponse>} */ (api(`/market/search/?${params.toString()}`));
 }

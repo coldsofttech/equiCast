@@ -10,8 +10,11 @@ import "./AppShell.css";
  * `footer` is optional, rendered full-width below `<main>` (outside its
  * padding) rather than as part of `children` — DashboardPage uses it for
  * SiteFooter, matching the login page's footer/disclaimer edge-to-edge.
+ * `sidebar` is also optional — when given, `children` renders beside it
+ * (SearchPage uses it for its filter pane) instead of taking the full
+ * page width.
  */
-function AppShell({ menuItems, eyebrow, title, subtitle, actions, children, footer }) {
+function AppShell({ menuItems, eyebrow, title, subtitle, actions, children, footer, sidebar }) {
   return (
     <div className="ec-app">
       <Topbar />
@@ -25,7 +28,14 @@ function AppShell({ menuItems, eyebrow, title, subtitle, actions, children, foot
           </div>
           {actions && <div className="ec-page-actions">{actions}</div>}
         </div>
-        {children}
+        {sidebar ? (
+          <div className="ec-page-with-sidebar">
+            <aside className="ec-page-sidebar">{sidebar}</aside>
+            <div className="ec-page-content">{children}</div>
+          </div>
+        ) : (
+          children
+        )}
       </main>
       {footer}
     </div>
