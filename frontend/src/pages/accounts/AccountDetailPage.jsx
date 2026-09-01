@@ -7,6 +7,7 @@ import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Modal from "../../components/core/Modal.jsx";
+import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import AccountForm from "./AccountForm.jsx";
 import PieForm from "../pies/PieForm.jsx";
@@ -197,7 +198,7 @@ function AccountDetailPage() {
         </div>
       )}
 
-      <Modal
+      <Drawer
         open={isEditOpen}
         onClose={() => {
           setIsEditOpen(false);
@@ -215,7 +216,7 @@ function AccountDetailPage() {
           isSubmitting={isSaving}
           error={saveError}
         />
-      </Modal>
+      </Drawer>
 
       <Modal
         open={isPieModalOpen}

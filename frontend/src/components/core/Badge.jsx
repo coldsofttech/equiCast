@@ -7,9 +7,9 @@ import "./Badge.css";
  *
  * @param {{ tone?: "neutral" | "accent" | "success" | "warning" | "danger" | "info" | "purple" }} props
  */
-function Badge({ tone = "neutral", className, children }) {
+function Badge({ tone = "neutral", className, children, ...rest }) {
   return (
-    <span className={["ec-badge", `ec-badge-${tone}`, className].filter(Boolean).join(" ")}>
+    <span className={["ec-badge", `ec-badge-${tone}`, className].filter(Boolean).join(" ")} {...rest}>
       {children}
     </span>
   );

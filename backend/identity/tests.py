@@ -103,3 +103,72 @@ class MeViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["default_currency"], "EUR")
+
+    def test_patch_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.patch(
+            reverse("me"), data={"default_currency": "EUR"}, content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_default_currency(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_client.update_default_currency.return_value = {
+            "user_id": "auth0|abc123",
+            "default_currency": "EUR",
+        }
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"default_currency": "EUR"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"user_id": "auth0|abc123", "default_currency": "EUR"})
+        mock_client.update_default_currency.assert_called_once_with("auth0|abc123", "EUR")
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_rejects_missing_default_currency(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+
+        response = self.client.patch(
+            reverse("me"),
+            data={},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_client.update_default_currency.assert_not_called()
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_rejects_unsupported_currency(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"default_currency": "JPY"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_client.update_default_currency.assert_not_called()

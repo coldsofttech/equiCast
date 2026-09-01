@@ -2,17 +2,20 @@ import { useState } from "react";
 import { TextField, SelectField, TextAreaField } from "../../components/core/Field.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
+import ACCOUNT_TYPE_SUGGESTIONS from "../../config/accountTypes.json";
+import CURRENCIES from "../../config/currencies.json";
 
 /**
- * Shared create/edit body for AccountsListPage's "New account" modal and
- * AccountDetailPage's "Edit" modal. `account_type`/`currency` have no
+ * Shared create/edit body for AccountsListPage's "New account" drawer and
+ * AccountDetailPage's "Edit" drawer. `account_type`/`currency` have no
  * backend enum (see REQUIRED_CREATE_FIELDS in backend/accounts/views.py) —
  * free text with a `<datalist>` of common values rather than a closed
  * `<select>`, so a caller isn't blocked from an account type/currency this
- * list doesn't happen to include.
+ * list doesn't happen to include. The suggestion lists come from the same
+ * config/*.json files as the Settings default-currency picker (see
+ * SettingsModal.jsx), not a separate hardcoded array here.
  */
-const ACCOUNT_TYPE_SUGGESTIONS = ["ISA", "GIA", "SIPP", "LISA", "Trading"];
-const CURRENCY_SUGGESTIONS = ["GBP", "USD", "EUR", "JPY", "CHF"];
+const CURRENCY_SUGGESTIONS = CURRENCIES.map((currency) => currency.code);
 
 const EMPTY_VALUES = {
   name: "",

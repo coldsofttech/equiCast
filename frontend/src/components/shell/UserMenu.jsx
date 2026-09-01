@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
+import SettingsModal from "./SettingsModal.jsx";
 import "./UserMenu.css";
 
 function initialsFor(name, email) {
@@ -13,14 +15,23 @@ function initialsFor(name, email) {
 /**
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
- * `user` — no extra API round trip) and the sign-out action. Only rendered
- * inside AppShell, which only mounts once RequireAuth has already
- * confirmed `isAuthenticated`, so `user` is always populated here.
+ * `user` — no extra API round trip), "Accounts" (MenuBar has no direct
+ * item for it — see menuItems.js), "Settings" (opens SettingsModal), and
+ * the sign-out action. Only rendered inside AppShell, which only mounts
+ * once RequireAuth has already confirmed `isAuthenticated`, so `user` is
+ * always populated here.
+ *
+ * `profile`/`onProfileUpdate` are passed down from Topbar's own
+ * useCurrentUser() call (rather than this component fetching its own copy)
+ * so a currency change made here is reflected immediately in Topbar's
+ * currency badge too.
  */
-function UserMenu() {
+function UserMenu({ profile, onProfileUpdate }) {
   const { user, logout } = useAuth0();
+  const navigate = useNavigate();
   const [isOpen, setIsOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const rootRef = useRef(null);
 
   useEffect(() => {
@@ -101,13 +112,45 @@ function UserMenu() {
           <button
             type="button"
             role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              navigate("/accounts");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-wallet2" aria-hidden="true" />
+            Accounts
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              setIsSettingsOpen(true);
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-gear" aria-hidden="true" />
+            Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
             className="ec-usermenu-item ec-usermenu-item--danger"
             onClick={handleSignOut}
           >
+            <i className="bi bi-box-arrow-right" aria-hidden="true" />
             Log out
           </button>
         </div>
       ) : null}
+
+      <SettingsModal
+        open={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        profile={profile}
+        onSaved={onProfileUpdate}
+      />
     </div>
   );
 }

@@ -8,7 +8,7 @@ import { getMe } from "./identity.js";
  * Authorization header -> Auth0JWTAuthentication -> DynamoDB
  * get_or_create_profile -> JSON back into React state.
  *
- * @returns {{ profile: import("./identity.js").UserProfile | null, isLoading: boolean, error: string | null }}
+ * @returns {{ profile: import("./identity.js").UserProfile | null, isLoading: boolean, error: string | null, setProfile: (profile: import("./identity.js").UserProfile) => void }}
  */
 export function useCurrentUser() {
   const api = useApi();
@@ -37,5 +37,5 @@ export function useCurrentUser() {
     };
   }, [api]);
 
-  return { profile, isLoading, error };
+  return { profile, isLoading, error, setProfile };
 }

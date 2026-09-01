@@ -1,4 +1,6 @@
+@import "bootstrap-icons/font/bootstrap-icons.css";
 @import "./styles/tokens.css";
 @import "./styles/base.css";
 @import "./styles/forms.css";
 @import "./styles/cardGrid.css";
+@import "./styles/table.css";

@@ -15,9 +15,13 @@
 }
 
 .ec-topbar-currency {
+  gap: var(--ec-s-4);
   font-family: var(--ec-font-mono);
   font-size: var(--ec-fs-13);
-  font-weight: 600;
-  color: var(--ec-text-muted);
   margin-right: var(--ec-s-4);
+  cursor: default;
+}
+
+.ec-topbar-currency i {
+  font-size: var(--ec-fs-13);
 }

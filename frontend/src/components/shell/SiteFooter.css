@@ -1,0 +1,42 @@
+/* ----- Footer ----- */
+.ec-landing-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-12);
+  padding: var(--ec-s-20) var(--ec-s-32);
+  border-top: 1px solid var(--ec-divider);
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-12);
+}
+
+/* ----- Disclaimer ----- */
+.ec-disclaimer {
+  padding: var(--ec-s-24) var(--ec-s-32);
+  box-sizing: border-box;
+  text-align: right;
+}
+
+.ec-disclaimer p {
+  margin: 0;
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-12);
+  line-height: 1.5;
+}
+
+.ec-disclaimer p + p {
+  margin-top: var(--ec-s-12);
+}
+
+.ec-disclaimer p:first-child {
+  color: var(--ec-text-muted);
+  font-weight: 600;
+}
+
+@media (max-width: 520px) {
+  .ec-landing-foot,
+  .ec-disclaimer {
+    padding-left: var(--ec-s-16);
+    padding-right: var(--ec-s-16);
+  }
+}

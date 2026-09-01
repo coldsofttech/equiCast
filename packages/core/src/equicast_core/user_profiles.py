@@ -59,3 +59,18 @@ class UserProfileClient:
         except self._table.meta.client.exceptions.ConditionalCheckFailedException:
             return self._table.get_item(Key={"user_id": user_id})["Item"]
         return item
+
+    def update_default_currency(self, user_id: str, default_currency: str) -> dict[str, Any]:
+        """Set `user_id`'s default_currency, creating their profile first
+        (get_or_create_profile) if this is called before their first login.
+
+        Returns the full updated item (ReturnValues=ALL_NEW) rather than a
+        synthesized dict, in case the profile ever grows other fields."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET default_currency = :c",
+            ExpressionAttributeValues={":c": default_currency},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])
