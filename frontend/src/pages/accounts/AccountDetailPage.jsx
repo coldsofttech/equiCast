@@ -9,13 +9,47 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import Modal from "../../components/core/Modal.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
+import StatTile from "../../components/core/StatTile.jsx";
 import AccountForm from "./AccountForm.jsx";
+import AccountPriceChart from "./AccountPriceChart.jsx";
+import DiversificationChart from "./DiversificationChart.jsx";
+import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import PieForm from "../pies/PieForm.jsx";
 import { useApi } from "../../api/useApi.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createPie, deletePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import "./AccountDetailPage.css";
+
+/**
+ * Fully synthetic sector/industry breakdowns and a diversification score —
+ * equiCast has no real sector/industry classification source yet (that
+ * needs market-data enrichment beyond this phase), so these are fixed
+ * placeholder samples rather than derived from this account's actual
+ * holdings. See DiversificationChart's `caption` prop for the on-page
+ * disclosure.
+ */
+const SECTOR_DATA = [
+  { label: "Technology", pct: 34 },
+  { label: "Healthcare", pct: 18 },
+  { label: "Financials", pct: 14 },
+  { label: "Consumer Discretionary", pct: 12 },
+  { label: "Industrials", pct: 9 },
+  { label: "Energy", pct: 7 },
+  { label: "Other", pct: 6 },
+];
+const SECTOR_SCORE = 72;
+
+const INDUSTRY_DATA = [
+  { label: "Software", pct: 22 },
+  { label: "Semiconductors", pct: 16 },
+  { label: "Banks", pct: 13 },
+  { label: "Pharmaceuticals", pct: 12 },
+  { label: "E-commerce", pct: 10 },
+  { label: "Insurance", pct: 8 },
+  { label: "Utilities", pct: 7 },
+  { label: "Other", pct: 12 },
+];
 
 function AccountDetailPage() {
   const { accountId } = useParams();
@@ -117,6 +151,11 @@ function AccountDetailPage() {
   }
 
   const pieBeingDeleted = account.pies?.find((p) => p.id === deletingPieId);
+  const directHoldings = account.holdings ?? [];
+  const allTickers = [
+    ...directHoldings.map((h) => h.ticker),
+    ...(account.pies ?? []).flatMap((p) => (p.holdings ?? []).map((h) => h.ticker)),
+  ];
 
   return (
     <AppShell
@@ -143,8 +182,16 @@ function AccountDetailPage() {
         </Badge>
       </div>
 
+      <div className="ec-stat-grid">
+        <StatTile label="Total invested" value="—" hint="Coming soon" />
+        <StatTile label="Profit / loss" value="—" hint="Coming soon" />
+        <StatTile label="Profit / loss %" value="—" hint="Coming soon" />
+      </div>
+
+      <AccountPriceChart pies={account.pies ?? []} />
+
       <div className="ec-section-head">
-        <h2 className="ec-section-title">Pies</h2>
+        <h2 className="ec-section-title">Portfolios</h2>
         <Button variant="primary" size="sm" onClick={() => setIsPieModalOpen(true)}>
           New pie
         </Button>
@@ -154,7 +201,7 @@ function AccountDetailPage() {
 
       {(account.pies ?? []).length === 0 ? (
         <EmptyState
-          title="No pies yet"
+          title="No portfolios yet"
           description="A pie holds a 100%-allocated slice of this account across one or more tickers."
           action={
             <Button variant="primary" onClick={() => setIsPieModalOpen(true)}>
@@ -197,6 +244,53 @@ function AccountDetailPage() {
           ))}
         </div>
       )}
+
+      <div className="ec-section-head">
+        <h2 className="ec-section-title">Holdings</h2>
+      </div>
+
+      {directHoldings.length === 0 ? (
+        <EmptyState
+          title="No direct holdings"
+          description="Holdings added straight to this account (not inside a pie) will show up here."
+        />
+      ) : (
+        <div className="ec-table-wrap">
+          <table className="ec-table">
+            <thead>
+              <tr>
+                <th>Ticker</th>
+                <th>Asset class</th>
+              </tr>
+            </thead>
+            <tbody>
+              {directHoldings.map((holding) => (
+                <tr key={holding.id}>
+                  <td className="ec-table-name">{holding.ticker}</td>
+                  <td>
+                    <Badge tone="neutral">{holding.asset_class}</Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <DiversificationChart
+        title="Sector diversification"
+        score={SECTOR_SCORE}
+        data={SECTOR_DATA}
+        caption="Illustrative sample data — sector classification isn't wired up to real holdings yet."
+      />
+
+      <DiversificationChart
+        title="Industry diversification"
+        data={INDUSTRY_DATA}
+        caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
+      />
+
+      <HoldingsHeatmap tickers={allTickers} />
 
       <Drawer
         open={isEditOpen}

@@ -1,0 +1,29 @@
+.ec-heatmap {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-12);
+}
+
+.ec-heatmap-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: var(--ec-s-2);
+  aspect-ratio: 1.4;
+  border-radius: var(--ec-r-8);
+  padding: var(--ec-s-8);
+  box-sizing: border-box;
+}
+
+.ec-heatmap-ticker {
+  font-family: var(--ec-font-mono);
+  font-weight: 800;
+  font-size: var(--ec-fs-14);
+}
+
+.ec-heatmap-pct {
+  font-size: var(--ec-fs-12);
+  opacity: 0.85;
+}

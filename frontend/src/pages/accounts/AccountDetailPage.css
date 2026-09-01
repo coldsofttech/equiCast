@@ -3,3 +3,10 @@
   gap: var(--ec-s-8);
   margin-bottom: var(--ec-s-24);
 }
+
+/** Spacing above each of the bottom-of-page sections (diversification
+ * charts, holdings heatmap) — they follow a Drawer/Modal/ConfirmDialog-free
+ * content flow, so only margin-top is needed, not margin-bottom too. */
+.ec-detail-section {
+  margin-top: var(--ec-s-24);
+}

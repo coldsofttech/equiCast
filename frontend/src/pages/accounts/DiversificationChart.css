@@ -1,0 +1,87 @@
+.ec-divchart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-12);
+  margin-bottom: var(--ec-s-16);
+}
+
+.ec-divchart-title {
+  font-size: var(--ec-fs-16);
+  margin: 0;
+}
+
+.ec-divchart-bars {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+}
+
+.ec-divchart-row {
+  display: grid;
+  grid-template-columns: 140px 1fr 44px;
+  align-items: center;
+  gap: var(--ec-s-8);
+}
+
+.ec-divchart-label {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-divchart-track {
+  height: 10px;
+  border-radius: var(--ec-r-pill);
+  background: var(--ec-surface-2);
+  overflow: hidden;
+}
+
+.ec-divchart-fill {
+  height: 100%;
+  border-radius: var(--ec-r-pill);
+}
+
+.ec-divchart-fill--accent {
+  background: var(--ec-accent);
+}
+
+.ec-divchart-fill--purple {
+  background: var(--ec-purple);
+}
+
+.ec-divchart-fill--info {
+  background: var(--ec-info);
+}
+
+.ec-divchart-fill--success {
+  background: var(--ec-success);
+}
+
+.ec-divchart-fill--warning {
+  background: var(--ec-warning);
+}
+
+.ec-divchart-fill--danger {
+  background: var(--ec-danger);
+}
+
+.ec-divchart-fill--neutral {
+  background: var(--ec-text-subtle);
+}
+
+.ec-divchart-pct {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  font-weight: 700;
+  color: var(--ec-text);
+  text-align: right;
+}
+
+@media (max-width: 480px) {
+  .ec-divchart-row {
+    grid-template-columns: 96px 1fr 40px;
+  }
+}
