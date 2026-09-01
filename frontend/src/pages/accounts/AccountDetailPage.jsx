@@ -14,9 +14,11 @@ import PriceChart from "./PriceChart.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
+import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { deletePie } from "../../api/pies.js";
+import { createHolding, deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
 import "./AccountDetailPage.css";
@@ -42,6 +44,11 @@ function AccountDetailPage() {
 
   const [deletingPieId, setDeletingPieId] = useState(null);
   const [pieDeleteError, setPieDeleteError] = useState(null);
+
+  const [addHoldingError, setAddHoldingError] = useState(null);
+  const [deletingHoldingId, setDeletingHoldingId] = useState(null);
+  const [isDeletingHolding, setIsDeletingHolding] = useState(false);
+  const [deleteHoldingError, setDeleteHoldingError] = useState(null);
 
   const load = () => {
     setIsLoading(true);
@@ -101,6 +108,34 @@ function AccountDetailPage() {
       .catch((err) => setPieDeleteError(err.message ?? "Couldn't delete the pie."));
   };
 
+  const handleAddHolding = ({ ticker, asset_class }) => {
+    setAddHoldingError(null);
+    if ((account.holdings ?? []).some((h) => h.ticker === ticker)) {
+      setAddHoldingError(`${ticker} is already held directly in this account.`);
+      return;
+    }
+    createHolding(api, { ticker, asset_class, account_id: accountId })
+      .then((holding) => {
+        setAccount((current) => ({ ...current, holdings: [...(current.holdings ?? []), holding] }));
+      })
+      .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
+  };
+
+  const handleRemoveHolding = () => {
+    setIsDeletingHolding(true);
+    setDeleteHoldingError(null);
+    deleteHolding(api, deletingHoldingId)
+      .then(() => {
+        setAccount((current) => ({
+          ...current,
+          holdings: current.holdings.filter((h) => h.id !== deletingHoldingId),
+        }));
+        setDeletingHoldingId(null);
+      })
+      .catch((err) => setDeleteHoldingError(err.message ?? "Couldn't remove the holding."))
+      .finally(() => setIsDeletingHolding(false));
+  };
+
   if (isLoading) {
     return (
       <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Loading…">
@@ -118,6 +153,7 @@ function AccountDetailPage() {
   }
 
   const pieBeingDeleted = account.pies?.find((p) => p.id === deletingPieId);
+  const holdingBeingDeleted = account.holdings?.find((h) => h.id === deletingHoldingId);
   const directHoldings = account.holdings ?? [];
   const allTickers = [
     ...directHoldings.map((h) => h.ticker),
@@ -217,10 +253,12 @@ function AccountDetailPage() {
         <h2 className="ec-section-title">Holdings</h2>
       </div>
 
+      {addHoldingError && <Alert tone="danger">{addHoldingError}</Alert>}
+
       {directHoldings.length === 0 ? (
         <EmptyState
           title="No direct holdings"
-          description="Holdings added straight to this account (not inside a pie) will show up here."
+          description="Holdings added straight to this account (not inside a pie) will show up here — search below to add one."
         />
       ) : (
         <div className="ec-table-wrap">
@@ -229,6 +267,7 @@ function AccountDetailPage() {
               <tr>
                 <th>Ticker</th>
                 <th>Asset class</th>
+                <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
@@ -238,12 +277,28 @@ function AccountDetailPage() {
                   <td>
                     <Badge tone="neutral">{holding.asset_class}</Badge>
                   </td>
+                  <td>
+                    <div className="ec-table-actions">
+                      <button
+                        type="button"
+                        className="ec-icon-btn ec-icon-btn--danger"
+                        aria-label={`Remove ${holding.ticker}`}
+                        onClick={() => setDeletingHoldingId(holding.id)}
+                      >
+                        <i className="bi bi-trash" aria-hidden="true" />
+                      </button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
+
+      <div className="ec-detail-section">
+        <TickerSearchField onSelect={handleAddHolding} />
+      </div>
 
       <DiversificationChart
         title="Sector diversification"
@@ -322,6 +377,24 @@ function AccountDetailPage() {
         onConfirm={() => pieBeingDeleted && handleDeletePie(pieBeingDeleted)}
         onCancel={() => setDeletingPieId(null)}
       />
+
+      <ConfirmDialog
+        open={Boolean(deletingHoldingId)}
+        title="Remove holding"
+        message={`This will remove ${holdingBeingDeleted?.ticker ?? "this holding"} from the account, along with any recorded transactions. This can't be undone.`}
+        confirmLabel="Remove holding"
+        isLoading={isDeletingHolding}
+        onConfirm={handleRemoveHolding}
+        onCancel={() => {
+          setDeletingHoldingId(null);
+          setDeleteHoldingError(null);
+        }}
+      />
+      {deleteHoldingError && (
+        <div className="ec-detail-delete-error">
+          <Alert tone="danger">{deleteHoldingError}</Alert>
+        </div>
+      )}
     </AppShell>
   );
 }
