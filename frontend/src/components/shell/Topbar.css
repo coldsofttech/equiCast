@@ -21,20 +21,3 @@
   color: var(--ec-text-muted);
   margin-right: var(--ec-s-4);
 }
-
-.ec-topbar-logout {
-  height: 32px;
-  padding: 0 var(--ec-s-12);
-  border-radius: var(--ec-r-6);
-  border: 1px solid var(--ec-border-strong);
-  background: var(--ec-surface);
-  color: var(--ec-text);
-  font-weight: 600;
-  font-size: var(--ec-fs-13);
-  cursor: pointer;
-  margin-left: var(--ec-s-4);
-}
-
-.ec-topbar-logout:hover {
-  background: var(--ec-surface-hover);
-}

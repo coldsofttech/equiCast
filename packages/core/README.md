@@ -39,6 +39,70 @@ than being swallowed.
 Only reads the **current** calendar year's `price.parquet` — no
 cross-year listing/concatenation of full history in this client yet.
 
+`get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
+third, separate piece of the market-data layout: `catalog/<asset_class>.json`
+— a small, pre-built `{ticker, name, type, current_price}` row per
+configured ticker, published by each ingestion pipeline after a run (see
+`equicast_core.catalog` below), not derived from `profile.parquet` on the
+fly. `search()` reads each scanned asset class's catalog once via
+`get_catalog()` and does a case-insensitive substring match against
+`ticker`/`name` in memory — no per-ticker S3 reads, and no live bucket
+listing:
+
+```python
+client.get_catalog("stock")
+# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}, ...]
+# or [] if this asset class has no catalog published yet
+
+client.search("v")
+# every fx/stock/etf catalog row whose ticker or name contains "v",
+# sorted by ticker — e.g. ticker "V" and any name containing a "v"
+client.search("v", asset_classes=["stock"])  # narrow the scan
+```
+
+`get_catalog()` returns `[]` (not an exception) if this asset class's
+pipeline hasn't published a catalog yet, the same "not configured" shape
+`get_prices()` uses. `search()`'s results are only as fresh as the last
+ingestion run that built the catalog — same staleness model as
+`get_profile()`/`get_prices()`, nothing here is live market data.
+
+## `equicast_core.catalog` — building the search catalog (ingestion side)
+
+The write side of the `catalog/<asset_class>.json` contract
+`MarketDataClient.get_catalog`/`.search` read. Deliberately generic across
+all three ingestion pipelines and asset-class-agnostic — every pipeline
+already writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
+local layout before uploading, so this only needs a local directory and an
+`asset_class` string, no per-pipeline config parsing:
+
+```python
+from pathlib import Path
+from equicast_core.catalog import build_catalog_rows, upload_catalog
+
+rows = build_catalog_rows(Path("output"), "stock")
+# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}, ...]
+# — ticker comes from the directory name (stock=AAPL/), not the profile
+# itself, so this works uniformly for fx profiles too, which carry no
+# literal "ticker"/"name" field (from_currency/to_currency/description
+# instead — see equicast_fx.writer)
+
+upload_catalog(bucket="equicast-market-data-dev", asset_class="stock", rows=rows)
+# replaces catalog/stock.json outright (a full rebuild, not a merge)
+```
+
+Also installs as a CLI, `equicast-core-build-catalog --asset-class stock
+--output-dir output --bucket equicast-market-data-dev`, which each
+ingestion workflow (`stock-ingestion.yml`/`etf-ingestion.yml`/
+`fx-ingestion.yml`) runs once per run, in a `build-catalog` job **after**
+every parallel ingest matrix leg finishes — a single leg only ever
+processes its own chunk of the full ticker list (GitHub Actions caps a
+matrix at 256 legs), so the catalog can't be built inside any one leg;
+`build-catalog` downloads every leg's `profile.parquet` files (published
+as a build artifact by each leg) merged into one local directory first.
+This needs no new S3 read permission for the ingestion role — it only
+ever reads the artifacts locally, then uploads the finished catalog with
+the same `s3:PutObject` access ingestion already had.
+
 ## `UserProfileClient` — DynamoDB user profiles
 
 Reads and upserts items in equicast's `user-profiles` DynamoDB table (one

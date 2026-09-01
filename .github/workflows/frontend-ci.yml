@@ -6,6 +6,11 @@ on:
     paths:
       - "frontend/**"
       - ".github/workflows/frontend-ci.yml"
+  # Lets a `main` run be triggered manually (Actions tab -> Run workflow,
+  # or `gh workflow run "Frontend CI" --ref main`) when a merge to `main`
+  # didn't touch frontend/** — e.g. an infra-only PR — so deploy.yml's
+  # workflow_run trigger still has something to chain off of.
+  workflow_dispatch:
   pull_request:
     paths:
       - "frontend/**"

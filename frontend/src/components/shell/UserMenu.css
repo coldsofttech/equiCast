@@ -1,0 +1,121 @@
+.ec-usermenu {
+  position: relative;
+}
+
+.ec-usermenu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-s-4);
+  height: 32px;
+  padding: 0 var(--ec-s-6) 0 0;
+  border-radius: var(--ec-r-pill);
+  border: 1px solid transparent;
+  background: none;
+  cursor: pointer;
+}
+
+.ec-usermenu-trigger:hover {
+  background: var(--ec-surface-hover);
+}
+
+.ec-usermenu-chevron {
+  color: var(--ec-text-subtle);
+}
+
+.ec-avatar {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: linear-gradient(135deg, var(--ec-accent), var(--ec-purple));
+  color: var(--ec-text-on-accent);
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+}
+
+.ec-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.ec-avatar--lg {
+  width: 40px;
+  height: 40px;
+  font-size: var(--ec-fs-14);
+}
+
+.ec-usermenu-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--ec-s-8));
+  right: 0;
+  min-width: 220px;
+  padding: var(--ec-s-6);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+  box-shadow: var(--ec-shadow-lg);
+}
+
+.ec-usermenu-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+  padding: var(--ec-s-8);
+  margin-bottom: var(--ec-s-4);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-usermenu-who {
+  min-width: 0;
+}
+
+.ec-usermenu-who strong {
+  display: block;
+  font-size: var(--ec-fs-14);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-usermenu-who small {
+  display: block;
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-12);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-usermenu-item {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 32px;
+  padding: 0 var(--ec-s-8);
+  border: 0;
+  border-radius: var(--ec-r-6);
+  background: none;
+  color: var(--ec-text);
+  font-weight: 600;
+  font-size: var(--ec-fs-13);
+  text-align: left;
+  cursor: pointer;
+}
+
+.ec-usermenu-item:hover {
+  background: var(--ec-surface-hover);
+}
+
+.ec-usermenu-item--danger {
+  color: var(--ec-danger-soft-text);
+}
+
+.ec-usermenu-item--danger:hover {
+  background: var(--ec-danger-soft);
+}

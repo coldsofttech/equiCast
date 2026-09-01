@@ -199,7 +199,7 @@ every 6 hours should land in the real bucket, not dev. The `environment`
 input only applies to manual `workflow_dispatch` runs, where it defaults to
 `dev` so an ad-hoc run doesn't write to production by accident.
 
-The workflow has two jobs:
+The workflow has three jobs:
 
 1. **plan** — runs `equicast-fx-plan` to split the configured pairs into
    chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). If
@@ -210,12 +210,22 @@ The workflow has two jobs:
    `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
-   `--pairs-json`, and uploads the resulting Parquet files to
-   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved).
+   `--pairs-json`, uploads the resulting Parquet files to
+   `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved),
+   and publishes just its `profile.parquet` files as a short-lived (1 day)
+   build artifact for the `build-catalog` job below.
    Each leg runs on its own GitHub-hosted runner (a separate source IP
    hitting Yahoo Finance), and each container also fetches its chunk's pairs
    (profile + prices + metrics) concurrently — so throughput scales both
    across and within legs.
+3. **build-catalog** — downloads and merges every leg's artifact from
+   **ingest** into one local directory (no single leg ever sees the full
+   pair list, so the catalog can't be built inside one), then runs
+   `equicast-core-build-catalog --asset-class fx` to rebuild
+   `catalog/fx.json` — the search catalog `MarketDataClient.search()`
+   reads (see [packages/core/README.md](../packages/core/README.md)).
+   Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
+   it reads the profiles from the downloaded artifacts, not back from S3.
 
 With today's 4 configured pairs this collapses to a single chunk/leg; at
 thousands of pairs it fans out automatically. A `full_load=true` run doesn't
@@ -227,6 +237,8 @@ always looks back as far as it needs, regardless of this flag).
 
 ```
 s3://equicast-market-data-<env>/
+├── catalog/
+│   └── fx.json
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet
