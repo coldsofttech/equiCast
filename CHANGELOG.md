@@ -19,6 +19,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
+  & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
+  `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default
+  in-memory token cache was wiped on every hard reload, so refreshing any
+  authenticated route (e.g. `/accounts`) bounced back to the sign-in screen
+  even with a still-valid Auth0 session. (2) `DashboardPage`'s empty-state
+  "Create an account" now opens the same `Drawer`+`AccountForm` right there
+  instead of navigating to `/accounts` and needing a second click. (3)
+  `AccountForm`'s description field is no longer marked `required` — the
+  backend (`REQUIRED_CREATE_FIELDS` in `backend/accounts/views.py`) already
+  allowed it blank. (4) `AccountForm` gains a `defaultCurrency` prop, seeded
+  from the caller's own `profile.default_currency`, so a new account's
+  currency field starts pre-filled with the user's own default instead of
+  blank (editing an existing account still uses its own currency). (5)
+  `Drawer.css`'s `max-width` is now `900px` (previously `440px`), applying
+  to every drawer in the app. (6) `ConfirmDialog` now renders via `Modal`
+  instead of `Drawer` — a delete confirmation is a single yes/no decision,
+  not a form, so it no longer shares the wide side-drawer used for
+  account/pie editing. (7) `AccountsListPage`'s top-of-page "New account"
+  button is now hidden once the list has loaded and is empty (kept during
+  the initial load to avoid a flash), leaving only the centered empty-state
+  button, which duplicated it.
+
+  Also added: `frontend/src/api/sessionCache.js` (thin sessionStorage
+  read/write/clear helpers, tolerant of storage being unavailable) backs a
+  reworked `useCurrentUser.js` and a new `useAccounts.js`, both of which now
+  cache their GET result (`GET /api/identity/me/`, `GET /api/accounts/`) in
+  `sessionStorage` and serve every later mount of the hook (Topbar,
+  AccountsListPage, DashboardPage, ... each calls independently) from that
+  cache instead of re-fetching; a module-level in-flight promise in each
+  hook also collapses simultaneous first-mounts (e.g. Topbar + a page both
+  mounting on first load) into a single request. `setProfile`/`setAccounts`
+  write straight back to the cache, so a save from `SettingsModal` or a
+  create/edit/delete from `AccountsListPage`/`DashboardPage` is what every
+  later mount sees. `AccountDetailPage`/`PieDetailPage` load their own copy
+  via `getAccount`/`getPie` rather than the shared list, so their own
+  mutations (edit account, delete account, create/delete pie, add/remove
+  holding, allocation sync) now also patch the cached accounts list
+  directly, keeping `/accounts`/`/dashboard` from showing stale data after a
+  visit to a detail page. Both caches are cleared on sign-out
+  (`UserMenu.jsx`'s `handleSignOut`) since `sessionStorage` survives the
+  Auth0 logout/login redirect round trip on the same tab — without this a
+  different account signing in on the same tab could briefly render the
+  previous user's cached profile/accounts.
 - `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
   `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
   existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With

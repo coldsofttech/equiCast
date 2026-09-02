@@ -1,13 +1,17 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/shell/AppShell.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import Button from "../components/core/Button.jsx";
 import Alert from "../components/core/Alert.jsx";
 import EmptyState from "../components/core/EmptyState.jsx";
+import Drawer from "../components/core/Drawer.jsx";
 import AccountCard from "./accounts/AccountCard.jsx";
+import AccountForm from "./accounts/AccountForm.jsx";
 import { useApi } from "../api/useApi.js";
-import { listAccounts } from "../api/accounts.js";
+import { useCurrentUser } from "../api/useCurrentUser.js";
+import { useAccounts } from "../api/useAccounts.js";
+import { createAccount } from "../api/accounts.js";
 import { MENU_ITEMS } from "./menuItems.js";
 
 /**
@@ -15,36 +19,38 @@ import { MENU_ITEMS } from "./menuItems.js";
  * paths here — see DashboardPage's routing in App.jsx). An accounts
  * overview: every account as a card (AccountsListPage's own card, reused
  * via AccountCard so the two don't diverge), or a prompt to create one
- * when there aren't any yet. This page is read-only — clicking any card
- * (or "View all accounts") routes to the Accounts table, which owns
- * viewing/creating/editing/deleting a specific account.
+ * when there aren't any yet. This page is otherwise read-only — clicking
+ * any card (or "View all accounts") routes to the Accounts table, which
+ * owns viewing/editing/deleting a specific account — but the empty state's
+ * "Create an account" opens the same drawer AccountsListPage uses right
+ * here, instead of a redirect + a second button click over there.
  */
 function DashboardPage() {
   const api = useApi();
   const navigate = useNavigate();
+  const { profile } = useCurrentUser();
+  const { accounts, isLoading, error: loadError, setAccounts } = useAccounts();
 
-  const [accounts, setAccounts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
-    listAccounts(api)
-      .then((result) => {
-        if (!cancelled) setAccounts(result);
+  const closeCreate = () => {
+    setIsCreateOpen(false);
+    setSaveError(null);
+  };
+
+  const handleCreate = (values) => {
+    setIsSaving(true);
+    setSaveError(null);
+    createAccount(api, values)
+      .then((account) => {
+        setAccounts((current) => [...current, account]);
+        closeCreate();
       })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err.message ?? "Couldn't load your accounts.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
+      .catch((err) => setSaveError(err.message ?? "Couldn't create the account."))
+      .finally(() => setIsSaving(false));
+  };
 
   return (
     <AppShell
@@ -69,7 +75,7 @@ function DashboardPage() {
           title="No accounts yet"
           description="Create an account to start tracking pies and holdings against it."
           action={
-            <Button variant="primary" onClick={() => navigate("/accounts")}>
+            <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
               Create an account
             </Button>
           }
@@ -83,6 +89,16 @@ function DashboardPage() {
           ))}
         </div>
       )}
+
+      <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
+        <AccountForm
+          defaultCurrency={profile?.default_currency}
+          onSubmit={handleCreate}
+          onCancel={closeCreate}
+          isSubmitting={isSaving}
+          error={saveError}
+        />
+      </Drawer>
     </AppShell>
   );
 }
