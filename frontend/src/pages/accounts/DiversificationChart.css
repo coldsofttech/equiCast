@@ -1,3 +1,9 @@
+.ec-divchart-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: var(--ec-s-16);
+}
+
 .ec-divchart-head {
   display: flex;
   align-items: center;
@@ -22,6 +28,38 @@
   grid-template-columns: 140px 1fr 44px;
   align-items: center;
   gap: var(--ec-s-8);
+}
+
+button.ec-divchart-row {
+  width: 100%;
+  padding: var(--ec-s-4);
+  margin: calc(var(--ec-s-4) * -1);
+  border: 0;
+  border-radius: var(--ec-r-6);
+  background: none;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ec-divchart-row--clickable:hover {
+  background: var(--ec-surface-hover);
+}
+
+.ec-divchart-row--clickable.is-active {
+  background: var(--ec-accent-soft);
+}
+
+.ec-divchart-row--clickable.is-active .ec-divchart-label {
+  color: var(--ec-accent-soft-text);
+  font-weight: 600;
+}
+
+.ec-divchart-empty {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-subtle);
+  margin: 0;
 }
 
 .ec-divchart-label {

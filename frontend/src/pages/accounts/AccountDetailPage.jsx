@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
+import { seededRandom } from "../../utils/deterministicRandom.js";
 import AppShell from "../../components/shell/AppShell.jsx";
+import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
@@ -18,11 +20,31 @@ import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
-import { deletePie } from "../../api/pies.js";
 import { createHolding, deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
 import "./AccountDetailPage.css";
+
+function formatCurrency(value, currency) {
+  return new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency,
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+/**
+ * Synthetic current value / P&L for a pie's card row — equiCast doesn't
+ * compute real portfolio valuation yet (see this page's "Coming soon"
+ * StatTiles), so these are illustrative only, deterministic per pie id.
+ */
+function buildPieSample(pieId) {
+  const rand = seededRandom(`pie-value:${pieId}`);
+  const currentValue = 500 + rand() * 49500;
+  const plPct = (rand() - 0.45) * 40;
+  const plValue = (currentValue * plPct) / 100;
+  return { currentValue, plValue, plPct };
+}
 
 function AccountDetailPage() {
   const { accountId } = useParams();
@@ -34,6 +56,8 @@ function AccountDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  const [selectedSector, setSelectedSector] = useState(null);
+
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -44,9 +68,7 @@ function AccountDetailPage() {
 
   const [isCreatePortfolioOpen, setIsCreatePortfolioOpen] = useState(false);
 
-  const [deletingPieId, setDeletingPieId] = useState(null);
-  const [pieDeleteError, setPieDeleteError] = useState(null);
-
+  const [isAddHoldingOpen, setIsAddHoldingOpen] = useState(false);
   const [addHoldingError, setAddHoldingError] = useState(null);
   const [deletingHoldingId, setDeletingHoldingId] = useState(null);
   const [isDeletingHolding, setIsDeletingHolding] = useState(false);
@@ -118,20 +140,6 @@ function AccountDetailPage() {
     }));
   };
 
-  const handleDeletePie = (pie) => {
-    setPieDeleteError(null);
-    deletePie(api, pie.id, { force: (pie.holdings?.length ?? 0) > 0 })
-      .then(() => {
-        setAccount((current) => ({
-          ...current,
-          pies: current.pies.filter((p) => p.id !== pie.id),
-        }));
-        patchCachedAccount((a) => ({ ...a, pies: (a.pies ?? []).filter((p) => p.id !== pie.id) }));
-        setDeletingPieId(null);
-      })
-      .catch((err) => setPieDeleteError(err.message ?? "Couldn't delete the pie."));
-  };
-
   const handleAddHolding = ({ ticker, asset_class }) => {
     setAddHoldingError(null);
     if ((account.holdings ?? []).some((h) => h.ticker === ticker)) {
@@ -167,7 +175,7 @@ function AccountDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Loading…">
+      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Loading…" footer={<SiteFooter />}>
         <p className="ec-loading">Loading…</p>
       </AppShell>
     );
@@ -175,13 +183,12 @@ function AccountDetailPage() {
 
   if (loadError || !account) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Account">
+      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Account" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Account not found."}</Alert>
       </AppShell>
     );
   }
 
-  const pieBeingDeleted = account.pies?.find((p) => p.id === deletingPieId);
   const holdingBeingDeleted = account.holdings?.find((h) => h.id === deletingHoldingId);
   const directHoldings = account.holdings ?? [];
   const allTickers = [
@@ -205,6 +212,7 @@ function AccountDetailPage() {
           </Button>
         </>
       }
+      footer={<SiteFooter />}
     >
       <div className="ec-account-detail-badges">
         <Badge tone="accent">{account.account_type}</Badge>
@@ -222,127 +230,159 @@ function AccountDetailPage() {
 
       <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />
 
-      <div className="ec-section-head">
-        <h2 className="ec-section-title">Portfolios</h2>
-        <Button variant="primary" size="sm" onClick={() => setIsCreatePortfolioOpen(true)}>
-          <i className="bi bi-plus-lg" aria-hidden="true" />
-          Create portfolio
-        </Button>
-      </div>
-
-      {pieDeleteError && <Alert tone="danger">{pieDeleteError}</Alert>}
-
-      {(account.pies ?? []).length === 0 ? (
-        <EmptyState
-          title="No portfolios yet"
-          description="A pie holds a 100%-allocated slice of this account across one or more tickers."
-          action={
-            <Button variant="primary" onClick={() => setIsCreatePortfolioOpen(true)}>
+      <div className="ec-account-columns">
+        <div>
+          <div className="ec-section-head">
+            <h2 className="ec-section-title">Portfolios</h2>
+            <Button variant="primary" size="sm" onClick={() => setIsCreatePortfolioOpen(true)}>
+              <i className="bi bi-plus-lg" aria-hidden="true" />
               Create portfolio
             </Button>
-          }
-        />
-      ) : (
-        <div className="ec-account-grid">
-          {account.pies.map((pie) => (
-            <Card
-              key={pie.id}
-              className="ec-account-card"
-              role="button"
-              tabIndex={0}
-              onClick={() => navigate(`/accounts/${accountId}/pies/${pie.id}`)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  navigate(`/accounts/${accountId}/pies/${pie.id}`);
-                }
-              }}
-            >
-              <div className="ec-account-card-head">
-                <h3 className="ec-account-card-name">{pie.name}</h3>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    setDeletingPieId(pie.id);
-                  }}
-                >
-                  Delete
+          </div>
+
+          {(account.pies ?? []).length === 0 ? (
+            <EmptyState
+              title="No portfolios yet"
+              description="A pie holds a 100%-allocated slice of this account across one or more tickers."
+              action={
+                <Button variant="primary" onClick={() => setIsCreatePortfolioOpen(true)}>
+                  Create portfolio
                 </Button>
-              </div>
-              <p className="ec-account-card-desc">{pie.description}</p>
-              <span className="ec-account-card-count">{(pie.holdings ?? []).length} holdings</span>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      <div className="ec-section-head">
-        <h2 className="ec-section-title">Holdings</h2>
-      </div>
-
-      {addHoldingError && <Alert tone="danger">{addHoldingError}</Alert>}
-
-      {directHoldings.length === 0 ? (
-        <EmptyState
-          title="No direct holdings"
-          description="Holdings added straight to this account (not inside a pie) will show up here — search below to add one."
-        />
-      ) : (
-        <div className="ec-table-wrap">
-          <table className="ec-table">
-            <thead>
-              <tr>
-                <th>Ticker</th>
-                <th>Asset class</th>
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {directHoldings.map((holding) => (
-                <tr key={holding.id}>
-                  <td className="ec-table-name">{holding.ticker}</td>
-                  <td>
-                    <Badge tone="neutral">{holding.asset_class}</Badge>
-                  </td>
-                  <td>
-                    <div className="ec-table-actions">
-                      <button
-                        type="button"
-                        className="ec-icon-btn ec-icon-btn--danger"
-                        aria-label={`Remove ${holding.ticker}`}
-                        onClick={() => setDeletingHoldingId(holding.id)}
-                      >
-                        <i className="bi bi-trash" aria-hidden="true" />
-                      </button>
+              }
+            />
+          ) : (
+            <div className="ec-portfolio-list">
+              {account.pies.map((pie) => {
+                const sample = buildPieSample(pie.id);
+                const plTone = sample.plPct > 0.05 ? "is-up" : sample.plPct < -0.05 ? "is-down" : "is-flat";
+                const plSign = sample.plValue >= 0 ? "+" : "-";
+                return (
+                  <Card
+                    key={pie.id}
+                    className="ec-portfolio-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/accounts/${accountId}/pies/${pie.id}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(`/accounts/${accountId}/pies/${pie.id}`);
+                      }
+                    }}
+                  >
+                    <div className="ec-portfolio-row-main">
+                      <h3 className="ec-portfolio-row-name">{pie.name}</h3>
+                      <span className="ec-portfolio-row-count">{(pie.holdings ?? []).length} holdings</span>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div className="ec-portfolio-row-value">
+                      <span className="ec-portfolio-row-current">
+                        {formatCurrency(sample.currentValue, account.currency)}
+                      </span>
+                      <span className={`ec-portfolio-row-pl ${plTone}`}>
+                        {plSign}
+                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
+                        {Math.abs(sample.plPct).toFixed(1)}%)
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
         </div>
-      )}
 
-      <div className="ec-detail-section">
-        <TickerSearchField onSelect={handleAddHolding} />
+        <div>
+          <div className="ec-section-head">
+            <h2 className="ec-section-title">Holdings</h2>
+            <Button variant="primary" size="sm" onClick={() => setIsAddHoldingOpen(true)}>
+              <i className="bi bi-plus-lg" aria-hidden="true" />
+              Add holding
+            </Button>
+          </div>
+
+          {directHoldings.length === 0 ? (
+            <EmptyState
+              title="No direct holdings"
+              description="Holdings added straight to this account (not inside a pie) will show up here."
+              action={
+                <Button variant="primary" onClick={() => setIsAddHoldingOpen(true)}>
+                  Add holding
+                </Button>
+              }
+            />
+          ) : (
+            <div className="ec-table-wrap">
+              <table className="ec-table">
+                <thead>
+                  <tr>
+                    <th>Ticker</th>
+                    <th>Asset class</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {directHoldings.map((holding) => (
+                    <tr key={holding.id}>
+                      <td className="ec-table-name">{holding.ticker}</td>
+                      <td>
+                        <Badge tone="neutral">{holding.asset_class}</Badge>
+                      </td>
+                      <td>
+                        <div className="ec-table-actions">
+                          <button
+                            type="button"
+                            className="ec-icon-btn ec-icon-btn--danger"
+                            aria-label={`Remove ${holding.ticker}`}
+                            onClick={() => setDeletingHoldingId(holding.id)}
+                          >
+                            <i className="bi bi-trash" aria-hidden="true" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       </div>
 
-      <DiversificationChart
-        title="Sector diversification"
-        score={SECTOR_SCORE}
-        data={SECTOR_DATA}
-        caption="Illustrative sample data — sector classification isn't wired up to real holdings yet."
-      />
+      <div className="ec-divchart-grid">
+        <DiversificationChart
+          title="Sector diversification"
+          score={SECTOR_SCORE}
+          data={SECTOR_DATA}
+          caption="Illustrative sample data — sector classification isn't wired up to real holdings yet. Click a sector to filter industries below; click it again to show all."
+          activeLabel={selectedSector}
+          onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
+        />
 
-      <DiversificationChart
-        title="Industry diversification"
-        data={INDUSTRY_DATA}
-        caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
-      />
+        <DiversificationChart
+          title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
+          data={
+            selectedSector ? INDUSTRY_DATA.filter((i) => i.sector === selectedSector) : INDUSTRY_DATA
+          }
+          caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
+        />
+      </div>
 
       <HoldingsHeatmap tickers={allTickers} />
+
+      <Drawer
+        open={isAddHoldingOpen}
+        onClose={() => {
+          setIsAddHoldingOpen(false);
+          setAddHoldingError(null);
+        }}
+        title="Add holding"
+      >
+        <p className="ec-account-holding-hint">
+          Search for a ticker to add it directly to this account, outside of any pie.
+        </p>
+        {addHoldingError && <Alert tone="danger">{addHoldingError}</Alert>}
+        <TickerSearchField onSelect={handleAddHolding} />
+      </Drawer>
 
       <Drawer
         open={isEditOpen}
@@ -393,19 +433,6 @@ function AccountDetailPage() {
           <Alert tone="danger">{deleteError}</Alert>
         </div>
       )}
-
-      <ConfirmDialog
-        open={Boolean(deletingPieId)}
-        title="Delete pie"
-        message={
-          pieBeingDeleted && (pieBeingDeleted.holdings?.length ?? 0) > 0
-            ? "This pie still has holdings. Deleting it will also delete them, along with any recorded transactions. This can't be undone."
-            : "This will permanently delete the pie. This can't be undone."
-        }
-        confirmLabel="Delete pie"
-        onConfirm={() => pieBeingDeleted && handleDeletePie(pieBeingDeleted)}
-        onCancel={() => setDeletingPieId(null)}
-      />
 
       <ConfirmDialog
         open={Boolean(deletingHoldingId)}

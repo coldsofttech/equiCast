@@ -3,6 +3,7 @@ reads, DynamoDB user-profile storage, S3 JSON user-owned data)."""
 
 from equicast_core.accounts import (
     MAX_ACCOUNTS,
+    AccountAlreadyExistsError,
     AccountLimitExceededError,
     AccountNotFoundError,
     AccountsClient,
@@ -46,6 +47,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "MAX_ACCOUNTS",
+    "AccountAlreadyExistsError",
     "AccountLimitExceededError",
     "AccountNotFoundError",
     "AccountsClient",

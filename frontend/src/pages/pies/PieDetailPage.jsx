@@ -38,6 +38,8 @@ function PieDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
+  const [selectedSector, setSelectedSector] = useState(null);
+
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -183,18 +185,24 @@ function PieDetailPage() {
         />
       </Card>
 
-      <DiversificationChart
-        title="Sector diversification"
-        score={SECTOR_SCORE}
-        data={SECTOR_DATA}
-        caption="Illustrative sample data — sector classification isn't wired up to real holdings yet."
-      />
+      <div className="ec-divchart-grid">
+        <DiversificationChart
+          title="Sector diversification"
+          score={SECTOR_SCORE}
+          data={SECTOR_DATA}
+          caption="Illustrative sample data — sector classification isn't wired up to real holdings yet. Click a sector to filter industries below; click it again to show all."
+          activeLabel={selectedSector}
+          onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
+        />
 
-      <DiversificationChart
-        title="Industry diversification"
-        data={INDUSTRY_DATA}
-        caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
-      />
+        <DiversificationChart
+          title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
+          data={
+            selectedSector ? INDUSTRY_DATA.filter((i) => i.sector === selectedSector) : INDUSTRY_DATA
+          }
+          caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
+        />
+      </div>
 
       <HoldingsHeatmap tickers={tickers} />
 

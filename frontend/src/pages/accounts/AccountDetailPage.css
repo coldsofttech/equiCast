@@ -3,3 +3,96 @@
   gap: var(--ec-s-8);
   margin-bottom: var(--ec-s-24);
 }
+
+.ec-account-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: var(--ec-s-16) var(--ec-s-24);
+}
+
+.ec-account-holding-hint {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-muted);
+  margin: 0 0 var(--ec-s-16);
+}
+
+/** One row per pie in the Portfolios column — deliberately compact
+ * (name/count on the left, sample value/P&L on the right, delete icon
+ * trailing) so it reads at roughly the same height as a Holdings table row. */
+.ec-portfolio-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+}
+
+.ec-card.ec-portfolio-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-12);
+  padding: var(--ec-s-12) var(--ec-s-16);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ec-portfolio-row:hover {
+  border-color: var(--ec-border-strong);
+  box-shadow: var(--ec-shadow-sm);
+}
+
+.ec-portfolio-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+  min-width: 0;
+}
+
+.ec-portfolio-row-name {
+  font-size: var(--ec-fs-14);
+  font-weight: 600;
+  margin: 0;
+  color: var(--ec-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-portfolio-row-count {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-portfolio-row-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--ec-s-2);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.ec-portfolio-row-current {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-portfolio-row-pl {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ec-portfolio-row-pl.is-up {
+  color: var(--ec-success);
+}
+
+.ec-portfolio-row-pl.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-portfolio-row-pl.is-flat {
+  color: var(--ec-text-subtle);
+}

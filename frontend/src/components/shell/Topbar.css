@@ -1,4 +1,7 @@
 .ec-topbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
   height: var(--ec-topbar-h);
   display: flex;
   align-items: center;

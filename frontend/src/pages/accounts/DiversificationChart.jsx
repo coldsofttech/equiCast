@@ -16,8 +16,12 @@ function scoreInfoFor(score) {
  * (see SECTOR_DATA/INDUSTRY_DATA there) — equiCast has no real sector or
  * industry classification source yet; `caption` should say so. `score`
  * (0-100), when given, renders as a qualitative badge next to the title.
+ *
+ * Passing `onRowClick` makes rows clickable (used by the Sector chart to
+ * drill into the Industry chart) — `activeLabel` then highlights whichever
+ * row is currently selected. Neither prop is needed for a read-only chart.
  */
-function DiversificationChart({ title, caption, data, score }) {
+function DiversificationChart({ title, caption, data, score, onRowClick, activeLabel }) {
   const scoreInfo = typeof score === "number" ? scoreInfoFor(score) : null;
 
   return (
@@ -30,20 +34,42 @@ function DiversificationChart({ title, caption, data, score }) {
           </Badge>
         )}
       </div>
-      <div className="ec-divchart-bars">
-        {data.map((entry, i) => (
-          <div className="ec-divchart-row" key={entry.label}>
-            <span className="ec-divchart-label">{entry.label}</span>
-            <div className="ec-divchart-track">
-              <div
-                className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
-                style={{ width: `${entry.pct}%` }}
-              />
-            </div>
-            <span className="ec-divchart-pct">{entry.pct}%</span>
-          </div>
-        ))}
-      </div>
+      {data.length === 0 ? (
+        <p className="ec-divchart-empty">Nothing to show for this filter in the sample data.</p>
+      ) : (
+        <div className="ec-divchart-bars">
+          {data.map((entry, i) => {
+            const isActive = entry.label === activeLabel;
+            const row = (
+              <>
+                <span className="ec-divchart-label">{entry.label}</span>
+                <div className="ec-divchart-track">
+                  <div
+                    className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
+                    style={{ width: `${entry.pct}%` }}
+                  />
+                </div>
+                <span className="ec-divchart-pct">{entry.pct}%</span>
+              </>
+            );
+            return onRowClick ? (
+              <button
+                type="button"
+                key={entry.label}
+                className={`ec-divchart-row ec-divchart-row--clickable${isActive ? " is-active" : ""}`}
+                aria-pressed={isActive}
+                onClick={() => onRowClick(entry.label)}
+              >
+                {row}
+              </button>
+            ) : (
+              <div className="ec-divchart-row" key={entry.label}>
+                {row}
+              </div>
+            );
+          })}
+        </div>
+      )}
       {caption && <p className="ec-chart-caption">{caption}</p>}
     </Card>
   );
