@@ -1,0 +1,6 @@
+[
+  { "code": "GBP", "name": "British Pound" },
+  { "code": "USD", "name": "US Dollar" },
+  { "code": "INR", "name": "Indian Rupee" },
+  { "code": "EUR", "name": "Euro" }
+]

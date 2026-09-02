@@ -67,6 +67,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--config` now point at the `dev` file, since neither is used by the
   ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
   explicitly) — only by ad-hoc local runs, where dev is the safer default.
+- Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
+  & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
+  `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default
+  in-memory token cache was wiped on every hard reload, so refreshing any
+  authenticated route (e.g. `/accounts`) bounced back to the sign-in screen
+  even with a still-valid Auth0 session. (2) `DashboardPage`'s empty-state
+  "Create an account" now opens the same `Drawer`+`AccountForm` right there
+  instead of navigating to `/accounts` and needing a second click. (3)
+  `AccountForm`'s description field is no longer marked `required` — the
+  backend (`REQUIRED_CREATE_FIELDS` in `backend/accounts/views.py`) already
+  allowed it blank. (4) `AccountForm` gains a `defaultCurrency` prop, seeded
+  from the caller's own `profile.default_currency`, so a new account's
+  currency field starts pre-filled with the user's own default instead of
+  blank (editing an existing account still uses its own currency). (5)
+  `Drawer.css`'s `max-width` is now `900px` (previously `440px`), applying
+  to every drawer in the app. (6) `ConfirmDialog` now renders via `Modal`
+  instead of `Drawer` — a delete confirmation is a single yes/no decision,
+  not a form, so it no longer shares the wide side-drawer used for
+  account/pie editing. (7) `AccountsListPage`'s top-of-page "New account"
+  button is now hidden once the list has loaded and is empty (kept during
+  the initial load to avoid a flash), leaving only the centered empty-state
+  button, which duplicated it.
+
+  Also added: `frontend/src/api/sessionCache.js` (thin sessionStorage
+  read/write/clear helpers, tolerant of storage being unavailable) backs a
+  reworked `useCurrentUser.js` and a new `useAccounts.js`, both of which now
+  cache their GET result (`GET /api/identity/me/`, `GET /api/accounts/`) in
+  `sessionStorage` and serve every later mount of the hook (Topbar,
+  AccountsListPage, DashboardPage, ... each calls independently) from that
+  cache instead of re-fetching; a module-level in-flight promise in each
+  hook also collapses simultaneous first-mounts (e.g. Topbar + a page both
+  mounting on first load) into a single request. `setProfile`/`setAccounts`
+  write straight back to the cache, so a save from `SettingsModal` or a
+  create/edit/delete from `AccountsListPage`/`DashboardPage` is what every
+  later mount sees. `AccountDetailPage`/`PieDetailPage` load their own copy
+  via `getAccount`/`getPie` rather than the shared list, so their own
+  mutations (edit account, delete account, create/delete pie, allocation
+  sync) now also patch the cached accounts list directly, keeping
+  `/accounts`/`/dashboard` from showing stale data after a visit to a detail
+  page. Both caches are cleared on sign-out (`UserMenu.jsx`'s
+  `handleSignOut`) since `sessionStorage` survives the Auth0 logout/login
+  redirect round trip on the same tab — without this a different account
+  signing in on the same tab could briefly render the previous user's
+  cached profile/accounts.
 - `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
   `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
   existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With
@@ -147,6 +191,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend Phase 1 (Accounts & Pies): the first real domain pages, plus a
+  core component library scoped to what they need — `frontend/src/components/core/`
+  gains `Button`, `Card`, `Badge`, `Alert`, `Modal`/`ConfirmDialog`, the
+  `TextField`/`SelectField`/`TextAreaField` trio (`Field.jsx`), and
+  `EmptyState`, all built on the Phase 0 design tokens (no new colors or
+  spacing values introduced). New `frontend/src/api/accounts.js`/`pies.js`
+  wrap the backend's account/pie/pie-holdings endpoints
+  (`backend/accounts/views.py`, `backend/pies/views.py`). Routes:
+  `/accounts` (`AccountsListPage` — create/list, with `transaction_type`
+  as a first-class field), `/accounts/:accountId` (`AccountDetailPage` —
+  edit/delete the account, create/delete its pies, force-delete cascading
+  into pies/holdings/transactions the same way the backend does), and
+  `/accounts/:accountId/pies/:pieId` (`PieDetailPage` — edit/delete the
+  pie, plus `AllocationEditor`, the add/remove/reallocate batch editor for
+  `PUT /api/pies/<id>/holdings/`: local row state diffs against the
+  loaded holdings to build the minimal `{add, remove, reallocate}` body,
+  keeps `allocation_pct` as a string end-to-end so JS number handling
+  never touches a value the backend parses via `Decimal`, and disables
+  Save until the active rows sum to exactly 100%, mirroring
+  `equicast_core.holdings`'s own invariant). `MenuBar` gains an optional
+  per-item `to` — an item with one renders as a real `NavLink` (active by
+  URL prefix, so a pie's page still shows "Portfolio" active); items
+  without one keep Phase 0's local-only placeholder behavior
+  (Watchlists/Search). `/` now redirects to `/accounts` instead of
+  rendering the Phase 0 profile-card page, which is retired
+  (`DashboardPage.jsx`); its one real proof — the signed-in user's
+  `default_currency` from `useCurrentUser()` — and the log out button
+  both move into `Topbar`, visible on every authenticated page instead of
+  just one.
 - Frontend Phase 0 (design tokens + app shell): `frontend/src/styles/tokens.css`
   ports [Resource Planner](https://github.com/coldsofttech/resource-planner)'s
   OKLCH design tokens as `--ec-*` custom properties — same values (Palette A,

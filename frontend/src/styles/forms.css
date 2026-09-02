@@ -1,0 +1,22 @@
+/**
+ * Shared layout for every account/pie create-edit form (AccountForm,
+ * PieForm, AllocationEditor's add-row) — global rather than per-component
+ * since `.ec-form`/`.ec-form-actions` have no other styling dependencies
+ * worth scoping.
+ */
+.ec-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-16);
+}
+
+.ec-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--ec-s-8);
+}
+
+/** Shared across every account/pie page's loading state. */
+.ec-loading {
+  color: var(--ec-text-muted);
+}

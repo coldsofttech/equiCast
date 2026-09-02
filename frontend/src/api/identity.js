@@ -17,3 +17,19 @@
 export function getMe(api) {
   return /** @type {Promise<UserProfile>} */ (api("/identity/me/"));
 }
+
+/**
+ * PATCH /api/identity/me/ — see MeView.patch. `default_currency` must be
+ * one of the codes in frontend/src/config/currencies.json (kept in sync
+ * with the backend's own SUPPORTED_CURRENCIES; the frontend doesn't fetch
+ * this list from the API to avoid a round trip for four static values).
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} defaultCurrency
+ * @returns {Promise<UserProfile>}
+ */
+export function updateDefaultCurrency(api, defaultCurrency) {
+  return /** @type {Promise<UserProfile>} */ (
+    api("/identity/me/", { method: "PATCH", body: { default_currency: defaultCurrency } })
+  );
+}

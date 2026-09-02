@@ -95,6 +95,7 @@
 .ec-usermenu-item {
   display: flex;
   align-items: center;
+  gap: var(--ec-s-8);
   width: 100%;
   height: 32px;
   padding: 0 var(--ec-s-8);
@@ -106,6 +107,15 @@
   font-size: var(--ec-fs-13);
   text-align: left;
   cursor: pointer;
+}
+
+.ec-usermenu-item i {
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
+}
+
+.ec-usermenu-item--danger i {
+  color: inherit;
 }
 
 .ec-usermenu-item:hover {

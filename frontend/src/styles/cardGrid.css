@@ -1,0 +1,73 @@
+/**
+ * Shared clickable-card-grid layout: AccountsListPage's accounts and
+ * AccountDetailPage's pies both render as this same grid of cards, so it
+ * lives globally rather than being duplicated (or imported cross-page)
+ * per-component.
+ */
+.ec-account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: var(--ec-s-16);
+}
+
+.ec-account-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  cursor: pointer;
+  text-align: left;
+}
+
+.ec-account-card:hover {
+  border-color: var(--ec-border-strong);
+  box-shadow: var(--ec-shadow-sm);
+}
+
+.ec-account-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ec-s-8);
+}
+
+.ec-account-card-name {
+  font-size: var(--ec-fs-16);
+  margin: 0;
+}
+
+.ec-account-card-desc {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  margin: 0;
+}
+
+.ec-account-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-4);
+}
+
+.ec-account-card-count {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+  margin-left: auto;
+}
+
+/** Section heading + action button above a card grid (e.g. "Pies" + "New pie"). */
+.ec-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--ec-s-12);
+}
+
+.ec-section-title {
+  font-size: var(--ec-fs-16);
+  margin: 0;
+}
+
+/** Space above a delete-confirmation error banner rendered below its ConfirmDialog. */
+.ec-detail-delete-error {
+  margin-top: var(--ec-s-16);
+}
