@@ -14,12 +14,6 @@ import { auth0Audience, auth0ClientId, auth0Domain, isAuth0Configured } from "./
  * un-wrapped rather than handing Auth0Provider undefined domain/clientId —
  * RequireAuth's `!isAuth0Configured` branch handles telling the user why
  * nothing works instead.
- *
- * `cacheLocation="localstorage"` + `useRefreshTokens` keep the session alive
- * across a hard refresh — the SDK's default in-memory cache is wiped on
- * reload, so without this a refresh on any route (e.g. /accounts) bounced
- * straight back to the sign-in screen even though Auth0 still had a valid
- * session.
  */
 function Auth0ProviderWithNavigate({ children }) {
   const navigate = useNavigate();
@@ -40,8 +34,6 @@ function Auth0ProviderWithNavigate({ children }) {
         redirect_uri: window.location.origin,
         audience: auth0Audience,
       }}
-      cacheLocation="localstorage"
-      useRefreshTokens
       onRedirectCallback={onRedirectCallback}
     >
       {children}

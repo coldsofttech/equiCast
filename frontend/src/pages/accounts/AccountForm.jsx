@@ -14,10 +14,6 @@ import CURRENCIES from "../../config/currencies.json";
  * list doesn't happen to include. The suggestion lists come from the same
  * config/*.json files as the Settings default-currency picker (see
  * SettingsModal.jsx), not a separate hardcoded array here.
- *
- * `defaultCurrency` (the caller's own profile.default_currency, see
- * useCurrentUser) seeds the currency field for a brand new account; it's
- * overridden by `initialValues.currency` when editing an existing one.
  */
 const CURRENCY_SUGGESTIONS = CURRENCIES.map((currency) => currency.code);
 
@@ -29,12 +25,8 @@ const EMPTY_VALUES = {
   transaction_type: "AVERAGE",
 };
 
-function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSubmitting, error }) {
-  const [values, setValues] = useState({
-    ...EMPTY_VALUES,
-    currency: defaultCurrency ?? EMPTY_VALUES.currency,
-    ...initialValues,
-  });
+function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error }) {
+  const [values, setValues] = useState({ ...EMPTY_VALUES, ...initialValues });
 
   const setField = (field) => (event) =>
     setValues((current) => ({ ...current, [field]: event.target.value }));
@@ -57,6 +49,7 @@ function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSub
       <TextAreaField
         id="account-description"
         label="Description"
+        required
         value={values.description}
         onChange={setField("description")}
       />

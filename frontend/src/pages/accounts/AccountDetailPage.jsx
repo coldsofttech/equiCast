@@ -16,7 +16,6 @@ import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
-import { useAccounts } from "../../api/useAccounts.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { deletePie } from "../../api/pies.js";
 import { createHolding, deleteHolding } from "../../api/holdings.js";
@@ -28,7 +27,6 @@ function AccountDetailPage() {
   const { accountId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
 
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -63,25 +61,12 @@ function AccountDetailPage() {
 
   useEffect(load, [api, accountId]);
 
-  /**
-   * Applies the same update to the session-cached accounts list (see
-   * useAccounts.js) that AccountsListPage/DashboardPage read from — this
-   * page loads its own copy via getAccount rather than that shared list, so
-   * without this, a pie/holding/field change made here wouldn't show up
-   * over there until the cache expired (tab close) or someone edited that
-   * account directly from the table.
-   */
-  const patchCachedAccount = (updater) => {
-    setCachedAccounts((current) => current.map((a) => (a.id === accountId ? updater(a) : a)));
-  };
-
   const handleUpdate = (values) => {
     setIsSaving(true);
     setSaveError(null);
     updateAccount(api, accountId, values)
       .then((updated) => {
         setAccount((current) => ({ ...current, ...updated }));
-        patchCachedAccount((a) => ({ ...a, ...updated }));
         setIsEditOpen(false);
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't update the account."))
@@ -94,27 +79,19 @@ function AccountDetailPage() {
     setIsDeleting(true);
     setDeleteError(null);
     deleteAccount(api, accountId, { force: needsForce })
-      .then(() => {
-        setCachedAccounts((current) => current.filter((a) => a.id !== accountId));
-        navigate("/accounts");
-      })
+      .then(() => navigate("/accounts"))
       .catch((err) => setDeleteError(err.message ?? "Couldn't delete the account."))
       .finally(() => setIsDeleting(false));
   };
 
   const handlePortfolioCreated = (pie) => {
     setAccount((current) => ({ ...current, pies: [...(current.pies ?? []), pie] }));
-    patchCachedAccount((a) => ({ ...a, pies: [...(a.pies ?? []), pie] }));
   };
 
   const handlePortfolioHoldingsSaved = (updatedPie) => {
     setAccount((current) => ({
       ...current,
       pies: current.pies.map((p) => (p.id === updatedPie.id ? updatedPie : p)),
-    }));
-    patchCachedAccount((a) => ({
-      ...a,
-      pies: (a.pies ?? []).map((p) => (p.id === updatedPie.id ? updatedPie : p)),
     }));
   };
 
@@ -126,7 +103,6 @@ function AccountDetailPage() {
           ...current,
           pies: current.pies.filter((p) => p.id !== pie.id),
         }));
-        patchCachedAccount((a) => ({ ...a, pies: (a.pies ?? []).filter((p) => p.id !== pie.id) }));
         setDeletingPieId(null);
       })
       .catch((err) => setPieDeleteError(err.message ?? "Couldn't delete the pie."));
@@ -141,7 +117,6 @@ function AccountDetailPage() {
     createHolding(api, { ticker, asset_class, account_id: accountId })
       .then((holding) => {
         setAccount((current) => ({ ...current, holdings: [...(current.holdings ?? []), holding] }));
-        patchCachedAccount((a) => ({ ...a, holdings: [...(a.holdings ?? []), holding] }));
       })
       .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
   };
@@ -154,10 +129,6 @@ function AccountDetailPage() {
         setAccount((current) => ({
           ...current,
           holdings: current.holdings.filter((h) => h.id !== deletingHoldingId),
-        }));
-        patchCachedAccount((a) => ({
-          ...a,
-          holdings: (a.holdings ?? []).filter((h) => h.id !== deletingHoldingId),
         }));
         setDeletingHoldingId(null);
       })

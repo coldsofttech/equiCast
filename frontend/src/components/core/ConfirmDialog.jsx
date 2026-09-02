@@ -1,13 +1,13 @@
-import Modal from "./Modal.jsx";
+import Drawer from "./Drawer.jsx";
 import Button from "./Button.jsx";
 
 /**
  * Delete confirmations for accounts/pies — both support a `?force=true`
  * cascade when the target still has children, so `message` carries that
  * nuance in per-call text (see AccountDetailPage/PieDetailPage) rather
- * than this component guessing at it. Renders as a centered Modal (not
- * Drawer) — a confirmation is a single yes/no decision, not a form, so it
- * shouldn't share the wide side-drawer used for account/pie editing.
+ * than this component guessing at it. Renders as a Drawer (not Modal) so
+ * every delete confirmation in the app is consistent with the accounts
+ * table's own add/edit/delete drawers.
  */
 function ConfirmDialog({
   open,
@@ -19,7 +19,7 @@ function ConfirmDialog({
   onCancel,
 }) {
   return (
-    <Modal
+    <Drawer
       open={open}
       onClose={onCancel}
       title={title}
@@ -35,7 +35,7 @@ function ConfirmDialog({
       }
     >
       <p>{message}</p>
-    </Modal>
+    </Drawer>
   );
 }
 

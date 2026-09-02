@@ -11,7 +11,7 @@
   background: var(--ec-bg-elev);
   box-shadow: var(--ec-shadow-lg);
   width: 100%;
-  max-width: 900px;
+  max-width: 440px;
   height: 100%;
   display: flex;
   flex-direction: column;

@@ -13,7 +13,6 @@ import PriceChart from "../accounts/PriceChart.jsx";
 import DiversificationChart from "../accounts/DiversificationChart.jsx";
 import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
-import { useAccounts } from "../../api/useAccounts.js";
 import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
@@ -31,7 +30,6 @@ function PieDetailPage() {
   const { accountId, pieId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
 
   const [pie, setPie] = useState(null);
   const [siblingPies, setSiblingPies] = useState([]);
@@ -67,29 +65,12 @@ function PieDetailPage() {
       .catch(() => {});
   }, [api, accountId, pieId]);
 
-  /**
-   * Mirrors a pie-level change into the session-cached accounts list (see
-   * useAccounts.js) that AccountsListPage/DashboardPage/AccountDetailPage
-   * read from — this page loads the pie via its own getPie/syncPieHoldings
-   * calls rather than that shared list, so without this a rename or
-   * holdings change made here wouldn't show up over there until the cache
-   * expired.
-   */
-  const patchCachedPie = (updater) => {
-    setCachedAccounts((current) =>
-      current.map((a) =>
-        a.id === accountId ? { ...a, pies: (a.pies ?? []).map((p) => (p.id === pieId ? updater(p) : p)) } : a
-      )
-    );
-  };
-
   const handleUpdate = (values) => {
     setIsSaving(true);
     setSaveError(null);
     updatePie(api, pieId, values)
       .then((updated) => {
         setPie((current) => ({ ...current, ...updated }));
-        patchCachedPie((p) => ({ ...p, ...updated }));
         setIsEditOpen(false);
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't update the pie."))
@@ -100,14 +81,7 @@ function PieDetailPage() {
     setIsDeleting(true);
     setDeleteError(null);
     deletePie(api, pieId, { force: (pie.holdings?.length ?? 0) > 0 })
-      .then(() => {
-        setCachedAccounts((current) =>
-          current.map((a) =>
-            a.id === accountId ? { ...a, pies: (a.pies ?? []).filter((p) => p.id !== pieId) } : a
-          )
-        );
-        navigate(`/accounts/${accountId}`);
-      })
+      .then(() => navigate(`/accounts/${accountId}`))
       .catch((err) => setDeleteError(err.message ?? "Couldn't delete the pie."))
       .finally(() => setIsDeleting(false));
   };
@@ -116,10 +90,7 @@ function PieDetailPage() {
     setIsAllocationSaving(true);
     setAllocationError(null);
     syncPieHoldings(api, pieId, batch)
-      .then((updated) => {
-        setPie(updated);
-        patchCachedPie(() => updated);
-      })
+      .then((updated) => setPie(updated))
       .catch((err) => setAllocationError(err.message ?? "Couldn't save the allocation changes."))
       .finally(() => setIsAllocationSaving(false));
   };
