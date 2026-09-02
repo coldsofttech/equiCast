@@ -148,7 +148,7 @@ prices, dividends, events, and metrics for each, and writes:
   CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
 
 ```bash
-uv run equicast-etf --config config/etfs.yaml --out ./output
+uv run equicast-etf --config config/etfs.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
@@ -158,7 +158,7 @@ year included) — same as `equicast-stock`'s `--full-load`. It does not
 affect `metrics.parquet`:
 
 ```bash
-uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
+uv run equicast-etf --config config/etfs.dev.yaml --out ./output --full-load
 ```
 
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
@@ -220,9 +220,11 @@ simply produce no `dividend.parquet` file for that year.
 
 ## Configuration
 
-`config/etfs.yaml` lists the ETF tickers to extract (currently VOO, QQQ,
-VTI, AGG, GLD — a mix of broad-market, tech-growth, bond, and commodity
-funds across different issuers, for category diversity).
+`config/etfs.dev.yaml` and `config/etfs.prod.yaml` each list the ETF tickers
+to extract for that environment (currently VOO, QQQ, VTI, AGG, GLD in both —
+a mix of broad-market, tech-growth, bond, and commodity funds across
+different issuers, for category diversity — `etf-ingestion.yml` picks
+between them, see [docs/etf-pipeline.md](../../docs/etf-pipeline.md)).
 
 ## Development
 

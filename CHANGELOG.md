@@ -19,6 +19,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
+  `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
+  previously shared one usage file, so the "dev" and "prod" cost estimates
+  were identical despite being very different deployments. Reworked the
+  numbers to actually reflect that: dev models ~2 users, no scheduled
+  ingestion (only ~12 manual `workflow_dispatch(environment=dev)` runs/month
+  against today's small `*.dev.yaml` pair/ticker lists), for development and
+  validation only; prod models ~50 active users and scheduled ingestion
+  sized against an expected ~10,000-instrument US/UK stock+ETF universe
+  (~9,000 stocks + ~1,000 ETFs, FX unchanged at 4 pairs) — a big jump from
+  today's small `*.prod.yaml` placeholders (see the prior "Split fx/stock/
+  etf ingestion configs" entry), reflected only in the cost model for now,
+  not the actual config files. Backend Lambda/API Gateway/DynamoDB/
+  `user_data_bucket` sizing now derives from an explicit per-session
+  request-count breakdown (identity, accounts, portfolios, watchlists,
+  holdings, transactions, market-data search — 15 HTTP calls/session, 20
+  sessions/user/month) instead of a flat unexplained "500 MAU" guess, with
+  dev/prod differing only in user count (2 vs. 50). `frontend_bucket`/
+  CloudFront page-load traffic scales the same way; `backend_deploy_bucket`
+  stays shared between dev/prod (deploy-frequency-driven, not
+  user-count-driven).
+- Tightened the three ingestion workflows' cron offsets from hours to
+  minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
+  (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
+  later (`15 */6 * * *`) instead of 4 hours later, and `stock-ingestion.yml`
+  now runs 30 minutes after ETF / 45 minutes after FX (`45 */6 * * *`)
+  instead of 2 hours after FX — swapping the stock/ETF run order in the
+  process (previously FX → stock → ETF, now FX → ETF → stock). Updated the
+  offset comments/docs (`docs/{fx,stock,etf}-pipeline.md`, root `README.md`,
+  `infra/infracost-usage.yml`) accordingly; the request-count estimates
+  themselves are unchanged since all three still run 4 times/day.
+- Split each ingestion pipeline's pair/ticker config into a `dev` and a
+  `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
+  `packages/stock/config/stocks.{dev,prod}.yaml`,
+  `packages/etf/config/etfs.{dev,prod}.yaml` — replacing the single
+  `fx_pairs.yaml`/`stocks.yaml`/`etfs.yaml` each package previously had.
+  `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`'s `plan` job
+  already resolved `dev`/`production` for which S3 bucket to upload to;
+  it now resolves the environment *before* computing chunks and picks the
+  matching config file for `equicast-{fx,stock,etf}-plan` too, so a manual
+  dev run and the scheduled production run can diverge on which
+  pairs/tickers get fetched, not just where the output lands. The `dev`
+  file in each pair keeps the previously-existing list; the `prod` file is
+  an exact copy for now (expand it independently as needed). Each
+  Dockerfile's default `CMD` and `scripts/smoke_test.py`'s default
+  `--config` now point at the `dev` file, since neither is used by the
+  ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
+  explicitly) — only by ad-hoc local runs, where dev is the safer default.
 - Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
   & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
   `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default

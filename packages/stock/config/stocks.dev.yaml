@@ -1,0 +1,14 @@
+# Used for manual dev/workflow_dispatch runs (stock-ingestion.yml's "dev"
+# environment) — the production ticker list lives in stocks.prod.yaml and is
+# what infra/infracost-usage.yml's cost estimate tracks, since the scheduled
+# (cron) trigger always targets production.
+tickers:
+  - AAPL
+  - MSFT
+  - GOOGL
+  - AMZN
+  - NVDA
+  - META
+  - TSLA
+  - QCOM
+  - AVGO

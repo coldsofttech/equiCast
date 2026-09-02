@@ -265,8 +265,9 @@ s3://equicast-market-data-<env>/
     └── year=2026/events.parquet
 ```
 
-Refreshed every 6 hours automatically, offset 2 hours from the FX schedule so
-the two pipelines never overlap.
+Refreshed every 6 hours automatically, offset 45 minutes from the FX
+schedule and 30 minutes from the ETF schedule so none of the three
+pipelines overlap.
 
 ## ETF data products
 
@@ -381,8 +382,8 @@ s3://equicast-market-data-<env>/
     └── year=2026/dividend.parquet
 ```
 
-Refreshed every 6 hours automatically, offset 4 hours from the FX schedule
-and 2 hours from the stock schedule so none of the three pipelines overlap.
+Refreshed every 6 hours automatically, offset 15 minutes from the FX
+schedule so the two pipelines never overlap.
 
 ## Documentation
 

@@ -58,9 +58,9 @@
 
 .PARAMETER SeedMarketData
   Only applies with -StartLocalStack: also ingests all three asset classes
-  via their CLI/config (equicast-fx/packages/fx/config/fx_pairs.yaml,
-  equicast-stock/packages/stock/config/stocks.yaml,
-  equicast-etf/packages/etf/config/etfs.yaml) and builds/uploads each
+  via their CLI/config (equicast-fx/packages/fx/config/fx_pairs.dev.yaml,
+  equicast-stock/packages/stock/config/stocks.dev.yaml,
+  equicast-etf/packages/etf/config/etfs.dev.yaml) and builds/uploads each
   asset class's catalog into LocalStack, so /api/market/... has something
   to return. These CLIs hit live Yahoo Finance data, so this makes real
   network calls even though everything else stays local.
@@ -325,9 +325,9 @@ try {
             # ./output, which equicast-core-build-catalog then reads to build that
             # asset class's catalog.json.
             $pipelines = @(
-                @{ AssetClass = "fx";    Package = "fx";    Cli = "equicast-fx";    Config = "config\fx_pairs.yaml" },
-                @{ AssetClass = "stock"; Package = "stock"; Cli = "equicast-stock"; Config = "config\stocks.yaml" },
-                @{ AssetClass = "etf";   Package = "etf";   Cli = "equicast-etf";   Config = "config\etfs.yaml" }
+                @{ AssetClass = "fx";    Package = "fx";    Cli = "equicast-fx";    Config = "config\fx_pairs.dev.yaml" },
+                @{ AssetClass = "stock"; Package = "stock"; Cli = "equicast-stock"; Config = "config\stocks.dev.yaml" },
+                @{ AssetClass = "etf";   Package = "etf";   Cli = "equicast-etf";   Config = "config\etfs.dev.yaml" }
             )
 
             foreach ($pipeline in $pipelines) {

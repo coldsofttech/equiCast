@@ -160,7 +160,7 @@ jobs:
           # precise. Doesn't attempt to estimate CloudFront's own data
           # transfer/request cost (unlike S3, it depends on cache hit ratio
           # and visitor count, not build size) — see
-          # infra/infracost-usage.yml for that side instead, and note both
+          # infra/infracost-usage.{dev,prod}.yml for that side instead, and note both
           # are comfortably inside CloudFront's 1TB/10M-request AWS Free
           # Tier for a new account's first 12 months regardless.
           S3_GB_MONTH_USD=0.023
@@ -178,7 +178,7 @@ jobs:
             echo ""
             echo "⚠️ S3 side only, rough estimate, per environment this is synced to"
             echo "(dev and prod each pay this independently). Excludes CloudFront's"
-            echo "own usage-based cost — see infra/infracost-usage.yml. Built with no"
+            echo "own usage-based cost — see infra/infracost-usage.{dev,prod}.yml. Built with no"
             echo "VITE_* config, so real bundle size may differ slightly — close enough"
             echo "for an order-of-magnitude estimate."
           } >> "$GITHUB_STEP_SUMMARY"

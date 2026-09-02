@@ -17,4 +17,4 @@ WORKDIR /app/packages/stock
 RUN uv sync --frozen --no-dev
 
 ENTRYPOINT ["uv", "run", "--no-sync", "equicast-stock"]
-CMD ["--config", "config/stocks.yaml", "--out", "/output"]
+CMD ["--config", "config/stocks.dev.yaml", "--out", "/output"]

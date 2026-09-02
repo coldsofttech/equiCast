@@ -25,8 +25,11 @@ jobs:
   # Pure HCL cost diff (no terraform plan/state involved) — posts/updates one
   # PR comment showing what this change adds to the dev and prod monthly
   # cost estimate, per infracost.yml's two projects. Uses
-  # infra/infracost-usage.yml for rough usage-based estimates (S3/ECR storage
-  # and request volume), since Infracost assumes zero usage by default.
+  # infra/infracost-usage.{dev,prod}.yml for rough usage-based estimates
+  # (S3/ECR storage and request volume), since Infracost assumes zero usage
+  # by default. The two files model deliberately different scenarios (dev:
+  # ~2 users, no scheduled ingestion; prod: ~50 users, scheduled ingestion
+  # at a ~10,000-instrument scale) — see either file's header for why.
   #
   # Uses the plain CLI (breakdown/diff/output) rather than
   # infracost/actions/diff@v4 — that action's wrapper binary calls out to

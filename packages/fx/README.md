@@ -40,12 +40,14 @@ Reads the FX pairs listed in a config file, fetches a profile for each, and
 writes one Parquet file per pair to `<out>/fx=<PAIR>/profile.parquet`:
 
 ```bash
-uv run equicast-fx --config config/fx_pairs.yaml --out ./output
+uv run equicast-fx --config config/fx_pairs.dev.yaml --out ./output
 ```
 
 ## Configuration
 
-`config/fx_pairs.yaml` lists the FX pairs to extract:
+`config/fx_pairs.dev.yaml` and `config/fx_pairs.prod.yaml` each list the FX
+pairs to extract for that environment (`fx-ingestion.yml` picks between them
+— see [docs/fx-pipeline.md](../../docs/fx-pipeline.md)):
 
 ```yaml
 pairs:
