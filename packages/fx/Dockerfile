@@ -15,4 +15,4 @@ WORKDIR /app/packages/fx
 RUN uv sync --frozen --no-dev
 
 ENTRYPOINT ["uv", "run", "--no-sync", "equicast-fx"]
-CMD ["--config", "config/fx_pairs.yaml", "--out", "/output"]
+CMD ["--config", "config/fx_pairs.dev.yaml", "--out", "/output"]

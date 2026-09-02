@@ -19,6 +19,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split each ingestion pipeline's pair/ticker config into a `dev` and a
+  `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
+  `packages/stock/config/stocks.{dev,prod}.yaml`,
+  `packages/etf/config/etfs.{dev,prod}.yaml` — replacing the single
+  `fx_pairs.yaml`/`stocks.yaml`/`etfs.yaml` each package previously had.
+  `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`'s `plan` job
+  already resolved `dev`/`production` for which S3 bucket to upload to;
+  it now resolves the environment *before* computing chunks and picks the
+  matching config file for `equicast-{fx,stock,etf}-plan` too, so a manual
+  dev run and the scheduled production run can diverge on which
+  pairs/tickers get fetched, not just where the output lands. The `dev`
+  file in each pair keeps the previously-existing list; the `prod` file is
+  an exact copy for now (expand it independently as needed). Each
+  Dockerfile's default `CMD` and `scripts/smoke_test.py`'s default
+  `--config` now point at the `dev` file, since neither is used by the
+  ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
+  explicitly) — only by ad-hoc local runs, where dev is the safer default.
 - `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
   `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
   existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With

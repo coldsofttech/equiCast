@@ -14,7 +14,7 @@ resource_usage:
   # lines if its pair/ticker count or schedule changes materially; the other
   # pipelines' lines are unaffected.
   #
-  # --- FX (packages/fx/config/fx_pairs.yaml, currently 4 pairs) ---
+  # --- FX (packages/fx/config/fx_pairs.prod.yaml, currently 4 pairs) ---
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
   #             price.parquet ~20KB (current year only — full_load isn't
   #             passed on schedule) = ~45KB/pair
@@ -23,7 +23,7 @@ resource_usage:
   #   requests: 3 files/pair (profile + metrics + price), all PUT
   #             120 runs * 4 pairs * 3 files = 1,440 PUTs -> 1,500 (rounded up)
   #
-  # --- Stock (packages/stock/config/stocks.yaml, currently 9 tickers) ---
+  # --- Stock (packages/stock/config/stocks.prod.yaml, currently 9 tickers) ---
   #   size (real samples, not placeholders):
   #     profile.parquet   ~30KB  (one snapshot, overwritten each run)
   #     metrics.parquet   ~20KB  (one snapshot, overwritten each run)
@@ -46,7 +46,7 @@ resource_usage:
   #             history), all PUT
   #             120 runs * 9 tickers * 5 files = 5,400 PUTs
   #
-  # --- ETF (packages/etf/config/etfs.yaml, currently 5 tickers) ---
+  # --- ETF (packages/etf/config/etfs.prod.yaml, currently 5 tickers) ---
   #   size (real samples, not placeholders):
   #     profile.parquet    ~22-23KB (one snapshot, overwritten each run) ->
   #                        25KB/ticker rounded up for headroom

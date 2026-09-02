@@ -23,7 +23,7 @@ from equicast_fx.config import FxPair, load_fx_pairs
 from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
 from equicast_metrics import MetricsClient
 
-DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "fx_pairs.yaml"
+DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "fx_pairs.dev.yaml"
 
 
 def _parse_pairs(raw: str) -> list[FxPair]:

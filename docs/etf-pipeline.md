@@ -9,7 +9,8 @@ package setup (installing deps, running unit tests), see
 ## Architecture
 
 ```
-packages/etf/config/etfs.yaml       (the tickers to extract)
+packages/etf/config/etfs.dev.yaml   (dev: the tickers to extract)
+packages/etf/config/etfs.prod.yaml  (production: the tickers to extract)
         │
         ▼
 equicast-etf CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
@@ -30,7 +31,10 @@ GitHub Actions (etf-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<en
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-etf`).
 The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
-feeds each parallel chunk its share of the work (see below).
+feeds each parallel chunk its share of the work (see below). The image's
+default `CMD` points at `config/etfs.dev.yaml`; `etf-ingestion.yml` never
+relies on that default — it resolves `dev`/`prod` itself and always passes
+`--tickers-json` explicitly.
 
 **`profile()`, `prices()`, dividends (via `equicast-dividends`'
 `DividendsClient`), events (via `equicast-events`' `EventsClient`), and
@@ -62,7 +66,7 @@ the full text; this is expected, not an error.
 
 ```bash
 cd packages/etf
-uv run equicast-etf --config config/etfs.yaml --out ./output
+uv run equicast-etf --config config/etfs.dev.yaml --out ./output
 uv run equicast-etf --tickers-json '["VOO"]' --out ./output
 ```
 
@@ -102,7 +106,7 @@ for **prices, dividends, and events**, writing one
 year included). It does not affect `profile.parquet`/`metrics.parquet`:
 
 ```bash
-uv run equicast-etf --config config/etfs.yaml --out ./output --full-load
+uv run equicast-etf --config config/etfs.dev.yaml --out ./output --full-load
 ```
 
 Profile, prices, dividends, events, and metrics are fetched as independent
@@ -132,7 +136,7 @@ hand whenever you want to sanity-check the pipeline end to end.
 ```bash
 cd packages/etf
 
-# Defaults to every ticker in config/etfs.yaml, prints JSON to stdout
+# Defaults to every ticker in config/etfs.dev.yaml, prints JSON to stdout
 uv run python scripts/smoke_test.py
 
 # Only specific tickers
@@ -227,11 +231,13 @@ doesn't write to production by accident.
 The workflow has three jobs, structured identically to
 `fx-ingestion.yml`/`stock-ingestion.yml`'s:
 
-1. **plan** — runs `equicast-etf-plan` to split the configured tickers into
-   chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). It
-   also resolves the target environment/bucket once (schedule → `production`,
-   dispatch → the `environment` input) and fails fast if the corresponding
-   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
+1. **plan** — first resolves the target environment/bucket/config (schedule
+   → `production`, dispatch → the `environment` input), failing fast if the
+   corresponding `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable
+   isn't set. Then runs `equicast-etf-plan` against `etfs.dev.yaml` or
+   `etfs.prod.yaml` (whichever the resolved environment picked) to split the
+   configured tickers into chunks, capped at 256 chunks (GitHub's
+   per-workflow matrix job limit).
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
    `--tickers-json`, uploads the resulting Parquet files to
