@@ -186,9 +186,12 @@ no changes to either).
 posting/updating one PR comment with the estimated monthly cost delta for
 both the `dev` and `prod` projects declared in `infracost.yml` (repo root).
 It's a pure HCL-based diff — no `terraform plan`, state, or AWS credentials
-involved. `infra/infracost-usage.yml` supplies rough usage estimates (S3
-storage/requests, ECR storage) since Infracost assumes zero usage by default
-for those; tune the numbers there as real usage becomes known, or run
+involved. `infra/infracost-usage.dev.yml`/`infra/infracost-usage.prod.yml`
+supply rough usage estimates (S3 storage/requests, ECR storage) since
+Infracost assumes zero usage by default for those — each models a
+deliberately different scenario (dev: ~2 users, no scheduled ingestion;
+prod: ~50 users, scheduled ingestion at a ~10,000-instrument scale); tune
+the numbers there as real usage becomes known, or run
 `infracost breakdown --config-file=infracost.yml --sync-usage-file` locally
 to regenerate the file with your installed CLI's exact supported keys.
 

@@ -2,11 +2,11 @@ version: 0.1
 projects:
   - path: infra
     name: dev
-    usage_file: infra/infracost-usage.yml
+    usage_file: infra/infracost-usage.dev.yml
     terraform_vars:
       environment: dev
   - path: infra
     name: prod
-    usage_file: infra/infracost-usage.yml
+    usage_file: infra/infracost-usage.prod.yml
     terraform_vars:
       environment: prod

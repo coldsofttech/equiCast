@@ -19,6 +19,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
+  `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
+  previously shared one usage file, so the "dev" and "prod" cost estimates
+  were identical despite being very different deployments. Reworked the
+  numbers to actually reflect that: dev models ~2 users, no scheduled
+  ingestion (only ~12 manual `workflow_dispatch(environment=dev)` runs/month
+  against today's small `*.dev.yaml` pair/ticker lists), for development and
+  validation only; prod models ~50 active users and scheduled ingestion
+  sized against an expected ~10,000-instrument US/UK stock+ETF universe
+  (~9,000 stocks + ~1,000 ETFs, FX unchanged at 4 pairs) — a big jump from
+  today's small `*.prod.yaml` placeholders (see the prior "Split fx/stock/
+  etf ingestion configs" entry), reflected only in the cost model for now,
+  not the actual config files. Backend Lambda/API Gateway/DynamoDB/
+  `user_data_bucket` sizing now derives from an explicit per-session
+  request-count breakdown (identity, accounts, portfolios, watchlists,
+  holdings, transactions, market-data search — 15 HTTP calls/session, 20
+  sessions/user/month) instead of a flat unexplained "500 MAU" guess, with
+  dev/prod differing only in user count (2 vs. 50). `frontend_bucket`/
+  CloudFront page-load traffic scales the same way; `backend_deploy_bucket`
+  stays shared between dev/prod (deploy-frequency-driven, not
+  user-count-driven).
 - Tightened the three ingestion workflows' cron offsets from hours to
   minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
   (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
