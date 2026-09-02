@@ -12,6 +12,7 @@ import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import AccountForm from "./AccountForm.jsx";
 import PieForm from "../pies/PieForm.jsx";
 import { useApi } from "../../api/useApi.js";
+import { useAccounts } from "../../api/useAccounts.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createPie, deletePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -21,6 +22,7 @@ function AccountDetailPage() {
   const { accountId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
+  const { setAccounts: setCachedAccounts } = useAccounts();
 
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -52,12 +54,25 @@ function AccountDetailPage() {
 
   useEffect(load, [api, accountId]);
 
+  /**
+   * Applies the same update to the session-cached accounts list (see
+   * useAccounts.js) that AccountsListPage/DashboardPage read from — this
+   * page loads its own copy via getAccount rather than that shared list, so
+   * without this, a field/pie change made here wouldn't show up over there
+   * until the cache expired (tab close) or someone edited that account
+   * directly from the table.
+   */
+  const patchCachedAccount = (updater) => {
+    setCachedAccounts((current) => current.map((a) => (a.id === accountId ? updater(a) : a)));
+  };
+
   const handleUpdate = (values) => {
     setIsSaving(true);
     setSaveError(null);
     updateAccount(api, accountId, values)
       .then((updated) => {
         setAccount((current) => ({ ...current, ...updated }));
+        patchCachedAccount((a) => ({ ...a, ...updated }));
         setIsEditOpen(false);
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't update the account."))
@@ -70,7 +85,10 @@ function AccountDetailPage() {
     setIsDeleting(true);
     setDeleteError(null);
     deleteAccount(api, accountId, { force: needsForce })
-      .then(() => navigate("/accounts"))
+      .then(() => {
+        setCachedAccounts((current) => current.filter((a) => a.id !== accountId));
+        navigate("/accounts");
+      })
       .catch((err) => setDeleteError(err.message ?? "Couldn't delete the account."))
       .finally(() => setIsDeleting(false));
   };
@@ -81,6 +99,7 @@ function AccountDetailPage() {
     createPie(api, { ...values, account_id: accountId })
       .then((pie) => {
         setAccount((current) => ({ ...current, pies: [...(current.pies ?? []), pie] }));
+        patchCachedAccount((a) => ({ ...a, pies: [...(a.pies ?? []), pie] }));
         setIsPieModalOpen(false);
       })
       .catch((err) => setPieSaveError(err.message ?? "Couldn't create the pie."))
@@ -95,6 +114,7 @@ function AccountDetailPage() {
           ...current,
           pies: current.pies.filter((p) => p.id !== pie.id),
         }));
+        patchCachedAccount((a) => ({ ...a, pies: (a.pies ?? []).filter((p) => p.id !== pie.id) }));
         setDeletingPieId(null);
       })
       .catch((err) => setPieDeleteError(err.message ?? "Couldn't delete the pie."));
