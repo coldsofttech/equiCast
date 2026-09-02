@@ -19,6 +19,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
+  scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
+  22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —
+  after both the US (NYSE/NASDAQ) and UK (LSE) markets close, so each
+  weekday's fetch gets that day's complete OHLC bar. yfinance's
+  daily-interval history only changes once a trading day closes, so the
+  previous 6-hourly schedule bought no real freshness, just repeated S3
+  writes of the same data; both markets are shut every Saturday/Sunday, so
+  the added day-of-week filter (`1-5`) skips those runs entirely rather than
+  harmlessly re-fetching Friday's already-current close — it doesn't account
+  for weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  trigger a run that harmlessly re-writes the last available close. The
+  15m/30m chain offsets between the three pipelines are unchanged. Re-sized
+  `infra/infracost-usage.prod.yml`'s `market_data_bucket` ingestion request
+  counts for the new ~22-runs/month weekday cadence (down from 120 at
+  6-hourly) — confirmed via a real `infracost breakdown` run: prod's
+  `market_data_bucket` PUT cost drops from ~$30.01/month to ~$5.50/month
+  (prod total ~$5.85/month, down from ~$30.36/month); dev is unaffected (it
+  was never on the scheduled trigger to begin with — see that file's
+  header).
 - Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
   `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
   previously shared one usage file, so the "dev" and "prod" cost estimates

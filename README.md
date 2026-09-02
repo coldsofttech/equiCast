@@ -136,7 +136,8 @@ s3://equicast-market-data-<env>/
     └── year=2026/price.parquet
 ```
 
-Refreshed every 6 hours automatically.
+Refreshed once daily automatically on weekdays, after both US and UK
+markets close.
 
 ## Stock data products
 
@@ -265,8 +266,8 @@ s3://equicast-market-data-<env>/
     └── year=2026/events.parquet
 ```
 
-Refreshed every 6 hours automatically, offset 45 minutes from the FX
-schedule and 30 minutes from the ETF schedule so none of the three
+Refreshed once daily automatically on weekdays, offset 45 minutes from the
+FX schedule and 30 minutes from the ETF schedule so none of the three
 pipelines overlap.
 
 ## ETF data products
@@ -382,8 +383,8 @@ s3://equicast-market-data-<env>/
     └── year=2026/dividend.parquet
 ```
 
-Refreshed every 6 hours automatically, offset 15 minutes from the FX
-schedule so the two pipelines never overlap.
+Refreshed once daily automatically on weekdays, offset 15 minutes from the
+FX schedule so the two pipelines never overlap.
 
 ## Documentation
 

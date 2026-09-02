@@ -201,9 +201,9 @@ via its `workflow_dispatch` trigger (Actions tab → *Build ETF Image* →
 
 ## Running the scheduled ingestion
 
-`etf-ingestion.yml` runs every 6 hours (`cron: "15 */6 * * *"`) and
-can also be triggered manually (Actions tab → *ETF Ingestion* → *Run
-workflow*) with these inputs:
+`etf-ingestion.yml` runs once daily, Monday-Friday, at 22:15 UTC
+(`cron: "15 22 * * 1-5"`) and can also be triggered manually (Actions tab →
+*ETF Ingestion* → *Run workflow*, any day) with these inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -214,19 +214,20 @@ workflow*) with these inputs:
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
-**Deliberately offset from `fx-ingestion.yml`'s schedule** (`0 */6 * * *` —
-00:00/06:00/12:00/18:00 UTC): ETF runs 15 minutes after each FX run
-(00:15/06:15/12:15/18:15 UTC) so the two don't overlap even if FX takes
+**Deliberately offset from `fx-ingestion.yml`'s schedule** (`0 22 * * 1-5`
+— 22:00 UTC, Monday-Friday, after both US and UK markets close — see that
+workflow's "Running the scheduled ingestion" for why): ETF runs 15 minutes
+after each FX run (22:15 UTC) so the two don't overlap even if FX takes
 longer than expected. `stock-ingestion.yml` in turn runs 30 minutes after
-this one (`45 */6 * * *`, see
+this one (`45 22 * * 1-5`, see
 [stock-pipeline.md](stock-pipeline.md#running-the-scheduled-ingestion)) — the
 full chain is FX → +15m → ETF → +30m → stock, all writing into the same S3
 bucket and pulling from the same GHCR/Yahoo Finance rate limits.
 
 The scheduled (cron) trigger always targets **production** — same reasoning
 as `fx-ingestion.yml`/`stock-ingestion.yml`: there's no `environment` input
-to read on a timer, and an unattended run every 6 hours should land in the
-real bucket, not dev. The `environment` input only applies to manual
+to read on a timer, and an unattended weekday run should land in the real
+bucket, not dev. The `environment` input only applies to manual
 `workflow_dispatch` runs, where it defaults to `dev` so an ad-hoc run
 doesn't write to production by accident.
 

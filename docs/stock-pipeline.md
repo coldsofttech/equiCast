@@ -200,9 +200,9 @@ via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
 
 ## Running the scheduled ingestion
 
-`stock-ingestion.yml` runs every 6 hours (`cron: "45 */6 * * *"`) and can
-also be triggered manually (Actions tab → *Stock Ingestion* → *Run
-workflow*) with these inputs:
+`stock-ingestion.yml` runs once daily, Monday-Friday, at 22:45 UTC
+(`cron: "45 22 * * 1-5"`) and can also be triggered manually (Actions tab →
+*Stock Ingestion* → *Run workflow*, any day) with these inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -213,17 +213,18 @@ workflow*) with these inputs:
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
-**Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 */6 * * *`
-— 00:15/06:15/12:15/18:15 UTC): stock runs 30 minutes after each ETF run
-(00:45/06:45/12:45/18:45 UTC) — 45 minutes after each FX run — so none of
-the three pipelines ever overlap even if an earlier run takes longer than
-expected. The full chain is FX (`0 */6 * * *`) → +15m → ETF → +30m → stock;
-all three write into the same S3 bucket and pull from the same GHCR/Yahoo
-Finance rate limits.
+**Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 22 * * 1-5`
+— 22:15 UTC): stock runs 30 minutes after each ETF run (22:45 UTC) — 45
+minutes after each FX run — so none of the three pipelines ever overlap
+even if an earlier run takes longer than expected. The full chain is FX
+(`0 22 * * 1-5`, 22:00 UTC, Monday-Friday — after both US and UK markets
+close, see [fx-pipeline.md](fx-pipeline.md#running-the-scheduled-ingestion))
+→ +15m → ETF → +30m → stock; all three write into the same S3 bucket and
+pull from the same GHCR/Yahoo Finance rate limits.
 
 The scheduled (cron) trigger always targets **production** — same reasoning
 as `fx-ingestion.yml`: there's no `environment` input to read on a timer, and
-an unattended run every 6 hours should land in the real bucket, not dev. The
+an unattended weekday run should land in the real bucket, not dev. The
 `environment` input only applies to manual `workflow_dispatch` runs, where
 it defaults to `dev` so an ad-hoc run doesn't write to production by
 accident.

@@ -105,9 +105,12 @@ resource_usage:
   #             price.parquet ~20KB (current year only — full_load isn't
   #             passed on schedule) = ~45KB/pair
   #   storage:  4 pairs * 45KB = 180KB
-  #   schedule: fx-ingestion.yml, cron "0 */6 * * *" -> ~120 runs/month (4/day)
+  #   schedule: fx-ingestion.yml, cron "0 22 * * 1-5" -> ~22 runs/month
+  #             (1/weekday — ~4.35 weeks/month * 5 weekdays; markets are
+  #             shut both weekend days, so those runs are skipped entirely
+  #             rather than harmlessly re-fetching Friday's close twice)
   #   requests: 3 files/pair (profile + metrics + price), all PUT
-  #             120 runs * 4 pairs * 3 files = 1,440 PUTs -> 1,500 (rounded up)
+  #             22 runs * 4 pairs * 3 files = 264 PUTs -> 300 (rounded up)
   #
   # --- Stock (~9,000 tickers — 90% of the ~10,000-instrument US/UK
   #     universe this scenario is sized against; packages/stock/config/
@@ -126,14 +129,14 @@ resource_usage:
   #   years = 800KB/ticker of per-year files, + 30KB + 20KB one-time
   #   snapshots = 850KB/ticker.
   #   storage:  9,000 tickers * 850KB = 7,650,000KB (~7.3GB)
-  #   schedule: stock-ingestion.yml, cron "45 */6 * * *" -> also
-  #             ~120 runs/month (4/day, offset 45m from FX/30m from ETF so
-  #             none of the three ever overlap)
+  #   schedule: stock-ingestion.yml, cron "45 22 * * 1-5" -> also
+  #             ~22 runs/month (1/weekday, offset 45m from FX/30m from ETF
+  #             so none of the three ever overlap)
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
   #             metrics — each run only touches the current year's
   #             price/dividend/events file, not the full accumulated
   #             history), all PUT
-  #             120 runs * 9,000 tickers * 5 files = 5,400,000 PUTs
+  #             22 runs * 9,000 tickers * 5 files = 990,000 PUTs
   #
   # --- ETF (~1,000 tickers — the remaining 10% of the ~10,000-instrument
   #     universe; packages/etf/config/etfs.prod.yaml itself still lists far
@@ -167,15 +170,15 @@ resource_usage:
   #   files, + 25KB + 7KB one-time snapshots = 532KB/ticker.
   #   storage:  1,000 tickers * 532KB + 7,000KB (events, flat) = 539,000KB
   #             (~0.53GB)
-  #   schedule: etf-ingestion.yml, cron "15 */6 * * *" -> also
-  #             ~120 runs/month (4/day, offset 15m from FX so none of the
-  #             three ever overlap)
+  #   schedule: etf-ingestion.yml, cron "15 22 * * 1-5" -> also
+  #             ~22 runs/month (1/weekday, offset 15m from FX so none of
+  #             the three ever overlap)
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
   #             metrics — same conservative per-run ceiling the Stock
   #             section uses, even though events.parquet in particular
   #             produces an actual upload in only a small fraction of runs
   #             — most ticker-years have no split), all PUT
-  #             120 runs * 1,000 tickers * 5 files = 600,000 PUTs
+  #             22 runs * 1,000 tickers * 5 files = 110,000 PUTs
   #
   # --- Totals used below ---
   #   storage:  180KB + 7,650,000KB + 539,000KB = 8,189,180KB (~7.81GB) ->
@@ -186,15 +189,15 @@ resource_usage:
   #             are known instead of the 20-year projection, or once the
   #             real prod ticker count is known instead of this 10,000
   #             planning scenario.
-  #   requests (PUT): 1,500 (FX) + 5,400,000 (stock) + 600,000 (ETF) =
-  #             6,001,500
+  #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) =
+  #             1,100,300
   #   requests (GET): 3,000 — backend on-demand reads, from the session
   #             model above (60/user/month * 50 users), not sized from the
-  #             ticker count
+  #             ticker count or ingestion schedule
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 7.9
-      monthly_tier_1_requests: 6001500 # PUT/COPY/POST/LIST — FX (1,500) + stock (5,400,000) + ETF (600,000)
+      monthly_tier_1_requests: 1100300 # PUT/COPY/POST/LIST — FX (300) + stock (990,000) + ETF (110,000)
       monthly_tier_2_requests: 3000 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/
