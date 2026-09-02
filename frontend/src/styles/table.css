@@ -1,0 +1,87 @@
+/**
+ * Shared data-table layout — AccountsListPage's accounts table is the
+ * first user, styled generically enough for other entity tables later
+ * rather than kept as page-local CSS.
+ */
+.ec-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--ec-border);
+  border-radius: var(--ec-r-12);
+  background: var(--ec-surface);
+}
+
+.ec-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ec-fs-14);
+}
+
+.ec-table th,
+.ec-table td {
+  padding: var(--ec-s-12) var(--ec-s-16);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ec-table th {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-table tbody tr {
+  border-bottom: 1px solid var(--ec-divider);
+  cursor: pointer;
+}
+
+.ec-table tbody tr:last-child {
+  border-bottom: 0;
+}
+
+.ec-table tbody tr:hover {
+  background: var(--ec-surface-hover);
+}
+
+.ec-table-name {
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.ec-table-desc {
+  color: var(--ec-text-muted);
+  font-weight: 400;
+  white-space: normal;
+}
+
+.ec-table-actions {
+  display: flex;
+  gap: var(--ec-s-4);
+  justify-content: flex-end;
+}
+
+.ec-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: var(--ec-r-6);
+  border: 1px solid transparent;
+  background: none;
+  color: var(--ec-text-muted);
+  cursor: pointer;
+}
+
+.ec-icon-btn:hover {
+  background: var(--ec-surface-hover);
+  color: var(--ec-text);
+}
+
+.ec-icon-btn--danger:hover {
+  background: var(--ec-danger-soft);
+  color: var(--ec-danger-soft-text);
+}

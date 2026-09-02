@@ -7,8 +7,11 @@ import "./AppShell.css";
  * (eyebrow/title/sub/actions) + whatever content the page passes as
  * children. `menuItems` is required — deciding what the nav shows is the
  * caller's job (App.jsx today; a router later), not this component's.
+ * `footer` is optional, rendered full-width below `<main>` (outside its
+ * padding) rather than as part of `children` — DashboardPage uses it for
+ * SiteFooter, matching the login page's footer/disclaimer edge-to-edge.
  */
-function AppShell({ menuItems, eyebrow, title, subtitle, actions, children }) {
+function AppShell({ menuItems, eyebrow, title, subtitle, actions, children, footer }) {
   return (
     <div className="ec-app">
       <Topbar />
@@ -24,6 +27,7 @@ function AppShell({ menuItems, eyebrow, title, subtitle, actions, children }) {
         </div>
         {children}
       </main>
+      {footer}
     </div>
   );
 }

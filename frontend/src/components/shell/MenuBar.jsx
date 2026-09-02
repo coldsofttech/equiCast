@@ -1,11 +1,14 @@
 import { useState } from "react";
+import { NavLink } from "react-router-dom";
 import "./MenuBar.css";
 
 /**
- * `items`: [{ id, label }, ...]. No routing wired up yet (that's a later
- * phase) — selecting an item just tracks which one is "active" locally, so
- * the visual state and the mobile collapse are both real and testable
- * without depending on react-router existing yet.
+ * `items`: [{ id, label, to? }, ...]. An item with `to` renders as a
+ * react-router `NavLink` — active state comes from the URL, matching
+ * `to` as a prefix so a sub-route (e.g. `/accounts/:id`) still shows
+ * "Portfolio" active. An item without `to` falls back to the original
+ * Phase 0 behavior: local "active" state with no real destination, for
+ * placeholders (Watchlists/Search) that don't have a page yet.
  */
 function MenuBar({ items, defaultActiveId }) {
   const [activeId, setActiveId] = useState(defaultActiveId ?? items[0]?.id);
@@ -36,17 +39,30 @@ function MenuBar({ items, defaultActiveId }) {
         </svg>
       </button>
       <div className={`ec-menubar-nav${isOpen ? " is-open" : ""}`}>
-        {items.map((item) => (
-          <button
-            key={item.id}
-            type="button"
-            className={`ec-menubar-item${item.id === activeId ? " is-active" : ""}`}
-            onClick={() => handleSelect(item.id)}
-            aria-current={item.id === activeId ? "page" : undefined}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item) =>
+          item.to ? (
+            <NavLink
+              key={item.id}
+              to={item.to}
+              className={({ isActive }) =>
+                `ec-menubar-item${isActive ? " is-active" : ""}`
+              }
+              onClick={() => setIsOpen(false)}
+            >
+              {item.label}
+            </NavLink>
+          ) : (
+            <button
+              key={item.id}
+              type="button"
+              className={`ec-menubar-item${item.id === activeId ? " is-active" : ""}`}
+              onClick={() => handleSelect(item.id)}
+              aria-current={item.id === activeId ? "page" : undefined}
+            >
+              {item.label}
+            </button>
+          )
+        )}
       </div>
     </nav>
   );

@@ -61,3 +61,24 @@ def test_get_or_create_profile_returns_winner_on_concurrent_create_race(dynamodb
     profile = client.get_or_create_profile("auth0|race")
 
     assert profile == {"user_id": "auth0|race", "default_currency": "USD"}
+
+
+def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={"user_id": "auth0|existing", "default_currency": "GBP"}
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_default_currency("auth0|existing", "EUR")
+
+    assert profile == {"user_id": "auth0|existing", "default_currency": "EUR"}
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_update_default_currency_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_default_currency("auth0|new-user", "INR")
+
+    assert profile == {"user_id": "auth0|new-user", "default_currency": "INR"}

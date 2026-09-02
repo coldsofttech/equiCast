@@ -1,0 +1,24 @@
+.ec-alert {
+  border-radius: var(--ec-r-8);
+  padding: var(--ec-s-12) var(--ec-s-16);
+  font-size: var(--ec-fs-13);
+  border: 1px solid transparent;
+}
+
+.ec-alert-danger {
+  background: var(--ec-danger-soft);
+  color: var(--ec-danger-soft-text);
+  border-color: var(--ec-danger-soft-text);
+}
+
+.ec-alert-success {
+  background: var(--ec-success-soft);
+  color: var(--ec-success-soft-text);
+  border-color: var(--ec-success-soft-text);
+}
+
+.ec-alert-info {
+  background: var(--ec-info-soft);
+  color: var(--ec-info-soft-text);
+  border-color: var(--ec-info-soft-text);
+}

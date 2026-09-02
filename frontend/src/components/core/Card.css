@@ -1,0 +1,6 @@
+.ec-card {
+  background: var(--ec-surface);
+  border: 1px solid var(--ec-border);
+  border-radius: var(--ec-r-12);
+  padding: var(--ec-s-20);
+}

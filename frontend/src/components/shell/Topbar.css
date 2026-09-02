@@ -13,3 +13,15 @@
   align-items: center;
   gap: var(--ec-s-4);
 }
+
+.ec-topbar-currency {
+  gap: var(--ec-s-4);
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  margin-right: var(--ec-s-4);
+  cursor: default;
+}
+
+.ec-topbar-currency i {
+  font-size: var(--ec-fs-13);
+}
