@@ -37,9 +37,9 @@ resource_usage:
   #   years = 800KB/ticker of per-year files, + 30KB + 20KB one-time
   #   snapshots = 850KB/ticker.
   #   storage:  9 tickers * 850KB = 7,650KB
-  #   schedule: stock-ingestion.yml, cron "0 2,8,14,20 * * *" -> also
-  #             ~120 runs/month (4/day, offset 2h from FX so they never
-  #             overlap)
+  #   schedule: stock-ingestion.yml, cron "45 */6 * * *" -> also
+  #             ~120 runs/month (4/day, offset 45m from FX/30m from ETF so
+  #             none of the three ever overlap)
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
   #             metrics — each run only touches the current year's
   #             price/dividend/events file, not the full accumulated
@@ -91,9 +91,9 @@ resource_usage:
   #   as the Stock section): (20+5)KB * 20 years = 500KB/ticker of per-year
   #   files, + 25KB + 7KB one-time snapshots = 532KB/ticker.
   #   storage:  5 tickers * 532KB + 35KB (events, flat) = 2,695KB
-  #   schedule: etf-ingestion.yml, cron "0 4,10,16,22 * * *" -> also
-  #             ~120 runs/month (4/day, offset 4h from FX and 2h from stock
-  #             so none of the three ever overlap)
+  #   schedule: etf-ingestion.yml, cron "15 */6 * * *" -> also
+  #             ~120 runs/month (4/day, offset 15m from FX so none of the
+  #             three ever overlap)
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
   #             metrics — same conservative per-run ceiling the Stock
   #             section uses, even though events.parquet in particular

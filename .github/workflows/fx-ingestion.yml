@@ -1,6 +1,10 @@
 name: FX Ingestion
 
 on:
+  # Runs first in the 6-hourly ingestion chain — etf-ingestion.yml runs 15
+  # minutes later, stock-ingestion.yml 30 minutes after that (45 minutes
+  # after this one), so the three never overlap even if a run takes longer
+  # than expected.
   schedule:
     - cron: "0 */6 * * *"
   workflow_dispatch:

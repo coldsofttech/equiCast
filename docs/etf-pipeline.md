@@ -201,7 +201,7 @@ via its `workflow_dispatch` trigger (Actions tab → *Build ETF Image* →
 
 ## Running the scheduled ingestion
 
-`etf-ingestion.yml` runs every 6 hours (`cron: "0 4,10,16,22 * * *"`) and
+`etf-ingestion.yml` runs every 6 hours (`cron: "15 */6 * * *"`) and
 can also be triggered manually (Actions tab → *ETF Ingestion* → *Run
 workflow*) with these inputs:
 
@@ -214,12 +214,14 @@ workflow*) with these inputs:
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
-**Deliberately offset from both `fx-ingestion.yml`'s schedule** (`0 */6 * * *`
-— 00:00/06:00/12:00/18:00 UTC) **and `stock-ingestion.yml`'s** (`0 2,8,14,20
-* * *`): ETF runs 4 hours after each FX run and 2 hours after each stock run
-(04:00/10:00/16:00/22:00 UTC), so none of the three pipelines ever overlap
-even if a run takes longer than expected — all three write into the same S3
-bucket and pull from the same GHCR/Yahoo Finance rate limits.
+**Deliberately offset from `fx-ingestion.yml`'s schedule** (`0 */6 * * *` —
+00:00/06:00/12:00/18:00 UTC): ETF runs 15 minutes after each FX run
+(00:15/06:15/12:15/18:15 UTC) so the two don't overlap even if FX takes
+longer than expected. `stock-ingestion.yml` in turn runs 30 minutes after
+this one (`45 */6 * * *`, see
+[stock-pipeline.md](stock-pipeline.md#running-the-scheduled-ingestion)) — the
+full chain is FX → +15m → ETF → +30m → stock, all writing into the same S3
+bucket and pulling from the same GHCR/Yahoo Finance rate limits.
 
 The scheduled (cron) trigger always targets **production** — same reasoning
 as `fx-ingestion.yml`/`stock-ingestion.yml`: there's no `environment` input

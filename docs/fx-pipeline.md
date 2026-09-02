@@ -186,7 +186,10 @@ workflow*).
 
 `fx-ingestion.yml` runs every 6 hours (`cron: "0 */6 * * *"`) and can also be
 triggered manually (Actions tab → *FX Ingestion* → *Run workflow*) with these
-inputs:
+inputs. It's first in the ingestion chain — `etf-ingestion.yml` runs 15
+minutes later, `stock-ingestion.yml` 30 minutes after that — see
+[etf-pipeline.md's "Running the scheduled
+ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 
 | Input | Default | Meaning |
 |---|---|---|

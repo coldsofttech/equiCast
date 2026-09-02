@@ -19,6 +19,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Tightened the three ingestion workflows' cron offsets from hours to
+  minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
+  (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
+  later (`15 */6 * * *`) instead of 4 hours later, and `stock-ingestion.yml`
+  now runs 30 minutes after ETF / 45 minutes after FX (`45 */6 * * *`)
+  instead of 2 hours after FX — swapping the stock/ETF run order in the
+  process (previously FX → stock → ETF, now FX → ETF → stock). Updated the
+  offset comments/docs (`docs/{fx,stock,etf}-pipeline.md`, root `README.md`,
+  `infra/infracost-usage.yml`) accordingly; the request-count estimates
+  themselves are unchanged since all three still run 4 times/day.
 - Split each ingestion pipeline's pair/ticker config into a `dev` and a
   `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
   `packages/stock/config/stocks.{dev,prod}.yaml`,

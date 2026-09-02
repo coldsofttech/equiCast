@@ -1,10 +1,12 @@
 name: Stock Ingestion
 
 on:
-  # Offset 2h from fx-ingestion.yml's "0 */6 * * *" (00:00/06:00/12:00/18:00
-  # UTC) so the two never overlap even if a run takes longer than expected.
+  # Runs 30 minutes after etf-ingestion.yml's "15 */6 * * *" (00:15/06:15/
+  # 12:15/18:15 UTC) — 45 minutes after fx-ingestion.yml's "0 */6 * * *" —
+  # so all three never overlap even if an earlier run takes longer than
+  # expected.
   schedule:
-    - cron: "0 2,8,14,20 * * *"
+    - cron: "45 */6 * * *"
   workflow_dispatch:
     inputs:
       environment:
