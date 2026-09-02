@@ -8,7 +8,8 @@ data actually contains, see the root [README](../README.md).
 ## Architecture
 
 ```
-packages/fx/config/fx_pairs.yaml   (the pairs to extract)
+packages/fx/config/fx_pairs.dev.yaml   (dev: the pairs to extract)
+packages/fx/config/fx_pairs.prod.yaml  (production: the pairs to extract)
         │
         ▼
 equicast-fx CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
@@ -27,7 +28,10 @@ GitHub Actions (fx-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-fx`). The
 FX pairs config isn't baked in as the only input — pairs can also be passed
 at runtime via `--pairs-json`, which is how the scheduled workflow feeds each
-parallel chunk its share of the work (see below).
+parallel chunk its share of the work (see below). The image's default `CMD`
+points at `config/fx_pairs.dev.yaml`; `fx-ingestion.yml` never relies on
+that default — it resolves `dev`/`prod` itself and always passes
+`--pairs-json` explicitly.
 
 Expect two `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed` (data via yfinance,
@@ -40,7 +44,7 @@ an error.
 
 ```bash
 cd packages/fx
-uv run equicast-fx --config config/fx_pairs.yaml --out ./output
+uv run equicast-fx --config config/fx_pairs.dev.yaml --out ./output
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output
 ```
 
@@ -85,7 +89,7 @@ you want to sanity-check the pipeline end to end.
 ```bash
 cd packages/fx
 
-# Defaults to every pair in config/fx_pairs.yaml, prints JSON to stdout
+# Defaults to every pair in config/fx_pairs.dev.yaml, prints JSON to stdout
 uv run python scripts/smoke_test.py
 
 # Only specific pairs
@@ -182,7 +186,10 @@ workflow*).
 
 `fx-ingestion.yml` runs every 6 hours (`cron: "0 */6 * * *"`) and can also be
 triggered manually (Actions tab → *FX Ingestion* → *Run workflow*) with these
-inputs:
+inputs. It's first in the ingestion chain — `etf-ingestion.yml` runs 15
+minutes later, `stock-ingestion.yml` 30 minutes after that — see
+[etf-pipeline.md's "Running the scheduled
+ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -201,13 +208,15 @@ input only applies to manual `workflow_dispatch` runs, where it defaults to
 
 The workflow has three jobs:
 
-1. **plan** — runs `equicast-fx-plan` to split the configured pairs into
-   chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). If
-   the pair list would need more than 256 chunks at the target `chunk_size`,
-   the chunk size grows instead of pairs being dropped. It also resolves the
-   target environment/bucket once (schedule → `production`, dispatch → the
-   `environment` input) and fails fast if the corresponding
-   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
+1. **plan** — first resolves the target environment/bucket/config (schedule
+   → `production`, dispatch → the `environment` input), failing fast if the
+   corresponding `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable
+   isn't set. Then runs `equicast-fx-plan` against `fx_pairs.dev.yaml` or
+   `fx_pairs.prod.yaml` (whichever the resolved environment picked) to split
+   the configured pairs into chunks, capped at 256 chunks (GitHub's
+   per-workflow matrix job limit). If the pair list would need more than 256
+   chunks at the target `chunk_size`, the chunk size grows instead of pairs
+   being dropped.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
    `--pairs-json`, uploads the resulting Parquet files to

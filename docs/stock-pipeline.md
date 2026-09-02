@@ -9,7 +9,8 @@ package setup (installing deps, running unit tests), see
 ## Architecture
 
 ```
-packages/stock/config/stocks.yaml   (the tickers to extract)
+packages/stock/config/stocks.dev.yaml   (dev: the tickers to extract)
+packages/stock/config/stocks.prod.yaml  (production: the tickers to extract)
         │
         ▼
 equicast-stock CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
@@ -30,7 +31,10 @@ GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<
 and pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-stock`).
 The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
-feeds each parallel chunk its share of the work (see below).
+feeds each parallel chunk its share of the work (see below). The image's
+default `CMD` points at `config/stocks.dev.yaml`; `stock-ingestion.yml`
+never relies on that default — it resolves `dev`/`prod` itself and always
+passes `--tickers-json` explicitly.
 
 `profile()`, `prices()`, dividends (via `equicast-dividends`'
 `DividendsClient`), events (via `equicast-events`' `EventsClient`), and
@@ -57,7 +61,7 @@ an error.
 
 ```bash
 cd packages/stock
-uv run equicast-stock --config config/stocks.yaml --out ./output
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output
 uv run equicast-stock --tickers-json '["AAPL"]' --out ./output
 ```
 
@@ -100,7 +104,7 @@ for **prices, dividends, and events**, writing one
 year included). It does not affect `profile.parquet`/`metrics.parquet`:
 
 ```bash
-uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
 ```
 
 Profile, prices, dividends, events, and metrics are fetched as independent
@@ -131,7 +135,7 @@ end to end.
 ```bash
 cd packages/stock
 
-# Defaults to every ticker in config/stocks.yaml, prints JSON to stdout
+# Defaults to every ticker in config/stocks.dev.yaml, prints JSON to stdout
 uv run python scripts/smoke_test.py
 
 # Only specific tickers
@@ -196,7 +200,7 @@ via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
 
 ## Running the scheduled ingestion
 
-`stock-ingestion.yml` runs every 6 hours (`cron: "0 2,8,14,20 * * *"`) and can
+`stock-ingestion.yml` runs every 6 hours (`cron: "45 */6 * * *"`) and can
 also be triggered manually (Actions tab → *Stock Ingestion* → *Run
 workflow*) with these inputs:
 
@@ -209,11 +213,13 @@ workflow*) with these inputs:
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
-**Deliberately offset from `fx-ingestion.yml`'s schedule** (`0 */6 * * *` —
-00:00/06:00/12:00/18:00 UTC): stock runs 2 hours after each FX run
-(02:00/08:00/14:00/20:00 UTC), so the two pipelines never overlap even if a
-run takes longer than expected — both write into the same S3 bucket and pull
-from the same GHCR/Yahoo Finance rate limits.
+**Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 */6 * * *`
+— 00:15/06:15/12:15/18:15 UTC): stock runs 30 minutes after each ETF run
+(00:45/06:45/12:45/18:45 UTC) — 45 minutes after each FX run — so none of
+the three pipelines ever overlap even if an earlier run takes longer than
+expected. The full chain is FX (`0 */6 * * *`) → +15m → ETF → +30m → stock;
+all three write into the same S3 bucket and pull from the same GHCR/Yahoo
+Finance rate limits.
 
 The scheduled (cron) trigger always targets **production** — same reasoning
 as `fx-ingestion.yml`: there's no `environment` input to read on a timer, and
@@ -224,11 +230,13 @@ accident.
 
 The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
 
-1. **plan** — runs `equicast-stock-plan` to split the configured tickers into
-   chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). It
-   also resolves the target environment/bucket once (schedule → `production`,
-   dispatch → the `environment` input) and fails fast if the corresponding
-   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
+1. **plan** — first resolves the target environment/bucket/config (schedule
+   → `production`, dispatch → the `environment` input), failing fast if the
+   corresponding `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable
+   isn't set. Then runs `equicast-stock-plan` against `stocks.dev.yaml` or
+   `stocks.prod.yaml` (whichever the resolved environment picked) to split
+   the configured tickers into chunks, capped at 256 chunks (GitHub's
+   per-workflow matrix job limit).
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
    `--tickers-json`, uploads the resulting Parquet files to

@@ -34,7 +34,7 @@ from equicast_stock.writer import (
     write_profile_parquet,
 )
 
-DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "stocks.yaml"
+DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "stocks.dev.yaml"
 
 
 def _parse_tickers(raw: str) -> list[StockTicker]:

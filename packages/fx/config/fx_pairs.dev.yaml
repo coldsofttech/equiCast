@@ -1,0 +1,13 @@
+# Used for manual dev/workflow_dispatch runs (fx-ingestion.yml's "dev"
+# environment) — the production pair list lives in fx_pairs.prod.yaml and is
+# what infra/infracost-usage.yml's cost estimate tracks, since the scheduled
+# (cron) trigger always targets production.
+pairs:
+  - from: GBP
+    to: USD
+  - from: USD
+    to: GBP
+  - from: GBP
+    to: EUR
+  - from: EUR
+    to: GBP

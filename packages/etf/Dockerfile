@@ -17,4 +17,4 @@ WORKDIR /app/packages/etf
 RUN uv sync --frozen --no-dev
 
 ENTRYPOINT ["uv", "run", "--no-sync", "equicast-etf"]
-CMD ["--config", "config/etfs.yaml", "--out", "/output"]
+CMD ["--config", "config/etfs.dev.yaml", "--out", "/output"]

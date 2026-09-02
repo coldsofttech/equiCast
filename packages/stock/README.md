@@ -137,7 +137,7 @@ prices, dividends, events, and metrics for each, and writes:
   returns, leverage, FCF/share)
 
 ```bash
-uv run equicast-stock --config config/stocks.yaml --out ./output
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
@@ -147,7 +147,7 @@ year included) — same as `equicast-fx`'s `--full-load`. It does not affect
 `metrics.parquet`:
 
 ```bash
-uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
 ```
 
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
@@ -207,8 +207,10 @@ every field in both came directly from yfinance's `.info`.
 
 ## Configuration
 
-`config/stocks.yaml` lists the stock tickers to extract (currently AAPL,
-MSFT, GOOGL, AMZN, NVDA, META, TSLA, QCOM, AVGO).
+`config/stocks.dev.yaml` and `config/stocks.prod.yaml` each list the stock
+tickers to extract for that environment (currently AAPL, MSFT, GOOGL, AMZN,
+NVDA, META, TSLA, QCOM, AVGO in both — `stock-ingestion.yml` picks between
+them, see [docs/stock-pipeline.md](../../docs/stock-pipeline.md)).
 
 ## Development
 
