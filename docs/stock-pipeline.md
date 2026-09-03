@@ -69,8 +69,11 @@ For each ticker this writes:
 
 - `stock=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
   currency, description, sector, industry, website, beta, payout ratio,
-  dividend rate/yield, market cap, volume, day open/high/low/close/average,
-  year open/high/low/close/average, 50-/200-day moving averages (same
+  dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
+  half_yearly/yearly/irregular/not_applicable, derived from dividend
+  history — see [packages/dividends/README.md](../packages/dividends/README.md#dividend_frequency)),
+  market cap, volume, day open/high/low/close/average, year
+  open/high/low/close/average, 50-/200-day moving averages (same
   fields/logic as `equicast-fx`'s profile), address, country, region,
   full-time employees, CEO(s) (each with a name and role), IPO date, last
   updated, source

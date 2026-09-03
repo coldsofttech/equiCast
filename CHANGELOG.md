@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `equicast_dividends.dividend_frequency()`: classifies a symbol's payout
+  cadence from its ex-dividend-date history into `weekly`/`monthly`/
+  `quarterly`/`half_yearly`/`yearly`/`irregular`/`not_applicable`, by taking
+  the median day-gap between its most recent 10 payouts (or however many
+  exist, down to 2 — fewer than that is `not_applicable`) against fixed
+  day-gap bands; median rather than mean so one unusually long/short gap
+  (a special dividend, a skipped payout) doesn't flip the classification on
+  its own. `equicast-stock`/`equicast-etf`'s CLIs merge the result into
+  `profile.parquet`'s new `dividend_frequency` field — merged into the
+  existing profile task rather than added as a separate one, since
+  `DividendsClient.dividends()` fetches a ticker's *entire* yfinance
+  dividend series regardless of its own `full_load` argument (that flag
+  only controls a post-fetch filter — see its docstring), so reusing the
+  same `dividends(full_load=True)` call `dividend.parquet` already needs
+  costs no extra yfinance calls over fetching it a second time from a
+  separate profile task would have. fx has no dividends, so its profile is
+  unaffected.
 - `frontend/public/brand/equicast-mark.png`: a 512x512 PNG export of the
   existing `equicast-mark.svg` (same gradient badge + Candlestick Spear
   icon), rasterized via `sharp`. Auth0's Application **Logo URL** field

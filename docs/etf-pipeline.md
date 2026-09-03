@@ -74,9 +74,12 @@ For each ticker this writes:
 
 - `etf=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
   currency, description, category, fund family, website, beta, expense
-  ratio, dividend rate/yield, total assets, NAV price, volume, day/year
-  price range and moving averages, YTD/3yr/5yr average returns, inception
-  date, last updated, source
+  ratio, dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
+  half_yearly/yearly/irregular/not_applicable, derived from dividend
+  history — see [packages/dividends/README.md](../packages/dividends/README.md#dividend_frequency)),
+  total assets, NAV price, volume, day/year price range and moving
+  averages, YTD/3yr/5yr average returns, inception date, last updated,
+  source
 - `etf=<TICKER>/price/current.parquet` — one row per trading day, for
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source

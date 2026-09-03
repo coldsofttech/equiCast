@@ -12,14 +12,14 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 #: Explicit schema for events.parquet, rather than letting pyarrow infer one
-#: per year-file from whatever rows land in it: a ticker-year with only
-#: earnings (say) leaves rating/split-only columns (firm, ratio, ...)
-#: entirely null in that slice, and pyarrow would otherwise infer a bare
-#: `null` type there. Pinning real types keeps every year's file schema-
-#: compatible with every other (important for tools that expect a uniform
-#: schema across a partitioned dataset, e.g. Athena/Glue over
-#: `stock=*/year=*/events.parquet`), rather than one year's file disagreeing
-#: on a column's type with the next.
+#: per file from whatever rows land in it: a file with only earnings (say)
+#: leaves rating/split-only columns (firm, ratio, ...) entirely null in that
+#: slice, and pyarrow would otherwise infer a bare `null` type there.
+#: Pinning real types keeps history.parquet and current.parquet
+#: schema-compatible with each other (important for tools that expect a
+#: uniform schema across a partitioned dataset, e.g. Athena/Glue over
+#: `stock=*/events/*.parquet`), rather than one disagreeing with the other
+#: on a column's type.
 #:
 #: This does NOT make an all-null string column round-trip as `None` via
 #: plain `pd.read_parquet()`, though - pyarrow's default numpy-backed

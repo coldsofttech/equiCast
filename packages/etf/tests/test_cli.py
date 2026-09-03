@@ -1,6 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 from equicast_etf.cli import run
 
 
@@ -65,11 +66,13 @@ def _fake_etf_client_factory(created: list[MagicMock] | None = None):
     return fake_etf_client
 
 
-def _fake_dividends_client_factory(created: list[MagicMock] | None = None):
+def _fake_dividends_client_factory(
+    created: list[MagicMock] | None = None, records: list[dict] | None = None
+):
     def fake_dividends_client(symbol: str, datafeed=None) -> MagicMock:
         client = MagicMock()
         client.symbol = symbol
-        client.dividends.return_value = [
+        client.dividends.return_value = records or [
             {
                 "ticker": symbol,
                 "currency": "USD",
@@ -142,13 +145,14 @@ def _patch_clients(
     dividends_created: list[MagicMock] | None = None,
     events_created: list[MagicMock] | None = None,
     metrics_created: list[MagicMock] | None = None,
+    dividend_records: list[dict] | None = None,
 ):
     return (
         patch("equicast_etf.cli.DatafeedClient"),
         patch("equicast_etf.cli.ETFClient", side_effect=_fake_etf_client_factory(etf_created)),
         patch(
             "equicast_etf.cli.DividendsClient",
-            side_effect=_fake_dividends_client_factory(dividends_created),
+            side_effect=_fake_dividends_client_factory(dividends_created, records=dividend_records),
         ),
         patch(
             "equicast_etf.cli.EventsClient",
@@ -181,6 +185,44 @@ def test_run_writes_profile_price_dividend_events_and_metrics_parquet_per_config
         assert (out_dir / f"etf={ticker}" / "metrics.parquet").exists()
 
 
+def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+    quarterly_records = [
+        {
+            "ticker": "VOO",
+            "currency": "USD",
+            "ex_dividend_date": date,
+            "price": 1.85,
+            "last_updated": "2026-08-30T09:00:02+00:00",
+            "source": "yfinance",
+        }
+        for date in ("2025-02-10", "2025-05-10", "2025-08-10", "2025-11-10", "2026-02-10")
+    ]
+
+    datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
+        dividend_records=quarterly_records
+    )
+    with datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch:
+        run(None, out_dir, tickers_json='["VOO"]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert profile["dividend_frequency"].iloc[0] == "quarterly"
+
+
+def test_run_dividend_frequency_is_not_applicable_with_too_little_history(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "output"
+
+    # Default fixture dividends_client returns exactly one record.
+    datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
+    with datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch:
+        run(None, out_dir, tickers_json='["VOO"]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert profile["dividend_frequency"].iloc[0] == "not_applicable"
+
+
 def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
     out_dir = tmp_path / "output"
     tickers_json = '["VOO"]'
@@ -198,7 +240,7 @@ def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
     }
 
 
-def test_run_passes_full_load_through_to_prices_dividends_and_events(tmp_path: Path) -> None:
+def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> None:
     out_dir = tmp_path / "output"
     tickers_json = '["VOO"]'
     etf_created: list[MagicMock] = []
@@ -226,12 +268,34 @@ def test_run_passes_full_load_through_to_prices_dividends_and_events(tmp_path: P
 
     assert len(etf_created) == 1  # one ETFClient per ticker, shared by profile + prices tasks
     etf_created[0].prices.assert_called_once_with(full_load=True)
-    assert len(dividends_created) == 1
-    dividends_created[0].dividends.assert_called_once_with(full_load=True)
     assert len(events_created) == 1
     events_created[0].events.assert_called_once_with(full_load=True)
     assert len(metrics_created) == 1
     metrics_created[0].metrics.assert_called_once_with()  # full_load doesn't affect metrics
+
+    # dividends() is always called with full_load=True regardless of run()'s own
+    # full_load flag - see _profile_and_dividends_task's docstring for why (it
+    # fetches this ticker's entire dividend series either way, so calling it once
+    # with full_load=True and filtering client-side for what to write costs no
+    # more yfinance calls than passing full_load through unconditionally would).
+    assert len(dividends_created) == 1
+    dividends_created[0].dividends.assert_called_once_with(full_load=True)
+
+
+def test_run_still_fetches_full_dividend_history_when_full_load_is_false(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "output"
+    dividends_created: list[MagicMock] = []
+
+    datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
+        dividends_created=dividends_created
+    )
+    with datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch:
+        run(None, out_dir, tickers_json='["VOO"]', full_load=False)
+
+    assert len(dividends_created) == 1
+    dividends_created[0].dividends.assert_called_once_with(full_load=True)
 
 
 def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:

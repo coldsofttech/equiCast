@@ -1,18 +1,23 @@
 """CLI: extract a profile, daily prices, dividends, events, and risk
 metrics for every configured ETF ticker.
 
-For each ticker, writes one profile.parquet snapshot, one price.parquet,
-dividend.parquet, and events.parquet per year covered (just the current
-year by default, or the ticker's full yfinance history with --full-load),
-and one metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown,
-CAGR). metrics.parquet only carries MetricsClient.metrics() - not
+For each ticker, writes one profile.parquet snapshot (including a
+`dividend_frequency` field derived from dividend history - see
+`equicast_dividends.dividend_frequency`), a price/current.parquet and
+dividend/current.parquet (plus price/history.parquet and
+dividend/history.parquet too, but only on a --full-load run), an
+events/current.parquet (and events/history.parquet on --full-load), and one
+metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
+metrics.parquet only carries MetricsClient.metrics() - not
 .fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
 events.parquet in practice only ever has "split" rows for an ETF ticker -
 earnings/analyst-rating events are always empty, since yfinance has no
 earnings or analyst coverage for a fund - but splits are real (e.g. QQQ's
-2000 2-for-1, VTI's 2008 2-for-1). These five fetches for a given ticker
-are independent tasks submitted to the same worker pool, so they run
-concurrently rather than one after the other.
+2000 2-for-1, VTI's 2008 2-for-1). Profile and dividends are fetched
+together as one task (both need the same dividend history - see
+`_profile_and_dividends_task`); prices, events, and metrics are three
+further independent tasks - all four for a given ticker submitted to the
+same worker pool, so they run concurrently rather than one after the other.
 """
 
 from __future__ import annotations
@@ -21,11 +26,12 @@ import argparse
 import logging
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import UTC, datetime
 from functools import partial
 from pathlib import Path
 
 from equicast_datafeed import DatafeedClient
-from equicast_dividends import DividendsClient
+from equicast_dividends import DividendsClient, dividend_frequency
 from equicast_events import EventsClient
 from equicast_metrics import MetricsClient
 
@@ -91,21 +97,44 @@ def _load_tickers(config: Path | None, tickers_json: str | None) -> list[ETFTick
     return load_etf_tickers(config)
 
 
-def _profile_task(client: ETFClient, output_dir: Path, key: str) -> list[Path]:
-    logger.info("Fetching profile for %s", key)
-    return [write_profile_parquet(client.profile(), output_dir)]
+def _profile_and_dividends_task(
+    client: ETFClient,
+    dividends_client: DividendsClient,
+    output_dir: Path,
+    key: str,
+    full_load: bool,
+) -> list[Path]:
+    """Write profile.parquet (with a `dividend_frequency` field derived from
+    dividend history) and dividend/current.parquet (plus
+    dividend/history.parquet on a --full-load run).
+
+    Combined into one task, rather than two independent ones like
+    prices/events, because both need the same dividend history:
+    `DividendsClient.dividends()` fetches this ticker's *entire* yfinance
+    dividend series regardless of its own `full_load` argument — that flag
+    only controls a post-fetch filter (see its docstring) — so calling it
+    once with `full_load=True` here and filtering client-side for what to
+    write costs no more yfinance calls than the old separate profile/
+    dividends tasks did, while a naive merge that just called `dividends()`
+    a second time from `_profile_task` would have doubled them.
+    """
+    logger.info("Fetching profile and dividends for %s (full_load=%s)", key, full_load)
+    dividends = dividends_client.dividends(full_load=True)
+    profile = {**client.profile(), "dividend_frequency": dividend_frequency(dividends)}
+    paths = [write_profile_parquet(profile, output_dir)]
+
+    if full_load:
+        to_write = dividends
+    else:
+        current_year = str(datetime.now(UTC).year)
+        to_write = [d for d in dividends if d["ex_dividend_date"][:4] == current_year]
+    paths.extend(write_dividend_parquet(to_write, output_dir))
+    return paths
 
 
 def _prices_task(client: ETFClient, output_dir: Path, key: str, full_load: bool) -> list[Path]:
     logger.info("Fetching prices for %s (full_load=%s)", key, full_load)
     return write_price_parquet(client.prices(full_load=full_load), output_dir)
-
-
-def _dividends_task(
-    dividends_client: DividendsClient, output_dir: Path, key: str, full_load: bool
-) -> list[Path]:
-    logger.info("Fetching dividends for %s (full_load=%s)", key, full_load)
-    return write_dividend_parquet(dividends_client.dividends(full_load=full_load), output_dir)
 
 
 def _events_task(
@@ -136,9 +165,9 @@ def run(
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
     # One ETFClient/DividendsClient/EventsClient/MetricsClient per ticker,
-    # shared by that ticker's profile, prices, dividends, events, and
-    # metrics tasks — all five only read immutable state and delegate to
-    # the (thread-safe) shared datafeed, so calling them concurrently on one
+    # shared by that ticker's profile+dividends, prices, events, and metrics
+    # tasks — all four only read immutable state and delegate to the
+    # (thread-safe) shared datafeed, so calling them concurrently on one
     # instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
@@ -146,9 +175,17 @@ def run(
         dividends_client = DividendsClient(client.symbol, datafeed=datafeed)
         events_client = EventsClient(client.symbol, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
-        tasks.append(partial(_profile_task, client, output_dir, ticker.key))
+        tasks.append(
+            partial(
+                _profile_and_dividends_task,
+                client,
+                dividends_client,
+                output_dir,
+                ticker.key,
+                full_load,
+            )
+        )
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
-        tasks.append(partial(_dividends_task, dividends_client, output_dir, ticker.key, full_load))
         tasks.append(partial(_events_task, events_client, output_dir, ticker.key, full_load))
         tasks.append(partial(_metrics_task, metrics_client, output_dir, ticker.key))
 

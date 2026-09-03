@@ -56,7 +56,11 @@ profile = client.profile()
 
 `dividend_rate` is `None` for ETFs yfinance doesn't report a trailing
 distribution amount for (seen on several bond/blend funds) — `dividend_yield`
-can still be populated in that case.
+can still be populated in that case. `ETFClient.profile()` itself doesn't
+return a `dividend_frequency` field — that's derived from dividend
+*history* (`equicast-dividends`), not `profile()`'s own yfinance `info`
+snapshot, and gets merged in at the CLI layer instead; see [On
+`dividend_frequency`](#on-dividend_frequency) below.
 
 ### How this differs from `equicast-stock`'s profile
 
@@ -133,7 +137,9 @@ as a full ISO 8601 datetime, same as `last_updated`.
 Reads the ETF tickers listed in a config file, fetches a profile, daily
 prices, dividends, events, and metrics for each, and writes:
 
-- `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
+- `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot, plus a
+  `dividend_frequency` field not present in `ETFClient.profile()` itself —
+  see [On `dividend_frequency`](#on-dividend_frequency) below
 - `<out>/etf=<TICKER>/price/current.parquet` — one row per trading day,
   for the current year only by default
 - `<out>/etf=<TICKER>/dividend/current.parquet` — one row per
@@ -224,6 +230,23 @@ history; see equicast-dividends's README for details. A ticker with no
 dividends in a given period (e.g. `GLD`, a gold trust that pays no
 distribution) simply produces no `dividend/current.parquet` (or
 `dividend/history.parquet` on a `--full-load` run) for it.
+
+### On `dividend_frequency`
+
+Merged into `profile.parquet` from
+[`equicast-dividends`'](../dividends/README.md) `dividend_frequency()` —
+one of `"weekly"`, `"monthly"`, `"quarterly"`, `"half_yearly"`, `"yearly"`,
+`"irregular"`, or `"not_applicable"` (see that package's README for exactly
+how each is derived).
+
+Profile and dividends are fetched as one combined CLI task (not two
+independent ones like prices/events) specifically so this can reuse the same
+`DividendsClient.dividends(full_load=True)` call `dividend.parquet` already
+needs, rather than fetching a ticker's dividend history twice — that call
+fetches the *entire* yfinance series regardless of its own `full_load`
+argument either way (see `DividendsClient.dividends()`'s docstring), so this
+merge costs no extra yfinance calls over the two-tasks version. `GLD`-style
+no-dividend tickers (see above) get `"not_applicable"`.
 
 ## Configuration
 

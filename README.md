@@ -173,7 +173,11 @@ StockClient("AAPL").profile()
 
 `ceos` and `ipo_date` are best-effort — yfinance has no dedicated field for
 either; see [equicast-stock's README](packages/stock/README.md) for how
-they're derived.
+they're derived. `profile.parquet` (written by the CLI, not returned by
+`profile()` itself) additionally carries `dividend_frequency` — one of
+`weekly`/`monthly`/`quarterly`/`half_yearly`/`yearly`/`irregular`/
+`not_applicable`, derived from dividend history by
+[equicast-dividends](packages/dividends/README.md#dividend_frequency).
 
 ```python
 StockClient("AAPL").prices()
@@ -311,7 +315,9 @@ fields (`category`, `total_assets`, `expense_ratio`, `nav_price`,
 `ytd_return`/`three_year_average_return`/`five_year_average_return`,
 `inception_date`). See [equicast-etf's README](packages/etf/README.md#how-this-differs-from-equicast-stocks-profile)
 for the full field-by-field comparison, and how `website`/`beta` are
-derived.
+derived. `profile.parquet` (written by the CLI, not returned by `profile()`
+itself) additionally carries `dividend_frequency`, same as
+`equicast-stock`'s (see above).
 
 ```python
 ETFClient("VOO").prices()

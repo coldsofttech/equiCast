@@ -18,9 +18,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
-from equicast_dividends import DividendsClient
+from equicast_dividends import DividendsClient, dividend_frequency
 from equicast_events import EventsClient
 from equicast_metrics import MetricsClient
 from equicast_stock.cli import _combine_metrics
@@ -103,11 +104,22 @@ def run_ticker(ticker: StockTicker, output_format: str, output_dir: Path, full_l
     metrics_client = MetricsClient(client.symbol)
     print(f"\n=== {ticker.key} ===")
 
-    profile = client.profile()
     prices = client.prices(full_load=full_load)
-    dividends = dividends_client.dividends(full_load=full_load)
+    # Always fetched in full, same as _profile_and_dividends_task does - the
+    # underlying yfinance call is identical either way (full_load only
+    # controls a post-fetch filter, see DividendsClient.dividends()'s
+    # docstring), so dividend_frequency() gets enough history to classify
+    # regardless of --full-load. dividends_to_write below still only writes
+    # what a real pipeline run would.
+    dividends = dividends_client.dividends(full_load=True)
+    if full_load:
+        dividends_to_write = dividends
+    else:
+        current_year = str(datetime.now(UTC).year)
+        dividends_to_write = [d for d in dividends if d["ex_dividend_date"][:4] == current_year]
     events = events_client.events(full_load=full_load)
     metrics = _combine_metrics(metrics_client.metrics(), metrics_client.fundamentals())
+    profile = {**client.profile(), "dividend_frequency": dividend_frequency(dividends)}
 
     if output_format == "json":
         print(f"\n--- {ticker.key} profile ---")
@@ -119,7 +131,7 @@ def run_ticker(ticker: StockTicker, output_format: str, output_dir: Path, full_l
         print(profile_json)  # lgtm[py/clear-text-logging-sensitive-data]
         print(f"\n--- {ticker.key} prices (summary; full_load={full_load}) ---")
         print(json.dumps(_summarize_prices(prices), indent=2, default=str))
-        print(f"\n--- {ticker.key} dividends (full_load={full_load}) ---")
+        print(f"\n--- {ticker.key} dividends (full history, always) ---")
         print(json.dumps(dividends, indent=2, default=str))
         print(f"\n--- {ticker.key} events (full_load={full_load}) ---")
         print(json.dumps(events, indent=2, default=str))
@@ -128,7 +140,7 @@ def run_ticker(ticker: StockTicker, output_format: str, output_dir: Path, full_l
     else:
         profile_path = write_profile_parquet(profile, output_dir)
         price_paths = write_price_parquet(prices, output_dir)
-        dividend_paths = write_dividend_parquet(dividends, output_dir)
+        dividend_paths = write_dividend_parquet(dividends_to_write, output_dir)
         events_paths = write_events_parquet(events, output_dir)
         metrics_path = write_metrics_parquet(metrics, ticker.ticker, output_dir)
         print(f"  wrote {profile_path}")
