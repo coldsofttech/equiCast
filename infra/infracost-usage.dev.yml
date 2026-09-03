@@ -65,17 +65,16 @@ resource_usage:
   #     --- see infracost-usage.prod.yml's Stock section for the real
   #     per-file size samples this is measured from; same per-ticker
   #     850KB/ticker (20-year accumulated) assumption applies, split the
-  #     same way into price/history.parquet+current.parquet and
-  #     dividend/history.parquet+current.parquet there (same 850KB total
-  #     either way — see that section's note on why consolidating files
-  #     doesn't shrink the row data).
+  #     same way into price/dividend/events history.parquet+current.parquet
+  #     there (same 850KB total either way — see that section's note on why
+  #     consolidating files doesn't shrink the row data).
   #   storage:  9 tickers * 850KB = 7,650KB
   #   manual runs: ~4/month
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
   #             metrics), all PUT — this flat per-run count is a closer
   #             approximation of a --full-load test run than it was before
-  #             the price/dividend split: both are now capped at 2
-  #             PUTs/ticker each (history.parquet + current.parquet)
+  #             the price/dividend/events split: all three are now capped
+  #             at 2 PUTs/ticker each (history.parquet + current.parquet)
   #             regardless of a ticker's history length, vs. up to ~20
   #             PUTs/ticker each (one per year) previously, so a manual
   #             --full-load run here no longer spikes materially above this
@@ -85,8 +84,9 @@ resource_usage:
   # --- ETF (packages/etf/config/etfs.dev.yaml, currently 5 tickers) ---
   #     see infracost-usage.prod.yml's ETF section for the real per-file
   #     size samples; same per-ticker 532KB (20-year accumulated) + flat
-  #     events overhead assumption applies, same price/dividend
-  #     history.parquet+current.parquet split.
+  #     events overhead assumption applies, same price/dividend/events
+  #     history.parquet+current.parquet split (events unaffected in byte
+  #     terms — see that section's note on why).
   #   storage:  5 tickers * 532KB + 35KB (events, flat: 5 tickers * 7KB) =
   #             2,695KB
   #   manual runs: ~4/month

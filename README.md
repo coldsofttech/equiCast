@@ -253,22 +253,23 @@ for exactly how each field is sourced/derived.
 
 The pipeline writes all five as Parquet, landing in the same bucket as FX
 data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
-`fundamentals()` into one row, `year=<YYYY>/events.parquet` combines all
-three event types for that year into one file, and prices/dividends each
-split into a `history.parquet`/`current.parquet` pair the same way as FX's
-prices (see above) rather than one file per year:
+`fundamentals()` into one row, and price/dividend/events each split into a
+`history.parquet`/`current.parquet` pair the same way as FX's prices (see
+above) rather than one file per year — `events/current.parquet` combines
+all three event types for the current year (or later) into one file:
 
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/events.parquet
-    ├── year=2026/events.parquet
     ├── price/
     │   ├── history.parquet
     │   └── current.parquet
-    └── dividend/
+    ├── dividend/
+    │   ├── history.parquet
+    │   └── current.parquet
+    └── events/
         ├── history.parquet
         └── current.parquet
 ```
@@ -383,12 +384,14 @@ s3://equicast-market-data-<env>/
 └── etf=VOO/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2013/events.parquet
     ├── price/
     │   ├── history.parquet
     │   └── current.parquet
-    └── dividend/
-        ├── history.parquet
+    ├── dividend/
+    │   ├── history.parquet
+    │   └── current.parquet
+    └── events/
+        ├── history.parquet   (VOO's 2013 split lands here)
         └── current.parquet
 ```
 

@@ -127,10 +127,10 @@ prices, dividends, events, and metrics for each, and writes:
 - `<out>/stock=<TICKER>/dividend/current.parquet` — one row per
   ex-dividend date, this year to date by default (not written for a ticker
   with no dividends this year)
-- `<out>/stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event
+- `<out>/stock=<TICKER>/events/current.parquet` — one row per event
   (earnings report, analyst rating change, stock split), this year to date
-  plus any future-dated entries by default (empty for tickers/years with
-  none of the three)
+  plus any future-dated entries by default (not written for a ticker with
+  none of the three this year or later)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
@@ -141,14 +141,14 @@ uv run equicast-stock --config config/stocks.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, dividends, and events — prices and dividends additionally get
-`<out>/stock=<TICKER>/price/history.parquet` and
-`<out>/stock=<TICKER>/dividend/history.parquet` (every year before the
+for prices, dividends, and events — all three additionally get a
+`history.parquet`: `<out>/stock=<TICKER>/price/history.parquet`,
+`<out>/stock=<TICKER>/dividend/history.parquet`, and
+`<out>/stock=<TICKER>/events/history.parquet` (every year before the
 current one, each combined into that one file rather than split per year;
-`price/current.parquet`/`dividend/current.parquet` still get just the
-current year), while events still writes one `events.parquet` per year
-found (current year included) — same as `equicast-fx`'s `--full-load`. It
-does not affect `metrics.parquet`:
+`price/current.parquet`/`dividend/current.parquet`/`events/current.parquet`
+still get the current year — for events, current year or later) — same as
+`equicast-fx`'s `--full-load`. It does not affect `metrics.parquet`:
 
 ```bash
 uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
@@ -185,10 +185,12 @@ asset-class package.
 Records are shaped `{ticker, event_type, date, eps_estimate, reported_eps,
 surprise_pct, firm, from_grade, to_grade, action, ratio, last_updated,
 source}`, combining three distinct event types (earnings reports, analyst
-rating changes, stock splits) into one file per year — `event_type` says
-which, and only that type's fields are populated (the rest `None`). See
-equicast-events's README for exactly how each type is sourced. Tickers/years
-with none of the three simply produce no `events.parquet` file.
+rating changes, stock splits) into `history.parquet`/`current.parquet` the
+same way price/dividend do (see above) — `event_type` says which, and only
+that type's fields are populated (the rest `None`). See equicast-events's
+README for exactly how each type is sourced. A ticker with none of the
+three in a given period simply produces no `events/current.parquet` (or
+`events/history.parquet` on a `--full-load` run) for it.
 
 ### On `metrics.parquet`
 

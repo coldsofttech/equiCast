@@ -82,12 +82,13 @@ For each ticker this writes:
   price (the dividend amount per share, not a stock price), last updated,
   source. No `payment_date` — yfinance's dividend history has none. Not
   written for a ticker with no dividends this year.
-- `stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event, this
+- `stock=<TICKER>/events/current.parquet` — one row per event, this
   year to date plus any future-dated entries by default (only earnings
   ever has any): ticker, event_type (earnings/rating/split), date, plus
   that type's fields (eps_estimate/reported_eps/surprise_pct for earnings;
   firm/from_grade/to_grade/action for ratings; ratio for splits), last
-  updated, source. Not written for tickers/years with none of the three.
+  updated, source. Not written for a ticker with none of the three this
+  year or later.
 - `stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,
@@ -99,13 +100,14 @@ field lists, including how `address`, `ceos`, and `ipo_date` are derived
 and how `metrics.parquet` merges the two `equicast-metrics` calls.
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for **prices, dividends, and events**: prices and dividends additionally
-get `stock=<TICKER>/price/history.parquet` and
-`stock=<TICKER>/dividend/history.parquet` — every year before the current
+for **prices, dividends, and events**: all three additionally get a
+`history.parquet` — `stock=<TICKER>/price/history.parquet`,
+`stock=<TICKER>/dividend/history.parquet`, and
+`stock=<TICKER>/events/history.parquet` — every year before the current
 one, each combined into that one file rather than split per year
-(`price/current.parquet`/`dividend/current.parquet` still get just the
-current year) — while events still writes one `events.parquet` per year
-found (current year included). It does not affect
+(`price/current.parquet`/`dividend/current.parquet`/`events/current.parquet`
+still get the current year — for events, current year *or later*, since
+earnings dates can be future-dated). It does not affect
 `profile.parquet`/`metrics.parquet`:
 
 ```bash
@@ -267,12 +269,13 @@ s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/events.parquet
-    ├── year=2026/events.parquet
     ├── price/
     │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
     │   └── current.parquet   (2026, rewritten by every run)
-    └── dividend/
+    ├── dividend/
+    │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
+    │   └── current.parquet   (2026, rewritten by every run)
+    └── events/
         ├── history.parquet   (every year before 2026, written once by a --full-load run)
-        └── current.parquet   (2026, rewritten by every run)
+        └── current.parquet   (2026 or later, rewritten by every run)
 ```

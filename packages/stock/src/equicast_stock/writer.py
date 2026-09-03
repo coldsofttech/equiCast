@@ -162,30 +162,50 @@ def write_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> l
 
 
 def write_events_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
-    """Write `records` to one `<output_dir>/stock=<TICKER>/year=<YYYY>/events.parquet`
-    per year.
+    """Write `records` to `<output_dir>/stock=<TICKER>/events/history.parquet` (every
+    year before the current one) and/or `.../events/current.parquet` (the current year
+    onward), instead of one file per year.
 
     Unlike price/dividend, `records` mixes three distinct event types
     (earnings, rating changes, splits) tagged by an `event_type` column, so
-    one year's file can hold everything that happened to the ticker that
-    year rather than splitting across separate files per type. Written with
-    an explicit schema (`_EVENTS_SCHEMA`), not `DataFrame.to_parquet`'s
-    default type inference - see `_EVENTS_SCHEMA`'s comment for why.
+    each file can hold everything that happened (or, for earnings, is
+    scheduled to happen) to the ticker in its range rather than splitting
+    across separate files per type. Written with an explicit schema
+    (`_EVENTS_SCHEMA`), not `DataFrame.to_parquet`'s default type inference
+    - see `_EVENTS_SCHEMA`'s comment for why.
+
+    Split the same way as `write_price_parquet`/`write_dividend_parquet` -
+    see `write_price_parquet`'s docstring for the full reasoning - except
+    `current.parquet` catches the current year *and any later one*
+    (`>=`, not `==`), not just an exact match: earnings dates can be
+    future-dated (e.g. a Q1 announcement scheduled into next calendar year
+    while this runs in December), and a not-yet-happened event belongs in
+    `current.parquet`, not `history.parquet`, regardless of which calendar
+    year it falls in.
     """
     if not records:
         return []
 
     ticker = records[0]["ticker"]
     df = pd.DataFrame(records)
-    years = df["date"].str[:4]
+    current_year = str(datetime.now(UTC).year)
+    is_current_or_later = df["date"].str[:4] >= current_year
+
+    directory = output_dir / f"stock={ticker}" / "events"
+    directory.mkdir(parents=True, exist_ok=True)
 
     written = []
-    for year, year_df in df.groupby(years):
-        directory = output_dir / f"stock={ticker}" / f"year={year}"
-        directory.mkdir(parents=True, exist_ok=True)
+    history_df = df[~is_current_or_later]
+    if not history_df.empty:
+        path = directory / "history.parquet"
+        table = pa.Table.from_pandas(history_df, schema=_EVENTS_SCHEMA, preserve_index=False)
+        pq.write_table(table, path)
+        written.append(path)
 
-        path = directory / "events.parquet"
-        table = pa.Table.from_pandas(year_df, schema=_EVENTS_SCHEMA, preserve_index=False)
+    current_df = df[is_current_or_later]
+    if not current_df.empty:
+        path = directory / "current.parquet"
+        table = pa.Table.from_pandas(current_df, schema=_EVENTS_SCHEMA, preserve_index=False)
         pq.write_table(table, path)
         written.append(path)
     return written

@@ -200,7 +200,7 @@ def test_run_writes_profile_price_dividend_events_and_metrics_parquet_per_config
         assert (out_dir / f"stock={ticker}" / "profile.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "price" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "dividend" / "current.parquet").exists()
-        assert (out_dir / f"stock={ticker}" / "year=2026" / "events.parquet").exists()
+        assert (out_dir / f"stock={ticker}" / "events" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "metrics.parquet").exists()
 
 
@@ -216,7 +216,7 @@ def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
         out_dir / "stock=AAPL" / "profile.parquet",
         out_dir / "stock=AAPL" / "price" / "current.parquet",
         out_dir / "stock=AAPL" / "dividend" / "current.parquet",
-        out_dir / "stock=AAPL" / "year=2026" / "events.parquet",
+        out_dir / "stock=AAPL" / "events" / "current.parquet",
         out_dir / "stock=AAPL" / "metrics.parquet",
     }
 

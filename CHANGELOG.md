@@ -30,13 +30,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   file), but the one-time `--full-load` backfill's combined price+dividend
   PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
   4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
-  tickers: 40,000 → 4,000 PUTs). `events.parquet` keeps its existing
-  one-file-per-year layout — nothing currently reads dividend/events back
+  tickers: 40,000 → 4,000 PUTs). Nothing currently reads dividend data back
   from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
   changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
   Stock/ETF sections re-annotated again with the updated math; a real
   `infracost breakdown` run confirms both projects' totals are still
   unchanged (dev ~$0.05/month, prod ~$5.85/month).
+- Applied the same split to `equicast-etf`/`equicast-stock`'s events
+  Parquet layout, the last remaining `year=<YYYY>` partition —
+  `events/history.parquet` (every year before the current one) and
+  `events/current.parquet` (the current year *or later*, not an exact
+  match: earnings dates can be future-dated, e.g. a Q1 announcement
+  scheduled into next calendar year while this runs in December, and a
+  not-yet-happened event belongs in `current.parquet` regardless of which
+  calendar year it falls in — `write_events_parquet` masks on `date >=
+  current_year`, not `==`). Same reasoning as price/dividend: unchanged
+  recurring monthly PUT count/storage, but the one-time `--full-load`
+  backfill's combined price+dividend+events PUT count drops from up to
+  ~60/ticker (20 each) to at most 6 — still a 90% cut (9,000 stock
+  tickers: 540,000 → 54,000 PUTs). ETF's events specifically sees no
+  realistic PUT saving from this — a ticker has at most one split in its
+  whole history, so a full-load run already wrote at most 1 events PUT
+  before this split and still does after; only its storage accounting
+  changed (a split's row now lands in `events/history.parquet` rather
+  than a specific `year=<YYYY>/events.parquet`, same ~7KB either way).
+  Nothing currently reads events data back from S3, so no reader changes
+  were needed here either. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated once more; a real `infracost breakdown`
+  run confirms both projects' totals are still unchanged (dev
+  ~$0.05/month, prod ~$5.85/month).
 - Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
   layout from one `year=<YYYY>/price.parquet` per year of history to just
   two files: `price/history.parquet` (every year before the current one,
