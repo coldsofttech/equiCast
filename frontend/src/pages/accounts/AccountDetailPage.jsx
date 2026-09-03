@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { seededRandom } from "../../utils/deterministicRandom.js";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
@@ -20,31 +19,18 @@ import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
-import { createHolding, deleteHolding } from "../../api/holdings.js";
+import { createHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
+import {
+  formatCurrency,
+  TICKER_NAMES,
+  buildPieSample,
+  buildHoldingSample,
+  plTone,
+  aggregateSamples,
+} from "../sampleFinancials.js";
 import "./AccountDetailPage.css";
-
-function formatCurrency(value, currency) {
-  return new Intl.NumberFormat(undefined, {
-    style: "currency",
-    currency,
-    maximumFractionDigits: 0,
-  }).format(value);
-}
-
-/**
- * Synthetic current value / P&L for a pie's card row — equiCast doesn't
- * compute real portfolio valuation yet (see this page's "Coming soon"
- * StatTiles), so these are illustrative only, deterministic per pie id.
- */
-function buildPieSample(pieId) {
-  const rand = seededRandom(`pie-value:${pieId}`);
-  const currentValue = 500 + rand() * 49500;
-  const plPct = (rand() - 0.45) * 40;
-  const plValue = (currentValue * plPct) / 100;
-  return { currentValue, plValue, plPct };
-}
 
 function AccountDetailPage() {
   const { accountId } = useParams();
@@ -70,9 +56,6 @@ function AccountDetailPage() {
 
   const [isAddHoldingOpen, setIsAddHoldingOpen] = useState(false);
   const [addHoldingError, setAddHoldingError] = useState(null);
-  const [deletingHoldingId, setDeletingHoldingId] = useState(null);
-  const [isDeletingHolding, setIsDeletingHolding] = useState(false);
-  const [deleteHoldingError, setDeleteHoldingError] = useState(null);
 
   const load = () => {
     setIsLoading(true);
@@ -154,28 +137,9 @@ function AccountDetailPage() {
       .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
   };
 
-  const handleRemoveHolding = () => {
-    setIsDeletingHolding(true);
-    setDeleteHoldingError(null);
-    deleteHolding(api, deletingHoldingId)
-      .then(() => {
-        setAccount((current) => ({
-          ...current,
-          holdings: current.holdings.filter((h) => h.id !== deletingHoldingId),
-        }));
-        patchCachedAccount((a) => ({
-          ...a,
-          holdings: (a.holdings ?? []).filter((h) => h.id !== deletingHoldingId),
-        }));
-        setDeletingHoldingId(null);
-      })
-      .catch((err) => setDeleteHoldingError(err.message ?? "Couldn't remove the holding."))
-      .finally(() => setIsDeletingHolding(false));
-  };
-
   if (isLoading) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Loading…" footer={<SiteFooter />}>
+      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Loading…" footer={<SiteFooter />}>
         <p className="ec-loading">Loading…</p>
       </AppShell>
     );
@@ -183,34 +147,38 @@ function AccountDetailPage() {
 
   if (loadError || !account) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Account" footer={<SiteFooter />}>
+      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Account" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Account not found."}</Alert>
       </AppShell>
     );
   }
 
-  const holdingBeingDeleted = account.holdings?.find((h) => h.id === deletingHoldingId);
   const directHoldings = account.holdings ?? [];
   const allTickers = [
     ...directHoldings.map((h) => h.ticker),
     ...(account.pies ?? []).flatMap((p) => (p.holdings ?? []).map((h) => h.ticker)),
   ];
+  const totals = aggregateSamples([
+    ...(account.pies ?? []).map((p) => buildPieSample(p.id)),
+    ...directHoldings.map((h) => buildHoldingSample(h.id)),
+  ]);
+  const totalsTone = plTone(totals.plPct);
 
   return (
     <AppShell
       menuItems={MENU_ITEMS}
-      eyebrow="Portfolio"
+      eyebrow="Account"
       title={account.name}
       subtitle={account.description}
       actions={
-        <>
-          <Button variant="secondary" onClick={() => setIsEditOpen(true)}>
-            Edit
-          </Button>
-          <Button variant="danger" onClick={() => setIsDeleteOpen(true)}>
-            Delete
-          </Button>
-        </>
+        <Button
+          variant="secondary"
+          className="ec-btn-icon-only"
+          aria-label="Edit account"
+          onClick={() => setIsEditOpen(true)}
+        >
+          <i className="bi bi-pencil" aria-hidden="true" />
+        </Button>
       }
       footer={<SiteFooter />}
     >
@@ -223,9 +191,23 @@ function AccountDetailPage() {
       </div>
 
       <div className="ec-stat-grid">
-        <StatTile label="Total invested" value="—" hint="Coming soon" />
-        <StatTile label="Profit / loss" value="—" hint="Coming soon" />
-        <StatTile label="Profit / loss %" value="—" hint="Coming soon" />
+        <StatTile
+          label="Total invested"
+          value={formatCurrency(totals.invested, account.currency)}
+          hint="Sample data"
+        />
+        <StatTile
+          label="Profit / loss"
+          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), account.currency)}`}
+          tone={totalsTone}
+          hint="Sample data"
+        />
+        <StatTile
+          label="Profit / loss %"
+          value={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
+          tone={totalsTone}
+          hint="Sample data"
+        />
       </div>
 
       <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />
@@ -251,15 +233,15 @@ function AccountDetailPage() {
               }
             />
           ) : (
-            <div className="ec-portfolio-list">
+            <div className="ec-detail-row-list">
               {account.pies.map((pie) => {
                 const sample = buildPieSample(pie.id);
-                const plTone = sample.plPct > 0.05 ? "is-up" : sample.plPct < -0.05 ? "is-down" : "is-flat";
+                const tone = plTone(sample.plPct);
                 const plSign = sample.plValue >= 0 ? "+" : "-";
                 return (
                   <Card
                     key={pie.id}
-                    className="ec-portfolio-row"
+                    className="ec-detail-row ec-detail-row--clickable"
                     role="button"
                     tabIndex={0}
                     onClick={() => navigate(`/accounts/${accountId}/pies/${pie.id}`)}
@@ -270,15 +252,15 @@ function AccountDetailPage() {
                       }
                     }}
                   >
-                    <div className="ec-portfolio-row-main">
-                      <h3 className="ec-portfolio-row-name">{pie.name}</h3>
-                      <span className="ec-portfolio-row-count">{(pie.holdings ?? []).length} holdings</span>
+                    <div className="ec-detail-row-main">
+                      <h3 className="ec-detail-row-name">{pie.name}</h3>
+                      <span className="ec-detail-row-meta">{(pie.holdings ?? []).length} holdings</span>
                     </div>
-                    <div className="ec-portfolio-row-value">
-                      <span className="ec-portfolio-row-current">
+                    <div className="ec-detail-row-value">
+                      <span className="ec-detail-row-current">
                         {formatCurrency(sample.currentValue, account.currency)}
                       </span>
-                      <span className={`ec-portfolio-row-pl ${plTone}`}>
+                      <span className={`ec-detail-row-pl ${tone}`}>
                         {plSign}
                         {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
                         {Math.abs(sample.plPct).toFixed(1)}%)
@@ -311,38 +293,45 @@ function AccountDetailPage() {
               }
             />
           ) : (
-            <div className="ec-table-wrap">
-              <table className="ec-table">
-                <thead>
-                  <tr>
-                    <th>Ticker</th>
-                    <th>Asset class</th>
-                    <th aria-label="Actions" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {directHoldings.map((holding) => (
-                    <tr key={holding.id}>
-                      <td className="ec-table-name">{holding.ticker}</td>
-                      <td>
-                        <Badge tone="neutral">{holding.asset_class}</Badge>
-                      </td>
-                      <td>
-                        <div className="ec-table-actions">
-                          <button
-                            type="button"
-                            className="ec-icon-btn ec-icon-btn--danger"
-                            aria-label={`Remove ${holding.ticker}`}
-                            onClick={() => setDeletingHoldingId(holding.id)}
-                          >
-                            <i className="bi bi-trash" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="ec-detail-row-list">
+              {directHoldings.map((holding) => {
+                const sample = buildHoldingSample(holding.id);
+                const tone = plTone(sample.plPct);
+                const plSign = sample.plValue >= 0 ? "+" : "-";
+                const name = TICKER_NAMES[holding.ticker];
+                return (
+                  <Card
+                    key={holding.id}
+                    className="ec-detail-row ec-detail-row--clickable"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => navigate(`/holdings/${holding.ticker}`)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        navigate(`/holdings/${holding.ticker}`);
+                      }
+                    }}
+                  >
+                    <div className="ec-detail-row-main">
+                      <h3 className="ec-detail-row-name">
+                        {name ? `${name} (${holding.ticker})` : holding.ticker}
+                      </h3>
+                      <span className="ec-detail-row-meta">{sample.shares} shares</span>
+                    </div>
+                    <div className="ec-detail-row-value">
+                      <span className="ec-detail-row-current">
+                        {formatCurrency(sample.currentValue, account.currency)}
+                      </span>
+                      <span className={`ec-detail-row-pl ${tone}`}>
+                        {plSign}
+                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
+                        {Math.abs(sample.plPct).toFixed(1)}%)
+                      </span>
+                    </div>
+                  </Card>
+                );
+              })}
             </div>
           )}
         </div>
@@ -368,6 +357,21 @@ function AccountDetailPage() {
       </div>
 
       <HoldingsHeatmap tickers={allTickers} />
+
+      <Card className="ec-danger-zone">
+        <div className="ec-danger-zone-text">
+          <h3 className="ec-danger-zone-title">Delete this account</h3>
+          <p className="ec-danger-zone-desc">
+            {needsForce
+              ? "This account still has pies and/or holdings. Deleting it will also delete all of them, along with any recorded transactions. This action is permanent and cannot be undone."
+              : "This will permanently delete the account. This action is permanent and cannot be undone."}
+          </p>
+        </div>
+        <Button variant="danger" onClick={() => setIsDeleteOpen(true)}>
+          <i className="bi bi-trash" aria-hidden="true" />
+          Delete account
+        </Button>
+      </Card>
 
       <Drawer
         open={isAddHoldingOpen}
@@ -431,24 +435,6 @@ function AccountDetailPage() {
       {deleteError && (
         <div className="ec-detail-delete-error">
           <Alert tone="danger">{deleteError}</Alert>
-        </div>
-      )}
-
-      <ConfirmDialog
-        open={Boolean(deletingHoldingId)}
-        title="Remove holding"
-        message={`This will remove ${holdingBeingDeleted?.ticker ?? "this holding"} from the account, along with any recorded transactions. This can't be undone.`}
-        confirmLabel="Remove holding"
-        isLoading={isDeletingHolding}
-        onConfirm={handleRemoveHolding}
-        onCancel={() => {
-          setDeletingHoldingId(null);
-          setDeleteHoldingError(null);
-        }}
-      />
-      {deleteHoldingError && (
-        <div className="ec-detail-delete-error">
-          <Alert tone="danger">{deleteHoldingError}</Alert>
         </div>
       )}
     </AppShell>

@@ -41,6 +41,40 @@
   margin: 0;
 }
 
+/** Sample current value / P&L row (see sampleFinancials.js) — same
+ * value-then-P&L stacking as .ec-detail-row-value, just left-aligned since
+ * this card is a vertical stack rather than a horizontal row. */
+.ec-account-card-value {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+}
+
+.ec-account-card-current {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-20);
+  font-weight: 800;
+  color: var(--ec-text);
+}
+
+.ec-account-card-pl {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+}
+
+.ec-account-card-pl.is-up {
+  color: var(--ec-success);
+}
+
+.ec-account-card-pl.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-account-card-pl.is-flat {
+  color: var(--ec-text-subtle);
+}
+
 .ec-account-card-meta {
   display: flex;
   align-items: center;
@@ -48,10 +82,16 @@
   margin-top: var(--ec-s-4);
 }
 
+.ec-account-card-counts {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  margin-left: auto;
+}
+
 .ec-account-card-count {
   font-size: var(--ec-fs-12);
   color: var(--ec-text-subtle);
-  margin-left: auto;
 }
 
 /** Section heading + action button above a card grid (e.g. "Pies" + "New pie"). */
@@ -78,4 +118,126 @@
  * margin-top is needed, not margin-bottom too. */
 .ec-detail-section {
   margin-top: var(--ec-s-24);
+}
+
+/** One compact row per item (a pie, a direct holding, or a holding
+ * instance on HoldingTickerPage) — name/meta on the left, sample value/P&L
+ * on the right. Shared across pages so they all read at the same height;
+ * `--clickable` is added only where the row actually navigates somewhere. */
+.ec-detail-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+}
+
+.ec-card.ec-detail-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-12);
+  padding: var(--ec-s-12) var(--ec-s-16);
+  text-align: left;
+}
+
+.ec-detail-row--clickable {
+  cursor: pointer;
+}
+
+.ec-detail-row--clickable:hover {
+  border-color: var(--ec-border-strong);
+  box-shadow: var(--ec-shadow-sm);
+}
+
+.ec-detail-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+  min-width: 0;
+}
+
+.ec-detail-row-name {
+  font-size: var(--ec-fs-14);
+  font-weight: 600;
+  margin: 0;
+  color: var(--ec-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-detail-row-meta {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-detail-row-value {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--ec-s-2);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.ec-detail-row-current {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-detail-row-pl {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-12);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.ec-detail-row-pl.is-up {
+  color: var(--ec-success);
+}
+
+.ec-detail-row-pl.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-detail-row-pl.is-flat {
+  color: var(--ec-text-subtle);
+}
+
+/** Two even-ish columns, wrapping to one below ~800px total width — used
+ * for AccountDetailPage's Portfolios/Holdings split and PieDetailPage's
+ * search/holdings split. */
+.ec-account-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+  gap: var(--ec-s-16) var(--ec-s-24);
+}
+
+/** Bottom-of-page "danger zone" — the only place account/pie deletion
+ * lives now (moved out of the header actions so it isn't a stray icon
+ * next to Edit); the ConfirmDialog it opens still gates the actual
+ * delete. Shared by AccountDetailPage and PieDetailPage. */
+.ec-card.ec-danger-zone {
+  margin-top: var(--ec-s-24);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  flex-wrap: wrap;
+  border-color: var(--ec-danger);
+  background: var(--ec-danger-soft);
+}
+
+.ec-danger-zone-title {
+  font-size: var(--ec-fs-16);
+  margin: 0 0 var(--ec-s-4);
+  color: var(--ec-danger-soft-text);
+}
+
+.ec-danger-zone-desc {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-danger-soft-text);
+  margin: 0;
+  max-width: 60ch;
 }

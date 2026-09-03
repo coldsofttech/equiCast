@@ -73,6 +73,11 @@ function AllocationRing({ pct }) {
  * caller replacing it with the server's post-save state) — mid-edit, the
  * caller only updates it on those two occasions, so this doesn't clobber
  * in-progress typing.
+ *
+ * Lives inside PieDetailPage's "Edit pie" Drawer (see CreatePortfolioDrawer
+ * for the analogous create-time flow) — the pie's own page just shows a
+ * read-only summary of holdings; this is the only place allocations are
+ * actually added/removed/reallocated.
  */
 function AllocationEditor({ holdings, onSave, isSaving, error }) {
   const [rows, setRows] = useState(() => holdingsToRows(holdings));

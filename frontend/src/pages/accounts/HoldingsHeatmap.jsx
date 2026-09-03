@@ -96,7 +96,7 @@ function HoldingsHeatmap({ tickers }) {
             <div
               key={cell.ticker}
               className="ec-heatmap-cell"
-              title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of account, ${tone.isUp ? "+" : "-"}${Math.abs(cell.changePct).toFixed(1)}% today (sample)`}
+              title={`${cell.ticker} — ${cell.pct.toFixed(1)}%, ${tone.isUp ? "+" : "-"}${Math.abs(cell.changePct).toFixed(1)}% today (sample)`}
               style={{
                 left: `${(cell.x / LAYOUT_W) * 100}%`,
                 top: `${(cell.y / LAYOUT_H) * 100}%`,
@@ -112,7 +112,7 @@ function HoldingsHeatmap({ tickers }) {
                   {tone.isUp ? "▲" : "▼"} {Math.abs(cell.changePct).toFixed(1)}%
                 </span>
               )}
-              {showDetail && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}% of account</span>}
+              {showDetail && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
             </div>
           );
         })}

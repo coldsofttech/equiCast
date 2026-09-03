@@ -11,6 +11,17 @@
   border-bottom: 1px solid var(--ec-divider);
 }
 
+.ec-topbar-logo-link {
+  display: inline-flex;
+  text-decoration: none;
+  border-radius: var(--ec-r-8);
+}
+
+.ec-topbar-logo-link:focus-visible {
+  outline: 2px solid var(--ec-accent);
+  outline-offset: 2px;
+}
+
 .ec-topbar-actions {
   display: flex;
   align-items: center;
