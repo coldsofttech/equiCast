@@ -1,5 +1,7 @@
 .ec-menubar {
-  position: relative;
+  position: sticky;
+  top: var(--ec-topbar-h);
+  z-index: 9;
   height: var(--ec-menubar-h);
   display: flex;
   align-items: center;

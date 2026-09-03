@@ -1,0 +1,95 @@
+.ec-pchart {
+  margin-bottom: var(--ec-s-24);
+}
+
+.ec-pchart-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--ec-s-12);
+  margin-bottom: var(--ec-s-12);
+}
+
+.ec-pchart-compare {
+  height: 32px;
+  padding: 0 var(--ec-s-8);
+  border-radius: var(--ec-r-6);
+  border: 1px solid var(--ec-border-strong);
+  background: var(--ec-surface);
+  color: var(--ec-text);
+  font-size: var(--ec-fs-13);
+  max-width: 220px;
+}
+
+.ec-pchart-ranges {
+  display: flex;
+  overflow-x: auto;
+  gap: var(--ec-s-4);
+  padding-bottom: var(--ec-s-8);
+  margin-bottom: var(--ec-s-12);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-pchart-range-btn {
+  flex-shrink: 0;
+  height: 26px;
+  padding: 0 var(--ec-s-8);
+  border: 0;
+  border-radius: var(--ec-r-6);
+  background: none;
+  color: var(--ec-text-muted);
+  font-weight: 700;
+  font-size: var(--ec-fs-12);
+  cursor: pointer;
+}
+
+.ec-pchart-range-btn:hover {
+  background: var(--ec-surface-hover);
+  color: var(--ec-text);
+}
+
+.ec-pchart-range-btn.is-active {
+  background: var(--ec-accent-soft);
+  color: var(--ec-accent-soft-text);
+}
+
+.ec-pchart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ec-s-16);
+  margin-bottom: var(--ec-s-12);
+}
+
+.ec-pchart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-6);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.ec-pchart-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ec-pchart-dot--main {
+  background: var(--ec-accent);
+}
+
+.ec-pchart-dot--compare {
+  background: var(--ec-purple);
+}
+
+.ec-pchart-area {
+  fill: var(--ec-accent-soft);
+}
+
+.ec-pchart-compare-line {
+  stroke: var(--ec-purple);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
