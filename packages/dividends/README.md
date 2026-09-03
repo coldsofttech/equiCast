@@ -85,6 +85,24 @@ gap doesn't shift the result on its own. See
 [`frequency.py`](src/equicast_dividends/frequency.py) for the exact day-gap
 bands each label matches.
 
+## `median_payout_gap_days`
+
+```python
+from equicast_dividends import DividendsClient, median_payout_gap_days
+
+median_payout_gap_days(DividendsClient("AAPL").dividends(full_load=True))
+# 91.0
+```
+
+The raw number `dividend_frequency()` classifies — the median day-gap itself
+(a `float`, or `None` below the 2-payout minimum), not rounded to a
+canonical per-label value. `dividend_frequency()` calls this internally;
+exposed separately for a caller (e.g.
+[`equicast-forecasting`](../forecasting/README.md)) that needs the ticker's
+*actual* empirical cadence to step forward by, not just which named band it
+falls into — a payer whose real median gap is 84 days keeps stepping by 84,
+not by "quarterly"'s canonical ~91.
+
 ## Development
 
 ```bash

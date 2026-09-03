@@ -1,6 +1,6 @@
 from datetime import date, timedelta
 
-from equicast_dividends.frequency import dividend_frequency
+from equicast_dividends.frequency import dividend_frequency, median_payout_gap_days
 
 
 def _records(dates: list[date]) -> list[dict]:
@@ -70,3 +70,16 @@ def test_records_do_not_need_to_be_pre_sorted() -> None:
     dates = _spaced(date(2025, 1, 1), 30, 6)
     shuffled = [dates[3], dates[0], dates[5], dates[1], dates[4], dates[2]]
     assert dividend_frequency(_records(shuffled)) == "monthly"
+
+
+def test_median_payout_gap_days_returns_none_below_the_minimum() -> None:
+    assert median_payout_gap_days([]) is None
+    assert median_payout_gap_days(_records([date(2026, 1, 15)])) is None
+
+
+def test_median_payout_gap_days_returns_the_raw_median() -> None:
+    dates = _spaced(date(2024, 1, 1), 91, 5)
+    dates.append(dates[-1] + timedelta(days=400))
+    # Same fixture as the "one outlier gap" dividend_frequency test above -
+    # the raw median gap is 91, not a canonical/rounded value.
+    assert median_payout_gap_days(_records(dates)) == 91

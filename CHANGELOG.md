@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `equicast-forecasting` package: `dividends(records, years=10)` projects
+  a symbol's future dividend payouts forward from its actual ex-dividend-date
+  history. Returns `[]` for a ticker with no dependable cadence to extend —
+  the same `"irregular"`/`"not_applicable"` cases `dividend_frequency()`
+  flags. Each projected date steps forward by the ticker's *real* empirical
+  cadence (`equicast_dividends.median_payout_gap_days()`, not a fixed
+  per-label constant), and each projected amount compounds once per calendar
+  year crossed at a trailing dividend growth rate — computed by comparing the
+  oldest to the newest of the most recent 6 full calendar years of summed
+  payouts as a CAGR, clamped to ±50%/year so one outlier historical year
+  can't produce a runaway compound over a long horizon, falling back to flat
+  (repeat the last actual amount) when there isn't enough full-year history
+  to compute a rate. Also ships a CLI (`equicast-forecasting`) and Dockerfile
+  — fetches a ticker's full dividend history live via
+  `DividendsClient.dividends(full_load=True)`, forecasts it, and writes
+  `<asset_class>=<TICKER>/forecasting/dividends.parquet` (nothing for a
+  ticker with no dependable cadence). Not yet wired into
+  stock-ingestion.yml/etf-ingestion.yml as a scheduled step — that's a
+  follow-up.
+- `equicast_dividends.median_payout_gap_days()`: the raw median day-gap
+  `dividend_frequency()` classifies (a `float`, or `None` below its 2-payout
+  minimum), exposed separately for `equicast-forecasting` to step forward
+  by — a payer whose real median gap is 84 days keeps stepping by 84, not by
+  "quarterly"'s canonical ~91.
 - `equicast_dividends.dividend_frequency()`: classifies a symbol's payout
   cadence from its ex-dividend-date history into `weekly`/`monthly`/
   `quarterly`/`half_yearly`/`yearly`/`irregular`/`not_applicable`, by taking

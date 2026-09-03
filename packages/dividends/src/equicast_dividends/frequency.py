@@ -32,6 +32,27 @@ _MIN_PAYOUTS = 2
 _SAMPLE_SIZE = 10
 
 
+def median_payout_gap_days(records: list[dict[str, Any]]) -> float | None:
+    """The median day-gap between the most recent `_SAMPLE_SIZE` payouts in
+    `records` (as returned by `DividendsClient.dividends()`), or however many
+    `records` has, down to `_MIN_PAYOUTS`. Sorted by `ex_dividend_date`
+    regardless of `records`' own order.
+
+    Returns `None` if there are fewer than `_MIN_PAYOUTS` payouts to measure a
+    gap from at all (no dividend history, or a single just-started one) --
+    the same case `dividend_frequency()` reports as `"not_applicable"`.
+    Median rather than mean so one unusually long/short gap in the sample
+    doesn't shift the result on its own.
+    """
+    dates = sorted(date.fromisoformat(record["ex_dividend_date"]) for record in records)
+    if len(dates) < _MIN_PAYOUTS:
+        return None
+
+    recent = dates[-_SAMPLE_SIZE:]
+    gaps = [(later - earlier).days for earlier, later in zip(recent, recent[1:])]
+    return median(gaps)
+
+
 def dividend_frequency(records: list[dict[str, Any]]) -> str:
     """Classify `records` (as returned by `DividendsClient.dividends()`) into a
     payout cadence: `"weekly"`, `"monthly"`, `"quarterly"`, `"half_yearly"`,
@@ -41,19 +62,12 @@ def dividend_frequency(records: list[dict[str, Any]]) -> str:
     or `"not_applicable"` (fewer than 2 recorded payouts to measure a gap from at
     all -- no dividend history, or a single just-started one).
 
-    Uses the most recent `_SAMPLE_SIZE` payouts (or however many `records` has,
-    down to `_MIN_PAYOUTS`), sorted by `ex_dividend_date` regardless of `records`'
-    own order, and classifies the *median* day-gap between consecutive payouts in
-    that sample against `_BANDS` -- median rather than mean so one unusually
-    long/short gap in the sample doesn't shift the classification on its own.
+    Matches `median_payout_gap_days(records)` against `_BANDS`; `None` from that
+    (fewer than `_MIN_PAYOUTS` payouts) maps to `"not_applicable"` here.
     """
-    dates = sorted(date.fromisoformat(record["ex_dividend_date"]) for record in records)
-    if len(dates) < _MIN_PAYOUTS:
+    median_gap = median_payout_gap_days(records)
+    if median_gap is None:
         return "not_applicable"
-
-    recent = dates[-_SAMPLE_SIZE:]
-    gaps = [(later - earlier).days for earlier, later in zip(recent, recent[1:])]
-    median_gap = median(gaps)
 
     for label, (low, high) in _BANDS:
         if low <= median_gap <= high:
