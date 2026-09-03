@@ -1,0 +1,34 @@
+.ec-field-list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.ec-field-list-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  padding: var(--ec-s-12) 0;
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-field-list-item:last-child {
+  border-bottom: 0;
+}
+
+.ec-field-list-label {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  flex-shrink: 0;
+}
+
+.ec-field-list-value {
+  margin: 0;
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text);
+  text-align: right;
+}

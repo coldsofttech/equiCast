@@ -69,4 +69,31 @@ describe("PriceChart", () => {
     );
     expect(select.querySelectorAll("optgroup")).toHaveLength(1);
   });
+
+  it("lists other holdings in the compare picker when passed", () => {
+    const holdings = [
+      { id: "h-1", name: "MSFT" },
+      { id: "h-2", name: "GOOGL" },
+    ];
+    render(<PriceChart holdings={holdings} seedKey="holding:AAPL" subjectLabel="This holding" />);
+
+    const select = screen.getByLabelText("Compare against");
+    const optionLabels = Array.from(select.querySelectorAll("option")).map((o) => o.textContent);
+
+    expect(optionLabels).toEqual(expect.arrayContaining(["MSFT", "GOOGL"]));
+    expect(
+      Array.from(select.querySelectorAll("optgroup")).map((g) => g.label)
+    ).toContain("Other holdings");
+  });
+
+  it("shows a compare legend entry once another holding is selected", () => {
+    const holdings = [{ id: "h-1", name: "MSFT" }];
+    render(<PriceChart holdings={holdings} seedKey="holding:AAPL" subjectLabel="This holding" />);
+
+    fireEvent.change(screen.getByLabelText("Compare against"), {
+      target: { value: "holding:h-1" },
+    });
+
+    expect(screen.getAllByText("MSFT")).toHaveLength(2);
+  });
 });

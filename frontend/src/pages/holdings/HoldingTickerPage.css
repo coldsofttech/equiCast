@@ -1,0 +1,111 @@
+.ec-holding-actions-row {
+  display: flex;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-24);
+}
+
+.ec-holding-stats-caption {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-muted);
+  margin: var(--ec-s-4) 0 0;
+}
+
+.ec-holding-highlow-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--ec-s-24);
+  margin: var(--ec-s-16) 0 var(--ec-s-24);
+}
+
+.ec-holding-range-title {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  margin: 0 0 var(--ec-s-12);
+}
+
+.ec-holding-range {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ec-s-8);
+}
+
+.ec-holding-range-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ec-s-2);
+}
+
+.ec-holding-range-label {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-holding-range-value {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-holding-range-bar-wrap {
+  position: relative;
+  width: 10px;
+  height: 64px;
+}
+
+.ec-holding-range-bar-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--ec-border);
+}
+
+.ec-holding-range-bar-segment {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  border-radius: 999px;
+}
+
+.ec-holding-range-bar-segment.is-up {
+  background: var(--ec-success);
+}
+
+.ec-holding-range-bar-segment.is-down {
+  background: var(--ec-danger);
+}
+
+.ec-holding-range-pointer {
+  position: absolute;
+  left: -5px;
+  width: 0;
+  height: 0;
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  border-right: 6px solid var(--ec-text);
+  transform: translateY(-50%);
+}
+
+.ec-holding-about-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  padding: var(--ec-s-8) 0;
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-holding-about-row:last-of-type {
+  border-bottom: 0;
+}
+
+.ec-holding-fx-note {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+  margin: var(--ec-s-8) 0 0;
+}
