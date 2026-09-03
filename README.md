@@ -254,20 +254,21 @@ for exactly how each field is sourced/derived.
 The pipeline writes all five as Parquet, landing in the same bucket as FX
 data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
 `fundamentals()` into one row, `year=<YYYY>/events.parquet` combines all
-three event types for that year into one file, and prices split into a
-`history.parquet`/`current.parquet` pair the same way as FX (see above)
-rather than one file per year:
+three event types for that year into one file, and prices/dividends each
+split into a `history.parquet`/`current.parquet` pair the same way as FX's
+prices (see above) rather than one file per year:
 
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/dividend.parquet
     ├── year=2025/events.parquet
-    ├── year=2026/dividend.parquet
     ├── year=2026/events.parquet
-    └── price/
+    ├── price/
+    │   ├── history.parquet
+    │   └── current.parquet
+    └── dividend/
         ├── history.parquet
         └── current.parquet
 ```
@@ -383,9 +384,10 @@ s3://equicast-market-data-<env>/
     ├── profile.parquet
     ├── metrics.parquet
     ├── year=2013/events.parquet
-    ├── year=2025/dividend.parquet
-    ├── year=2026/dividend.parquet
-    └── price/
+    ├── price/
+    │   ├── history.parquet
+    │   └── current.parquet
+    └── dividend/
         ├── history.parquet
         └── current.parquet
 ```

@@ -19,6 +19,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Applied the same `history.parquet`/`current.parquet` split to
+  `equicast-etf`/`equicast-stock`'s dividend Parquet layout (fx has no
+  dividends) — `dividend/history.parquet` (every year before the current
+  one, written once by a `--full-load` run) and `dividend/current.parquet`
+  (the current year, rewritten by every run that has any current-year
+  ex-dividend rows), replacing `year=<YYYY>/dividend.parquet` per year, for
+  the same reasoning as the price split above: unchanged recurring monthly
+  PUT count/storage (each scheduled run already only touched one dividend
+  file), but the one-time `--full-load` backfill's combined price+dividend
+  PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
+  4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
+  tickers: 40,000 → 4,000 PUTs). `events.parquet` keeps its existing
+  one-file-per-year layout — nothing currently reads dividend/events back
+  from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
+  changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated again with the updated math; a real
+  `infracost breakdown` run confirms both projects' totals are still
+  unchanged (dev ~$0.05/month, prod ~$5.85/month).
 - Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
   layout from one `year=<YYYY>/price.parquet` per year of history to just
   two files: `price/history.parquet` (every year before the current one,

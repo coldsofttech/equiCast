@@ -136,9 +136,9 @@ prices, dividends, events, and metrics for each, and writes:
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
 - `<out>/etf=<TICKER>/price/current.parquet` — one row per trading day,
   for the current year only by default
-- `<out>/etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
-  ex-dividend date, for the current year only by default (empty for tickers
-  with no dividend history)
+- `<out>/etf=<TICKER>/dividend/current.parquet` — one row per
+  ex-dividend date, for the current year only by default (not written for
+  a ticker with no dividends this year)
 - `<out>/etf=<TICKER>/year=<YYYY>/events.parquet` — one row per event
   (earnings report, analyst rating change, stock split), for the current
   year only by default. In practice only ever has `"split"` rows for an
@@ -152,11 +152,12 @@ uv run equicast-etf --config config/etfs.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, dividends, and events — prices additionally get
-`<out>/etf=<TICKER>/price/history.parquet` (every year before the current
-one, combined into that one file rather than split per year;
-`price/current.parquet` still gets just the current year), while dividends
-and events still write one `dividend.parquet`/`events.parquet` per year
+for prices, dividends, and events — prices and dividends additionally get
+`<out>/etf=<TICKER>/price/history.parquet` and
+`<out>/etf=<TICKER>/dividend/history.parquet` (every year before the
+current one, each combined into that one file rather than split per year;
+`price/current.parquet`/`dividend/current.parquet` still get just the
+current year), while events still writes one `events.parquet` per year
 found (current year included) — same as `equicast-stock`'s `--full-load`.
 It does not affect `metrics.parquet`:
 
@@ -217,9 +218,10 @@ Records are shaped `{ticker, currency, ex_dividend_date, price,
 last_updated, source}`. `price` is the dividend cash amount per share, not
 an ETF price. There's no `payment_date` field — yfinance's dividend history
 only has ex-dividend date and amount, for any ticker, at any point in
-history; see equicast-dividends's README for details. Tickers with no
-dividend history (e.g. `GLD`, a gold trust that pays no distribution)
-simply produce no `dividend.parquet` file for that year.
+history; see equicast-dividends's README for details. A ticker with no
+dividends in a given period (e.g. `GLD`, a gold trust that pays no
+distribution) simply produces no `dividend/current.parquet` (or
+`dividend/history.parquet` on a `--full-load` run) for it.
 
 ## Configuration
 

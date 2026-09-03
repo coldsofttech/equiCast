@@ -124,22 +124,39 @@ def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list
 
 
 def write_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
-    """Write `records` to one `<output_dir>/stock=<TICKER>/year=<YYYY>/dividend.parquet`
-    per year."""
+    """Write `records` to `<output_dir>/stock=<TICKER>/dividend/history.parquet` (every
+    year before the current one) and/or `.../dividend/current.parquet` (the current
+    year), instead of one file per year.
+
+    Same split as `write_price_parquet` — see its docstring for the full reasoning.
+    `history.parquet` is only ever produced by a `--full-load` run and is written
+    wholesale from whatever `records` contains this call, not merged with any
+    `history.parquet` already on disk. `current.parquet` is rewritten by every run that
+    has any current-year ex-dividend rows to write (nothing at all is written for a
+    ticker/year with no dividends, same as before this split).
+    """
     if not records:
         return []
 
     ticker = records[0]["ticker"]
     df = pd.DataFrame(records)
-    years = df["ex_dividend_date"].str[:4]
+    current_year = str(datetime.now(UTC).year)
+    is_current_year = df["ex_dividend_date"].str[:4] == current_year
+
+    directory = output_dir / f"stock={ticker}" / "dividend"
+    directory.mkdir(parents=True, exist_ok=True)
 
     written = []
-    for year, year_df in df.groupby(years):
-        directory = output_dir / f"stock={ticker}" / f"year={year}"
-        directory.mkdir(parents=True, exist_ok=True)
+    history_df = df[~is_current_year]
+    if not history_df.empty:
+        path = directory / "history.parquet"
+        history_df.to_parquet(path, index=False)
+        written.append(path)
 
-        path = directory / "dividend.parquet"
-        year_df.to_parquet(path, index=False)
+    current_df = df[is_current_year]
+    if not current_df.empty:
+        path = directory / "current.parquet"
+        current_df.to_parquet(path, index=False)
         written.append(path)
     return written
 

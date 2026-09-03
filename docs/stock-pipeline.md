@@ -77,11 +77,11 @@ For each ticker this writes:
 - `stock=<TICKER>/price/current.parquet` — one row per trading day, for
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source
-- `stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per ex-dividend
+- `stock=<TICKER>/dividend/current.parquet` — one row per ex-dividend
   date, this year to date by default: ticker, currency, ex_dividend_date,
   price (the dividend amount per share, not a stock price), last updated,
   source. No `payment_date` — yfinance's dividend history has none. Not
-  written for tickers/years with no dividends.
+  written for a ticker with no dividends this year.
 - `stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event, this
   year to date plus any future-dated entries by default (only earnings
   ever has any): ticker, event_type (earnings/rating/split), date, plus
@@ -99,12 +99,13 @@ field lists, including how `address`, `ceos`, and `ipo_date` are derived
 and how `metrics.parquet` merges the two `equicast-metrics` calls.
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for **prices, dividends, and events**: prices additionally get
-`stock=<TICKER>/price/history.parquet` — every year before the current one,
-combined into that one file rather than split per year
-(`price/current.parquet` still gets just the current year) — while
-dividends and events still write one `dividend.parquet`/`events.parquet`
-per year found (current year included). It does not affect
+for **prices, dividends, and events**: prices and dividends additionally
+get `stock=<TICKER>/price/history.parquet` and
+`stock=<TICKER>/dividend/history.parquet` — every year before the current
+one, each combined into that one file rather than split per year
+(`price/current.parquet`/`dividend/current.parquet` still get just the
+current year) — while events still writes one `events.parquet` per year
+found (current year included). It does not affect
 `profile.parquet`/`metrics.parquet`:
 
 ```bash
@@ -266,11 +267,12 @@ s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/dividend.parquet
     ├── year=2025/events.parquet
-    ├── year=2026/dividend.parquet
     ├── year=2026/events.parquet
-    └── price/
+    ├── price/
+    │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
+    │   └── current.parquet   (2026, rewritten by every run)
+    └── dividend/
         ├── history.parquet   (every year before 2026, written once by a --full-load run)
         └── current.parquet   (2026, rewritten by every run)
 ```

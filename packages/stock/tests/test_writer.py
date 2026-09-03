@@ -139,7 +139,7 @@ def _dividend_record(ex_dividend_date: str, **overrides) -> dict:
     return record
 
 
-def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_dividend_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _dividend_record("2025-11-10", price=0.25),
         _dividend_record("2026-02-10", price=0.26),
@@ -149,15 +149,26 @@ def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) ->
     paths = write_dividend_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "stock=AAPL" / "year=2025" / "dividend.parquet",
-        tmp_path / "stock=AAPL" / "year=2026" / "dividend.parquet",
+        tmp_path / "stock=AAPL" / "dividend" / "history.parquet",
+        tmp_path / "stock=AAPL" / "dividend" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2025" / "dividend.parquet")
-    assert year_2025.to_dict(orient="records") == [records[0]]
+    history = pd.read_parquet(tmp_path / "stock=AAPL" / "dividend" / "history.parquet")
+    assert history.to_dict(orient="records") == [records[0]]
 
-    year_2026 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2026" / "dividend.parquet")
-    assert sorted(year_2026["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+    current = pd.read_parquet(tmp_path / "stock=AAPL" / "dividend" / "current.parquet")
+    assert sorted(current["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+
+
+def test_write_dividend_parquet_current_year_only_writes_no_history_file(
+    tmp_path: Path,
+) -> None:
+    records = [_dividend_record("2026-02-10")]
+
+    paths = write_dividend_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "stock=AAPL" / "dividend" / "current.parquet"]
+    assert not (tmp_path / "stock=AAPL" / "dividend" / "history.parquet").exists()
 
 
 def test_write_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:

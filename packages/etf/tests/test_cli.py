@@ -176,7 +176,7 @@ def test_run_writes_profile_price_dividend_events_and_metrics_parquet_per_config
     for ticker in ("VOO", "QQQ"):
         assert (out_dir / f"etf={ticker}" / "profile.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "price" / "current.parquet").exists()
-        assert (out_dir / f"etf={ticker}" / "year=2026" / "dividend.parquet").exists()
+        assert (out_dir / f"etf={ticker}" / "dividend" / "current.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "year=2026" / "events.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "metrics.parquet").exists()
 
@@ -192,7 +192,7 @@ def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
     assert set(written) == {
         out_dir / "etf=VOO" / "profile.parquet",
         out_dir / "etf=VOO" / "price" / "current.parquet",
-        out_dir / "etf=VOO" / "year=2026" / "dividend.parquet",
+        out_dir / "etf=VOO" / "dividend" / "current.parquet",
         out_dir / "etf=VOO" / "year=2026" / "events.parquet",
         out_dir / "etf=VOO" / "metrics.parquet",
     }
