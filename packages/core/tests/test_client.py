@@ -47,6 +47,35 @@ def test_get_profile_returns_none_when_key_missing(s3_client) -> None:
     assert client.get_profile("stock", "MISSING") is None
 
 
+def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
+    """A stock profile's `ceos` is written as a JSON string column (see
+    equicast_stock.writer.write_profile_parquet's docstring) — get_profile
+    must decode it back into a real list rather than leaking the raw JSON
+    text through to callers."""
+    ceos = [{"name": "Timothy D. Cook", "role": "CEO"}]
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/profile.parquet",
+        Body=_parquet_bytes([{"ticker": "AAPL", "ceos": json.dumps(ceos)}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_profile("stock", "AAPL")["ceos"] == ceos
+
+
+def test_get_profile_leaves_a_missing_ceos_field_untouched(s3_client) -> None:
+    """etf/fx profiles have no `ceos` field at all — get_profile shouldn't
+    require one."""
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="fx=GBPUSD/profile.parquet",
+        Body=_parquet_bytes([{"ticker": "GBPUSD"}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_profile("fx", "GBPUSD") == {"ticker": "GBPUSD"}
+
+
 def test_get_prices_returns_current_year_rows(s3_client) -> None:
     year = datetime.now(UTC).year
     rows = [

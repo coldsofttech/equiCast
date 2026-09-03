@@ -48,10 +48,26 @@ class MarketDataClient:
 
     def get_profile(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single profile record for `symbol`, or `None` if this
-        ticker/pair has no `profile.parquet` in the bucket."""
+        ticker/pair has no `profile.parquet` in the bucket.
+
+        A stock profile's `ceos` is written as a JSON-encoded string column
+        (see `equicast_stock.writer.write_profile_parquet`'s docstring —
+        Parquet viewers render a native list<struct> column as
+        "[object Object]", so the writer stores JSON text instead and
+        documents that consumers decode it back); decoded here so every
+        caller of this client gets a real list, not a raw JSON string. Only
+        touched when present and still a string — etf/fx profiles have no
+        `ceos` field at all, and a value that's already a list (e.g. from a
+        test fixture) is left as-is rather than re-decoded.
+        """
         key = f"{asset_class.lower()}={symbol.upper()}/profile.parquet"
         rows = self._read_parquet(key)
-        return rows[0] if rows else None
+        if not rows:
+            return None
+        profile = rows[0]
+        if isinstance(profile.get("ceos"), str):
+            profile = {**profile, "ceos": json.loads(profile["ceos"])}
+        return profile
 
     def get_prices(self, asset_class: str, symbol: str) -> list[dict[str, Any]]:
         """Return this calendar year's daily OHLC rows for `symbol`, or `[]`

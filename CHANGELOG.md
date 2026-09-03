@@ -91,6 +91,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
+  now decodes a stock profile's `ceos` field back into a real list before
+  returning it. `equicast_stock.writer.write_profile_parquet` deliberately
+  JSON-encodes `ceos` to a plain string column when writing `profile.parquet`
+  (a native `list<struct>` column round-trips fine through pandas/pyarrow,
+  but common Parquet viewers are JS-based and render it as
+  "[object Object]") — its docstring says "consumers `json.loads()` it
+  back", but `get_profile` never did, so every caller (the `ProfileView`
+  API endpoint included) got the raw JSON text through instead of a real
+  array. Surfaced by the frontend holding detail page's About section
+  always showing "—" for CEO even on tickers (e.g. AAPL, NVDA) with real
+  `companyOfficers` data. Only touches `ceos` when present and still a
+  string, so etf/fx profiles (which have no `ceos` field at all) are
+  unaffected. `packages/core/tests/test_client.py` gained regression
+  coverage for both the decode and the missing-field case.
 - Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
   `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
   previously shared one usage file, so the "dev" and "prod" cost estimates
