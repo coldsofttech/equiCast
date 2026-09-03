@@ -1,5 +1,4 @@
 import json
-from datetime import UTC, datetime
 from io import BytesIO
 
 import boto3
@@ -48,14 +47,13 @@ def test_get_profile_returns_none_when_key_missing(s3_client) -> None:
 
 
 def test_get_prices_returns_current_year_rows(s3_client) -> None:
-    year = datetime.now(UTC).year
     rows = [
         {"ticker": "VOO", "date": "2026-01-02", "close": 624.5},
         {"ticker": "VOO", "date": "2026-01-05", "close": 628.64},
     ]
     s3_client.put_object(
         Bucket=BUCKET,
-        Key=f"etf=VOO/year={year}/price.parquet",
+        Key="etf=VOO/price/current.parquet",
         Body=_parquet_bytes(rows),
     )
     client = MarketDataClient(BUCKET, s3_client=s3_client)

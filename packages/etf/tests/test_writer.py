@@ -72,7 +72,7 @@ def _price_record(date: str, **overrides) -> dict:
     return record
 
 
-def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_price_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _price_record("2025-12-30"),
         _price_record("2025-12-31"),
@@ -82,15 +82,24 @@ def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> No
     paths = write_price_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "etf=VOO" / "year=2025" / "price.parquet",
-        tmp_path / "etf=VOO" / "year=2026" / "price.parquet",
+        tmp_path / "etf=VOO" / "price" / "history.parquet",
+        tmp_path / "etf=VOO" / "price" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2025" / "price.parquet")
-    assert sorted(year_2025["date"]) == ["2025-12-30", "2025-12-31"]
+    history = pd.read_parquet(tmp_path / "etf=VOO" / "price" / "history.parquet")
+    assert sorted(history["date"]) == ["2025-12-30", "2025-12-31"]
 
-    year_2026 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2026" / "price.parquet")
-    assert year_2026.to_dict(orient="records") == [records[2]]
+    current = pd.read_parquet(tmp_path / "etf=VOO" / "price" / "current.parquet")
+    assert current.to_dict(orient="records") == [records[2]]
+
+
+def test_write_price_parquet_current_year_only_writes_no_history_file(tmp_path: Path) -> None:
+    records = [_price_record("2026-01-15")]
+
+    paths = write_price_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "etf=VOO" / "price" / "current.parquet"]
+    assert not (tmp_path / "etf=VOO" / "price" / "history.parquet").exists()
 
 
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:

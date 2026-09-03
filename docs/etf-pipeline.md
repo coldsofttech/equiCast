@@ -77,7 +77,7 @@ For each ticker this writes:
   ratio, dividend rate/yield, total assets, NAV price, volume, day/year
   price range and moving averages, YTD/3yr/5yr average returns, inception
   date, last updated, source
-- `etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day, for
+- `etf=<TICKER>/price/current.parquet` — one row per trading day, for
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source
 - `etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per ex-dividend
@@ -101,9 +101,13 @@ lists, including how the profile differs from `equicast-stock`'s, how
 rows for an ETF.
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for **prices, dividends, and events**, writing one
-`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
-year included). It does not affect `profile.parquet`/`metrics.parquet`:
+for **prices, dividends, and events**: prices additionally get
+`etf=<TICKER>/price/history.parquet` — every year before the current one,
+combined into that one file rather than split per year
+(`price/current.parquet` still gets just the current year) — while
+dividends and events still write one `dividend.parquet`/`events.parquet`
+per year found (current year included). It does not affect
+`profile.parquet`/`metrics.parquet`:
 
 ```bash
 uv run equicast-etf --config config/etfs.dev.yaml --out ./output --full-load
@@ -266,8 +270,9 @@ s3://equicast-market-data-<env>/
     ├── profile.parquet
     ├── metrics.parquet
     ├── year=2013/events.parquet
-    ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
-    ├── year=2026/price.parquet
-    └── year=2026/dividend.parquet
+    ├── year=2026/dividend.parquet
+    └── price/
+        ├── history.parquet   (every year before 2026, written once by a --full-load run)
+        └── current.parquet   (2026, rewritten by every run)
 ```

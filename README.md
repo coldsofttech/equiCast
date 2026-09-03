@@ -124,16 +124,19 @@ as for an FX pair, checking yfinance for an existing value first (only
 
 ### Where it lands
 
-The pipeline writes all three as Parquet to S3, partitioned by pair and —
-for prices — by year:
+The pipeline writes all three as Parquet to S3, partitioned by pair — prices
+split into a `history.parquet` (every year before the current one, written
+once by a `--full-load` run) and a `current.parquet` (the current year,
+rewritten by every run) rather than one file per year:
 
 ```
 s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/price.parquet
-    └── year=2026/price.parquet
+    └── price/
+        ├── history.parquet
+        └── current.parquet
 ```
 
 Refreshed once daily automatically on weekdays, after both US and UK
@@ -250,20 +253,23 @@ for exactly how each field is sourced/derived.
 
 The pipeline writes all five as Parquet, landing in the same bucket as FX
 data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
-`fundamentals()` into one row, and `year=<YYYY>/events.parquet` combines all
-three event types for that year into one file:
+`fundamentals()` into one row, `year=<YYYY>/events.parquet` combines all
+three event types for that year into one file, and prices split into a
+`history.parquet`/`current.parquet` pair the same way as FX (see above)
+rather than one file per year:
 
 ```
 s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
     ├── year=2025/events.parquet
-    ├── year=2026/price.parquet
     ├── year=2026/dividend.parquet
-    └── year=2026/events.parquet
+    ├── year=2026/events.parquet
+    └── price/
+        ├── history.parquet
+        └── current.parquet
 ```
 
 Refreshed once daily automatically on weekdays, offset 45 minutes from the
@@ -377,10 +383,11 @@ s3://equicast-market-data-<env>/
     ├── profile.parquet
     ├── metrics.parquet
     ├── year=2013/events.parquet
-    ├── year=2025/price.parquet
     ├── year=2025/dividend.parquet
-    ├── year=2026/price.parquet
-    └── year=2026/dividend.parquet
+    ├── year=2026/dividend.parquet
+    └── price/
+        ├── history.parquet
+        └── current.parquet
 ```
 
 Refreshed once daily automatically on weekdays, offset 15 minutes from the

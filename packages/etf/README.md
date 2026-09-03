@@ -134,7 +134,7 @@ Reads the ETF tickers listed in a config file, fetches a profile, daily
 prices, dividends, events, and metrics for each, and writes:
 
 - `<out>/etf=<TICKER>/profile.parquet` — one row, current snapshot
-- `<out>/etf=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
+- `<out>/etf=<TICKER>/price/current.parquet` — one row per trading day,
   for the current year only by default
 - `<out>/etf=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
   ex-dividend date, for the current year only by default (empty for tickers
@@ -152,10 +152,13 @@ uv run equicast-etf --config config/etfs.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, dividends, and events, writing one
-`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
-year included) — same as `equicast-stock`'s `--full-load`. It does not
-affect `metrics.parquet`:
+for prices, dividends, and events — prices additionally get
+`<out>/etf=<TICKER>/price/history.parquet` (every year before the current
+one, combined into that one file rather than split per year;
+`price/current.parquet` still gets just the current year), while dividends
+and events still write one `dividend.parquet`/`events.parquet` per year
+found (current year included) — same as `equicast-stock`'s `--full-load`.
+It does not affect `metrics.parquet`:
 
 ```bash
 uv run equicast-etf --config config/etfs.dev.yaml --out ./output --full-load

@@ -122,21 +122,43 @@ resource_usage:
   #     price.parquet     ~20KB/year
   #     dividend.parquet  ~10KB/year
   #     events.parquet    ~10KB/year (equicast-events: earnings/ratings/splits)
-  #   Unlike profile/metrics, the three per-year files accumulate one
-  #   year=<YYYY> partition per year rather than being overwritten — assuming
-  #   20 years of accumulated history per ticker (a full yfinance backfill via
-  #   --full-load, then steady-state incremental runs): (20+10+10)KB * 20
-  #   years = 800KB/ticker of per-year files, + 30KB + 20KB one-time
-  #   snapshots = 850KB/ticker.
+  #   dividend.parquet/events.parquet still accumulate one year=<YYYY>
+  #   partition per year rather than being overwritten — assuming 20 years of
+  #   accumulated history per ticker (a full yfinance backfill via
+  #   --full-load, then steady-state incremental runs): (10+10)KB * 20 years
+  #   = 400KB/ticker of per-year files. price.parquet instead splits into
+  #   price/history.parquet (every year before the current one, ~19 years *
+  #   20KB = ~380KB, written once by a --full-load run) and
+  #   price/current.parquet (~20KB, rewritten by every run) — 400KB total,
+  #   same as the old per-year layout's 20 years * 20KB, since consolidating
+  #   into 2 files doesn't shrink the actual row data, just the file count
+  #   (see the PUT note below for where that file-count drop actually pays
+  #   off). Total: 400KB (dividend+events) + 400KB (price) + 30KB + 20KB
+  #   one-time snapshots = 850KB/ticker — unchanged from before this split.
   #   storage:  9,000 tickers * 850KB = 7,650,000KB (~7.3GB)
   #   schedule: stock-ingestion.yml, cron "45 22 * * 1-5" -> also
   #             ~22 runs/month (1/weekday, offset 45m from FX/30m from ETF
   #             so none of the three ever overlap)
   #   requests: 5 files/ticker/run (profile + price + dividend + events +
-  #             metrics — each run only touches the current year's
-  #             price/dividend/events file, not the full accumulated
-  #             history), all PUT
-  #             22 runs * 9,000 tickers * 5 files = 990,000 PUTs
+  #             metrics — each scheduled run only ever fetches ytd data, so
+  #             it only ever touches the current year's price/dividend/events
+  #             file, not the full accumulated history — true before and
+  #             after the price/history.parquet+current.parquet split), all
+  #             PUT. 22 runs * 9,000 tickers * 5 files = 990,000 PUTs —
+  #             unchanged by the split; not where its savings show up (see
+  #             below).
+  #
+  #   Where the price split actually saves requests: the one-time
+  #   `--full-load` backfill this 20-year storage assumption presumes (a
+  #   manual workflow_dispatch run, outside the 22-runs/month scheduled
+  #   figure above, so not priced into monthly_tier_1_requests below either
+  #   way). Before this split, that run wrote one price.parquet per year of
+  #   history — 20 PUTs/ticker for price alone, 9,000 tickers *
+  #   20 = 180,000 PUTs. After: at most 2 PUTs/ticker (history.parquet +
+  #   current.parquet), 9,000 * 2 = 18,000 PUTs — a 162,000-PUT (90%) cut on
+  #   that one-off run, at roughly the $0.005/1,000 PUT rate S3 standard
+  #   charges (~$0.81 saved on that single backfill run — not a recurring
+  #   monthly cost, so it doesn't appear in monthly_tier_1_requests below).
   #
   # --- ETF (~1,000 tickers — the remaining 10% of the ~10,000-instrument
   #     universe; packages/etf/config/etfs.prod.yaml itself still lists far
@@ -161,13 +183,19 @@ resource_usage:
   #                        ETF, so this is only ever written for a
   #                        ticker-year with an actual split). Modeled
   #                        worst-case as 1 accumulated events file per
-  #                        ticker (not *20 years like price/dividend), for
+  #                        ticker (not *20 years like dividend), for
   #                        headroom: 1,000 tickers * 7KB = 7,000KB total.
-  #   Unlike profile/metrics, price.parquet/dividend.parquet accumulate one
-  #   year=<YYYY> partition per year rather than being overwritten —
-  #   assuming 20 years of accumulated history per ticker (same assumption
-  #   as the Stock section): (20+5)KB * 20 years = 500KB/ticker of per-year
-  #   files, + 25KB + 7KB one-time snapshots = 532KB/ticker.
+  #   dividend.parquet still accumulates one year=<YYYY> partition per year
+  #   rather than being overwritten — assuming 20 years of accumulated
+  #   history per ticker (same assumption as the Stock section): 5KB * 20
+  #   years = 100KB/ticker of per-year files. price.parquet instead splits
+  #   into price/history.parquet (every year before the current one, ~19
+  #   years * 20KB = ~380KB, written once by a --full-load run) and
+  #   price/current.parquet (~20KB, rewritten by every run) — 400KB total,
+  #   same as the old per-year layout's 20 years * 20KB (see the Stock
+  #   section's note on why consolidating files doesn't shrink the row
+  #   data). Total: 100KB (dividend) + 400KB (price) + 25KB + 7KB one-time
+  #   snapshots = 532KB/ticker — unchanged from before this split.
   #   storage:  1,000 tickers * 532KB + 7,000KB (events, flat) = 539,000KB
   #             (~0.53GB)
   #   schedule: etf-ingestion.yml, cron "15 22 * * 1-5" -> also
@@ -177,8 +205,18 @@ resource_usage:
   #             metrics — same conservative per-run ceiling the Stock
   #             section uses, even though events.parquet in particular
   #             produces an actual upload in only a small fraction of runs
-  #             — most ticker-years have no split), all PUT
-  #             22 runs * 1,000 tickers * 5 files = 110,000 PUTs
+  #             — most ticker-years have no split), all PUT. 22 runs *
+  #             1,000 tickers * 5 files = 110,000 PUTs — unchanged by the
+  #             price split, same reasoning as the Stock section (each
+  #             scheduled run is ytd-only, so it only ever touched one price
+  #             file per ticker either way).
+  #
+  #   One-time `--full-load` backfill savings (see the Stock section for the
+  #   full explanation — same reasoning, not priced into
+  #   monthly_tier_1_requests below): price PUTs/ticker drop from ~20
+  #   (one per year of history) to at most 2 (history.parquet +
+  #   current.parquet). 1,000 tickers * 20 = 20,000 PUTs before vs.
+  #   1,000 * 2 = 2,000 after — an 18,000-PUT (90%) cut on that one-off run.
   #
   # --- Totals used below ---
   #   storage:  180KB + 7,650,000KB + 539,000KB = 8,189,180KB (~7.81GB) ->
@@ -190,7 +228,11 @@ resource_usage:
   #             real prod ticker count is known instead of this 10,000
   #             planning scenario.
   #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) =
-  #             1,100,300
+  #             1,100,300. Unaffected by the price/history.parquet+
+  #             current.parquet split — that split's ~180,000-PUT saving
+  #             (see the Stock/ETF sections) is on the one-time --full-load
+  #             backfill, a manual workflow_dispatch run outside this
+  #             scheduled-runs figure, so it never shows up here.
   #   requests (GET): 3,000 — backend on-demand reads, from the session
   #             model above (60/user/month * 50 users), not sized from the
   #             ticker count or ingestion schedule

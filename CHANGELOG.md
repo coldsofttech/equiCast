@@ -19,6 +19,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
+  layout from one `year=<YYYY>/price.parquet` per year of history to just
+  two files: `price/history.parquet` (every year before the current one,
+  written once by a `--full-load` run) and `price/current.parquet` (the
+  current year, rewritten by every run — scheduled or manual). Each
+  scheduled run only ever fetches `ytd` data, so it only ever touched one
+  price file either way — this doesn't change the recurring monthly PUT
+  count (still 990,000/month for stock, 110,000/month for ETF, per
+  `infra/infracost-usage.prod.yml`) or total storage (still ~850KB/stock
+  ticker, ~532KB/ETF ticker — consolidating years into one file doesn't
+  shrink the row data). What it does cut is the one-time `--full-load`
+  backfill's PUT count for price specifically: up to ~20 PUTs/ticker (one
+  per year of history) down to at most 2 — a 90% reduction (9,000 stock
+  tickers: 180,000 → 18,000 PUTs; 1,000 ETF tickers: 20,000 → 2,000), not
+  part of the scheduled-runs figure either way since that backfill is a
+  manual `workflow_dispatch` run. `equicast_core.MarketDataClient.get_prices()`
+  now reads `price/current.parquet` instead of the current year's
+  `year=<YYYY>/price.parquet` — its return value (current calendar year's
+  rows) is unchanged, only the S3 key. `dividend.parquet`/`events.parquet`
+  keep their existing one-file-per-year layout; only prices were affected
+  by their put/get volume being singled out. Re-annotated (not
+  re-numbered) `infra/infracost-usage.{dev,prod}.yml`'s Stock/ETF sections
+  with the storage/request math above — a real `infracost breakdown` run
+  confirms both projects' totals are unchanged (dev ~$0.05/month, prod
+  ~$5.85/month), as expected since only comments changed there, not the
+  usage values themselves.
 - Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
   scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
   22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —

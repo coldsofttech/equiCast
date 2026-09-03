@@ -3,7 +3,8 @@
 Generic across consumers (Django backend, Lambda, scripts) and across asset
 classes (`fx`/`stock`/`etf`) — it only knows the S3 key layout the ingestion
 pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
-`<asset_class>=<symbol>/year=<YYYY>/price.parquet`,
+`<asset_class>=<symbol>/price/current.parquet` and
+`<asset_class>=<symbol>/price/history.parquet`,
 `catalog/<asset_class>.json` — see `equicast_core.catalog` for how the
 latter is built/uploaded by each ingestion pipeline), nothing about Django
 or any particular caller.
@@ -12,7 +13,6 @@ or any particular caller.
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -56,9 +56,14 @@ class MarketDataClient:
     def get_prices(self, asset_class: str, symbol: str) -> list[dict[str, Any]]:
         """Return this calendar year's daily OHLC rows for `symbol`, or `[]`
         if none exist yet (not-yet-configured ticker, or no trading days so
-        far this year)."""
-        year = datetime.now(UTC).year
-        key = f"{asset_class.lower()}={symbol.upper()}/year={year}/price.parquet"
+        far this year).
+
+        Reads `price/current.parquet` — the current year only, same as
+        before this was split from a `year=<YYYY>/price.parquet` per year.
+        `price/history.parquet` (every earlier year, written once by a
+        `--full-load` ingestion run) isn't read here; nothing currently
+        needs prior-year rows."""
+        key = f"{asset_class.lower()}={symbol.upper()}/price/current.parquet"
         rows = self._read_parquet(key)
         return rows or []
 

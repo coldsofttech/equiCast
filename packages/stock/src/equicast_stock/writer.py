@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -83,21 +84,41 @@ def write_metrics_parquet(metrics: dict[str, Any], ticker: str, output_dir: Path
 
 
 def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
-    """Write `records` to one `<output_dir>/stock=<TICKER>/year=<YYYY>/price.parquet` per year."""
+    """Write `records` to `<output_dir>/stock=<TICKER>/price/history.parquet` (every year
+    before the current one) and/or `.../price/current.parquet` (the current year),
+    instead of one file per year.
+
+    `history.parquet` is only ever produced by a `--full-load` run — the default
+    incremental fetch is `ytd`-only, so `records` never has pre-current-year rows to put
+    in it — and is written wholesale from whatever `records` contains this call, not
+    merged with any `history.parquet` already on disk: a second `--full-load` run
+    replaces it rather than appending to it. `current.parquet` is rewritten by every run,
+    full-load or incremental, since the current year always has *some* rows to write.
+    This keeps the ticker's total price files at 2 regardless of how many years of
+    history it has, rather than growing by one file per year.
+    """
     if not records:
         return []
 
     ticker = records[0]["ticker"]
     df = pd.DataFrame(records)
-    years = df["date"].str[:4]
+    current_year = str(datetime.now(UTC).year)
+    is_current_year = df["date"].str[:4] == current_year
+
+    directory = output_dir / f"stock={ticker}" / "price"
+    directory.mkdir(parents=True, exist_ok=True)
 
     written = []
-    for year, year_df in df.groupby(years):
-        directory = output_dir / f"stock={ticker}" / f"year={year}"
-        directory.mkdir(parents=True, exist_ok=True)
+    history_df = df[~is_current_year]
+    if not history_df.empty:
+        path = directory / "history.parquet"
+        history_df.to_parquet(path, index=False)
+        written.append(path)
 
-        path = directory / "price.parquet"
-        year_df.to_parquet(path, index=False)
+    current_df = df[is_current_year]
+    if not current_df.empty:
+        path = directory / "current.parquet"
+        current_df.to_parquet(path, index=False)
         written.append(path)
     return written
 

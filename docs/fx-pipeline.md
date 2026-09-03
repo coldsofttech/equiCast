@@ -51,14 +51,16 @@ uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output
 For each pair this writes:
 
 - `fx=<PAIR>/profile.parquet` — one row, current snapshot
-- `fx=<PAIR>/year=<YYYY>/price.parquet` — one row per trading day, for the
+- `fx=<PAIR>/price/current.parquet` — one row per trading day, for the
   current year only by default
 - `fx=<PAIR>/metrics.parquet` — one row, volatility/Sharpe/drawdown/CAGR
 
 Add `--full-load` to fetch each pair's entire available yfinance history for
-**prices**, writing one `price.parquet` per year found (current year
-included). It does not affect `metrics.parquet`, which always looks back far
-enough for `cagr_10y` regardless of this flag:
+**prices**, additionally writing `fx=<PAIR>/price/history.parquet` — every
+year before the current one, combined into that one file rather than split
+per year (`price/current.parquet` still gets just the current year). It
+does not affect `metrics.parquet`, which always looks back far enough for
+`cagr_10y` regardless of this flag:
 
 ```bash
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output --full-load
@@ -258,8 +260,7 @@ s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2003/price.parquet
-    ├── year=2004/price.parquet
-    ├── ...
-    └── year=2026/price.parquet
+    └── price/
+        ├── history.parquet   (2003-2025, written once by a --full-load run)
+        └── current.parquet   (2026, rewritten by every run)
 ```
