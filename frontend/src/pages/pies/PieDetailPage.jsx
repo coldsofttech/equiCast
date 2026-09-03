@@ -41,7 +41,9 @@ const FALLBACK_CURRENCY = "USD";
  * bottom-of-page diversification/heatmap), scoped to this pie's own
  * holdings instead of the whole account's. Holdings here are read-only
  * (name, allocation %, sample value/P&L) — adding/removing/reallocating
- * them happens via AllocationEditor inside the "Edit pie" Drawer instead.
+ * them happens via AllocationEditor inside its own "Add holdings" Drawer,
+ * separate from the "Edit pie" Drawer (name/description only), so editing
+ * one never shows form fields for the other.
  */
 function PieDetailPage() {
   const { accountId, pieId } = useParams();
@@ -65,6 +67,7 @@ function PieDetailPage() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  const [isHoldingsOpen, setIsHoldingsOpen] = useState(false);
   const [isAllocationSaving, setIsAllocationSaving] = useState(false);
   const [allocationError, setAllocationError] = useState(null);
 
@@ -138,6 +141,7 @@ function PieDetailPage() {
       .then((updated) => {
         setPie(updated);
         patchCachedPie(() => updated);
+        setIsHoldingsOpen(false);
       })
       .catch((err) => setAllocationError(err.message ?? "Couldn't save the allocation changes."))
       .finally(() => setIsAllocationSaving(false));
@@ -214,53 +218,86 @@ function PieDetailPage() {
 
       <div className="ec-section-head">
         <h2 className="ec-section-title">Holdings</h2>
+        <Button variant="primary" size="sm" onClick={() => setIsHoldingsOpen(true)}>
+          <i className="bi bi-plus-lg" aria-hidden="true" />
+          Add holding
+        </Button>
       </div>
 
       {(pie.holdings ?? []).length === 0 ? (
         <EmptyState
           title="No holdings yet"
-          description="Add holdings and set their allocation from the Edit action above."
+          description="Search for a ticker and set its allocation to add it to this pie."
+          action={
+            <Button variant="primary" onClick={() => setIsHoldingsOpen(true)}>
+              Add holding
+            </Button>
+          }
         />
       ) : (
         <div className="ec-detail-row-list">
-          {pie.holdings.map((holding) => {
-            const sample = buildHoldingSample(holding.id);
-            const tone = plTone(sample.plPct);
-            const plSign = sample.plValue >= 0 ? "+" : "-";
-            const name = TICKER_NAMES[holding.ticker];
-            return (
-              <Card
-                key={holding.id}
-                className="ec-detail-row ec-detail-row--clickable"
-                role="button"
-                tabIndex={0}
-                onClick={() => navigate(`/holdings/${holding.ticker}`)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    navigate(`/holdings/${holding.ticker}`);
-                  }
-                }}
-              >
-                <div className="ec-detail-row-main">
-                  <h3 className="ec-detail-row-name">
-                    {name ? `${name} (${holding.ticker})` : holding.ticker}
-                  </h3>
-                  <span className="ec-detail-row-meta">{holding.allocation_pct}% allocated</span>
-                </div>
-                <div className="ec-detail-row-value">
-                  <span className="ec-detail-row-current">
-                    {formatCurrency(sample.currentValue, currency)}
-                  </span>
-                  <span className={`ec-detail-row-pl ${tone}`}>
-                    {plSign}
-                    {formatCurrency(Math.abs(sample.plValue), currency)} ({plSign}
-                    {Math.abs(sample.plPct).toFixed(1)}%)
-                  </span>
-                </div>
-              </Card>
+          {(() => {
+            const holdingSamples = pie.holdings.map((holding) => ({
+              holding,
+              sample: buildHoldingSample(holding.id),
+            }));
+            const totalCurrentValue = holdingSamples.reduce(
+              (sum, { sample }) => sum + sample.currentValue,
+              0
             );
-          })}
+
+            return holdingSamples.map(({ holding, sample }) => {
+              const tone = plTone(sample.plPct);
+              const plSign = sample.plValue >= 0 ? "+" : "-";
+              const name = TICKER_NAMES[holding.ticker];
+              const targetPct = Number(holding.allocation_pct);
+              // "Actual" allocation is this holding's share of the pie's
+              // sample current value, not its stored target — the two
+              // drift apart as prices move, which is exactly what this
+              // comparison is meant to surface (sample data for now).
+              const actualPct =
+                totalCurrentValue > 0 ? (sample.currentValue / totalCurrentValue) * 100 : 0;
+              const allocTone =
+                actualPct > targetPct ? "is-up" : actualPct < targetPct ? "is-down" : "is-flat";
+              return (
+                <Card
+                  key={holding.id}
+                  className="ec-detail-row ec-detail-row--clickable"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`/holdings/${holding.ticker}`)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      navigate(`/holdings/${holding.ticker}`);
+                    }
+                  }}
+                >
+                  <div className="ec-detail-row-main">
+                    <h3 className="ec-detail-row-name">
+                      {name ? `${name} (${holding.ticker})` : holding.ticker}
+                    </h3>
+                    <span className="ec-detail-row-meta">
+                      {sample.shares} shares · {targetPct}% target /{" "}
+                      <span className={`ec-detail-row-alloc-actual ${allocTone}`}>
+                        {actualPct.toFixed(1)}% actual
+                      </span>
+                    </span>
+                  </div>
+                  <div className="ec-detail-row-value">
+                    <span className="ec-detail-row-current">
+                      {formatCurrency(sample.currentValue, currency)}
+                    </span>
+                    <span className={`ec-detail-row-pl ${tone}`}>
+                      {plSign}
+                      {formatCurrency(Math.abs(sample.plValue), currency)} ({plSign}
+                      {Math.abs(sample.plPct).toFixed(1)}%)
+                    </span>
+                  </div>
+                </Card>
+              );
+            });
+          })()}
         </div>
       )}
 
@@ -318,10 +355,16 @@ function PieDetailPage() {
           isSubmitting={isSaving}
           error={saveError}
         />
+      </Drawer>
 
-        <div className="ec-section-head">
-          <h3 className="ec-section-title">Holdings</h3>
-        </div>
+      <Drawer
+        open={isHoldingsOpen}
+        onClose={() => {
+          setIsHoldingsOpen(false);
+          setAllocationError(null);
+        }}
+        title="Add holdings"
+      >
         <AllocationEditor
           holdings={pie.holdings ?? []}
           onSave={handleSaveAllocation}

@@ -205,6 +205,21 @@
   color: var(--ec-text-subtle);
 }
 
+/** A pie holding's "actual" (by current value) allocation %, next to its
+ * fixed target % — green once it's outgrown its target, red once it's
+ * shrunk below it, neutral grey when they still match exactly. */
+.ec-detail-row-alloc-actual.is-up {
+  color: var(--ec-success);
+}
+
+.ec-detail-row-alloc-actual.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-detail-row-alloc-actual.is-flat {
+  color: var(--ec-text-subtle);
+}
+
 /** Two even-ish columns, wrapping to one below ~800px total width — used
  * for AccountDetailPage's Portfolios/Holdings split and PieDetailPage's
  * search/holdings split. */

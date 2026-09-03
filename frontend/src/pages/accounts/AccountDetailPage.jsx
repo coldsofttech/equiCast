@@ -112,17 +112,6 @@ function AccountDetailPage() {
     patchCachedAccount((a) => ({ ...a, pies: [...(a.pies ?? []), pie] }));
   };
 
-  const handlePortfolioHoldingsSaved = (updatedPie) => {
-    setAccount((current) => ({
-      ...current,
-      pies: current.pies.map((p) => (p.id === updatedPie.id ? updatedPie : p)),
-    }));
-    patchCachedAccount((a) => ({
-      ...a,
-      pies: (a.pies ?? []).map((p) => (p.id === updatedPie.id ? updatedPie : p)),
-    }));
-  };
-
   const handleAddHolding = ({ ticker, asset_class }) => {
     setAddHoldingError(null);
     if ((account.holdings ?? []).some((h) => h.ticker === ticker)) {
@@ -413,7 +402,6 @@ function AccountDetailPage() {
         accountId={accountId}
         onClose={() => setIsCreatePortfolioOpen(false)}
         onCreated={handlePortfolioCreated}
-        onHoldingsSaved={handlePortfolioHoldingsSaved}
       />
 
       <ConfirmDialog
