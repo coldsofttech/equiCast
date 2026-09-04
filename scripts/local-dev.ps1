@@ -43,6 +43,16 @@
   windows (via taskkill /T, since npm/uv each fork child processes a plain
   Stop-Process wouldn't reach) and the LocalStack container - on Ctrl+C.
 
+  LocalStack itself keeps no state across a container removal, and this
+  script always removes it on teardown - so accounts/pies/etc. created
+  against it (the user-data bucket + user-profiles table, both real app
+  data, not market data) would otherwise vanish every time you stop and
+  restart. To avoid that, they're backed up to disk (data/localstack-seed/,
+  gitignored - see -SeedMarketData's help for the same folder's other use)
+  right before every teardown (Ctrl+C, or -Stop) and restored right after
+  every fresh container start - only a clean stop is covered, a crash/kill
+  isn't. -Reset also clears this backup, for a genuinely fresh start.
+
 .PARAMETER StartLocalStack
   Start LocalStack and provision its buckets/table. Combine with
   -StartBackend/-StartFrontend, or use alone to just stand up LocalStack
@@ -94,10 +104,15 @@
 
 .PARAMETER Reset
   Only applies with -StartLocalStack: removes any existing LocalStack
-  container (and its data) before starting a fresh one.
+  container (and its data) before starting a fresh one. Also clears the
+  on-disk user-data/user-profiles-table backup described above, so this is
+  a genuinely clean slate rather than one that gets silently repopulated
+  from yesterday's data right after. Does not touch the separate
+  market-data seed cache - see -ForceReseed for that.
 
 .PARAMETER Stop
-  Stops and removes the LocalStack container, then exits without starting
+  Backs up the app's own user-data/user-profiles-table (see above), then
+  stops and removes the LocalStack container, then exits without starting
   anything. The backend/frontend windows (if any are still open from a
   previous run) aren't tracked across invocations - close them directly.
 
@@ -147,12 +162,34 @@ $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ContainerName = "equicast-localstack"
 $Endpoint = "http://localhost:4566"
 
-# Persists a seeded market-data bucket across LocalStack container removals
-# (see -SeedMarketData's help above) - gitignored, since this is purely a
-# local dev-loop speedup, not something to ship.
+# Persists a seeded market-data bucket, and (separately) the app's own
+# user-data bucket/user-profiles table, across LocalStack container
+# removals - gitignored, since this is purely a local dev-loop speedup/
+# data-preservation measure, not something to ship.
 $SeedCacheDir = Join-Path $RepoRoot "data\localstack-seed"
 $SeedCacheMarketData = Join-Path $SeedCacheDir "market-data"
 $SeedInfoPath = Join-Path $SeedCacheDir "seed-info.json"
+$AppDataCacheDir = Join-Path $SeedCacheDir "user-data"
+$UserProfilesTableCachePath = Join-Path $SeedCacheDir "user-profiles-table.json"
+
+# Fake creds + boto3 endpoint overrides - equicast-core's clients call plain
+# boto3.client(...)/boto3.resource(...) with no endpoint_url hook of their
+# own, this relies on boto3>=1.28's AWS_ENDPOINT_URL_* env var support
+# (pinned boto3>=1.35.9 here) to route them at LocalStack instead, with no
+# code change. Set unconditionally and this early (before even -Stop's
+# early exit below) since the AWS CLI itself needs *some* credentials
+# configured to talk to LocalStack at all, including for -Stop's/this
+# script's own backup-before-teardown calls - harmless to set even when
+# this run isn't the one starting LocalStack (e.g. -StartBackend alone,
+# against a LocalStack already running from a previous invocation).
+$env:AWS_ACCESS_KEY_ID = "test"
+$env:AWS_SECRET_ACCESS_KEY = "test"
+$env:AWS_REGION = $Region
+$env:AWS_ENDPOINT_URL_S3 = $Endpoint
+$env:AWS_ENDPOINT_URL_DYNAMODB = $Endpoint
+$env:MARKET_DATA_BUCKET = $MarketDataBucket
+$env:USER_DATA_BUCKET = $UserDataBucket
+$env:USER_PROFILES_TABLE = $UserProfilesTable
 
 function Test-Command {
     param([string]$Name)
@@ -161,6 +198,59 @@ function Test-Command {
 
 function Stop-LocalStackContainer {
     docker rm -f $ContainerName *> $null
+}
+
+# LocalStack itself keeps no state across a container removal, and this
+# script's own teardown always removes it (see Stop-LocalStackContainer) -
+# so unlike market-data (explicitly (re-)seeded via -SeedMarketData), the
+# app's own user-data bucket (accounts/pies/watchlists/holdings/
+# transactions - all S3 JSON via equicast-core) and user-profiles
+# DynamoDB table are backed up to disk right before every teardown and
+# restored right after every fresh container start, so creating a couple
+# of accounts, stopping, and starting again doesn't lose them. Only a
+# clean stop is covered - a crash/kill before the `finally`/-Stop path
+# runs means whatever changed since the last clean stop isn't backed up.
+function Backup-LocalStackAppData {
+    Write-Host "Backing up user data (accounts/pies/etc.) to $SeedCacheDir..."
+    New-Item -ItemType Directory -Force -Path $SeedCacheDir | Out-Null
+
+    if (Test-Path $AppDataCacheDir) {
+        Remove-Item -Recurse -Force $AppDataCacheDir
+    }
+    aws --endpoint-url $Endpoint s3 sync "s3://$UserDataBucket/" $AppDataCacheDir *> $null
+
+    # A plain `scan` (no pagination handling) - fine for this table's size
+    # (one small item per user) in local dev, not meant to scale further.
+    $scanJson = aws --endpoint-url $Endpoint dynamodb scan --table-name $UserProfilesTable --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $scanJson) {
+        Set-Content -Path $UserProfilesTableCachePath -Value $scanJson
+    }
+}
+
+function Restore-LocalStackAppData {
+    if (Test-Path $AppDataCacheDir) {
+        Write-Host "Restoring cached user data from $AppDataCacheDir..."
+        aws --endpoint-url $Endpoint s3 sync $AppDataCacheDir "s3://$UserDataBucket/" | Out-Null
+    }
+
+    if (Test-Path $UserProfilesTableCachePath) {
+        Write-Host "Restoring cached user-profiles table items from $UserProfilesTableCachePath..."
+        $scan = Get-Content $UserProfilesTableCachePath -Raw | ConvertFrom-Json
+        foreach ($item in $scan.Items) {
+            $itemFile = [System.IO.Path]::GetTempFileName()
+            try {
+                $itemJson = $item | ConvertTo-Json -Depth 20 -Compress
+                # Set-Content -Encoding utf8 writes a UTF-8 BOM in Windows
+                # PowerShell 5.1 - the AWS CLI's `file://` JSON parser chokes
+                # on that BOM ("Expected: '=', received: ..."), so this
+                # writes plain BOM-less UTF-8 instead.
+                [System.IO.File]::WriteAllText($itemFile, $itemJson, [System.Text.UTF8Encoding]::new($false))
+                aws --endpoint-url $Endpoint dynamodb put-item --table-name $UserProfilesTable --item "file://$itemFile" | Out-Null
+            } finally {
+                Remove-Item -Force $itemFile -ErrorAction SilentlyContinue
+            }
+        }
+    }
 }
 
 function Stop-SpawnedProcess {
@@ -189,18 +279,11 @@ if ($StartLocalStack -or $Stop) {
     docker info *> $null
     $dockerRunning = ($LASTEXITCODE -eq 0)
 
-    if ($Stop) {
-        if (-not $dockerRunning) {
+    if (-not $dockerRunning) {
+        if ($Stop) {
             Write-Host "Docker Desktop doesn't appear to be running - nothing to stop."
             exit 0
         }
-        Write-Host "Stopping and removing $ContainerName..."
-        Stop-LocalStackContainer
-        Write-Host "Done."
-        exit 0
-    }
-
-    if (-not $dockerRunning) {
         Write-Error "Docker Desktop doesn't appear to be running. Start it, then re-run."
         exit 1
     }
@@ -208,6 +291,17 @@ if ($StartLocalStack -or $Stop) {
     if (-not (Test-Command aws)) {
         Write-Error "AWS CLI is required to provision LocalStack's buckets/table (e.g. 'winget install Amazon.AWSCLI'), then re-run."
         exit 1
+    }
+
+    if ($Stop) {
+        $runningNow = @((docker ps --format "{{.Names}}") -split "`n" | Where-Object { $_ -ne "" })
+        if ($runningNow -contains $ContainerName) {
+            Backup-LocalStackAppData
+        }
+        Write-Host "Stopping and removing $ContainerName..."
+        Stop-LocalStackContainer
+        Write-Host "Done."
+        exit 0
     }
 }
 
@@ -225,22 +319,6 @@ if ($StartFrontend) {
         Write-Warning "frontend/node_modules not found - run 'npm install' in frontend/ first; the frontend window will show the failure otherwise."
     }
 }
-
-# Fake creds + boto3 endpoint overrides - equicast-core's clients call
-# plain boto3.client(...)/boto3.resource(...) with no endpoint_url hook of
-# their own, this relies on boto3>=1.28's AWS_ENDPOINT_URL_* env var
-# support (pinned boto3>=1.35.9 here) to route them at LocalStack instead,
-# with no code change. Harmless to set even when this run isn't the one
-# starting LocalStack (e.g. -StartBackend alone, against a LocalStack
-# already running from a previous invocation).
-$env:AWS_ACCESS_KEY_ID = "test"
-$env:AWS_SECRET_ACCESS_KEY = "test"
-$env:AWS_REGION = $Region
-$env:AWS_ENDPOINT_URL_S3 = $Endpoint
-$env:AWS_ENDPOINT_URL_DYNAMODB = $Endpoint
-$env:MARKET_DATA_BUCKET = $MarketDataBucket
-$env:USER_DATA_BUCKET = $UserDataBucket
-$env:USER_PROFILES_TABLE = $UserProfilesTable
 
 if ($StartBackend) {
     if (-not $Auth0Domain -or -not $Auth0Audience) {
@@ -273,11 +351,20 @@ try {
         if ($Reset) {
             Write-Host "Removing existing $ContainerName for a clean slate..."
             docker rm -f $ContainerName | Out-Null
+            # -Reset means "start over" for the app's own data too, not just
+            # the container - otherwise Restore-LocalStackAppData below would
+            # immediately repopulate the "fresh" container from yesterday's
+            # backup. The market-data seed cache is untouched here - that
+            # one's expensive (real Yahoo Finance calls) and has its own
+            # dedicated -ForceReseed switch instead.
+            if (Test-Path $AppDataCacheDir) { Remove-Item -Recurse -Force $AppDataCacheDir }
+            if (Test-Path $UserProfilesTableCachePath) { Remove-Item -Force $UserProfilesTableCachePath }
         }
 
         # --- Start LocalStack ---------------------------------------------
         $allContainers = @((docker ps -a --format "{{.Names}}") -split "`n" | Where-Object { $_ -ne "" })
         $runningContainers = @((docker ps --format "{{.Names}}") -split "`n" | Where-Object { $_ -ne "" })
+        $wasAlreadyRunning = $runningContainers -contains $ContainerName
 
         if ($runningContainers -contains $ContainerName) {
             Write-Host "$ContainerName is already running."
@@ -346,6 +433,16 @@ try {
                 --billing-mode PAY_PER_REQUEST | Out-Null
         } else {
             Write-Host "Table $UserProfilesTable already exists."
+        }
+
+        # --- Restore any previously backed-up app data ------------------------
+        # Only when this run is the one that just created/started the
+        # container - if it was already running (e.g. a second -StartBackend-
+        # only invocation attaching to a LocalStack still up from before),
+        # whatever's live in there is newer than any on-disk backup, and
+        # restoring would overwrite it with stale data.
+        if (-not $wasAlreadyRunning) {
+            Restore-LocalStackAppData
         }
 
         # --- Optionally seed all three asset classes' catalogs ---------------
@@ -489,6 +586,7 @@ try {
     Stop-SpawnedProcess -Process $frontendProcess -Label "frontend"
     Stop-SpawnedProcess -Process $backendProcess -Label "backend"
     if ($StartLocalStack) {
+        Backup-LocalStackAppData
         Write-Host "Stopping LocalStack ($ContainerName)..."
         Stop-LocalStackContainer
         Write-Host "Stopped."

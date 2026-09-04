@@ -179,6 +179,16 @@ is also mirrored to `data/localstack-seed/` (gitignored), and the next
 calls) instead of re-ingesting, as long as `-FullLoad` matches what was
 cached. Pass `-ForceReseed` to ingest fresh data regardless of that cache.
 
+The app's own data (accounts/pies/watchlists/holdings/transactions in
+`USER_DATA_BUCKET`, plus `USER_PROFILES_TABLE`) survives the same way, but
+continuously rather than via an explicit seed step: it's backed up to
+`data/localstack-seed/` right before every teardown (Ctrl+C, or `-Stop`) and
+restored right after every fresh container start, so creating a couple of
+accounts, stopping, and starting again doesn't lose them. Only a clean stop
+is covered — killing the process or Docker itself isn't. `-Reset` also
+clears this backup (but not the market-data seed cache above), for a
+genuinely fresh start.
+
 Two things it deliberately does **not** simulate:
 
 - **Auth0** — `Auth0JWTAuthentication` always talks to a real Auth0 tenant (JWKS
