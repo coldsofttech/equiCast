@@ -49,9 +49,11 @@
   data, not market data) would otherwise vanish every time you stop and
   restart. To avoid that, they're backed up to disk (data/localstack-seed/,
   gitignored - see -SeedMarketData's help for the same folder's other use)
-  right before every teardown (Ctrl+C, or -Stop) and restored right after
-  every fresh container start - only a clean stop is covered, a crash/kill
-  isn't. -Reset also clears this backup, for a genuinely fresh start.
+  right before every teardown (Ctrl+C, or -Stop - both wait for/handle
+  Ctrl+C the same deliberate way, see the wait loop below) and restored
+  right after every fresh container start - only a clean stop is covered,
+  killing the process or Docker itself isn't. -Reset also clears this
+  backup, for a genuinely fresh start.
 
 .PARAMETER StartLocalStack
   Start LocalStack and provision its buckets/table. Combine with
@@ -579,8 +581,37 @@ try {
 
     Write-Host ""
     Write-Host "Press Ctrl+C to stop everything this script started."
-    while ($true) {
-        Start-Sleep -Seconds 1
+
+    # A plain Ctrl+C's default behavior (breaking PowerShell's pipeline) is
+    # unreliable for actually reaching the `finally` block below - which
+    # terminal host has focus decides whether the interrupt tears the whole
+    # process down before PowerShell gets a chance to unwind try/finally,
+    # silently skipping Backup-LocalStackAppData and losing whatever
+    # accounts/pies/etc. were created this session. Treating Ctrl+C as
+    # plain input and polling for it here instead guarantees this loop
+    # exits normally into `finally` regardless of host quirks. Falls back
+    # to the old plain Start-Sleep loop if console manipulation isn't
+    # available at all (e.g. no real console attached).
+    try {
+        $previousTreatControlCAsInput = [Console]::TreatControlCAsInput
+        [Console]::TreatControlCAsInput = $true
+        try {
+            while ($true) {
+                if ([Console]::KeyAvailable) {
+                    $key = [Console]::ReadKey($true)
+                    if ($key.Key -eq "C" -and ($key.Modifiers -band [ConsoleModifiers]::Control)) {
+                        break
+                    }
+                }
+                Start-Sleep -Milliseconds 200
+            }
+        } finally {
+            [Console]::TreatControlCAsInput = $previousTreatControlCAsInput
+        }
+    } catch {
+        while ($true) {
+            Start-Sleep -Seconds 1
+        }
     }
 } finally {
     Stop-SpawnedProcess -Process $frontendProcess -Label "frontend"
