@@ -145,6 +145,7 @@ LocalStack instead of real AWS.
 .\scripts\local-dev.ps1 -StartBackend          # just the backend, against a LocalStack already running from a previous invocation
 .\scripts\local-dev.ps1 -SeedMarketData        # also ingest fx/stock/etf (per their packages/*/config/*.yaml) so /api/market/... has data
 .\scripts\local-dev.ps1 -SeedMarketData -FullLoad  # same, but full price history instead of just the current year (slower, more network calls)
+.\scripts\local-dev.ps1 -SeedMarketData -ForceReseed  # ignore the cached seed below and ingest fresh data anyway
 .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app  # let the backend verify real Auth0 tokens
 .\scripts\local-dev.ps1 -Stop                  # stop and remove the LocalStack container
 .\scripts\local-dev.ps1 -Reset                 # wipe the LocalStack container/data and start fresh
@@ -170,9 +171,13 @@ actually need to call the API with a real token.
 against live Yahoo Finance data (see [fx-pipeline.md](fx-pipeline.md)/
 [stock-pipeline.md](stock-pipeline.md)/[etf-pipeline.md](etf-pipeline.md)) — the
 LocalStack part is fully local, but this specific step makes real network calls.
-Ctrl+C stops the backend/frontend windows and tears down the LocalStack container
-(nothing persists across sessions — pass `-SeedMarketData` again next time you
-want data in it).
+The three run as parallel background jobs, not one after another. Ctrl+C stops
+the backend/frontend windows and tears down the LocalStack container, so
+nothing survives in LocalStack itself across sessions — but a successful seed
+is also mirrored to `data/localstack-seed/` (gitignored), and the next
+`-SeedMarketData` run restores straight from there (`aws s3 sync`, no network
+calls) instead of re-ingesting, as long as `-FullLoad` matches what was
+cached. Pass `-ForceReseed` to ingest fresh data regardless of that cache.
 
 Two things it deliberately does **not** simulate:
 
