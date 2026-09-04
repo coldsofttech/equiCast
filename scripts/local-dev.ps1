@@ -171,7 +171,7 @@ $Endpoint = "http://localhost:4566"
 $SeedCacheDir = Join-Path $RepoRoot "data\localstack-seed"
 $SeedCacheMarketData = Join-Path $SeedCacheDir "market-data"
 $SeedInfoPath = Join-Path $SeedCacheDir "seed-info.json"
-$AppDataCacheDir = Join-Path $SeedCacheDir "user-data"
+$AppDataCachePath = Join-Path $SeedCacheDir "user-data.json"
 $UserProfilesTableCachePath = Join-Path $SeedCacheDir "user-profiles-table.json"
 
 # Fake creds + boto3 endpoint overrides - equicast-core's clients call plain
@@ -187,6 +187,15 @@ $UserProfilesTableCachePath = Join-Path $SeedCacheDir "user-profiles-table.json"
 $env:AWS_ACCESS_KEY_ID = "test"
 $env:AWS_SECRET_ACCESS_KEY = "test"
 $env:AWS_REGION = $Region
+# Forces the AWS CLI's own response formatting (not boto3 - equicast-core
+# never shells out to it) to "json" regardless of what a machine's
+# ~/.aws/config happens to have set for `output` - one machine tested here
+# had `output = none` set globally (for an unrelated project), which made
+# several of this script's own `aws` calls (get-object/put-object among
+# them) exit non-zero ("Unknown output type: none") despite succeeding,
+# which this script's own $LASTEXITCODE checks then wrongly treated as a
+# real failure.
+$env:AWS_DEFAULT_OUTPUT = "json"
 $env:AWS_ENDPOINT_URL_S3 = $Endpoint
 $env:AWS_ENDPOINT_URL_DYNAMODB = $Endpoint
 $env:MARKET_DATA_BUCKET = $MarketDataBucket
@@ -216,10 +225,36 @@ function Backup-LocalStackAppData {
     Write-Host "Backing up user data (accounts/pies/etc.) to $SeedCacheDir..."
     New-Item -ItemType Directory -Force -Path $SeedCacheDir | Out-Null
 
-    if (Test-Path $AppDataCacheDir) {
-        Remove-Item -Recurse -Force $AppDataCacheDir
+    # NOT `aws s3 sync` to a real directory: a real Auth0 user id contains
+    # a literal "|" (e.g. "auth0|abc123"), which every equicast-core client
+    # bakes straight into its S3 keys (accounts/<user_id>.json, etc.), and
+    # "|" is an illegal character in a Windows file name. `sync` silently
+    # fails per-file in that case - it creates the "accounts" directory,
+    # then errors trying to create the actual file, and that error was
+    # being thrown away here. Reading every object's key/content into one
+    # JSON manifest instead - the key only ever appears as a JSON string
+    # value, never as a literal path component - sidesteps that (and every
+    # other S3-legal-but-Windows-illegal character) entirely.
+    $objects = @()
+    $listJson = aws --endpoint-url $Endpoint s3api list-objects-v2 --bucket $UserDataBucket --output json 2>$null
+    if ($LASTEXITCODE -eq 0 -and $listJson) {
+        # No pagination handling (list-objects-v2 caps at 1000 keys/page) -
+        # fine for this bucket's size in local dev, not meant to scale further.
+        $keys = ($listJson | ConvertFrom-Json).Contents | ForEach-Object { $_.Key }
+        foreach ($key in $keys) {
+            $objectFile = [System.IO.Path]::GetTempFileName()
+            try {
+                aws --endpoint-url $Endpoint s3api get-object --bucket $UserDataBucket --key "$key" $objectFile *> $null
+                if ($LASTEXITCODE -eq 0) {
+                    $bytes = [System.IO.File]::ReadAllBytes($objectFile)
+                    $objects += @{ key = $key; contentBase64 = [Convert]::ToBase64String($bytes) }
+                }
+            } finally {
+                Remove-Item -Force $objectFile -ErrorAction SilentlyContinue
+            }
+        }
     }
-    aws --endpoint-url $Endpoint s3 sync "s3://$UserDataBucket/" $AppDataCacheDir *> $null
+    @{ objects = $objects } | ConvertTo-Json -Depth 10 | Set-Content -Path $AppDataCachePath
 
     # A plain `scan` (no pagination handling) - fine for this table's size
     # (one small item per user) in local dev, not meant to scale further.
@@ -230,9 +265,19 @@ function Backup-LocalStackAppData {
 }
 
 function Restore-LocalStackAppData {
-    if (Test-Path $AppDataCacheDir) {
-        Write-Host "Restoring cached user data from $AppDataCacheDir..."
-        aws --endpoint-url $Endpoint s3 sync $AppDataCacheDir "s3://$UserDataBucket/" | Out-Null
+    if (Test-Path $AppDataCachePath) {
+        Write-Host "Restoring cached user data from $AppDataCachePath..."
+        $cache = Get-Content $AppDataCachePath -Raw | ConvertFrom-Json
+        foreach ($object in $cache.objects) {
+            $objectFile = [System.IO.Path]::GetTempFileName()
+            try {
+                $bytes = [Convert]::FromBase64String($object.contentBase64)
+                [System.IO.File]::WriteAllBytes($objectFile, $bytes)
+                aws --endpoint-url $Endpoint s3api put-object --bucket $UserDataBucket --key "$($object.key)" --body $objectFile | Out-Null
+            } finally {
+                Remove-Item -Force $objectFile -ErrorAction SilentlyContinue
+            }
+        }
     }
 
     if (Test-Path $UserProfilesTableCachePath) {
@@ -359,7 +404,7 @@ try {
             # backup. The market-data seed cache is untouched here - that
             # one's expensive (real Yahoo Finance calls) and has its own
             # dedicated -ForceReseed switch instead.
-            if (Test-Path $AppDataCacheDir) { Remove-Item -Recurse -Force $AppDataCacheDir }
+            if (Test-Path $AppDataCachePath) { Remove-Item -Force $AppDataCachePath }
             if (Test-Path $UserProfilesTableCachePath) { Remove-Item -Force $UserProfilesTableCachePath }
         }
 
