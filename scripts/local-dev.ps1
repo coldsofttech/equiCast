@@ -63,14 +63,34 @@
   equicast-etf/packages/etf/config/etfs.dev.yaml) and builds/uploads each
   asset class's catalog into LocalStack, so /api/market/... has something
   to return. These CLIs hit live Yahoo Finance data, so this makes real
-  network calls even though everything else stays local.
+  network calls even though everything else stays local. The three
+  pipelines run in parallel (PowerShell background jobs), not one after
+  another.
+
+  LocalStack keeps no data across container removal (a fresh
+  `docker run`, or `-Reset`), so everything this ingests would otherwise
+  need re-fetching from Yahoo Finance every single run. To avoid that,
+  a successful seed is mirrored to disk under data/localstack-seed/ (see
+  .gitignore) once every pipeline finishes; the next run with
+  -SeedMarketData restores straight from that folder (via `aws s3 sync`,
+  no network calls, no ingestion CLIs) instead of re-seeding, as long as
+  -FullLoad matches what was cached. Pass -ForceReseed to ignore the cache
+  and ingest fresh data anyway (e.g. the dev config files changed, or the
+  cached data is just stale).
 
 .PARAMETER FullLoad
   Only applies with -SeedMarketData: passes --full-load through to each
   ingestion CLI, fetching each ticker/pair's entire available price
   history (one price.parquet per year) instead of just the current year.
   Slower and more network-heavy - omit unless you specifically need
-  multi-year price data locally.
+  multi-year price data locally. Also part of the seed cache's reuse check
+  - switching this on/off from what's cached forces a fresh ingest, same
+  as -ForceReseed.
+
+.PARAMETER ForceReseed
+  Only applies with -SeedMarketData: skips the data/localstack-seed/ cache
+  reuse check and re-ingests from Yahoo Finance regardless, refreshing the
+  cache afterward.
 
 .PARAMETER Reset
   Only applies with -StartLocalStack: removes any existing LocalStack
@@ -90,6 +110,8 @@
 .EXAMPLE
   .\scripts\local-dev.ps1 -SeedMarketData -FullLoad
 .EXAMPLE
+  .\scripts\local-dev.ps1 -SeedMarketData -ForceReseed
+.EXAMPLE
   .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app -Auth0ClientId <client-id>
 .EXAMPLE
   .\scripts\local-dev.ps1 -Stop
@@ -101,6 +123,7 @@ param(
     [switch]$StartFrontend,
     [switch]$SeedMarketData,
     [switch]$FullLoad,
+    [switch]$ForceReseed,
     [switch]$Reset,
     [switch]$Stop,
     [string]$Auth0Domain = $env:AUTH0_DOMAIN,
@@ -123,6 +146,13 @@ if (-not ($StartLocalStack -or $StartBackend -or $StartFrontend)) {
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 $ContainerName = "equicast-localstack"
 $Endpoint = "http://localhost:4566"
+
+# Persists a seeded market-data bucket across LocalStack container removals
+# (see -SeedMarketData's help above) - gitignored, since this is purely a
+# local dev-loop speedup, not something to ship.
+$SeedCacheDir = Join-Path $RepoRoot "data\localstack-seed"
+$SeedCacheMarketData = Join-Path $SeedCacheDir "market-data"
+$SeedInfoPath = Join-Path $SeedCacheDir "seed-info.json"
 
 function Test-Command {
     param([string]$Name)
@@ -320,51 +350,111 @@ try {
 
         # --- Optionally seed all three asset classes' catalogs ---------------
         if ($SeedMarketData) {
-            # Each pipeline package shares the same CLI shape (--config/--out
-            # [--full-load]) and writes <asset_class>=<TICKER>/... under its own
-            # ./output, which equicast-core-build-catalog then reads to build that
-            # asset class's catalog.json.
-            $pipelines = @(
-                @{ AssetClass = "fx";    Package = "fx";    Cli = "equicast-fx";    Config = "config\fx_pairs.dev.yaml" },
-                @{ AssetClass = "stock"; Package = "stock"; Cli = "equicast-stock"; Config = "config\stocks.dev.yaml" },
-                @{ AssetClass = "etf";   Package = "etf";   Cli = "equicast-etf";   Config = "config\etfs.dev.yaml" }
-            )
+            # A previous run's seed, if its -FullLoad mode matches this run's -
+            # see the cache-write side below for what gets written here and why.
+            $cachedSeedInfo = $null
+            if (-not $ForceReseed -and (Test-Path $SeedInfoPath)) {
+                try {
+                    $cachedSeedInfo = Get-Content $SeedInfoPath -Raw | ConvertFrom-Json
+                } catch {
+                    Write-Warning "Couldn't read $SeedInfoPath - ignoring the cache and re-seeding."
+                    $cachedSeedInfo = $null
+                }
+            }
 
-            foreach ($pipeline in $pipelines) {
-                Write-Host "Seeding $($pipeline.AssetClass) market data ($($pipeline.Config)) into $MarketDataBucket..."
-                Push-Location (Join-Path $RepoRoot "packages\$($pipeline.Package)")
+            if ($cachedSeedInfo -and ($cachedSeedInfo.FullLoad -eq [bool]$FullLoad) -and (Test-Path $SeedCacheMarketData)) {
+                Write-Host "Restoring cached market data (seeded $($cachedSeedInfo.SeededAt), FullLoad=$($cachedSeedInfo.FullLoad)) from $SeedCacheMarketData - pass -ForceReseed to ingest fresh data instead."
+                aws --endpoint-url $Endpoint s3 sync $SeedCacheMarketData "s3://$MarketDataBucket/" | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Error "Restoring the cached seed into $MarketDataBucket failed (exit $LASTEXITCODE)."
+                    exit 1
+                }
+            } else {
+                # Each pipeline package shares the same CLI shape (--config/--out
+                # [--full-load]) and writes <asset_class>=<TICKER>/... under its own
+                # ./output, which equicast-core-build-catalog then reads to build
+                # that asset class's catalog.json. The three run as parallel
+                # background jobs (each its own process, so no Push-Location/
+                # $env: interference between them) rather than one after another -
+                # they're independent, network-bound CLI calls, so there's nothing
+                # to gain from serializing them.
+                $pipelines = @(
+                    @{ AssetClass = "fx";    Package = "fx";    Cli = "equicast-fx";    Config = "config\fx_pairs.dev.yaml" },
+                    @{ AssetClass = "stock"; Package = "stock"; Cli = "equicast-stock"; Config = "config\stocks.dev.yaml" },
+                    @{ AssetClass = "etf";   Package = "etf";   Cli = "equicast-etf";   Config = "config\etfs.dev.yaml" }
+                )
 
-                # equicast-core-build-catalog globs every <asset_class>=*/profile.parquet
-                # under --output-dir, regardless of what's in this run's config -
-                # a stale ticker from an earlier manual run (different config,
-                # different day) would otherwise silently leak into the catalog
-                # alongside whatever this run actually ingested.
-                if (Test-Path .\output) {
-                    Remove-Item -Recurse -Force .\output
+                Write-Host "Seeding fx/stock/etf market data into $MarketDataBucket in parallel (FullLoad=$([bool]$FullLoad))..."
+                $seedJobs = foreach ($pipeline in $pipelines) {
+                    Start-Job -Name $pipeline.AssetClass -ScriptBlock {
+                        param($RepoRoot, $Endpoint, $MarketDataBucket, $FullLoad, $pipeline)
+
+                        Set-Location (Join-Path $RepoRoot "packages\$($pipeline.Package)")
+
+                        # equicast-core-build-catalog globs every
+                        # <asset_class>=*/profile.parquet under --output-dir,
+                        # regardless of what's in this run's config - a stale
+                        # ticker from an earlier manual run (different config,
+                        # different day) would otherwise silently leak into the
+                        # catalog alongside whatever this run actually ingested.
+                        if (Test-Path .\output) {
+                            Remove-Item -Recurse -Force .\output
+                        }
+
+                        # --config (a file), not --pairs-json/--tickers-json:
+                        # inline JSON with embedded double quotes gets mangled by
+                        # PowerShell's native-command argument marshalling on
+                        # Windows (the quotes don't survive). Array splatting
+                        # here (not a single interpolated string) is what keeps
+                        # --full-load conditional without needing any manual
+                        # argument-quoting either.
+                        $ingestArgs = @("run", $pipeline.Cli, "--config", $pipeline.Config, "--out", ".\output")
+                        if ($FullLoad) { $ingestArgs += "--full-load" }
+                        uv @ingestArgs
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "$($pipeline.Cli) failed (exit $LASTEXITCODE)."
+                        }
+
+                        aws --endpoint-url $Endpoint s3 cp .\output\ "s3://$MarketDataBucket/" --recursive
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "Uploading $($pipeline.AssetClass) output to $MarketDataBucket failed (exit $LASTEXITCODE)."
+                        }
+
+                        Set-Location (Join-Path $RepoRoot "packages\core")
+                        uv run equicast-core-build-catalog --asset-class $pipeline.AssetClass `
+                            --output-dir "..\$($pipeline.Package)\output" --bucket $MarketDataBucket
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "Building the $($pipeline.AssetClass) catalog failed (exit $LASTEXITCODE)."
+                        }
+                    } -ArgumentList $RepoRoot, $Endpoint, $MarketDataBucket, [bool]$FullLoad, $pipeline
                 }
 
-                # --config (a file), not --pairs-json/--tickers-json: inline JSON
-                # with embedded double quotes gets mangled by PowerShell's
-                # native-command argument marshalling on Windows (the quotes don't
-                # survive). Array splatting here (not a single interpolated
-                # string) is what keeps --full-load conditional without needing
-                # any manual argument-quoting either.
-                $ingestArgs = @("run", $pipeline.Cli, "--config", $pipeline.Config, "--out", ".\output")
-                if ($FullLoad) { $ingestArgs += "--full-load" }
-                uv @ingestArgs
-                if ($LASTEXITCODE -ne 0) {
-                    Pop-Location
-                    Write-Error "$($pipeline.Cli) failed (exit $LASTEXITCODE) - see output above."
+                $seedJobs | Wait-Job | Out-Null
+                $seedFailed = $false
+                foreach ($job in $seedJobs) {
+                    Write-Host "--- $($job.Name) ---"
+                    Receive-Job -Job $job -ErrorAction Continue
+                    if ($job.State -eq "Failed") { $seedFailed = $true }
+                    Remove-Job -Job $job
+                }
+                if ($seedFailed) {
+                    Write-Error "One or more market-data seed jobs failed - see output above."
                     exit 1
                 }
 
-                aws --endpoint-url $Endpoint s3 cp .\output\ "s3://$MarketDataBucket/" --recursive
-                Pop-Location
-
-                Push-Location (Join-Path $RepoRoot "packages\core")
-                uv run equicast-core-build-catalog --asset-class $pipeline.AssetClass `
-                    --output-dir "..\$($pipeline.Package)\output" --bucket $MarketDataBucket
-                Pop-Location
+                # --- Cache the freshly seeded bucket for next time ---------------
+                Write-Host "Caching seeded market data to $SeedCacheMarketData for reuse next time..."
+                New-Item -ItemType Directory -Force -Path $SeedCacheDir | Out-Null
+                if (Test-Path $SeedCacheMarketData) {
+                    Remove-Item -Recurse -Force $SeedCacheMarketData
+                }
+                aws --endpoint-url $Endpoint s3 sync "s3://$MarketDataBucket/" $SeedCacheMarketData | Out-Null
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Warning "Caching the seeded bucket to $SeedCacheMarketData failed (exit $LASTEXITCODE) - next run will re-seed from scratch."
+                } else {
+                    @{ FullLoad = [bool]$FullLoad; SeededAt = (Get-Date).ToString("o") } |
+                        ConvertTo-Json | Set-Content -Path $SeedInfoPath
+                }
             }
         }
     }
