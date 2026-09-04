@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Button from "../../components/core/Button.jsx";
+import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
@@ -21,6 +22,7 @@ import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { TICKER_NAMES, formatCurrency, plTone } from "../sampleFinancials.js";
 import { deriveInstanceFinancials, resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import { websiteIconUrl } from "../../utils/websiteIcon.js";
 import "./HoldingTickerPage.css";
 
 /** formatCurrency requires a currency code — this page's totals are real,
@@ -51,6 +53,7 @@ function formatMoney(value, currency) {
 function HoldingTickerPage() {
   const { ticker } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const api = useApi();
   const { accounts, isLoading, error, setAccounts: setCachedAccounts } = useAccounts();
   const { profile: userProfile } = useCurrentUser();
@@ -201,6 +204,19 @@ function HoldingTickerPage() {
   };
 
   const name = TICKER_NAMES[ticker];
+  const iconUrl = websiteIconUrl(marketProfile?.website);
+
+  // Only known when this page was reached via a row click from
+  // AccountDetailPage/PieDetailPage (they pass it as router state) — a
+  // direct link/refresh/dashboard visit has no "back to" context, so no
+  // link shows in that case.
+  const backFrom = location.state?.from;
+  const backTarget =
+    backFrom?.type === "account"
+      ? { label: "Back to account", path: `/accounts/${backFrom.accountId}` }
+      : backFrom?.type === "pie"
+        ? { label: "Back to portfolio", path: `/accounts/${backFrom.accountId}/pies/${backFrom.pieId}` }
+        : null;
 
   return (
     <AppShell
@@ -208,6 +224,26 @@ function HoldingTickerPage() {
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
+      titleIcon={iconUrl && <img src={iconUrl} alt="" />}
+      titleBadges={
+        marketProfile && (marketProfile.exchange || marketProfile.quote_type) ? (
+          <>
+            {marketProfile.exchange && (
+              <Badge tone="neutral">Exchange: {marketProfile.exchange}</Badge>
+            )}
+            {marketProfile.quote_type && (
+              <Badge tone="accent">Quote type: {marketProfile.quote_type}</Badge>
+            )}
+          </>
+        ) : undefined
+      }
+      actions={
+        backTarget && (
+          <Button variant="ghost" onClick={() => navigate(backTarget.path)}>
+            {backTarget.label}
+          </Button>
+        )
+      }
       footer={<SiteFooter />}
     >
       {isLoading && <p className="ec-loading">Loading…</p>}

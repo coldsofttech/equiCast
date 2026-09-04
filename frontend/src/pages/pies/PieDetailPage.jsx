@@ -265,11 +265,17 @@ function PieDetailPage() {
                   className="ec-detail-row ec-detail-row--clickable"
                   role="button"
                   tabIndex={0}
-                  onClick={() => navigate(`/holdings/${holding.ticker}`)}
+                  onClick={() =>
+                    navigate(`/holdings/${holding.ticker}`, {
+                      state: { from: { type: "pie", accountId, pieId } },
+                    })
+                  }
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === " ") {
                       event.preventDefault();
-                      navigate(`/holdings/${holding.ticker}`);
+                      navigate(`/holdings/${holding.ticker}`, {
+                        state: { from: { type: "pie", accountId, pieId } },
+                      });
                     }
                   }}
                 >
