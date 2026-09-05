@@ -102,7 +102,11 @@ class SearchView(APIView):
             return Response(
                 {"detail": "min_market_cap/max_market_cap must be numbers."}, status=400
             )
-        if None not in (min_market_cap, max_market_cap) and min_market_cap > max_market_cap:
+        if (
+            min_market_cap is not None
+            and max_market_cap is not None
+            and min_market_cap > max_market_cap
+        ):
             return Response(
                 {"detail": "min_market_cap must not exceed max_market_cap."}, status=400
             )
