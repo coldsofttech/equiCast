@@ -22,6 +22,21 @@
   margin-bottom: var(--ec-s-24);
 }
 
+.ec-page-head-main {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-16);
+}
+
+.ec-page-title-icon img {
+  display: block;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--ec-r-8);
+  background: var(--ec-surface-2);
+  object-fit: contain;
+}
+
 .ec-eyebrow {
   font-size: var(--ec-fs-12);
   font-weight: 700;
@@ -42,6 +57,13 @@
   font-size: var(--ec-fs-14);
   color: var(--ec-text-muted);
   margin: var(--ec-s-4) 0 0;
+}
+
+.ec-page-title-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-8);
 }
 
 .ec-page-actions {

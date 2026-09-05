@@ -1,0 +1,35 @@
+/**
+ * Axis label text for HoldingPriceChart's SVG — accounts/PriceChart.css and
+ * styles/chart.css cover every other visual (toolbar, range pills, candle/
+ * line/area strokes, tooltip); this chart is the only one with a rendered
+ * axis (the synthetic account/pie chart never needed real tick values).
+ */
+.ec-chart-axis-label {
+  font-family: var(--ec-font-mono);
+  font-size: 10px;
+  fill: var(--ec-text-subtle);
+}
+
+.ec-chart-yaxis-label {
+  text-anchor: end;
+  dominant-baseline: middle;
+}
+
+.ec-chart-xaxis-label {
+  text-anchor: middle;
+}
+
+/** The user's average buy price for this holding — a grey dashed
+ * reference line so it reads as a marker against the real price series,
+ * distinct from ec-pchart-compare-line's colored dashed overlay. */
+.ec-chart-avg-line {
+  stroke: var(--ec-text-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
+.ec-pchart-swatch {
+  width: 14px;
+  height: 0;
+  border-top: 1.5px dashed var(--ec-text-muted);
+}
