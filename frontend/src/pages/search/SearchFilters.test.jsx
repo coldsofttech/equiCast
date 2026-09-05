@@ -10,7 +10,7 @@ describe("SearchFilters", () => {
     expect(screen.getByLabelText("All types")).not.toBeChecked();
   });
 
-  it("calls onApply with the selected type only after clicking Search", () => {
+  it("calls onApply with the selected type and no market cap bounds by default, only after clicking Search", () => {
     const onApply = vi.fn();
     render(<SearchFilters type="" onApply={onApply} />);
 
@@ -18,16 +18,49 @@ describe("SearchFilters", () => {
     expect(onApply).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Search" }));
-    expect(onApply).toHaveBeenCalledWith("stock");
+    expect(onApply).toHaveBeenCalledWith({
+      type: "stock",
+      minMarketCap: undefined,
+      maxMarketCap: undefined,
+    });
   });
 
-  it("disables Region/Exchange/Market cap as coming-soon placeholders", () => {
+  it("calls onApply with the slider's market cap bounds after moving it", () => {
+    const onApply = vi.fn();
+    render(<SearchFilters type="" onApply={onApply} />);
+
+    fireEvent.change(screen.getByLabelText("Minimum"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Maximum"), { target: { value: "8" } });
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+    expect(onApply).toHaveBeenCalledWith({
+      type: "",
+      minMarketCap: 1_000_000_000,
+      maxMarketCap: 1_000_000_000_000,
+    });
+  });
+
+  it("restores the slider from applied minMarketCap/maxMarketCap props", () => {
+    render(
+      <SearchFilters
+        type=""
+        minMarketCap={1_000_000_000}
+        maxMarketCap={1_000_000_000_000}
+        onApply={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText("Minimum")).toHaveValue("4");
+    expect(screen.getByLabelText("Maximum")).toHaveValue("8");
+  });
+
+  it("disables Region/Exchange as coming-soon placeholders, but not Market cap", () => {
     render(<SearchFilters type="" onApply={vi.fn()} />);
 
     expect(screen.getByText("Region").closest("fieldset")).toBeDisabled();
     expect(screen.getByText("Exchange").closest("fieldset")).toBeDisabled();
-    expect(screen.getByText("Market cap").closest("fieldset")).toBeDisabled();
-    expect(screen.getAllByText("Coming soon")).toHaveLength(3);
+    expect(screen.getByText("Market cap").closest("fieldset")).not.toBeDisabled();
+    expect(screen.getAllByText("Coming soon")).toHaveLength(2);
   });
 
   it("resets the draft selection when the applied type prop changes", () => {

@@ -42,6 +42,24 @@ describe("market api", () => {
     expect(api).toHaveBeenCalledWith("/market/search/?q=usdgbp&page=1&page_size=10&asset_class=fx");
   });
 
+  it("includes min/max market cap when given", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, results: [] });
+
+    await searchTickers(api, "vwrl", { minMarketCap: 1_000_000_000, maxMarketCap: 200_000_000_000 });
+
+    expect(api).toHaveBeenCalledWith(
+      "/market/search/?q=vwrl&page=1&page_size=10&min_market_cap=1000000000&max_market_cap=200000000000"
+    );
+  });
+
+  it("omits market cap params entirely when not given", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, results: [] });
+
+    await searchTickers(api, "vwrl");
+
+    expect(api).toHaveBeenCalledWith("/market/search/?q=vwrl&page=1&page_size=10");
+  });
+
   it("fetches a symbol's profile", async () => {
     const api = vi.fn().mockResolvedValue({ ticker: "AAPL", currency: "USD" });
 

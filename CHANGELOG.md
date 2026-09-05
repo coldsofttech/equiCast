@@ -159,6 +159,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "`{ticker}` not found" empty state, replacing the previous
   "No holdings of X" message for that case.
 
+- Search's Market cap filter (`SearchFilters.jsx`) is now real, backed by a
+  new two-handle `frontend/src/components/core/RangeSlider.jsx` (two
+  overlapping native `<input type="range">`s sharing one visual track, no
+  new dependency — reusable beyond this one filter) over log-spaced
+  breakpoints ($0/$10M/$50M/$200M/$1B/$10B/$50B/$200B/$1T/$1T+, see new
+  `pages/search/marketCapSteps.js`) rather than a continuous range, since
+  market cap spans ~$1M to ~$3T+ and a linear slider would make the low
+  end unusable next to mega-caps. `minCap`/`maxCap` live in the URL
+  alongside `q`/`type` (same reasoning as those — shareable/bookmarkable,
+  survives a refresh), and `marketCapSteps.js`'s
+  `indexesFromMarketCapRange` restores the closest enclosing slider
+  position from them.
+
+  This needed `market_cap` in the search catalog, which didn't carry it
+  before: `equicast_core.catalog.build_catalog_rows` now also publishes
+  `currency` (stock/etf's own `currency`; an fx pair's `to_currency`,
+  since that's what its price is quoted in) and `market_cap` (a stock's
+  real `market_cap`, an etf's `total_assets`/fund AUM as the closest
+  comparable "size" figure a fund has, `None` for fx, which has neither).
+  `MarketDataClient.search` gained `min_market_cap`/`max_market_cap`
+  filtering by that field — stock/etf rows with no resolved `market_cap`
+  are excluded whenever either bound is given (nothing to compare against),
+  while fx rows always match regardless, having no size concept of their
+  own. `SearchView`/`searchTickers` (`frontend/src/api/market.js`) pass
+  the two bounds straight through as `min_market_cap`/`max_market_cap`
+  query params, validated server-side (numeric, `min <= max`).
+  `SearchPage.jsx`'s Price column also now renders each result's real
+  `current_price` with its `currency` (e.g. `$379.99`) via the existing
+  `formatCurrency`, instead of a bare unlabeled number.
+
 ### Changed
 
 - `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped

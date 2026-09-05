@@ -48,9 +48,16 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     profiles which don't — see equicast_fx.writer), `name` (`name` for
     stock/etf, `description` for fx — same "no literal name field" reason),
     `type` (`asset_class`), `current_price` (`day_close`, the same field
-    all three pipelines' profile() methods already compute), and `website`
-    (`None` for fx profiles, which carry no such field — a currency pair
-    has no issuer site to link/show a favicon for).
+    all three pipelines' profile() methods already compute), `currency`
+    (`currency` for stock/etf; an fx pair has no such field — its own
+    `current_price` is the exchange rate quoted *in* `to_currency`, so
+    that's what a display of it should be formatted as), `website` (`None`
+    for fx profiles, which carry no such field — a currency pair has no
+    issuer site to link/show a favicon for), and `market_cap` — a stock's
+    real `market_cap`, an etf's `total_assets` (fund AUM, the closest
+    comparable "size" figure a fund has — etf profiles carry no market cap
+    of their own), or `None` for fx, which has neither and isn't
+    size-filterable at all.
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -65,7 +72,9 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "name": profile.get("name") or profile.get("description"),
                 "type": asset_class.lower(),
                 "current_price": profile.get("day_close"),
+                "currency": profile.get("currency") or profile.get("to_currency"),
                 "website": profile.get("website"),
+                "market_cap": profile.get("market_cap") or profile.get("total_assets"),
             }
         )
     return rows

@@ -9,6 +9,7 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import SearchFilters from "./SearchFilters.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
+import { formatCurrency } from "../sampleFinancials.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import "./SearchPage.css";
 
@@ -16,19 +17,23 @@ const PAGE_SIZE = 25;
 
 /**
  * Results table + left filter pane for ticker search. `q` comes from the
- * URL (TopbarSearch sets it on Enter); `type` mirrors SearchFilters'
- * applied Type selection, the only filter that's real — see
- * SearchFilters.jsx for why Region/Exchange/Market cap are placeholders.
- * Both live in the URL (not just component state) so a search is
- * shareable/bookmarkable and survives a refresh. Clicking a result row
- * goes to its holding detail page (HoldingTickerPage handles a ticker the
- * user doesn't actually hold with its own "No holdings of X" state).
+ * URL (TopbarSearch sets it on Enter); `type`/`minCap`/`maxCap` mirror
+ * SearchFilters' applied Type/Market cap selections, the two filters
+ * that are real — see SearchFilters.jsx for why Region/Exchange are still
+ * placeholders. All four live in the URL (not just component state) so a
+ * search is shareable/bookmarkable and survives a refresh. Clicking a
+ * result row goes to its holding detail page (HoldingTickerPage handles a
+ * ticker the user doesn't actually hold with its own empty state).
  */
 function SearchPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const type = searchParams.get("type") ?? "";
+  const minCapParam = searchParams.get("minCap");
+  const maxCapParam = searchParams.get("maxCap");
+  const minMarketCap = minCapParam != null ? Number(minCapParam) : undefined;
+  const maxMarketCap = maxCapParam != null ? Number(maxCapParam) : undefined;
   const api = useApi();
 
   const [results, setResults] = useState([]);
@@ -50,7 +55,13 @@ function SearchPage() {
     let cancelled = false;
     setIsLoading(true);
     setLoadError(null);
-    searchTickers(api, query, { assetClass: type || undefined, page: 1, pageSize: PAGE_SIZE })
+    searchTickers(api, query, {
+      assetClass: type || undefined,
+      minMarketCap,
+      maxMarketCap,
+      page: 1,
+      pageSize: PAGE_SIZE,
+    })
       .then((response) => {
         if (cancelled) return;
         setResults(response.results);
@@ -67,13 +78,15 @@ function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, query, type]);
+  }, [api, query, type, minMarketCap, maxMarketCap]);
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
     setLoadError(null);
     searchTickers(api, query, {
       assetClass: type || undefined,
+      minMarketCap,
+      maxMarketCap,
       page: page + 1,
       pageSize: PAGE_SIZE,
     })
@@ -85,10 +98,12 @@ function SearchPage() {
       .finally(() => setIsLoadingMore(false));
   };
 
-  const handleApplyFilters = (nextType) => {
+  const handleApplyFilters = ({ type: nextType, minMarketCap: nextMin, maxMarketCap: nextMax }) => {
     const next = {};
     if (query) next.q = query;
     if (nextType) next.type = nextType;
+    if (nextMin != null) next.minCap = String(nextMin);
+    if (nextMax != null) next.maxCap = String(nextMax);
     setSearchParams(next);
   };
 
@@ -98,7 +113,14 @@ function SearchPage() {
       eyebrow="Search"
       title="Search"
       subtitle={query ? `Results for “${query}”` : "Search for a ticker or company name."}
-      sidebar={<SearchFilters type={type} onApply={handleApplyFilters} />}
+      sidebar={
+        <SearchFilters
+          type={type}
+          minMarketCap={minMarketCap}
+          maxMarketCap={maxMarketCap}
+          onApply={handleApplyFilters}
+        />
+      }
     >
       {loadError && <Alert tone="danger">{loadError}</Alert>}
 
@@ -147,7 +169,13 @@ function SearchPage() {
                     <td>
                       <AssetTypeBadge type={result.type} />
                     </td>
-                    <td>{result.current_price != null ? result.current_price.toFixed(2) : "—"}</td>
+                    <td>
+                      {result.current_price != null
+                        ? result.currency
+                          ? formatCurrency(result.current_price, result.currency)
+                          : result.current_price.toFixed(2)
+                        : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

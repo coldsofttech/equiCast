@@ -328,14 +328,34 @@ class TestSearch:
             s3_client,
             "stock",
             [
-                {"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5},
-                {"ticker": "NVDA", "name": "NVIDIA Corp", "type": "stock", "current_price": 178.9},
+                {
+                    "ticker": "AAPL",
+                    "name": "Apple Inc.",
+                    "type": "stock",
+                    "current_price": 227.5,
+                    "market_cap": 3_400_000_000_000,
+                },
+                {
+                    "ticker": "NVDA",
+                    "name": "NVIDIA Corp",
+                    "type": "stock",
+                    "current_price": 178.9,
+                    "market_cap": 4_300_000_000_000,
+                },
             ],
         )
         _put_catalog(
             s3_client,
             "etf",
-            [{"ticker": "VOO", "name": "Vanguard S&P 500", "type": "etf", "current_price": 624.5}],
+            [
+                {
+                    "ticker": "VOO",
+                    "name": "Vanguard S&P 500",
+                    "type": "etf",
+                    "current_price": 624.5,
+                    "market_cap": 500_000_000_000,
+                }
+            ],
         )
         _put_catalog(
             s3_client,
@@ -346,6 +366,7 @@ class TestSearch:
                     "name": "British Pound to US Dollar",
                     "type": "fx",
                     "current_price": 1.27,
+                    "market_cap": None,
                 }
             ],
         )
@@ -395,3 +416,53 @@ class TestSearch:
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         assert client.search("zzz") == []
+
+    def test_market_cap_range_filters_stock_and_etf(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # "a" also matches GBPUSD's name ("... to US Dollar") — expected to
+        # stay in the results regardless of the bound, per fx always
+        # matching a market cap filter (see test_market_cap_filter_never_
+        # excludes_fx below for a more targeted check of that).
+        result = client.search("a", min_market_cap=1_000_000_000_000)
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+
+    def test_market_cap_range_is_inclusive_on_both_ends(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search(
+            "a", min_market_cap=3_400_000_000_000, max_market_cap=3_400_000_000_000
+        )
+
+        assert {r["ticker"] for r in result} == {"AAPL", "GBPUSD"}
+
+    def test_market_cap_filter_never_excludes_fx(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("gbp", min_market_cap=1_000_000_000_000)
+
+        assert {r["ticker"] for r in result} == {"GBPUSD"}
+
+    def test_market_cap_filter_excludes_a_stock_with_no_market_cap_resolved(
+        self, s3_client
+    ) -> None:
+        _put_catalog(
+            s3_client,
+            "stock",
+            [{"ticker": "NEWCO", "name": "New Co", "type": "stock", "market_cap": None}],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.search("newco", min_market_cap=1) == []
+
+    def test_no_market_cap_bounds_leaves_every_asset_class_unfiltered(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a")
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "VOO", "GBPUSD"}

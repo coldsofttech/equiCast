@@ -205,7 +205,9 @@ class SearchViewTests(TestCase):
             data["results"],
             [{"ticker": "V", "name": "Visa Inc.", "type": "stock", "current_price": 310.2}],
         )
-        mock_client.search.assert_called_once_with("v", asset_classes=None)
+        mock_client.search.assert_called_once_with(
+            "v", asset_classes=None, min_market_cap=None, max_market_cap=None
+        )
 
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -218,7 +220,54 @@ class SearchViewTests(TestCase):
 
         self.client.get(reverse("search"), {"q": "v", "asset_class": "stock"}, **AUTH_HEADER)
 
-        mock_client.search.assert_called_once_with("v", asset_classes=["stock"])
+        mock_client.search.assert_called_once_with(
+            "v", asset_classes=["stock"], min_market_cap=None, max_market_cap=None
+        )
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_market_cap_bounds_are_passed_through(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
+
+        self.client.get(
+            reverse("search"),
+            {"q": "v", "min_market_cap": "1000000000", "max_market_cap": "2000000000.5"},
+            **AUTH_HEADER,
+        )
+
+        mock_client.search.assert_called_once_with(
+            "v", asset_classes=None, min_market_cap=1_000_000_000.0, max_market_cap=2_000_000_000.5
+        )
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_for_non_numeric_market_cap(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(
+            reverse("search"), {"q": "v", "min_market_cap": "x"}, **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_min_market_cap_exceeds_max(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(
+            reverse("search"),
+            {"q": "v", "min_market_cap": "2000", "max_market_cap": "1000"},
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")

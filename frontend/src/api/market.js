@@ -6,7 +6,11 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * @property {string} name
  * @property {"stock"|"etf"|"fx"} type
  * @property {number|null} current_price
+ * @property {string|null} currency
  * @property {string|null} website
+ * @property {number|null} market_cap - a stock's real market cap, an
+ *   etf's total assets (fund AUM, the closest comparable "size" figure a
+ *   fund has), or `null` for fx, which has neither.
  */
 
 /**
@@ -27,16 +31,25 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * `assetClass`/`page` for its Type filter and "Load more"), and for
  * resolving a currency-pair ticker for FX conversion (`assetClass: "fx"`
  * — see holdings/holdingFinancials.js's resolveFxRate). `assetClass`
- * omitted searches every asset class.
+ * omitted searches every asset class. `minMarketCap`/`maxMarketCap`
+ * (SearchFilters' Market cap range slider) filter stock/etf rows by
+ * `market_cap`; fx rows always match regardless (see
+ * `MarketDataClient.search`'s docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number }} [options]
  * @returns {Promise<SearchResponse>}
  */
-export function searchTickers(api, query, { assetClass, page = 1, pageSize = 10 } = {}) {
+export function searchTickers(
+  api,
+  query,
+  { assetClass, page = 1, pageSize = 10, minMarketCap, maxMarketCap } = {}
+) {
   const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) });
   if (assetClass) params.set("asset_class", assetClass);
+  if (minMarketCap != null) params.set("min_market_cap", String(minMarketCap));
+  if (maxMarketCap != null) params.set("max_market_cap", String(maxMarketCap));
   return /** @type {Promise<SearchResponse>} */ (api(`/market/search/?${params.toString()}`));
 }
 

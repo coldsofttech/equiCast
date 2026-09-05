@@ -1,5 +1,11 @@
 import { useEffect, useState } from "react";
 import Button from "../../components/core/Button.jsx";
+import RangeSlider from "../../components/core/RangeSlider.jsx";
+import {
+  MARKET_CAP_STEPS,
+  indexesFromMarketCapRange,
+  marketCapRangeFromIndexes,
+} from "./marketCapSteps.js";
 import "./SearchFilters.css";
 
 const TYPES = [
@@ -10,26 +16,43 @@ const TYPES = [
 ];
 
 /**
- * SearchPage's left filter pane. Only Type actually filters results — it
- * maps to the search endpoint's `asset_class` param. Region/Exchange/
- * Market cap are shown disabled with a "Coming soon" note rather than
- * silently doing nothing: the catalog search index only carries ticker/
- * name/type/current_price today (see backend/market_data/views.py's
- * SearchView and equicast_core.catalog) — those other fields live on each
- * ticker's own profile, not in the bulk search results, so there's no
- * efficient way to filter by them yet.
+ * SearchPage's left filter pane. Type and Market cap both actually filter
+ * results (mapping to the search endpoint's `asset_class`/`min_market_cap`/
+ * `max_market_cap` params); Region/Exchange are shown disabled with a
+ * "Coming soon" note rather than silently doing nothing — that data lives
+ * on each ticker's own profile, not in the bulk catalog search results
+ * (see backend/market_data/views.py's SearchView and
+ * equicast_core.catalog), so there's no efficient way to filter by them
+ * yet. Market cap's `market_cap` field *is* in the catalog for exactly
+ * this reason.
  *
- * `type` is the currently-applied filter (from the URL); local `draftType`
- * lets a caller change the radio without re-searching until "Search" is
- * clicked, same reasoning as TickerSearchField not searching per keystroke
- * — one request per explicit action, not per interaction.
+ * `type`/`minMarketCap`/`maxMarketCap` are the currently-applied filters
+ * (from the URL); local `draftType`/`draftRange` let a caller change them
+ * without re-searching until "Search" is clicked, same reasoning as
+ * TickerSearchField not searching per keystroke — one request per explicit
+ * action, not per interaction. Market cap only meaningfully narrows
+ * stock/etf rows — fx always matches it regardless (see
+ * MarketDataClient.search's docstring) — but the slider itself doesn't
+ * call that out per-row; a fx-heavy result set simply won't visibly shrink
+ * as the range tightens.
  */
-function SearchFilters({ type, onApply }) {
+function SearchFilters({ type, minMarketCap, maxMarketCap, onApply }) {
   const [draftType, setDraftType] = useState(type);
+  const [draftRange, setDraftRange] = useState(() =>
+    indexesFromMarketCapRange(minMarketCap, maxMarketCap)
+  );
 
   useEffect(() => {
     setDraftType(type);
   }, [type]);
+
+  useEffect(() => {
+    setDraftRange(indexesFromMarketCapRange(minMarketCap, maxMarketCap));
+  }, [minMarketCap, maxMarketCap]);
+
+  const handleSearch = () => {
+    onApply({ type: draftType, ...marketCapRangeFromIndexes(draftRange.lowIndex, draftRange.highIndex) });
+  };
 
   return (
     <div className="ec-search-filters">
@@ -65,15 +88,18 @@ function SearchFilters({ type, onApply }) {
         <span className="ec-search-filter-soon">Coming soon</span>
       </fieldset>
 
-      <fieldset className="ec-search-filter-group" disabled>
+      <fieldset className="ec-search-filter-group">
         <legend>Market cap</legend>
-        <select className="ec-select" disabled defaultValue="">
-          <option value="">Any market cap</option>
-        </select>
-        <span className="ec-search-filter-soon">Coming soon</span>
+        <RangeSlider
+          steps={MARKET_CAP_STEPS}
+          lowIndex={draftRange.lowIndex}
+          highIndex={draftRange.highIndex}
+          onChange={(lowIndex, highIndex) => setDraftRange({ lowIndex, highIndex })}
+        />
+        <span className="ec-search-filter-hint">Stocks by market cap, ETFs by fund size</span>
       </fieldset>
 
-      <Button variant="primary" onClick={() => onApply(draftType)}>
+      <Button variant="primary" onClick={handleSearch}>
         Search
       </Button>
     </div>

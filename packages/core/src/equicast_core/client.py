@@ -260,10 +260,10 @@ class MarketDataClient:
         }
 
     def get_catalog(self, asset_class: str) -> list[dict[str, Any]]:
-        """Return every `{ticker, name, type, current_price, website}` row
-        this asset class's ingestion pipeline last published (see
-        `equicast_core.catalog`), or `[]` if no catalog has been uploaded
-        yet for it."""
+        """Return every `{ticker, name, type, current_price, currency,
+        website, market_cap}` row this asset class's ingestion pipeline
+        last published (see `equicast_core.catalog`), or `[]` if no
+        catalog has been uploaded yet for it."""
         try:
             response = self._s3.get_object(Bucket=self._bucket, Key=catalog_key(asset_class))
         except self._s3.exceptions.NoSuchKey:
@@ -271,7 +271,13 @@ class MarketDataClient:
         body = json.loads(response["Body"].read())
         return body.get("tickers", [])
 
-    def search(self, query: str, asset_classes: list[str] | None = None) -> list[dict[str, Any]]:
+    def search(
+        self,
+        query: str,
+        asset_classes: list[str] | None = None,
+        min_market_cap: float | None = None,
+        max_market_cap: float | None = None,
+    ) -> list[dict[str, Any]]:
         """Case-insensitive substring match of `query` against every
         catalog row's `ticker` and `name`, across `asset_classes` (default:
         every asset class — see `ASSET_CLASSES`). Reads each scanned asset
@@ -279,17 +285,36 @@ class MarketDataClient:
         bucket itself — no per-ticker S3 reads here, unlike
         `get_profile`/`get_prices`.
 
+        `min_market_cap`/`max_market_cap`, when given, additionally filter
+        stock (real market cap) and etf (total assets, as the closest
+        comparable "size" figure a fund has) rows by their `market_cap`
+        (see `equicast_core.catalog.build_catalog_rows`) — fx rows always
+        match regardless, having no size concept of their own to filter
+        by. A stock/etf row with no `market_cap` resolved yet is excluded
+        whenever either bound is given, rather than guessed to be in
+        range — there's nothing to compare it against.
+
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""
         classes = asset_classes if asset_classes is not None else ASSET_CLASSES
         query_lower = query.lower()
+        filter_by_market_cap = min_market_cap is not None or max_market_cap is not None
 
         matches = []
         for asset_class in classes:
             for row in self.get_catalog(asset_class):
                 ticker = row.get("ticker") or ""
                 name = row.get("name") or ""
-                if query_lower in ticker.lower() or query_lower in name.lower():
-                    matches.append(row)
+                if query_lower not in ticker.lower() and query_lower not in name.lower():
+                    continue
+                if filter_by_market_cap and asset_class != "fx":
+                    market_cap = row.get("market_cap")
+                    if market_cap is None:
+                        continue
+                    if min_market_cap is not None and market_cap < min_market_cap:
+                        continue
+                    if max_market_cap is not None and market_cap > max_market_cap:
+                        continue
+                matches.append(row)
         matches.sort(key=lambda row: row["ticker"])
         return matches

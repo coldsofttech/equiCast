@@ -20,6 +20,15 @@ MAX_PAGE_SIZE = 200
 _client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
 
 
+def _parse_market_cap(raw: str | None) -> float | None:
+    """`None` when unset, else a float — raises `ValueError` (caught by the
+    caller) for anything else, same "let int()/float() do the validation"
+    approach `SearchView.get` already takes for `page`/`page_size`."""
+    if raw is None:
+        return None
+    return float(raw)
+
+
 class ProfileView(APIView):
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -86,8 +95,21 @@ class SearchView(APIView):
             return Response({"detail": "page/page_size must be positive."}, status=400)
         page_size = min(page_size, MAX_PAGE_SIZE)
 
+        try:
+            min_market_cap = _parse_market_cap(request.query_params.get("min_market_cap"))
+            max_market_cap = _parse_market_cap(request.query_params.get("max_market_cap"))
+        except ValueError:
+            return Response({"detail": "min_market_cap/max_market_cap must be numbers."}, status=400)
+        if None not in (min_market_cap, max_market_cap) and min_market_cap > max_market_cap:
+            return Response({"detail": "min_market_cap must not exceed max_market_cap."}, status=400)
+
         asset_classes = [asset_class] if asset_class is not None else None
-        matches = _client.search(query, asset_classes=asset_classes)
+        matches = _client.search(
+            query,
+            asset_classes=asset_classes,
+            min_market_cap=min_market_cap,
+            max_market_cap=max_market_cap,
+        )
 
         count = len(matches)
         start = (page - 1) * page_size

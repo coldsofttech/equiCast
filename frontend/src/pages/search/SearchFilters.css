@@ -45,3 +45,8 @@
   color: var(--ec-text-subtle);
   font-style: italic;
 }
+
+.ec-search-filter-hint {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
