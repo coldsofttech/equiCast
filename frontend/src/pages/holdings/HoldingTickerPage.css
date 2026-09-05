@@ -4,12 +4,6 @@
   margin-top: var(--ec-s-24);
 }
 
-.ec-holding-stats-caption {
-  font-size: var(--ec-fs-13);
-  color: var(--ec-text-muted);
-  margin: var(--ec-s-4) 0 0;
-}
-
 .ec-holding-highlow-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

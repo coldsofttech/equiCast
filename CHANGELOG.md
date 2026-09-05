@@ -38,48 +38,79 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   when no rate is published; `extractPriceWindow` and
   `buildPlaceholderMetrics` back the Stats panel (see below).
 
-  Page sections: real Total Invested/Profit-Loss/Profit-Loss % StatTiles
-  (hidden entirely when the ticker's net shares are 0); the same
-  hand-rolled illustrative `PriceChart` account/pie pages already use,
-  unchanged in behavior — `PriceChart.jsx` gains an optional `holdings=[]`
-  prop (parallel to its existing `pies=[]`) adding an "Other holdings"
-  optgroup to the "Compare against" picker, additive-only and verified
-  backward-compatible with `AccountDetailPage`/`PieDetailPage`'s existing
-  `pies`-only usage; an "Owned shares" table
-  (`HoldingInstancesTable.jsx`, hidden when there are no shares) — one row
-  per holding instance with shares, average price in both the native and
-  the caller's default currency (via `resolveFxRate`), its account/pie
-  location, and a per-row delete icon (`deleteHolding`, previously wired
-  up nowhere in the UI) opening a shared `ConfirmDialog` naming that
-  specific instance; a `HoldingStatsPanel.jsx` "Stats" card modeled on a
-  provided mockup — a 1 Day / 52 Weeks high-low range shown as two vertical
-  bars sharing one scale (the min low and max high across *both* windows),
-  so a given price lines up at the same height in either bar, with each
-  bar's own sub-range highlighted green/red by whether that window's
-  trading was net positive (`close >= open`) or negative and a pointer
-  marking the current price; 1 Day comes straight off the profile's real
-  `day_high`/`day_low` (there's no "1 week" figure anywhere in the data);
-  52 Weeks uses the current calendar year's published price history,
-  falling back to the profile's year-to-date high/low early in the year.
-  Below the bars, a stacked metrics list (market cap, dividend yield: real;
-  volatility, average volume, P/E ratio, dividend frequency: seeded
-  placeholders, called out as sample data in a caption — no backend
-  endpoint exposes these yet, `packages/metrics`' computed fundamentals are
-  never read back out by `MarketDataClient`/`market_data/views.py`) with a
-  "See all" Drawer for the rest of the profile's real fields. A
-  `HoldingAboutSection.jsx` "About" card (real description — truncated to
-  ~220 characters at a word boundary, full text still in its own "See all"
-  Drawer — CEO(s)/sector/industry) sits side by side with Stats via the
-  existing `.ec-account-columns` layout. Below that, "Financials" and
-  "Transactions" buttons each open a stub Drawer with an `EmptyState`
-  ("coming soon") — real functionality for both is a later phase. New
-  shared `frontend/src/components/core/FieldList.jsx`/`.css` (a plain
-  label/value list, skipping null/empty values) backs every "See all"
-  Drawer here — the first "truncated section + See all -> Drawer" pattern
-  in the app. `formatCurrency` (`sampleFinancials.js`) and the new
-  `formatPrice` both gain `currencyDisplay: "narrowSymbol"` so USD renders
-  as `$` rather than `US$` (a locale quirk of the default `Intl.NumberFormat`
-  locale), fixed app-wide since `formatCurrency` is shared by every page.
+  Page sections: real Total Invested/Profit-Loss StatTiles, shown in the
+  user's own `default_currency` rather than the holding's native currency
+  (via the same `resolveFxRate` the table below uses — "…" while the rate
+  resolves, "—" when none is published; falls back to a plain
+  currency-less number only when there's no market profile at all for the
+  ticker, since there's then no native currency to convert from), plus a
+  Profit-Loss % tile needing no conversion, being currency-free. All three
+  are shown whenever the ticker has at least one holding instance in the
+  portfolio, even a fully-sold one with 0 net shares — invested/P&L both
+  read as 0/— rather than the section vanishing. A real price chart
+  (`HoldingPriceChart.jsx`) with the same candle/line/area toggle, hover
+  tooltip and "compare against" overlay as the account/pie pages' existing
+  hand-rolled illustrative `PriceChart` — `PriceChart.jsx` gains an
+  optional `holdings=[]` prop (parallel to its existing `pies=[]`) adding
+  an "Other holdings" optgroup to the "Compare against" picker,
+  additive-only and verified backward-compatible with
+  `AccountDetailPage`/`PieDetailPage`'s existing `pies`-only usage; both
+  charts default to Line rather than Candles, toggle order Line/Area/
+  Candle. `HoldingPriceChart.jsx` additionally draws the holding's real
+  weighted-average buy price (native currency, matching the chart's own
+  price scale) as a grey dashed reference line with its own legend entry,
+  folded into the chart's y-domain alongside the series' own high/low so
+  it stays on-screen even when a short date range's price band sits well
+  outside it. An "Owned shares" table (`HoldingInstancesTable.jsx`, same
+  "shown whenever a holding instance exists" rule as the StatTiles above)
+  — one row per holding instance with shares, average price in both the
+  native and the caller's default currency (via `resolveFxRate`), its
+  account/pie location, and a per-row delete icon (`deleteHolding`,
+  previously wired up nowhere in the UI) opening a shared `ConfirmDialog`
+  naming that specific instance; a `HoldingStatsPanel.jsx` "Stats" card
+  modeled on a provided mockup — a 1 Day / 52 Weeks high-low range shown as
+  two vertical bars sharing one scale (the min low and max high across
+  *both* windows), so a given price lines up at the same height in either
+  bar, with each bar's own sub-range highlighted green/red by whether that
+  window's trading was net positive (`close >= open`) or negative and a
+  pointer marking the current price; 1 Day comes straight off the
+  profile's real `day_high`/`day_low` (there's no "1 week" figure anywhere
+  in the data); 52 Weeks uses the current calendar year's published price
+  history, falling back to the profile's year-to-date high/low early in
+  the year. Below the bars, one stacked metrics list grouped by subject —
+  market cap, P/E ratio, beta, volatility, average volume, then every
+  dividend-related field together (dividend yield, dividend rate, dividend
+  frequency, payout ratio) — rather than scattering real and placeholder
+  fields arbitrarily; market cap, dividend yield, beta, payout ratio and
+  dividend rate are real (market cap in K/M/B/T compact notation via the
+  new `formatCompactCurrency`, locale pinned to "en-US" since compact
+  abbreviations vary by locale — e.g. British English renders 1e12 as
+  "1tn" rather than "1T"), while volatility, average volume, P/E ratio and
+  dividend frequency stay the four seeded placeholders, called out as
+  sample data in a caption — no backend endpoint exposes these yet,
+  `packages/metrics`' computed fundamentals are never read back out by
+  `MarketDataClient`/`market_data/views.py`. No "See all" Drawer — every
+  real field the profile exposes is already in the main list, so the
+  50/200-day moving averages (the only fields that Drawer showed and the
+  main list doesn't) are dropped rather than kept behind a now-pointless
+  extra click. A `HoldingAboutSection.jsx` "About" card (real description
+  — truncated to ~220 characters at a word boundary, full text still in
+  its own "See all" Drawer — CEO(s)/sector/industry/IPO date, the last
+  formatted as "12 Dec 1980" via `en-GB` regardless of the viewer's own
+  locale) sits side by side with Stats via the existing
+  `.ec-account-columns` layout. Below that, "Financials" and "Transactions"
+  buttons each open a stub Drawer with an `EmptyState` ("coming soon") —
+  real functionality for both is a later phase. New shared
+  `frontend/src/components/core/FieldList.jsx`/`.css` (a plain label/value
+  list, skipping null/empty values) backs HoldingAboutSection's "See all"
+  Drawer — the first "truncated section + See all -> Drawer" pattern in
+  the app. `formatCurrency` (`sampleFinancials.js`) gains `currencyDisplay:
+  "narrowSymbol"` so USD renders as `$` rather than `US$` (a locale quirk
+  of the default `Intl.NumberFormat` locale) and now always shows exactly
+  2 decimal places rather than rounding to whole units — both fixed
+  app-wide, since `formatCurrency` is shared by every page; the new
+  `formatPrice`/`formatCompactCurrency` (`holdingFinancials.js`) match its
+  narrow-symbol style.
 
 - `frontend/public/brand/equicast-mark.png`: a 512x512 PNG export of the
   existing `equicast-mark.svg` (same gradient badge + Candlestick Spear

@@ -36,6 +36,34 @@ export function formatPrice(value, currency) {
 }
 
 /**
+ * A large figure like market cap rendered in K/M/B/T notation (e.g.
+ * $4.67T) rather than formatCurrency's full digit string — unreadable at a
+ * glance once it's 13 digits long. Locale is pinned to "en-US" rather than
+ * following the viewer's own locale — compact notation's abbreviations
+ * aren't just digit grouping, they vary by locale (e.g. British English
+ * renders 1e9/1e12 as "1bn"/"1tn" instead of "1B"/"1T"), and K/M/B/T is
+ * what this is meant to show regardless of viewer.
+ *
+ * @param {number} value
+ * @param {string|null|undefined} currency
+ * @returns {string}
+ */
+export function formatCompactCurrency(value, currency) {
+  if (!currency) {
+    return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 }).format(
+      value
+    );
+  }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency,
+    currencyDisplay: "narrowSymbol",
+    notation: "compact",
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+/**
  * @typedef {Object} InstanceFinancials
  * @property {number} shares - net shares currently held.
  * @property {number|null} avgPriceNative - null when there are no
@@ -186,9 +214,8 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
  * @property {number|null} low
  * @property {number[]} closes
  * @property {boolean} sufficient - false when there's too little published
- *   price history for a meaningful high/low or sparkline (e.g. very early
- *   January, before many trading days of the new calendar year are
- *   published — see getPrices's "current calendar year only" note).
+ *   price history for a meaningful high/low or sparkline (e.g. a ticker
+ *   published only a handful of trading days ago).
  */
 
 /**
@@ -197,7 +224,7 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
  * high-low. `sufficient` requires at least 3 days (or fewer if
  * `tradingDays` itself is smaller) so a 1-2-point "chart" is never rendered.
  *
- * @param {import("../../api/market.js").PriceRecord[]|null|undefined} priceResults
+ * @param {import("../../api/market.js").PriceBar[]|null|undefined} priceResults
  * @param {number} tradingDays
  * @returns {PriceWindow}
  */

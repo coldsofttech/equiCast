@@ -15,6 +15,16 @@ function truncate(text, limit) {
   return `${cut.slice(0, lastSpace > 0 ? lastSpace : limit)}…`;
 }
 
+/** marketProfile.ipo_date is a full ISO 8601 datetime (see equicast_core's
+ * writers) — this only needs the calendar date, as "12 Dec 1980" regardless
+ * of the viewer's own locale. */
+function formatIpoDate(isoDatetime) {
+  if (!isoDatetime) return null;
+  const date = new Date(isoDatetime);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
 /**
  * Real company-profile data — description (truncated with a "Show
  * more"/"Show less" toggle) plus CEOs/sector/industry/website/address/
@@ -101,7 +111,7 @@ function HoldingAboutSection({ marketProfile }) {
       </div>
       <div className="ec-holding-about-row">
         <span className="ec-field-list-label">IPO date</span>
-        <span>{marketProfile.ipo_date || "—"}</span>
+        <span>{formatIpoDate(marketProfile.ipo_date) ?? "—"}</span>
       </div>
     </Card>
   );

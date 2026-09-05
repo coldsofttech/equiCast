@@ -1,7 +1,7 @@
 import math
 
 from django.conf import settings
-from equicast_core import ASSET_CLASSES, MarketDataClient
+from equicast_core import ASSET_CLASSES, DEFAULT_PRICE_RANGE, PRICE_RANGES, MarketDataClient
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -35,6 +35,14 @@ class ProfileView(APIView):
 
 
 class PricesView(APIView):
+    """`prices` is trimmed/aggregated to the requested `range` query param
+    (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see
+    equicast_core.client.MarketDataClient.get_prices) server-side, not
+    fetched-then-cut client-side — a long-history "max"/"10y" response
+    could otherwise be several thousand daily rows, well past what's worth
+    sending over this Lambda-behind-API-Gateway deployment (see
+    backend/README.md) or rendering in a chart."""
+
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -42,8 +50,13 @@ class PricesView(APIView):
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
 
-        records = _client.get_prices(asset_class, symbol)
-        return Response({"ticker": symbol.upper(), "results": records})
+        price_range = request.query_params.get("range", DEFAULT_PRICE_RANGE)
+        if price_range not in PRICE_RANGES:
+            detail = f"Unknown range '{price_range}'. Must be one of: {', '.join(PRICE_RANGES)}."
+            return Response({"detail": detail}, status=400)
+
+        prices = _client.get_prices(asset_class, symbol, price_range=price_range)
+        return Response(prices)
 
 
 class SearchView(APIView):

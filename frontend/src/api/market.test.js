@@ -34,11 +34,19 @@ describe("market api", () => {
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/profile/");
   });
 
-  it("fetches a symbol's prices", async () => {
-    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", results: [] });
+  it("defaults to the max range when none is given", async () => {
+    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", prices: [] });
 
     await getPrices(api, "stock", "AAPL");
 
-    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/");
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/?range=max");
+  });
+
+  it("passes a given range through as a query param", async () => {
+    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", prices: [] });
+
+    await getPrices(api, "stock", "AAPL", { range: "1y" });
+
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/?range=1y");
   });
 });

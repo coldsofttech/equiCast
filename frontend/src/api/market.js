@@ -1,3 +1,5 @@
+import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
+
 /**
  * @typedef {Object} SearchResult
  * @property {string} ticker
@@ -91,32 +93,79 @@ export function getProfile(api, assetClass, symbol) {
   return /** @type {Promise<MarketProfile>} */ (api(`/market/${assetClass}/${symbol}/profile/`));
 }
 
+/** Badge `tone` (see components/core/Badge.jsx) for each MarketProfile field
+ * shown as a badge — one shared mapping so Exchange/Quote type/Synced read
+ * the same color wherever a page surfaces them (today: HoldingTickerPage's
+ * title badges), rather than each caller picking its own. */
+export const MARKET_PROFILE_BADGE_TONES = {
+  exchange: "neutral",
+  quoteType: "accent",
+  synced: "info",
+};
+
 /**
- * @typedef {Object} PriceRecord
- * @property {string} ticker
- * @property {string} currency
+ * Every range GET .../prices/'s `?range=` accepts, in the order a range
+ * picker should offer them — mirrors equicast_core.client.PRICE_RANGES
+ * exactly; keep the two in sync if either changes.
+ */
+export const PRICE_RANGES = ["1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max"];
+
+/** The backend's own default when `range` is omitted — see
+ * backend/market_data/views.py's PricesView / equicast_core's
+ * DEFAULT_PRICE_RANGE. */
+export const DEFAULT_PRICE_RANGE = "max";
+
+/**
+ * @typedef {Object} PriceBar
  * @property {string} date
  * @property {number} open
  * @property {number} high
  * @property {number} low
  * @property {number} close
- * @property {number} average
- * @property {string} last_updated
- * @property {string} source
+ */
+
+/**
+ * @typedef {Object} PriceSeries
+ * @property {string} ticker
+ * @property {string|null} currency
+ * @property {string|null} last_updated
+ * @property {string|null} source
+ * @property {PriceBar[]} prices - ascending/oldest-first. Daily bars for
+ *   `range` "6m" or shorter; weekly ("1y"/"2y") or monthly ("3y" and up)
+ *   OHLC bars otherwise — see equicast_core.client.get_prices.
  */
 
 /**
  * GET /api/market/<asset_class>/<symbol>/prices/ — see
- * backend/market_data/views.py's PricesView. Current calendar year only.
- * `results` is ascending/oldest-first (see equicast_stock's writer).
+ * backend/market_data/views.py's PricesView. `range` is one of
+ * PRICE_RANGES, defaulting client-side to DEFAULT_PRICE_RANGE ("max") so
+ * the request URL and the cache key below always agree on what range was
+ * actually asked for.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol`/`range` for the rest of
+ * the browser's local calendar day (see utils/priceCache.js) — the
+ * backend's published price data only changes once a day, so a repeat
+ * request for the same range later the same day is served from the cache
+ * instead of hitting the API again. A cache miss/failure (including no
+ * IndexedDB support at all) just falls through to the network call.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} assetClass
  * @param {string} symbol
- * @returns {Promise<{ ticker: string, results: PriceRecord[] }>}
+ * @param {{ range?: string }} [options]
+ * @returns {Promise<PriceSeries>}
  */
-export function getPrices(api, assetClass, symbol) {
-  return /** @type {Promise<{ ticker: string, results: PriceRecord[] }>} */ (
-    api(`/market/${assetClass}/${symbol}/prices/`)
+export async function getPrices(api, assetClass, symbol, { range } = {}) {
+  const effectiveRange = range ?? DEFAULT_PRICE_RANGE;
+  const cacheKey = priceCacheKey(assetClass, symbol, effectiveRange);
+
+  const cached = await readCachedPrices(cacheKey);
+  if (cached) return cached;
+
+  const query = new URLSearchParams({ range: effectiveRange }).toString();
+  const result = /** @type {PriceSeries} */ (
+    await api(`/market/${assetClass}/${symbol}/prices/?${query}`)
   );
+  writeCachedPrices(cacheKey, result);
+  return result;
 }

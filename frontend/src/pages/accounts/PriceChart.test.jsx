@@ -8,10 +8,10 @@ const PIES = [
 ];
 
 describe("PriceChart", () => {
-  it("renders with Candles and 1Y active by default", () => {
+  it("renders with Line and 1Y active by default", () => {
     render(<PriceChart pies={PIES} seedKey="account:test" />);
 
-    expect(screen.getByRole("button", { name: "Candles" })).toHaveClass("is-active");
+    expect(screen.getByRole("button", { name: "Line" })).toHaveClass("is-active");
     expect(screen.getByRole("button", { name: "1Y" })).toHaveClass("is-active");
     expect(screen.getByText("This account")).toBeInTheDocument();
   });
@@ -22,7 +22,7 @@ describe("PriceChart", () => {
     fireEvent.click(screen.getByRole("button", { name: "Area" }));
 
     expect(screen.getByRole("button", { name: "Area" })).toHaveClass("is-active");
-    expect(screen.getByRole("button", { name: "Candles" })).not.toHaveClass("is-active");
+    expect(screen.getByRole("button", { name: "Line" })).not.toHaveClass("is-active");
   });
 
   it.each(["1D", "5D", "1M", "6M", "YTD", "2Y", "3Y", "5Y", "10Y", "MAX"])(

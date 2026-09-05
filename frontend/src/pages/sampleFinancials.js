@@ -14,7 +14,8 @@ export function formatCurrency(value, currency) {
     style: "currency",
     currency,
     currencyDisplay: "narrowSymbol",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value);
 }
 

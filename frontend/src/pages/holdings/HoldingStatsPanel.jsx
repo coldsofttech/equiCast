@@ -1,11 +1,9 @@
-import { useState } from "react";
 import Card from "../../components/core/Card.jsx";
-import Button from "../../components/core/Button.jsx";
-import Drawer from "../../components/core/Drawer.jsx";
 import FieldList from "../../components/core/FieldList.jsx";
 import {
   buildPlaceholderMetrics,
   extractPriceWindow,
+  formatCompactCurrency,
   formatCurrency,
   formatPrice,
 } from "./holdingFinancials.js";
@@ -97,19 +95,17 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
  * year's range and mislabeling it. 52 Weeks uses the current calendar
  * year's published price history when there's enough of it, falling back
  * to the profile's year-to-date high/low early in the year before much of
- * it is published yet. Below that, a stacked metrics list
- * mixing real profile fields (market cap, dividend yield) with the four
- * seeded placeholders the backend doesn't expose yet (volatility, average
- * volume, P/E ratio, dividend frequency — see holdingFinancials.js's
- * buildPlaceholderMetrics), called out as sample data in the caption below
- * rather than per-row, to match the mockup's clean row style. "See all"
- * opens a Drawer with the rest of the real profile fields.
+ * it is published yet. Below that, a stacked metrics list mixing real
+ * profile fields (market cap, dividend yield, beta, payout ratio, dividend
+ * rate) with the four seeded placeholders the backend doesn't expose yet
+ * (volatility, average volume, P/E ratio, dividend frequency — see
+ * holdingFinancials.js's buildPlaceholderMetrics), called out as sample
+ * data in the caption below rather than per-row, to match the mockup's
+ * clean row style.
  *
- * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null, priceResults: import("../../api/market.js").PriceRecord[]|null }} props
+ * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null, priceResults: import("../../api/market.js").PriceBar[]|null }} props
  */
 function HoldingStatsPanel({ ticker, marketProfile, priceResults }) {
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-
   const fiftyTwoWeeks = extractPriceWindow(priceResults, priceResults?.length ?? 0);
   const fiftyTwoWeeksHigh = fiftyTwoWeeks.sufficient ? fiftyTwoWeeks.high : marketProfile?.year_high;
   const fiftyTwoWeeksLow = fiftyTwoWeeks.sufficient ? fiftyTwoWeeks.low : marketProfile?.year_low;
@@ -140,15 +136,7 @@ function HoldingStatsPanel({ ticker, marketProfile, priceResults }) {
   return (
     <Card className="ec-detail-section">
       <div className="ec-section-head">
-        <div>
-          <h3 className="ec-section-title">Stats</h3>
-          <p className="ec-holding-stats-caption">
-            This gives you some of the key information for {ticker}.
-          </p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={() => setIsDrawerOpen(true)}>
-          See all
-        </Button>
+        <h3 className="ec-section-title">Stats</h3>
       </div>
 
       <div className="ec-holding-highlow-grid">
@@ -176,52 +164,39 @@ function HoldingStatsPanel({ ticker, marketProfile, priceResults }) {
 
       <FieldList
         items={[
-          { label: "Volatility", value: `${placeholders.volatilityPct.toFixed(1)}%` },
           {
             label: "Market cap",
-            value: marketProfile?.market_cap != null ? formatCurrency(marketProfile.market_cap, currency) : null,
+            value:
+              marketProfile?.market_cap != null
+                ? formatCompactCurrency(marketProfile.market_cap, currency)
+                : null,
           },
-          { label: "Average volume", value: placeholders.avgVolume.toLocaleString() },
           { label: "P/E ratio", value: placeholders.peRatio.toFixed(1) },
+          { label: "Beta", value: marketProfile?.beta != null ? marketProfile.beta.toFixed(2) : null },
+          { label: "Volatility", value: `${placeholders.volatilityPct.toFixed(1)}%` },
+          { label: "Average volume", value: placeholders.avgVolume.toLocaleString() },
           {
             label: "Dividend yield",
             value: marketProfile?.dividend_yield != null ? `${(marketProfile.dividend_yield * 100).toFixed(2)}%` : null,
           },
+          {
+            label: "Dividend rate",
+            value:
+              marketProfile?.dividend_rate != null
+                ? formatCurrency(marketProfile.dividend_rate, currency)
+                : null,
+          },
           { label: "Dividend frequency", value: placeholders.dividendFrequency },
+          {
+            label: "Payout ratio",
+            value: marketProfile?.payout_ratio != null ? `${(marketProfile.payout_ratio * 100).toFixed(2)}%` : null,
+          },
         ]}
       />
       <p className="ec-chart-caption">
-        Volatility, average volume, P/E ratio and dividend frequency are sample data — market cap
-        and dividend yield are real.
+        Volatility, average volume, P/E ratio and dividend frequency are sample data — market cap,
+        dividend yield, beta, payout ratio and dividend rate are real.
       </p>
-
-      <Drawer open={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} title="All metrics">
-        <FieldList
-          items={[
-            { label: "Beta", value: marketProfile?.beta },
-            { label: "Payout ratio", value: marketProfile?.payout_ratio },
-            {
-              label: "Dividend rate",
-              value:
-                marketProfile?.dividend_rate != null
-                  ? formatCurrency(marketProfile.dividend_rate, currency)
-                  : null,
-            },
-            { label: "Day open", value: marketProfile?.day_open != null ? formatCurrency(marketProfile.day_open, currency) : null },
-            { label: "Day high", value: marketProfile?.day_high != null ? formatCurrency(marketProfile.day_high, currency) : null },
-            { label: "Day low", value: marketProfile?.day_low != null ? formatCurrency(marketProfile.day_low, currency) : null },
-            { label: "Day close", value: marketProfile?.day_close != null ? formatCurrency(marketProfile.day_close, currency) : null },
-            { label: "Day average", value: marketProfile?.day_average != null ? formatCurrency(marketProfile.day_average, currency) : null },
-            { label: "Year open", value: marketProfile?.year_open != null ? formatCurrency(marketProfile.year_open, currency) : null },
-            { label: "Year high", value: marketProfile?.year_high != null ? formatCurrency(marketProfile.year_high, currency) : null },
-            { label: "Year low", value: marketProfile?.year_low != null ? formatCurrency(marketProfile.year_low, currency) : null },
-            { label: "Year close", value: marketProfile?.year_close != null ? formatCurrency(marketProfile.year_close, currency) : null },
-            { label: "Year average", value: marketProfile?.year_average != null ? formatCurrency(marketProfile.year_average, currency) : null },
-            { label: "50-day moving average", value: marketProfile?.moving_average_50_days != null ? formatCurrency(marketProfile.moving_average_50_days, currency) : null },
-            { label: "200-day moving average", value: marketProfile?.moving_average_200_days != null ? formatCurrency(marketProfile.moving_average_200_days, currency) : null },
-          ]}
-        />
-      </Drawer>
     </Card>
   );
 }

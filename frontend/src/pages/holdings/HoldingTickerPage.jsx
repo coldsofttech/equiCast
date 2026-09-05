@@ -9,14 +9,14 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
-import PriceChart from "../accounts/PriceChart.jsx";
+import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getProfile, getPrices } from "../../api/market.js";
+import { getProfile, getPrices, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -31,16 +31,28 @@ import "./HoldingTickerPage.css";
  * this can't assume a currency is always known by the time it renders. */
 function formatMoney(value, currency) {
   if (currency) return formatCurrency(value, currency);
-  return new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 }).format(value);
+  return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
+    value
+  );
+}
+
+/** marketProfile.last_updated is a full ISO 8601 datetime (see
+ * equicast_core's writers) — the Synced badge only needs the date. */
+function formatSyncedDate(isoDatetime) {
+  const date = new Date(isoDatetime);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 /**
  * The full holding detail page for one ticker: real Total invested/P&L/P&L%
  * (rolled up from every instance's recorded transactions plus the
- * instrument's real current price — see holdingFinancials.js), the same
- * illustrative consolidated chart pattern account/pie pages use (now also
- * offering other holdings as a compare option), a per-instance shares/avg
- * price table with delete, a two-pane stats section, and an About section —
+ * instrument's real current price — see holdingFinancials.js), a real
+ * price chart for this ticker with a 1D..MAX range picker (see
+ * HoldingPriceChart.jsx — unlike account/pie pages' consolidated chart,
+ * which stays illustrative since there's no real portfolio-valuation
+ * series to plot yet), a per-instance shares/avg price table with delete,
+ * a two-pane stats section, and an About section —
  * both real data from the market profile endpoint where it exists, with the
  * handful of fields the backend doesn't expose yet (P/E, volatility,
  * average volume, dividend frequency) shown as clearly-hinted placeholders.
@@ -134,8 +146,11 @@ function HoldingTickerPage() {
       .then((profile) => ({ status: "ok", profile }))
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
-    const pricesPromise = getPrices(api, assetClass, ticker)
-      .then((res) => res.results)
+    // Fixed at "1y" regardless of the price chart's own range picker below
+    // — this is the Stats panel's 52-week high/low window, a distinct
+    // concept from whatever range the user has the chart set to.
+    const pricesPromise = getPrices(api, assetClass, ticker, { range: "1y" })
+      .then((res) => res.prices)
       .catch(() => null);
 
     const transactionsPromise = Promise.all(
@@ -226,13 +241,22 @@ function HoldingTickerPage() {
       subtitle={name ? ticker : undefined}
       titleIcon={iconUrl && <img src={iconUrl} alt="" />}
       titleBadges={
-        marketProfile && (marketProfile.exchange || marketProfile.quote_type) ? (
+        marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
           <>
             {marketProfile.exchange && (
-              <Badge tone="neutral">Exchange: {marketProfile.exchange}</Badge>
+              <Badge tone={MARKET_PROFILE_BADGE_TONES.exchange}>
+                Exchange: {marketProfile.exchange}
+              </Badge>
             )}
             {marketProfile.quote_type && (
-              <Badge tone="accent">Quote type: {marketProfile.quote_type}</Badge>
+              <Badge tone={MARKET_PROFILE_BADGE_TONES.quoteType}>
+                Quote type: {marketProfile.quote_type}
+              </Badge>
+            )}
+            {marketProfile.last_updated && formatSyncedDate(marketProfile.last_updated) && (
+              <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>
+                Synced: {formatSyncedDate(marketProfile.last_updated)}
+              </Badge>
             )}
           </>
         ) : undefined
@@ -280,60 +304,91 @@ function HoldingTickerPage() {
             });
 
             const nativeCurrency = marketProfile?.currency ?? null;
+            const defaultCurrency = userProfile?.default_currency ?? null;
+            const assetClass = instances[0].holding.asset_class;
             const currentPriceNative = marketProfile?.day_close ?? marketProfile?.day_average ?? null;
             const totals = rollupInstances(instanceFinancials, currentPriceNative);
             const totalsTone = plTone(totals.plPct ?? 0);
+            const avgPriceNative = totals.shares > 0 ? totals.invested / totals.shares : null;
+
+            // Total invested/Profit-loss are shown in the user's own default
+            // currency (fxRate converts nativeCurrency -> defaultCurrency —
+            // see resolveFxRate), not the holding's native currency: a GBP
+            // account holding a USD stock should read in GBP here, same
+            // reasoning as HoldingInstancesTable's own default-currency
+            // column. Profit/loss % needs no conversion, being currency-free.
+            // When there's no market profile at all (marketProfileStatus ===
+            // "missing"), nativeCurrency is null, so there's nothing to
+            // convert from/to — shown as a plain currency-less number
+            // instead of blocking forever on an fx lookup the page never
+            // even attempts in that case (see the fxRate effect above).
+            const totalsLoading = nativeCurrency != null && fxState === "loading";
+            const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
+            const investedDefault =
+              nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
+            const plValueDefault =
+              totals.plValue == null
+                ? null
+                : nativeCurrency == null
+                  ? totals.plValue
+                  : fxRate != null
+                    ? totals.plValue * fxRate
+                    : null;
 
             return (
               <>
-                {totals.shares > 0 && (
-                  <div className="ec-stat-grid">
-                    <StatTile
-                      label="Total invested"
-                      value={formatMoney(totals.invested, nativeCurrency)}
-                      hint="Real data"
-                    />
-                    <StatTile
-                      label="Profit / loss"
-                      value={
-                        totals.plValue != null
-                          ? `${totals.plValue >= 0 ? "+" : "-"}${formatMoney(Math.abs(totals.plValue), nativeCurrency)}`
+                <div className="ec-stat-grid">
+                  <StatTile
+                    label="Total invested"
+                    value={
+                      totalsLoading
+                        ? "…"
+                        : investedDefault != null
+                          ? formatMoney(investedDefault, totalsCurrency)
                           : "—"
-                      }
-                      tone={totalsTone}
-                      hint="Real data"
-                    />
-                    <StatTile
-                      label="Profit / loss %"
-                      value={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
-                      tone={totalsTone}
-                      hint="Real data"
-                    />
-                  </div>
-                )}
+                    }
+                    hint="Real data"
+                  />
+                  <StatTile
+                    label="Profit / loss"
+                    value={
+                      totalsLoading
+                        ? "…"
+                        : plValueDefault != null
+                          ? `${plValueDefault >= 0 ? "+" : "-"}${formatMoney(Math.abs(plValueDefault), totalsCurrency)}`
+                          : "—"
+                    }
+                    tone={totalsTone}
+                    hint="Real data"
+                  />
+                  <StatTile
+                    label="Profit / loss %"
+                    value={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
+                    tone={totalsTone}
+                    hint="Real data"
+                  />
+                </div>
 
-                <PriceChart
+                <HoldingPriceChart
+                  assetClass={assetClass}
+                  ticker={ticker}
+                  currency={nativeCurrency}
                   holdings={otherHoldings}
-                  seedKey={`holding:${ticker}`}
-                  subjectLabel="This holding"
+                  avgPrice={avgPriceNative}
                 />
 
-                {totals.shares > 0 && (
-                  <>
-                    <div className="ec-section-head">
-                      <h2 className="ec-section-title">Owned shares</h2>
-                    </div>
-                    <HoldingInstancesTable
-                      instances={instanceFinancials}
-                      nativeCurrency={nativeCurrency}
-                      defaultCurrency={userProfile?.default_currency ?? null}
-                      fxRate={fxRate}
-                      fxState={fxState}
-                      onDelete={setDeletingInstance}
-                      onRowClick={(instance) => navigate(instance.destination)}
-                    />
-                  </>
-                )}
+                <div className="ec-section-head">
+                  <h2 className="ec-section-title">Owned shares</h2>
+                </div>
+                <HoldingInstancesTable
+                  instances={instanceFinancials}
+                  nativeCurrency={nativeCurrency}
+                  defaultCurrency={defaultCurrency}
+                  fxRate={fxRate}
+                  fxState={fxState}
+                  onDelete={setDeletingInstance}
+                  onRowClick={(instance) => navigate(instance.destination)}
+                />
               </>
             );
           })()}

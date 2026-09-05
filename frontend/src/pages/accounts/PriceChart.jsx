@@ -115,7 +115,7 @@ const PADDING = 24;
  * given caller, but both default to `[]` so either can be omitted.
  */
 function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This account" }) {
-  const [chartType, setChartType] = useState("candle");
+  const [chartType, setChartType] = useState("line");
   const [rangeId, setRangeId] = useState("1y");
   const [compareId, setCompareId] = useState("");
   const [hoverIndex, setHoverIndex] = useState(null);
@@ -176,8 +176,18 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
 
   const handleMove = (event) => {
     if (!svgRef.current) return;
-    const rect = svgRef.current.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * WIDTH;
+    const svg = svgRef.current;
+    // getBoundingClientRect()'s width is a plain pixel-ratio scale, which
+    // assumes the viewBox fills that box exactly — the rendered box's
+    // aspect ratio rarely matches WIDTH:HEIGHT, so the default
+    // preserveAspectRatio ("xMidYMid meet") letterboxes it, throwing that
+    // mapping off from where the cursor actually is. getScreenCTM() is the
+    // real screen-pixel-to-viewBox transform, correct regardless of any
+    // letterboxing.
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const { x } = point.matrixTransform(svg.getScreenCTM().inverse());
     const index = Math.min(bars.length - 1, Math.max(0, Math.floor((x - PADDING) / step)));
     setHoverIndex(index);
   };
@@ -189,7 +199,7 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
         <div className="ec-chart-toggle" role="group" aria-label="Chart type">
-          {["candle", "line", "area"].map((type) => (
+          {["line", "area", "candle"].map((type) => (
             <button
               key={type}
               type="button"
