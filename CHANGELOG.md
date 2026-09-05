@@ -106,6 +106,92 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   string, so etf/fx profiles (which have no `ceos` field at all) are
   unaffected. `packages/core/tests/test_client.py` gained regression
   coverage for both the decode and the missing-field case.
+- Applied the same `history.parquet`/`current.parquet` split to
+  `equicast-etf`/`equicast-stock`'s dividend Parquet layout (fx has no
+  dividends) — `dividend/history.parquet` (every year before the current
+  one, written once by a `--full-load` run) and `dividend/current.parquet`
+  (the current year, rewritten by every run that has any current-year
+  ex-dividend rows), replacing `year=<YYYY>/dividend.parquet` per year, for
+  the same reasoning as the price split above: unchanged recurring monthly
+  PUT count/storage (each scheduled run already only touched one dividend
+  file), but the one-time `--full-load` backfill's combined price+dividend
+  PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
+  4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
+  tickers: 40,000 → 4,000 PUTs). Nothing currently reads dividend data back
+  from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
+  changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated again with the updated math; a real
+  `infracost breakdown` run confirms both projects' totals are still
+  unchanged (dev ~$0.05/month, prod ~$5.85/month).
+- Applied the same split to `equicast-etf`/`equicast-stock`'s events
+  Parquet layout, the last remaining `year=<YYYY>` partition —
+  `events/history.parquet` (every year before the current one) and
+  `events/current.parquet` (the current year *or later*, not an exact
+  match: earnings dates can be future-dated, e.g. a Q1 announcement
+  scheduled into next calendar year while this runs in December, and a
+  not-yet-happened event belongs in `current.parquet` regardless of which
+  calendar year it falls in — `write_events_parquet` masks on `date >=
+  current_year`, not `==`). Same reasoning as price/dividend: unchanged
+  recurring monthly PUT count/storage, but the one-time `--full-load`
+  backfill's combined price+dividend+events PUT count drops from up to
+  ~60/ticker (20 each) to at most 6 — still a 90% cut (9,000 stock
+  tickers: 540,000 → 54,000 PUTs). ETF's events specifically sees no
+  realistic PUT saving from this — a ticker has at most one split in its
+  whole history, so a full-load run already wrote at most 1 events PUT
+  before this split and still does after; only its storage accounting
+  changed (a split's row now lands in `events/history.parquet` rather
+  than a specific `year=<YYYY>/events.parquet`, same ~7KB either way).
+  Nothing currently reads events data back from S3, so no reader changes
+  were needed here either. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated once more; a real `infracost breakdown`
+  run confirms both projects' totals are still unchanged (dev
+  ~$0.05/month, prod ~$5.85/month).
+- Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
+  layout from one `year=<YYYY>/price.parquet` per year of history to just
+  two files: `price/history.parquet` (every year before the current one,
+  written once by a `--full-load` run) and `price/current.parquet` (the
+  current year, rewritten by every run — scheduled or manual). Each
+  scheduled run only ever fetches `ytd` data, so it only ever touched one
+  price file either way — this doesn't change the recurring monthly PUT
+  count (still 990,000/month for stock, 110,000/month for ETF, per
+  `infra/infracost-usage.prod.yml`) or total storage (still ~850KB/stock
+  ticker, ~532KB/ETF ticker — consolidating years into one file doesn't
+  shrink the row data). What it does cut is the one-time `--full-load`
+  backfill's PUT count for price specifically: up to ~20 PUTs/ticker (one
+  per year of history) down to at most 2 — a 90% reduction (9,000 stock
+  tickers: 180,000 → 18,000 PUTs; 1,000 ETF tickers: 20,000 → 2,000), not
+  part of the scheduled-runs figure either way since that backfill is a
+  manual `workflow_dispatch` run. `equicast_core.MarketDataClient.get_prices()`
+  now reads `price/current.parquet` instead of the current year's
+  `year=<YYYY>/price.parquet` — its return value (current calendar year's
+  rows) is unchanged, only the S3 key. `dividend.parquet`/`events.parquet`
+  keep their existing one-file-per-year layout; only prices were affected
+  by their put/get volume being singled out. Re-annotated (not
+  re-numbered) `infra/infracost-usage.{dev,prod}.yml`'s Stock/ETF sections
+  with the storage/request math above — a real `infracost breakdown` run
+  confirms both projects' totals are unchanged (dev ~$0.05/month, prod
+  ~$5.85/month), as expected since only comments changed there, not the
+  usage values themselves.
+- Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
+  scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
+  22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —
+  after both the US (NYSE/NASDAQ) and UK (LSE) markets close, so each
+  weekday's fetch gets that day's complete OHLC bar. yfinance's
+  daily-interval history only changes once a trading day closes, so the
+  previous 6-hourly schedule bought no real freshness, just repeated S3
+  writes of the same data; both markets are shut every Saturday/Sunday, so
+  the added day-of-week filter (`1-5`) skips those runs entirely rather than
+  harmlessly re-fetching Friday's already-current close — it doesn't account
+  for weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  trigger a run that harmlessly re-writes the last available close. The
+  15m/30m chain offsets between the three pipelines are unchanged. Re-sized
+  `infra/infracost-usage.prod.yml`'s `market_data_bucket` ingestion request
+  counts for the new ~22-runs/month weekday cadence (down from 120 at
+  6-hourly) — confirmed via a real `infracost breakdown` run: prod's
+  `market_data_bucket` PUT cost drops from ~$30.01/month to ~$5.50/month
+  (prod total ~$5.85/month, down from ~$30.36/month); dev is unaffected (it
+  was never on the scheduled trigger to begin with — see that file's
+  header).
 - Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
   `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
   previously shared one usage file, so the "dev" and "prod" cost estimates

@@ -72,7 +72,7 @@ def _price_record(date: str, **overrides) -> dict:
     return record
 
 
-def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_price_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _price_record("2025-12-30"),
         _price_record("2025-12-31"),
@@ -82,15 +82,24 @@ def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> No
     paths = write_price_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "etf=VOO" / "year=2025" / "price.parquet",
-        tmp_path / "etf=VOO" / "year=2026" / "price.parquet",
+        tmp_path / "etf=VOO" / "price" / "history.parquet",
+        tmp_path / "etf=VOO" / "price" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2025" / "price.parquet")
-    assert sorted(year_2025["date"]) == ["2025-12-30", "2025-12-31"]
+    history = pd.read_parquet(tmp_path / "etf=VOO" / "price" / "history.parquet")
+    assert sorted(history["date"]) == ["2025-12-30", "2025-12-31"]
 
-    year_2026 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2026" / "price.parquet")
-    assert year_2026.to_dict(orient="records") == [records[2]]
+    current = pd.read_parquet(tmp_path / "etf=VOO" / "price" / "current.parquet")
+    assert current.to_dict(orient="records") == [records[2]]
+
+
+def test_write_price_parquet_current_year_only_writes_no_history_file(tmp_path: Path) -> None:
+    records = [_price_record("2026-01-15")]
+
+    paths = write_price_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "etf=VOO" / "price" / "current.parquet"]
+    assert not (tmp_path / "etf=VOO" / "price" / "history.parquet").exists()
 
 
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
@@ -111,7 +120,7 @@ def _dividend_record(ex_dividend_date: str, **overrides) -> dict:
     return record
 
 
-def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_dividend_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _dividend_record("2025-11-10", price=1.80),
         _dividend_record("2026-02-10", price=1.85),
@@ -121,15 +130,26 @@ def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) ->
     paths = write_dividend_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "etf=VOO" / "year=2025" / "dividend.parquet",
-        tmp_path / "etf=VOO" / "year=2026" / "dividend.parquet",
+        tmp_path / "etf=VOO" / "dividend" / "history.parquet",
+        tmp_path / "etf=VOO" / "dividend" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2025" / "dividend.parquet")
-    assert year_2025.to_dict(orient="records") == [records[0]]
+    history = pd.read_parquet(tmp_path / "etf=VOO" / "dividend" / "history.parquet")
+    assert history.to_dict(orient="records") == [records[0]]
 
-    year_2026 = pd.read_parquet(tmp_path / "etf=VOO" / "year=2026" / "dividend.parquet")
-    assert sorted(year_2026["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+    current = pd.read_parquet(tmp_path / "etf=VOO" / "dividend" / "current.parquet")
+    assert sorted(current["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+
+
+def test_write_dividend_parquet_current_year_only_writes_no_history_file(
+    tmp_path: Path,
+) -> None:
+    records = [_dividend_record("2026-02-10")]
+
+    paths = write_dividend_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "etf=VOO" / "dividend" / "current.parquet"]
+    assert not (tmp_path / "etf=VOO" / "dividend" / "history.parquet").exists()
 
 
 def test_write_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
@@ -157,7 +177,7 @@ def _event_record(event_type: str, date: str, **overrides) -> dict:
     return record
 
 
-def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_events_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _event_record("split", "2000-03-20", ratio=2.0),
         _event_record("split", "2026-06-09", ratio=4.0),
@@ -166,8 +186,8 @@ def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> N
     paths = write_events_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "etf=VOO" / "year=2000" / "events.parquet",
-        tmp_path / "etf=VOO" / "year=2026" / "events.parquet",
+        tmp_path / "etf=VOO" / "events" / "history.parquet",
+        tmp_path / "etf=VOO" / "events" / "current.parquet",
     }
 
     # Read back via the pyarrow dtype backend, not plain pd.read_parquet's
@@ -177,16 +197,27 @@ def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> N
     # interop quirk, not something _EVENTS_SCHEMA's pinning is meant to fix
     # (see its comment). The pyarrow backend preserves real None, which is
     # what this test cares about.
-    year_2026 = pd.read_parquet(
-        tmp_path / "etf=VOO" / "year=2026" / "events.parquet", dtype_backend="pyarrow"
+    current = pd.read_parquet(
+        tmp_path / "etf=VOO" / "events" / "current.parquet", dtype_backend="pyarrow"
     )
-    assert year_2026.to_dict(orient="records") == [records[1]]
+    assert current.to_dict(orient="records") == [records[1]]
 
     # Plain pd.read_parquet (no dtype_backend override) is the more common
     # call, so also confirm the documented NaN-not-None quirk actually
     # happens for an all-null column, rather than just asserting it away.
-    year_2000_default = pd.read_parquet(tmp_path / "etf=VOO" / "year=2000" / "events.parquet")
-    assert pd.isna(year_2000_default["firm"].iloc[0])
+    history_default = pd.read_parquet(tmp_path / "etf=VOO" / "events" / "history.parquet")
+    assert pd.isna(history_default["firm"].iloc[0])
+
+
+def test_write_events_parquet_current_year_or_later_only_writes_no_history_file(
+    tmp_path: Path,
+) -> None:
+    records = [_event_record("split", "2026-06-09", ratio=4.0)]
+
+    paths = write_events_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "etf=VOO" / "events" / "current.parquet"]
+    assert not (tmp_path / "etf=VOO" / "events" / "history.parquet").exists()
 
 
 def test_write_events_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:

@@ -1,12 +1,13 @@
 name: Stock Ingestion
 
 on:
-  # Runs 30 minutes after etf-ingestion.yml's "15 */6 * * *" (00:15/06:15/
-  # 12:15/18:15 UTC) — 45 minutes after fx-ingestion.yml's "0 */6 * * *" —
-  # so all three never overlap even if an earlier run takes longer than
-  # expected.
+  # Runs 30 minutes after etf-ingestion.yml's "15 22 * * 1-5" (22:15 UTC) —
+  # 45 minutes after fx-ingestion.yml's "0 22 * * 1-5" (22:00 UTC,
+  # Monday-Friday only — after both US and UK markets close, see that
+  # workflow's comment) — so all three never overlap even if an earlier
+  # run takes longer than expected.
   schedule:
-    - cron: "45 */6 * * *"
+    - cron: "45 22 * * 1-5"
   workflow_dispatch:
     inputs:
       environment:
