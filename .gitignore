@@ -222,6 +222,9 @@ node_modules/
 frontend/dist/
 frontend/.vite/
 
+# Temporary files
+.temp/
+
 # Terraform
 infra/**/.terraform/
 infra/**/*.tfstate
@@ -236,6 +239,8 @@ infra/modules/lambda_function/placeholder.zip
 
 # equiCast Parquet data cache
 data/*.parquet
+# scripts/local-dev.ps1's cached LocalStack market-data seed (see -SeedMarketData)
+data/localstack-seed/
 packages/fx/output/
 packages/fx/chunks/
 packages/fx/smoke_output/

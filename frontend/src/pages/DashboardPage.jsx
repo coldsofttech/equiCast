@@ -85,7 +85,7 @@ function DashboardPage() {
       {!isLoading && !loadError && accounts.length > 0 && (
         <div className="ec-account-grid">
           {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} onClick={() => navigate("/accounts")} />
+            <AccountCard key={account.id} account={account} onClick={() => navigate(`/accounts/${account.id}`)} />
           ))}
         </div>
       )}

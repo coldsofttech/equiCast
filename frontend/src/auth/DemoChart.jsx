@@ -137,17 +137,17 @@ function DemoChart() {
               </button>
             ))}
           </div>
-          <div className="ec-demo-toggle" role="group" aria-label="Chart type">
+          <div className="ec-chart-toggle" role="group" aria-label="Chart type">
             <button
               type="button"
-              className={`ec-demo-toggle-btn${chartType === "candle" ? " is-active" : ""}`}
+              className={`ec-chart-toggle-btn${chartType === "candle" ? " is-active" : ""}`}
               onClick={() => setChartType("candle")}
             >
               Candles
             </button>
             <button
               type="button"
-              className={`ec-demo-toggle-btn${chartType === "line" ? " is-active" : ""}`}
+              className={`ec-chart-toggle-btn${chartType === "line" ? " is-active" : ""}`}
               onClick={() => setChartType("line")}
             >
               Line
@@ -159,14 +159,14 @@ function DemoChart() {
           <span className="ec-demo-name">
             {ticker.name} <span className="ec-demo-symbol">{ticker.symbol}</span>
           </span>
-          <span className={`ec-demo-change${isUp ? " is-up" : " is-down"}`}>
+          <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
             {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
           </span>
         </div>
 
         <svg
           ref={svgRef}
-          className="ec-demo-chart"
+          className="ec-chart-svg"
           viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
           onMouseMove={handleMove}
           onMouseLeave={() => setHoverIndex(null)}
@@ -180,12 +180,12 @@ function DemoChart() {
               x2={WIDTH - PADDING}
               y1={PADDING + plotHeight * frac}
               y2={PADDING + plotHeight * frac}
-              className="ec-demo-gridline"
+              className="ec-chart-gridline"
             />
           ))}
 
           {chartType === "line" ? (
-            <path d={linePath} className="ec-demo-line" fill="none" />
+            <path d={linePath} className="ec-chart-line" fill="none" />
           ) : (
             bars.map((b, i) => (
               <g key={labels[i]}>
@@ -194,14 +194,14 @@ function DemoChart() {
                   x2={xFor(i)}
                   y1={yFor(b.high)}
                   y2={yFor(b.low)}
-                  className={b.close >= b.open ? "ec-demo-wick-up" : "ec-demo-wick-down"}
+                  className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
                 />
                 <rect
                   x={xFor(i) - step * 0.3}
                   y={yFor(Math.max(b.open, b.close))}
                   width={step * 0.6}
                   height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
-                  className={b.close >= b.open ? "ec-demo-candle-up" : "ec-demo-candle-down"}
+                  className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
                 />
               </g>
             ))
@@ -213,13 +213,13 @@ function DemoChart() {
               x2={xFor(hoverIndex)}
               y1={PADDING}
               y2={HEIGHT - PADDING}
-              className="ec-demo-crosshair"
+              className="ec-chart-crosshair"
             />
           )}
         </svg>
 
-        <div className="ec-demo-tooltip">
-          <span className="ec-demo-tooltip-date">{hoveredLabel}</span>
+        <div className="ec-chart-tooltip">
+          <span className="ec-chart-tooltip-date">{hoveredLabel}</span>
           <span>O {hovered.open.toFixed(1)}</span>
           <span>H {hovered.high.toFixed(1)}</span>
           <span>L {hovered.low.toFixed(1)}</span>

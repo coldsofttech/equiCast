@@ -9,7 +9,11 @@ const ACCOUNT = {
   account_type: "ISA",
   currency: "GBP",
   transaction_type: "AVERAGE",
-  pies: [{ id: "p-1" }, { id: "p-2" }],
+  pies: [
+    { id: "p-1", holdings: [{ id: "h-1" }] },
+    { id: "p-2", holdings: [{ id: "h-2" }, { id: "h-3" }] },
+  ],
+  holdings: [{ id: "h-4" }],
 };
 
 describe("AccountCard", () => {
@@ -22,6 +26,7 @@ describe("AccountCard", () => {
     expect(screen.getByText("GBP")).toBeInTheDocument();
     expect(screen.getByText("Average cost")).toBeInTheDocument();
     expect(screen.getByText("2 pies")).toBeInTheDocument();
+    expect(screen.getByText("4 holdings")).toBeInTheDocument();
   });
 
   it("shows Per-transaction for TRANSACTION accounts", () => {
@@ -41,11 +46,13 @@ describe("AccountCard", () => {
     expect(onClick).toHaveBeenCalledTimes(2);
   });
 
-  it("defaults pies count to 0 when absent", () => {
-    const { pies, ...withoutPies } = ACCOUNT;
+  it("defaults pies and holdings counts to 0 when absent", () => {
+    const { pies, holdings, ...withoutEither } = ACCOUNT;
     void pies;
-    render(<AccountCard account={withoutPies} onClick={vi.fn()} />);
+    void holdings;
+    render(<AccountCard account={withoutEither} onClick={vi.fn()} />);
 
     expect(screen.getByText("0 pies")).toBeInTheDocument();
+    expect(screen.getByText("0 holdings")).toBeInTheDocument();
   });
 });

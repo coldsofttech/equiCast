@@ -1,0 +1,48 @@
+.ec-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--ec-s-16);
+  margin-bottom: var(--ec-s-24);
+}
+
+.ec-stat-tile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+  padding: var(--ec-s-16);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+}
+
+.ec-stat-label {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+}
+
+.ec-stat-value {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-24);
+  font-weight: 800;
+  color: var(--ec-text);
+}
+
+.ec-stat-value.is-up {
+  color: var(--ec-success);
+}
+
+.ec-stat-value.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-stat-value.is-flat {
+  color: var(--ec-text-subtle);
+}
+
+.ec-stat-hint {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}

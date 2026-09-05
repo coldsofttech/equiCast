@@ -27,6 +27,18 @@
   font-size: var(--ec-fs-13);
 }
 
+/** An icon-only button (no text children) — square instead of the usual
+ * horizontally-padded pill, so a lone icon doesn't sit in a wide rectangle. */
+.ec-btn-icon-only.ec-btn-md {
+  width: 36px;
+  padding: 0;
+}
+
+.ec-btn-icon-only.ec-btn-sm {
+  width: 30px;
+  padding: 0;
+}
+
 .ec-btn-primary {
   background: var(--ec-accent);
   border-color: var(--ec-accent);

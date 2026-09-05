@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Logo from "../brand/Logo.jsx";
 import Badge from "../core/Badge.jsx";
 import ThemeToggle from "./ThemeToggle.jsx";
@@ -19,7 +20,9 @@ function Topbar() {
 
   return (
     <header className="ec-topbar">
-      <Logo />
+      <Link to="/dashboard" className="ec-topbar-logo-link" aria-label="Go to dashboard">
+        <Logo />
+      </Link>
       <div className="ec-topbar-actions">
         {profile && (
           <Badge tone="accent" className="ec-topbar-currency" title="Default currency">
