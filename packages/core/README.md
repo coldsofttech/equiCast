@@ -9,7 +9,8 @@ script), not tied to Django.
 Reads equicast's S3 market-data layout — the Parquet files written by
 `equicast-fx`/`equicast-stock`/`equicast-etf`
 (`<asset_class>=<symbol>/profile.parquet`,
-`<asset_class>=<symbol>/year=<YYYY>/price.parquet`). Has no
+`<asset_class>=<symbol>/price/current.parquet`,
+`<asset_class>=<symbol>/price/history.parquet`). Has no
 `yfinance`/pandas dependency — just `boto3` (S3) and `pyarrow` (Parquet
 parsing).
 
@@ -23,7 +24,7 @@ client.get_profile("stock", "AAPL")
 
 client.get_prices("etf", "VOO")
 # [{"ticker": "VOO", "date": "2026-01-02", ...}, ...] for the current year,
-# or [] if there's no price.parquet for this year yet
+# or [] if there's no price/current.parquet yet
 ```
 
 `get_profile()` returns `None` (not an exception) when the requested
@@ -36,8 +37,9 @@ from this client's point of view. Any other S3 error (permissions, bucket
 missing, etc.) propagates as a `botocore.exceptions.ClientError` rather
 than being swallowed.
 
-Only reads the **current** calendar year's `price.parquet` — no
-cross-year listing/concatenation of full history in this client yet.
+Only reads `price/current.parquet` (the current calendar year) — it never
+reads `price/history.parquet` (every earlier year, written once by a
+`--full-load` ingestion run), since nothing currently needs prior-year rows.
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.json`

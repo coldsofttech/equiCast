@@ -74,20 +74,21 @@ For each ticker this writes:
   fields/logic as `equicast-fx`'s profile), address, country, region,
   full-time employees, CEO(s) (each with a name and role), IPO date, last
   updated, source
-- `stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day, for
+- `stock=<TICKER>/price/current.parquet` — one row per trading day, for
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source
-- `stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per ex-dividend
+- `stock=<TICKER>/dividend/current.parquet` — one row per ex-dividend
   date, this year to date by default: ticker, currency, ex_dividend_date,
   price (the dividend amount per share, not a stock price), last updated,
   source. No `payment_date` — yfinance's dividend history has none. Not
-  written for tickers/years with no dividends.
-- `stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event, this
+  written for a ticker with no dividends this year.
+- `stock=<TICKER>/events/current.parquet` — one row per event, this
   year to date plus any future-dated entries by default (only earnings
   ever has any): ticker, event_type (earnings/rating/split), date, plus
   that type's fields (eps_estimate/reported_eps/surprise_pct for earnings;
   firm/from_grade/to_grade/action for ratings; ratio for splits), last
-  updated, source. Not written for tickers/years with none of the three.
+  updated, source. Not written for a ticker with none of the three this
+  year or later.
 - `stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,
@@ -99,9 +100,15 @@ field lists, including how `address`, `ceos`, and `ipo_date` are derived
 and how `metrics.parquet` merges the two `equicast-metrics` calls.
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for **prices, dividends, and events**, writing one
-`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
-year included). It does not affect `profile.parquet`/`metrics.parquet`:
+for **prices, dividends, and events**: all three additionally get a
+`history.parquet` — `stock=<TICKER>/price/history.parquet`,
+`stock=<TICKER>/dividend/history.parquet`, and
+`stock=<TICKER>/events/history.parquet` — every year before the current
+one, each combined into that one file rather than split per year
+(`price/current.parquet`/`dividend/current.parquet`/`events/current.parquet`
+still get the current year — for events, current year *or later*, since
+earnings dates can be future-dated). It does not affect
+`profile.parquet`/`metrics.parquet`:
 
 ```bash
 uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
@@ -200,9 +207,9 @@ via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
 
 ## Running the scheduled ingestion
 
-`stock-ingestion.yml` runs every 6 hours (`cron: "45 */6 * * *"`) and can
-also be triggered manually (Actions tab → *Stock Ingestion* → *Run
-workflow*) with these inputs:
+`stock-ingestion.yml` runs once daily, Monday-Friday, at 22:45 UTC
+(`cron: "45 22 * * 1-5"`) and can also be triggered manually (Actions tab →
+*Stock Ingestion* → *Run workflow*, any day) with these inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -213,17 +220,18 @@ workflow*) with these inputs:
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
-**Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 */6 * * *`
-— 00:15/06:15/12:15/18:15 UTC): stock runs 30 minutes after each ETF run
-(00:45/06:45/12:45/18:45 UTC) — 45 minutes after each FX run — so none of
-the three pipelines ever overlap even if an earlier run takes longer than
-expected. The full chain is FX (`0 */6 * * *`) → +15m → ETF → +30m → stock;
-all three write into the same S3 bucket and pull from the same GHCR/Yahoo
-Finance rate limits.
+**Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 22 * * 1-5`
+— 22:15 UTC): stock runs 30 minutes after each ETF run (22:45 UTC) — 45
+minutes after each FX run — so none of the three pipelines ever overlap
+even if an earlier run takes longer than expected. The full chain is FX
+(`0 22 * * 1-5`, 22:00 UTC, Monday-Friday — after both US and UK markets
+close, see [fx-pipeline.md](fx-pipeline.md#running-the-scheduled-ingestion))
+→ +15m → ETF → +30m → stock; all three write into the same S3 bucket and
+pull from the same GHCR/Yahoo Finance rate limits.
 
 The scheduled (cron) trigger always targets **production** — same reasoning
 as `fx-ingestion.yml`: there's no `environment` input to read on a timer, and
-an unattended run every 6 hours should land in the real bucket, not dev. The
+an unattended weekday run should land in the real bucket, not dev. The
 `environment` input only applies to manual `workflow_dispatch` runs, where
 it defaults to `dev` so an ad-hoc run doesn't write to production by
 accident.
@@ -261,10 +269,13 @@ s3://equicast-market-data-<env>/
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2025/price.parquet
-    ├── year=2025/dividend.parquet
-    ├── year=2025/events.parquet
-    ├── year=2026/price.parquet
-    ├── year=2026/dividend.parquet
-    └── year=2026/events.parquet
+    ├── price/
+    │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
+    │   └── current.parquet   (2026, rewritten by every run)
+    ├── dividend/
+    │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
+    │   └── current.parquet   (2026, rewritten by every run)
+    └── events/
+        ├── history.parquet   (every year before 2026, written once by a --full-load run)
+        └── current.parquet   (2026 or later, rewritten by every run)
 ```

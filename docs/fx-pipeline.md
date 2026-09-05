@@ -51,14 +51,16 @@ uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output
 For each pair this writes:
 
 - `fx=<PAIR>/profile.parquet` — one row, current snapshot
-- `fx=<PAIR>/year=<YYYY>/price.parquet` — one row per trading day, for the
+- `fx=<PAIR>/price/current.parquet` — one row per trading day, for the
   current year only by default
 - `fx=<PAIR>/metrics.parquet` — one row, volatility/Sharpe/drawdown/CAGR
 
 Add `--full-load` to fetch each pair's entire available yfinance history for
-**prices**, writing one `price.parquet` per year found (current year
-included). It does not affect `metrics.parquet`, which always looks back far
-enough for `cagr_10y` regardless of this flag:
+**prices**, additionally writing `fx=<PAIR>/price/history.parquet` — every
+year before the current one, combined into that one file rather than split
+per year (`price/current.parquet` still gets just the current year). It
+does not affect `metrics.parquet`, which always looks back far enough for
+`cagr_10y` regardless of this flag:
 
 ```bash
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output --full-load
@@ -184,10 +186,17 @@ workflow*).
 
 ## Running the scheduled ingestion
 
-`fx-ingestion.yml` runs every 6 hours (`cron: "0 */6 * * *"`) and can also be
-triggered manually (Actions tab → *FX Ingestion* → *Run workflow*) with these
-inputs. It's first in the ingestion chain — `etf-ingestion.yml` runs 15
-minutes later, `stock-ingestion.yml` 30 minutes after that — see
+`fx-ingestion.yml` runs once daily, Monday-Friday, at 22:00 UTC
+(`cron: "0 22 * * 1-5"`) — after both the US and UK markets close, so each
+day's fetch gets that day's complete OHLC bar rather than a partial one.
+Both markets are closed every Saturday/Sunday, so the day-of-week filter
+(`1-5`) skips those runs entirely rather than re-fetching Friday's
+already-current data twice — it doesn't account for weekday market
+holidays (Christmas, Thanksgiving, etc.), which still trigger a run that
+harmlessly re-writes the last available close. Can also be triggered
+manually (Actions tab → *FX Ingestion* → *Run workflow*, any day) with
+these inputs. It's first in the ingestion chain — `etf-ingestion.yml` runs
+15 minutes later, `stock-ingestion.yml` 30 minutes after that — see
 [etf-pipeline.md's "Running the scheduled
 ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 
@@ -202,7 +211,7 @@ ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 
 The scheduled (cron) trigger always targets **production** — there's no
 `environment` input to read on a timer, and a data feed running unattended
-every 6 hours should land in the real bucket, not dev. The `environment`
+once a weekday should land in the real bucket, not dev. The `environment`
 input only applies to manual `workflow_dispatch` runs, where it defaults to
 `dev` so an ad-hoc run doesn't write to production by accident.
 
@@ -251,8 +260,7 @@ s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2003/price.parquet
-    ├── year=2004/price.parquet
-    ├── ...
-    └── year=2026/price.parquet
+    └── price/
+        ├── history.parquet   (2003-2025, written once by a --full-load run)
+        └── current.parquet   (2026, rewritten by every run)
 ```

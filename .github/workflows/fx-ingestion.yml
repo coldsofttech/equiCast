@@ -1,12 +1,24 @@
 name: FX Ingestion
 
 on:
-  # Runs first in the 6-hourly ingestion chain — etf-ingestion.yml runs 15
-  # minutes later, stock-ingestion.yml 30 minutes after that (45 minutes
-  # after this one), so the three never overlap even if a run takes longer
-  # than expected.
+  # Once daily, Monday-Friday only, at 22:00 UTC — after both the US
+  # (NYSE/NASDAQ, closes 20:00-21:00 UTC depending on DST) and UK (LSE,
+  # closes 15:30-16:30 UTC depending on DST) markets close, so each day's
+  # fetch gets that day's complete OHLC bar rather than a partial one.
+  # yfinance's daily-interval history only changes once a trading day
+  # closes anyway — running more often than that (the previous 6-hourly
+  # schedule) bought no real freshness, just repeated S3 writes of the same
+  # data. Both markets are closed every Saturday/Sunday (the day-of-week
+  # field below, "1-5", is Monday-Friday), so a weekend run would only ever
+  # re-write Friday's already-fetched close — this doesn't account for
+  # weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  # trigger a run that harmlessly re-writes the last available close.
+  #
+  # First in the ingestion chain — etf-ingestion.yml runs 15 minutes later,
+  # stock-ingestion.yml 30 minutes after that (45 minutes after this one),
+  # so the three never overlap even if a run takes longer than expected.
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 22 * * 1-5"
   workflow_dispatch:
     inputs:
       environment:

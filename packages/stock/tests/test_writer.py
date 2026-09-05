@@ -91,7 +91,7 @@ def _price_record(date: str, **overrides) -> dict:
     return record
 
 
-def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_price_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _price_record("2025-12-30"),
         _price_record("2025-12-31"),
@@ -101,15 +101,24 @@ def test_write_price_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> No
     paths = write_price_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "stock=AAPL" / "year=2025" / "price.parquet",
-        tmp_path / "stock=AAPL" / "year=2026" / "price.parquet",
+        tmp_path / "stock=AAPL" / "price" / "history.parquet",
+        tmp_path / "stock=AAPL" / "price" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2025" / "price.parquet")
-    assert sorted(year_2025["date"]) == ["2025-12-30", "2025-12-31"]
+    history = pd.read_parquet(tmp_path / "stock=AAPL" / "price" / "history.parquet")
+    assert sorted(history["date"]) == ["2025-12-30", "2025-12-31"]
 
-    year_2026 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2026" / "price.parquet")
-    assert year_2026.to_dict(orient="records") == [records[2]]
+    current = pd.read_parquet(tmp_path / "stock=AAPL" / "price" / "current.parquet")
+    assert current.to_dict(orient="records") == [records[2]]
+
+
+def test_write_price_parquet_current_year_only_writes_no_history_file(tmp_path: Path) -> None:
+    records = [_price_record("2026-01-15")]
+
+    paths = write_price_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "stock=AAPL" / "price" / "current.parquet"]
+    assert not (tmp_path / "stock=AAPL" / "price" / "history.parquet").exists()
 
 
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
@@ -130,7 +139,7 @@ def _dividend_record(ex_dividend_date: str, **overrides) -> dict:
     return record
 
 
-def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_dividend_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _dividend_record("2025-11-10", price=0.25),
         _dividend_record("2026-02-10", price=0.26),
@@ -140,15 +149,26 @@ def test_write_dividend_parquet_partitions_by_ticker_and_year(tmp_path: Path) ->
     paths = write_dividend_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "stock=AAPL" / "year=2025" / "dividend.parquet",
-        tmp_path / "stock=AAPL" / "year=2026" / "dividend.parquet",
+        tmp_path / "stock=AAPL" / "dividend" / "history.parquet",
+        tmp_path / "stock=AAPL" / "dividend" / "current.parquet",
     }
 
-    year_2025 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2025" / "dividend.parquet")
-    assert year_2025.to_dict(orient="records") == [records[0]]
+    history = pd.read_parquet(tmp_path / "stock=AAPL" / "dividend" / "history.parquet")
+    assert history.to_dict(orient="records") == [records[0]]
 
-    year_2026 = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2026" / "dividend.parquet")
-    assert sorted(year_2026["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+    current = pd.read_parquet(tmp_path / "stock=AAPL" / "dividend" / "current.parquet")
+    assert sorted(current["ex_dividend_date"]) == ["2026-02-10", "2026-05-12"]
+
+
+def test_write_dividend_parquet_current_year_only_writes_no_history_file(
+    tmp_path: Path,
+) -> None:
+    records = [_dividend_record("2026-02-10")]
+
+    paths = write_dividend_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "stock=AAPL" / "dividend" / "current.parquet"]
+    assert not (tmp_path / "stock=AAPL" / "dividend" / "history.parquet").exists()
 
 
 def test_write_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
@@ -176,7 +196,7 @@ def _event_record(event_type: str, date: str, **overrides) -> dict:
     return record
 
 
-def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> None:
+def test_write_events_parquet_splits_into_history_and_current(tmp_path: Path) -> None:
     records = [
         _event_record("earnings", "2025-10-30", reported_eps=1.5, surprise_pct=2.0),
         _event_record("rating", "2026-03-01", firm="Morgan Stanley", action="up"),
@@ -186,35 +206,50 @@ def test_write_events_parquet_partitions_by_ticker_and_year(tmp_path: Path) -> N
     paths = write_events_parquet(records, tmp_path)
 
     assert set(paths) == {
-        tmp_path / "stock=AAPL" / "year=2025" / "events.parquet",
-        tmp_path / "stock=AAPL" / "year=2026" / "events.parquet",
+        tmp_path / "stock=AAPL" / "events" / "history.parquet",
+        tmp_path / "stock=AAPL" / "events" / "current.parquet",
     }
 
     # Read back via the pyarrow dtype backend, not plain pd.read_parquet's
-    # default numpy backend: a fully-null column in a given year's file
-    # (e.g. `firm` here, since 2025 only has an earnings event) round-trips
-    # as float NaN under the numpy backend regardless of its declared type -
-    # a pyarrow/pandas interop quirk, not something _EVENTS_SCHEMA's pinning
-    # is meant to fix (see its comment). The pyarrow backend preserves real
-    # None, which is what this test cares about.
-    year_2025 = pd.read_parquet(
-        tmp_path / "stock=AAPL" / "year=2025" / "events.parquet", dtype_backend="pyarrow"
+    # default numpy backend: a fully-null column in a given file (e.g.
+    # `firm` in history.parquet, since 2025 only has an earnings event)
+    # round-trips as float NaN under the numpy backend regardless of its
+    # declared type - a pyarrow/pandas interop quirk, not something
+    # _EVENTS_SCHEMA's pinning is meant to fix (see its comment). The
+    # pyarrow backend preserves real None, which is what this test cares
+    # about.
+    history = pd.read_parquet(
+        tmp_path / "stock=AAPL" / "events" / "history.parquet", dtype_backend="pyarrow"
     )
-    assert year_2025.to_dict(orient="records") == [records[0]]
+    assert history.to_dict(orient="records") == [records[0]]
 
-    year_2026 = pd.read_parquet(
-        tmp_path / "stock=AAPL" / "year=2026" / "events.parquet", dtype_backend="pyarrow"
+    current = pd.read_parquet(
+        tmp_path / "stock=AAPL" / "events" / "current.parquet", dtype_backend="pyarrow"
     )
-    assert sorted(year_2026["event_type"]) == ["rating", "split"]
-    rating_row = year_2026[year_2026["event_type"] == "rating"].to_dict(orient="records")[0]
+    assert sorted(current["event_type"]) == ["rating", "split"]
+    rating_row = current[current["event_type"] == "rating"].to_dict(orient="records")[0]
     assert rating_row["eps_estimate"] is None
     assert rating_row["firm"] == "Morgan Stanley"
 
     # Plain pd.read_parquet (no dtype_backend override) is the more common
     # call, so also confirm the documented NaN-not-None quirk actually
     # happens for an all-null column, rather than just asserting it away.
-    year_2025_default = pd.read_parquet(tmp_path / "stock=AAPL" / "year=2025" / "events.parquet")
-    assert pd.isna(year_2025_default["firm"].iloc[0])
+    history_default = pd.read_parquet(tmp_path / "stock=AAPL" / "events" / "history.parquet")
+    assert pd.isna(history_default["firm"].iloc[0])
+
+
+def test_write_events_parquet_current_year_or_later_only_writes_no_history_file(
+    tmp_path: Path,
+) -> None:
+    records = [
+        _event_record("rating", "2026-03-01", firm="Morgan Stanley", action="up"),
+        _event_record("earnings", "2027-01-15", eps_estimate=2.1),
+    ]
+
+    paths = write_events_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "stock=AAPL" / "events" / "current.parquet"]
+    assert not (tmp_path / "stock=AAPL" / "events" / "history.parquet").exists()
 
 
 def test_write_events_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
