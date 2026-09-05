@@ -3,11 +3,17 @@ reads, DynamoDB user-profile storage, S3 JSON user-owned data)."""
 
 from equicast_core.accounts import (
     MAX_ACCOUNTS,
+    AccountAlreadyExistsError,
     AccountLimitExceededError,
     AccountNotFoundError,
     AccountsClient,
 )
-from equicast_core.client import ASSET_CLASSES, MarketDataClient
+from equicast_core.client import (
+    ASSET_CLASSES,
+    DEFAULT_PRICE_RANGE,
+    PRICE_RANGES,
+    MarketDataClient,
+)
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
     MAX_HOLDINGS_FOR_PIE,
@@ -46,6 +52,7 @@ __version__ = "0.1.0"
 
 __all__ = [
     "MAX_ACCOUNTS",
+    "AccountAlreadyExistsError",
     "AccountLimitExceededError",
     "AccountNotFoundError",
     "AccountsClient",
@@ -74,6 +81,8 @@ __all__ = [
     "TransactionNotFoundError",
     "TransactionsClient",
     "ASSET_CLASSES",
+    "DEFAULT_PRICE_RANGE",
+    "PRICE_RANGES",
     "MarketDataClient",
     "UserProfileClient",
 ]

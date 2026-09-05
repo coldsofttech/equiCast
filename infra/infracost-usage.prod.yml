@@ -1,0 +1,302 @@
+# Rough usage estimates so Infracost can price the usage-based parts of S3,
+# Lambda, API Gateway, and DynamoDB (storage, requests, compute) — by default
+# Infracost assumes zero usage for these, which would understate the real
+# cost of running them.
+#
+# This is the **production** scenario: an active instance with ~50 real
+# users and scheduled ingestion, sized against an expected ~10,000-instrument
+# US/UK stock+ETF universe (today's packages/{stock,etf}/config/*.prod.yaml
+# are still small placeholders — see CHANGELOG.md — this models where their
+# ingestion cost is headed, not their current row count). Contrast with
+# infra/infracost-usage.dev.yml, which reuses the session model below at 2
+# users and drops the scheduled-ingestion assumption entirely (dev never
+# receives fx/stock/etf-ingestion.yml's cron trigger — see each workflow's
+# "Resolve target environment..." step, which hardcodes production on
+# schedule and only reads the dev/production input on manual dispatch).
+#
+# These are deliberately rough guesses; tune them as real usage becomes
+# known. Regenerate the exact supported keys for your Infracost CLI version
+# with:
+#   infracost breakdown --config-file=infracost.yml --sync-usage-file
+version: 0.1
+resource_usage:
+  # --- Session model (shared basis for Lambda/API Gateway, DynamoDB, and
+  # user_data_bucket below — dev applies the same per-user rates to 2 users
+  # instead of 50) ---
+  #
+  # One session = one HTTP call to /identity/me/ plus a realistic amount of
+  # browsing for a finance/portfolio app — not just a single lookup:
+  #   identity:      1  (GET /identity/me/)
+  #   accounts:      2  (GET /accounts/, GET /accounts/<id>/)
+  #   portfolios:    3  (GET /pies/, GET /pies/<id>/, GET /pies/<id>/holdings/)
+  #   watchlists:    2  (GET /watchlists/, GET /watchlists/<id>/)
+  #   holdings:      2  (GET /holdings/, GET /holdings/<id>/)
+  #   transactions:  2  (GET /transactions/?holding_id=..., GET .../<id>/)
+  #   market data:   3  (GET .../search/, .../profile/, .../prices/ for one
+  #                      looked-up symbol)
+  #   total:         15 HTTP calls/session
+  # 20 sessions/user/month (a few times a week) -> 300 HTTP calls/user/month.
+  # This 300 is what module.backend_lambda/module.backend_api_gateway below
+  # size their monthly_requests from.
+  #
+  # DynamoDB (user_profiles_table) only serves the identity call: 1
+  # read/session -> 20 reads/user/month. Writes aren't session-driven
+  # (profile edits are rare) — modeled flat at 2/user/month regardless of
+  # session count.
+  #
+  # user_data_bucket serves accounts/portfolios/watchlists/holdings/
+  # transactions. Each *detail* endpoint (account, pie, watchlist) also
+  # joins in that resource's holdings — a separate S3 object (see
+  # PieDetailView.get et al.) — so it costs 2 S3 GETs, not 1:
+  #   accounts:      3  (list=1, detail=2)
+  #   portfolios:    4  (list=1, detail=2, holdings-view=1)
+  #   watchlists:    3  (list=1, detail=2)
+  #   holdings:      2  (list=1, detail=1 — this endpoint doesn't join further)
+  #   transactions:  2  (list=1, detail=1)
+  #   total:         14 S3 GETs/session -> 280 GET/user/month
+  # Writes (PUT) are modeled flat at 4/user/month, not session-derived —
+  # "few transactions" per the product's own framing, covering roughly one
+  # account/pie/watchlist edit, one holding create/update, and one
+  # transaction record most months, not a write on every session.
+  #
+  # market_data_bucket's on-demand backend cache reads are driven by the
+  # market-data leg of the session (search + profile + prices = 3 calls):
+  # 60 GET/user/month, independent of how large the ingested catalog is —
+  # the number of users searching/viewing drives this, not the number of
+  # tickers available to search.
+  module.backend_lambda.aws_lambda_function.this:
+    monthly_requests: 15000 # 300 HTTP calls/user/month * 50 users
+    request_duration_ms: 300 # rough guess pending a real cold/warm measurement
+
+  module.backend_api_gateway.aws_apigatewayv2_api.this:
+    monthly_requests: 15000 # same 300/user/month * 50 users as the Lambda above
+
+  module.user_profiles_table.aws_dynamodb_table.this:
+    monthly_read_request_units: 1000 # 20 reads/user/month (1 identity call/session) * 50 users
+    monthly_write_request_units: 100 # 2 writes/user/month (occasional profile edits, flat) * 50 users
+    storage_gb: 0.01 # 50 tiny profile records — well under Infracost's practical floor
+
+  # User-owned data bucket (accounts, pies, watchlists, holdings,
+  # transactions). One JSON object per user per domain: accounts capped at
+  # 5 (~200 bytes each), pies capped at 20/account (~150 bytes each),
+  # watchlists capped at 5/user (~150 bytes each), holdings capped at
+  # 100/account, 50/pie, 20/watchlist (~150-200 bytes each) — typical usage
+  # sits nowhere near those caps. 50 users * ~3KB combined -> 150KB, still
+  # under Infracost's practical floor.
+  module.user_data_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 0.01
+      monthly_tier_1_requests: 200 # PUT — 4 writes/user/month (session model above) * 50 users
+      monthly_tier_2_requests: 14000 # GET — 280 reads/user/month (session model above) * 50 users
+
+  # FX + stock + ETF profile data (and the backend's on-demand search/
+  # profile/price cache reads) lands here. Three independent scheduled
+  # pipelines write into this one bucket — broken out per pipeline below,
+  # then summed into the storage_gb/monthly_tier_1_requests values actually
+  # used. Recompute a pipeline's own lines if its ticker count or schedule
+  # changes materially; the other pipelines' lines are unaffected.
+  #
+  # FX pairs aren't "holdings" in the same sense as a listed stock/ETF, and
+  # weren't part of the 10,000-instrument scale-up — packages/fx/config/
+  # fx_pairs.prod.yaml stays at today's 4 pairs.
+  #
+  # --- FX (packages/fx/config/fx_pairs.prod.yaml, currently 4 pairs) ---
+  #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
+  #             price.parquet ~20KB (current year only — full_load isn't
+  #             passed on schedule) = ~45KB/pair
+  #   storage:  4 pairs * 45KB = 180KB
+  #   schedule: fx-ingestion.yml, cron "0 22 * * 1-5" -> ~22 runs/month
+  #             (1/weekday — ~4.35 weeks/month * 5 weekdays; markets are
+  #             shut both weekend days, so those runs are skipped entirely
+  #             rather than harmlessly re-fetching Friday's close twice)
+  #   requests: 3 files/pair (profile + metrics + price), all PUT
+  #             22 runs * 4 pairs * 3 files = 264 PUTs -> 300 (rounded up)
+  #
+  # --- Stock (~9,000 tickers — 90% of the ~10,000-instrument US/UK
+  #     universe this scenario is sized against; packages/stock/config/
+  #     stocks.prod.yaml itself still lists far fewer today, see the header
+  #     note above) ---
+  #   size (real samples, not placeholders):
+  #     profile.parquet   ~30KB  (one snapshot, overwritten each run)
+  #     metrics.parquet   ~20KB  (one snapshot, overwritten each run)
+  #     price.parquet     ~20KB/year
+  #     dividend.parquet  ~10KB/year
+  #     events.parquet    ~10KB/year (equicast-events: earnings/ratings/splits)
+  #   price.parquet, dividend.parquet, and events.parquet all split into a
+  #   history.parquet (every year before the current one, written once by a
+  #   --full-load run) and a current.parquet (rewritten by every run — for
+  #   events, "current" means the current year *or later*, since earnings
+  #   dates can be future-dated): price ~19 years * 20KB = ~380KB history +
+  #   ~20KB current = ~400KB total; dividend ~19 years * 10KB = ~190KB
+  #   history + ~10KB current = ~200KB total; events ~19 years * 10KB =
+  #   ~190KB history + ~10KB current = ~200KB total. All three totals match
+  #   the old per-year layout's 20 years * (20KB/10KB/10KB), since
+  #   consolidating into 2 files doesn't shrink the actual row data, just
+  #   the file count (see the PUT note below for where that file-count drop
+  #   actually pays off). Total: 400KB (price) + 200KB (dividend) + 200KB
+  #   (events) + 30KB + 20KB one-time snapshots = 850KB/ticker — unchanged
+  #   from before this split.
+  #   storage:  9,000 tickers * 850KB = 7,650,000KB (~7.3GB)
+  #   schedule: stock-ingestion.yml, cron "45 22 * * 1-5" -> also
+  #             ~22 runs/month (1/weekday, offset 45m from FX/30m from ETF
+  #             so none of the three ever overlap)
+  #   requests: 5 files/ticker/run (profile + price + dividend + events +
+  #             metrics — each scheduled run only ever fetches ytd data, so
+  #             it only ever touches the current year's price/dividend/events
+  #             file, not the full accumulated history — true before and
+  #             after the price/dividend/events history.parquet+
+  #             current.parquet split), all PUT. 22 runs * 9,000 tickers *
+  #             5 files = 990,000 PUTs — unchanged by the split; not where
+  #             its savings show up (see below).
+  #
+  #   Where the price/dividend/events split actually saves requests: the
+  #   one-time `--full-load` backfill this 20-year storage assumption
+  #   presumes (a manual workflow_dispatch run, outside the 22-runs/month
+  #   scheduled figure above, so not priced into monthly_tier_1_requests
+  #   below either way). Before this split, that run wrote one
+  #   price.parquet, one dividend.parquet, and one events.parquet per year
+  #   of history — up to 60 PUTs/ticker (20 each), 9,000 tickers * 60 =
+  #   540,000 PUTs. After: at most 6 PUTs/ticker (history.parquet +
+  #   current.parquet for each of the three — a history.parquet is skipped
+  #   entirely for a ticker with no pre-current-year rows in that file,
+  #   same "not written" behavior as before), 9,000 * 6 = 54,000 PUTs — a
+  #   486,000-PUT (90%) cut on that one-off run, at roughly the
+  #   $0.005/1,000 PUT rate S3 standard charges (~$2.43 saved on that single
+  #   backfill run — not a recurring monthly cost, so it doesn't appear in
+  #   monthly_tier_1_requests below).
+  #
+  # --- ETF (~1,000 tickers — the remaining 10% of the ~10,000-instrument
+  #     universe; packages/etf/config/etfs.prod.yaml itself still lists far
+  #     fewer today, see the header note above) ---
+  #   size (real samples, not placeholders):
+  #     profile.parquet    ~22-23KB (one snapshot, overwritten each run) ->
+  #                        25KB/ticker rounded up for headroom
+  #     price.parquet      ~20KB/year (same figure as the Stock section's
+  #                        price.parquet, scaled to a full trading year)
+  #     dividend.parquet   ~5KB/year (smaller than the Stock section's
+  #                        assumed 10KB/year since ETF distributions are
+  #                        quarterly/monthly cash amounts with no other
+  #                        per-row fields — see infracost-usage.dev.yml's
+  #                        Stock/ETF sections, sized from the current small
+  #                        ticker list, for the real per-ticker samples this
+  #                        is measured from)
+  #     metrics.parquet    ~7KB/ticker (risk/performance only, no
+  #                        .fundamentals() — notably smaller than the Stock
+  #                        section's 20KB metrics.parquet)
+  #     events.parquet     ~7KB per ticker that ever has one (earnings/
+  #                        analyst-rating events are always empty for an
+  #                        ETF, so this is only ever written for a
+  #                        ticker with an actual split — at most once in a
+  #                        ticker's lifetime, e.g. VOO's single 2013 split;
+  #                        see packages/etf/README.md's "On events.parquet"
+  #                        section). Modeled worst-case as 1 accumulated
+  #                        events file per ticker (not *20 years like
+  #                        dividend, before or after this split — see
+  #                        below), for headroom: 1,000 tickers * 7KB =
+  #                        7,000KB total.
+  #   price.parquet, dividend.parquet, and events.parquet all split into a
+  #   history.parquet (every year before the current one, written once by a
+  #   --full-load run) and a current.parquet (rewritten by every run), same
+  #   as the Stock section: price ~19 years * 20KB = ~380KB history + ~20KB
+  #   current = ~400KB total; dividend ~19 years * 5KB = ~95KB history +
+  #   ~5KB current = ~100KB total. Both totals match the old per-year
+  #   layout's 20 years * (20KB or 5KB) — consolidating into 2 files
+  #   doesn't shrink the row data (see the Stock section's note). events is
+  #   unaffected in storage terms either way — it was already modeled as one
+  #   flat 7KB file/ticker (a split is a single historical event, so it now
+  #   lands entirely in events/history.parquet rather than a specific
+  #   year=<YYYY>/events.parquet, same 7KB either way). Total: 100KB
+  #   (dividend) + 400KB (price) + 25KB + 7KB one-time snapshots =
+  #   532KB/ticker — unchanged from before this split.
+  #   storage:  1,000 tickers * 532KB + 7,000KB (events, flat) = 539,000KB
+  #             (~0.53GB)
+  #   schedule: etf-ingestion.yml, cron "15 22 * * 1-5" -> also
+  #             ~22 runs/month (1/weekday, offset 15m from FX so none of
+  #             the three ever overlap)
+  #   requests: 5 files/ticker/run (profile + price + dividend + events +
+  #             metrics — same conservative per-run ceiling the Stock
+  #             section uses, even though events.parquet in particular
+  #             produces an actual upload in only a small fraction of runs
+  #             — most tickers have no split), all PUT. 22 runs *
+  #             1,000 tickers * 5 files = 110,000 PUTs — unchanged by the
+  #             price/dividend/events split, same reasoning as the Stock
+  #             section (each scheduled run is ytd-only, so it only ever
+  #             touched one file per data type per ticker either way).
+  #
+  #   One-time `--full-load` backfill savings (see the Stock section for the
+  #   full explanation — same reasoning, not priced into
+  #   monthly_tier_1_requests below): price+dividend PUTs/ticker drop from
+  #   up to ~40 (20 price + 20 dividend, one per year of history each) to at
+  #   most 4 (history.parquet + current.parquet for each). 1,000 tickers *
+  #   40 = 40,000 PUTs before vs. 1,000 * 4 = 4,000 after — a 36,000-PUT
+  #   (90%) cut on that one-off run. events isn't part of this saving,
+  #   unlike the Stock section: a ticker has at most one split in its whole
+  #   history, so a full-load run already wrote at most 1 PUT for events
+  #   before this split (one year=<YYYY>/events.parquet, or none at all) and
+  #   still writes at most 1 after (history.parquet, or none) — there's no
+  #   per-year accumulation to consolidate away for ETF events specifically.
+  #
+  # --- Totals used below ---
+  #   storage:  180KB + 7,650,000KB + 539,000KB = 8,189,180KB (~7.81GB) ->
+  #             7.9GB (rounded up for headroom). Recompute the
+  #             accumulated-years assumption in the stock/ETF sections once
+  #             actual bucket age approaches (or exceeds) 20 years, once
+  #             --full-load has actually been run and real multi-year sizes
+  #             are known instead of the 20-year projection, or once the
+  #             real prod ticker count is known instead of this 10,000
+  #             planning scenario.
+  #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) =
+  #             1,100,300. Unaffected by the price/dividend/events
+  #             history.parquet+current.parquet split — that split's
+  #             ~522,000-PUT combined saving (486,000 stock + 36,000 ETF,
+  #             see the Stock/ETF sections) is on the one-time --full-load
+  #             backfill, a manual workflow_dispatch run outside this
+  #             scheduled-runs figure, so it never shows up here.
+  #   requests (GET): 3,000 — backend on-demand reads, from the session
+  #             model above (60/user/month * 50 users), not sized from the
+  #             ticker count or ingestion schedule
+  module.market_data_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 7.9
+      monthly_tier_1_requests: 1100300 # PUT/COPY/POST/LIST — FX (300) + stock (990,000) + ETF (110,000)
+      monthly_tier_2_requests: 3000 # GET — backend on-demand reads, from the session model above
+
+  # React static site. Build size doesn't depend on traffic, so storage/
+  # deploy-sync requests stay the same as infracost-usage.dev.yml's — only
+  # page-load traffic (this tier_2) scales with user count. ~100
+  # page-loads/user/month (roughly one per session plus a little
+  # cache-miss/asset-refetch overhead) * 50 users.
+  module.frontend_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 1
+      monthly_tier_1_requests: 500 # one `aws s3 sync` per deploy — deploy-frequency-driven, not user-count-driven, same as dev
+      monthly_tier_2_requests: 5000 # page loads: 100/user/month * 50 users
+
+  # CloudFront distribution fronting frontend_bucket (no custom domain yet
+  # — see docs/local-setup.md). Same 100 page-loads/user/month * 50 users
+  # scenario as frontend_bucket's own monthly_tier_2_requests above;
+  # assumes a ~1.5MB average cached bundle weight and that most repeat
+  # visits are served from the browser/edge cache rather than
+  # re-transferred. Well within CloudFront's 1TB/10M-request AWS Free Tier
+  # for a new account's first 12 months regardless.
+  aws_cloudfront_distribution.frontend:
+    monthly_data_transfer_out_gb: 3
+    monthly_http_requests: 500
+    monthly_https_requests: 5000
+
+  # Backend deploy artifacts bucket. Real measurement: Phase A's
+  # scripts/build_lambda_package.sh produced a 76.2MB zip. Versioned (so
+  # deploy.yml can promote one exact object version dev -> prod), no
+  # lifecycle expiration — every deploy adds another ~76MB version, so this
+  # grows unbounded; 1GB is a rough near-term estimate, revisit once real
+  # deploy cadence is known. Two PUTs per deploy (upload + prod promotion
+  # copy-object). Deploy-frequency-driven, not user-count-driven, so this is
+  # deliberately the same in infracost-usage.dev.yml — in practice dev
+  # likely deploys more often (apply-dev runs automatically on every push to
+  # main; apply-prod is gated behind required reviewers), but that's a
+  # cadence difference to revisit once real deploy frequency is known, not
+  # something to guess a ratio for here.
+  module.backend_deploy_bucket.aws_s3_bucket.this:
+    standard:
+      storage_gb: 1
+      monthly_tier_1_requests: 20

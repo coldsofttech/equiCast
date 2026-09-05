@@ -19,13 +19,19 @@ export const SECTOR_DATA = [
 
 export const SECTOR_SCORE = 72;
 
+/**
+ * `sector` ties each industry back to one SECTOR_DATA label, so clicking a
+ * sector row in the Sector diversification chart can filter this list down
+ * to just its industries (see AccountDetailPage/PieDetailPage) — again a
+ * fully synthetic grouping, not a real GICS mapping.
+ */
 export const INDUSTRY_DATA = [
-  { label: "Software", pct: 22 },
-  { label: "Semiconductors", pct: 16 },
-  { label: "Banks", pct: 13 },
-  { label: "Pharmaceuticals", pct: 12 },
-  { label: "E-commerce", pct: 10 },
-  { label: "Insurance", pct: 8 },
-  { label: "Utilities", pct: 7 },
-  { label: "Other", pct: 12 },
+  { label: "Software", pct: 22, sector: "Technology" },
+  { label: "Semiconductors", pct: 16, sector: "Technology" },
+  { label: "Banks", pct: 13, sector: "Financials" },
+  { label: "Pharmaceuticals", pct: 12, sector: "Healthcare" },
+  { label: "E-commerce", pct: 10, sector: "Consumer Discretionary" },
+  { label: "Insurance", pct: 8, sector: "Financials" },
+  { label: "Utilities", pct: 7, sector: "Industrials" },
+  { label: "Other", pct: 12, sector: "Other" },
 ];

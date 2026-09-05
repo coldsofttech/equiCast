@@ -1,3 +1,6 @@
+# Used for scheduled (cron) runs and manual "production" workflow_dispatch
+# runs. Currently mirrors fx_pairs.dev.yaml; expand independently as needed.
+#
 # Changing this list changes the market_data_bucket cost estimate:
 # infra/infracost-usage.yml's module.market_data_bucket.aws_s3_bucket.this
 # usage (storage_gb, monthly_tier_1_requests) is computed from this file's

@@ -122,32 +122,36 @@ Reads the stock tickers listed in a config file, fetches a profile, daily
 prices, dividends, events, and metrics for each, and writes:
 
 - `<out>/stock=<TICKER>/profile.parquet` — one row, current snapshot
-- `<out>/stock=<TICKER>/year=<YYYY>/price.parquet` — one row per trading day,
+- `<out>/stock=<TICKER>/price/current.parquet` — one row per trading day,
   for the current year only by default
-- `<out>/stock=<TICKER>/year=<YYYY>/dividend.parquet` — one row per
-  ex-dividend date, this year to date by default (empty for tickers with no
-  dividend history)
-- `<out>/stock=<TICKER>/year=<YYYY>/events.parquet` — one row per event
+- `<out>/stock=<TICKER>/dividend/current.parquet` — one row per
+  ex-dividend date, this year to date by default (not written for a ticker
+  with no dividends this year)
+- `<out>/stock=<TICKER>/events/current.parquet` — one row per event
   (earnings report, analyst rating change, stock split), this year to date
-  plus any future-dated entries by default (empty for tickers/years with
-  none of the three)
+  plus any future-dated entries by default (not written for a ticker with
+  none of the three this year or later)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
   returns, leverage, FCF/share)
 
 ```bash
-uv run equicast-stock --config config/stocks.yaml --out ./output
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output
 ```
 
 Add `--full-load` to fetch each ticker's entire available yfinance history
-for prices, dividends, and events, writing one
-`price.parquet`/`dividend.parquet`/`events.parquet` per year found (current
-year included) — same as `equicast-fx`'s `--full-load`. It does not affect
-`metrics.parquet`:
+for prices, dividends, and events — all three additionally get a
+`history.parquet`: `<out>/stock=<TICKER>/price/history.parquet`,
+`<out>/stock=<TICKER>/dividend/history.parquet`, and
+`<out>/stock=<TICKER>/events/history.parquet` (every year before the
+current one, each combined into that one file rather than split per year;
+`price/current.parquet`/`dividend/current.parquet`/`events/current.parquet`
+still get the current year — for events, current year or later) — same as
+`equicast-fx`'s `--full-load`. It does not affect `metrics.parquet`:
 
 ```bash
-uv run equicast-stock --config config/stocks.yaml --out ./output --full-load
+uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
 ```
 
 `prices()` returns records shaped `{ticker, currency, date, open, high, low,
@@ -167,8 +171,9 @@ Records are shaped `{ticker, currency, ex_dividend_date, price,
 last_updated, source}`. `price` is the dividend cash amount per share, not a
 stock price. There's no `payment_date` field — yfinance's dividend history
 only has ex-dividend date and amount, for any ticker, at any point in
-history; see equicast-dividends's README for details. Tickers with no
-dividend history simply produce no `dividend.parquet` file for that year.
+history; see equicast-dividends's README for details. A ticker with no
+dividends in a given period simply produces no `dividend/current.parquet`
+(or `dividend/history.parquet` on a `--full-load` run) for it.
 
 ### On `events.parquet`
 
@@ -180,10 +185,12 @@ asset-class package.
 Records are shaped `{ticker, event_type, date, eps_estimate, reported_eps,
 surprise_pct, firm, from_grade, to_grade, action, ratio, last_updated,
 source}`, combining three distinct event types (earnings reports, analyst
-rating changes, stock splits) into one file per year — `event_type` says
-which, and only that type's fields are populated (the rest `None`). See
-equicast-events's README for exactly how each type is sourced. Tickers/years
-with none of the three simply produce no `events.parquet` file.
+rating changes, stock splits) into `history.parquet`/`current.parquet` the
+same way price/dividend do (see above) — `event_type` says which, and only
+that type's fields are populated (the rest `None`). See equicast-events's
+README for exactly how each type is sourced. A ticker with none of the
+three in a given period simply produces no `events/current.parquet` (or
+`events/history.parquet` on a `--full-load` run) for it.
 
 ### On `metrics.parquet`
 
@@ -207,8 +214,10 @@ every field in both came directly from yfinance's `.info`.
 
 ## Configuration
 
-`config/stocks.yaml` lists the stock tickers to extract (currently AAPL,
-MSFT, GOOGL, AMZN, NVDA, META, TSLA, QCOM, AVGO).
+`config/stocks.dev.yaml` and `config/stocks.prod.yaml` each list the stock
+tickers to extract for that environment (currently AAPL, MSFT, GOOGL, AMZN,
+NVDA, META, TSLA, QCOM, AVGO in both — `stock-ingestion.yml` picks between
+them, see [docs/stock-pipeline.md](../../docs/stock-pipeline.md)).
 
 ## Development
 

@@ -36,6 +36,11 @@ class AccountLimitExceededError(Exception):
     """Raised by `create_account` when the user already has MAX_ACCOUNTS."""
 
 
+class AccountAlreadyExistsError(Exception):
+    """Raised by `create_account`/`update_account` when the user already has
+    another account with the same `name`, compared case-insensitively."""
+
+
 class AccountNotFoundError(Exception):
     """Raised by `get_account`/`update_account`/`delete_account` for an
     unknown account id."""
@@ -121,6 +126,10 @@ class AccountsClient:
         same way it validates `account_type`/`currency`."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             accounts, etag = self._load(user_id)
+            if any(a["name"].casefold() == name.casefold() for a in accounts):
+                raise AccountAlreadyExistsError(
+                    f"User '{user_id}' already has an account named '{name}'."
+                )
             if len(accounts) >= self._max_accounts:
                 raise AccountLimitExceededError(
                     f"User '{user_id}' already has {self._max_accounts} accounts."
@@ -153,6 +162,13 @@ class AccountsClient:
             index = next((i for i, a in enumerate(accounts) if a["id"] == account_id), None)
             if index is None:
                 raise AccountNotFoundError(f"No account '{account_id}' for user '{user_id}'.")
+            if "name" in fields and any(
+                a["id"] != account_id and a["name"].casefold() == fields["name"].casefold()
+                for a in accounts
+            ):
+                raise AccountAlreadyExistsError(
+                    f"User '{user_id}' already has an account named '{fields['name']}'."
+                )
             updated = {
                 **accounts[index],
                 **fields,

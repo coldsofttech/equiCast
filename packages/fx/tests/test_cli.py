@@ -82,7 +82,7 @@ def test_run_writes_profile_price_and_metrics_parquet_per_configured_pair(
     assert len(written) == 6  # profile + price + metrics per pair
     for pair_key in ("GBPUSD", "USDGBP"):
         assert (out_dir / f"fx={pair_key}" / "profile.parquet").exists()
-        assert (out_dir / f"fx={pair_key}" / "year=2026" / "price.parquet").exists()
+        assert (out_dir / f"fx={pair_key}" / "price" / "current.parquet").exists()
         assert (out_dir / f"fx={pair_key}" / "metrics.parquet").exists()
 
 
@@ -96,7 +96,7 @@ def test_run_accepts_pairs_json_instead_of_config(tmp_path: Path) -> None:
 
     assert set(written) == {
         out_dir / "fx=GBPEUR" / "profile.parquet",
-        out_dir / "fx=GBPEUR" / "year=2026" / "price.parquet",
+        out_dir / "fx=GBPEUR" / "price" / "current.parquet",
         out_dir / "fx=GBPEUR" / "metrics.parquet",
     }
 

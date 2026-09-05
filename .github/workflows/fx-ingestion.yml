@@ -1,8 +1,24 @@
 name: FX Ingestion
 
 on:
+  # Once daily, Monday-Friday only, at 22:00 UTC — after both the US
+  # (NYSE/NASDAQ, closes 20:00-21:00 UTC depending on DST) and UK (LSE,
+  # closes 15:30-16:30 UTC depending on DST) markets close, so each day's
+  # fetch gets that day's complete OHLC bar rather than a partial one.
+  # yfinance's daily-interval history only changes once a trading day
+  # closes anyway — running more often than that (the previous 6-hourly
+  # schedule) bought no real freshness, just repeated S3 writes of the same
+  # data. Both markets are closed every Saturday/Sunday (the day-of-week
+  # field below, "1-5", is Monday-Friday), so a weekend run would only ever
+  # re-write Friday's already-fetched close — this doesn't account for
+  # weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  # trigger a run that harmlessly re-writes the last available close.
+  #
+  # First in the ingestion chain — etf-ingestion.yml runs 15 minutes later,
+  # stock-ingestion.yml 30 minutes after that (45 minutes after this one),
+  # so the three never overlap even if a run takes longer than expected.
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "0 22 * * 1-5"
   workflow_dispatch:
     inputs:
       environment:
@@ -55,28 +71,14 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Compute FX pair chunks
-        id: plan
-        working-directory: packages/fx
-        run: |
-          CHUNKS=$(uv run equicast-fx-plan \
-            --config config/fx_pairs.yaml \
-            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
-            --max-chunks 256)
-          echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
-          if [ "$CHUNKS" = "[]" ]; then
-            echo "has_chunks=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_chunks=true" >> "$GITHUB_OUTPUT"
-          fi
-
       # Scheduled runs always target production, regardless of the
       # workflow_dispatch default below — there's no input to read on a
       # cron trigger. Manual runs pick dev/production via the "environment"
-      # input. Resolved once here (not per matrix leg in the ingest job) so
-      # every chunk uploads to the same bucket and a missing variable fails
-      # fast, before any container spends time fetching data.
-      - name: Resolve target environment and bucket
+      # input. Resolved once here, before the chunk computation below, so
+      # every chunk both reads the right config file (fx_pairs.dev.yaml vs.
+      # fx_pairs.prod.yaml) and uploads to the same bucket, and a missing
+      # variable fails fast, before any container spends time fetching data.
+      - name: Resolve target environment, bucket, and config
         id: env
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
@@ -87,8 +89,10 @@ jobs:
 
           if [ "$ENVIRONMENT" = "production" ]; then
             BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
+            CONFIG="config/fx_pairs.prod.yaml"
           else
             BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
+            CONFIG="config/fx_pairs.dev.yaml"
           fi
 
           if [ -z "$BUCKET" ]; then
@@ -98,6 +102,22 @@ jobs:
 
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute FX pair chunks
+        id: plan
+        working-directory: packages/fx
+        run: |
+          CHUNKS=$(uv run equicast-fx-plan \
+            --config "${{ steps.env.outputs.config }}" \
+            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
+            --max-chunks 256)
+          echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
+          if [ "$CHUNKS" = "[]" ]; then
+            echo "has_chunks=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_chunks=true" >> "$GITHUB_OUTPUT"
+          fi
 
   ingest:
     needs: plan

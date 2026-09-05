@@ -150,14 +150,17 @@ can't invalidate the CloudFront cache after a sync, so CloudFront would
 keep serving stale cached responses (including an `index.html` referencing
 since-deleted hashed asset filenames) for up to the cache policy's TTL.
 
-**`API_URL`** — the backend API Gateway's invoke URL, baked into the
-frontend build as `VITE_API_BASE_URL` (see `frontend/src/api/client.js`)
-since Vite inlines `import.meta.env.VITE_*` at build time, not something
-the built SPA can read at runtime. Unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE`
-(one shared Auth0 tenant/API — the *same* value works for both
-Environments), dev and prod have genuinely different backend deployments,
-so this one has to be set separately per Environment and kept in sync
-after each apply that changes it.
+**`API_URL`** — the backend API Gateway's invoke URL with `/api` already
+appended (see `infra/outputs.tf`'s `backend_api_invoke_url` output — the
+*bare* invoke URL 404s on every real endpoint, since Django's `urls.py`
+roots them all under `api/`), baked into the frontend build as
+`VITE_API_BASE_URL` (see `frontend/src/api/client.js`) since Vite inlines
+`import.meta.env.VITE_*` at build time, not something the built SPA can
+read at runtime. Unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (one shared Auth0
+tenant/API — the *same* value works for both Environments), dev and prod
+have genuinely different backend deployments, so this one has to be set
+separately per Environment and kept in sync after each apply that changes
+it.
 
 After `apply-dev`/`apply-prod` has run at least once:
 
@@ -186,9 +189,12 @@ no changes to either).
 posting/updating one PR comment with the estimated monthly cost delta for
 both the `dev` and `prod` projects declared in `infracost.yml` (repo root).
 It's a pure HCL-based diff — no `terraform plan`, state, or AWS credentials
-involved. `infra/infracost-usage.yml` supplies rough usage estimates (S3
-storage/requests, ECR storage) since Infracost assumes zero usage by default
-for those; tune the numbers there as real usage becomes known, or run
+involved. `infra/infracost-usage.dev.yml`/`infra/infracost-usage.prod.yml`
+supply rough usage estimates (S3 storage/requests, ECR storage) since
+Infracost assumes zero usage by default for those — each models a
+deliberately different scenario (dev: ~2 users, no scheduled ingestion;
+prod: ~50 users, scheduled ingestion at a ~10,000-instrument scale); tune
+the numbers there as real usage becomes known, or run
 `infracost breakdown --config-file=infracost.yml --sync-usage-file` locally
 to regenerate the file with your installed CLI's exact supported keys.
 

@@ -33,7 +33,7 @@ from equicast_etf.writer import (
 from equicast_events import EventsClient
 from equicast_metrics import MetricsClient
 
-DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "etfs.yaml"
+DEFAULT_CONFIG = Path(__file__).resolve().parent.parent / "config" / "etfs.dev.yaml"
 
 
 def _parse_tickers(raw: str) -> list[ETFTicker]:

@@ -1,10 +1,13 @@
 name: Stock Ingestion
 
 on:
-  # Offset 2h from fx-ingestion.yml's "0 */6 * * *" (00:00/06:00/12:00/18:00
-  # UTC) so the two never overlap even if a run takes longer than expected.
+  # Runs 30 minutes after etf-ingestion.yml's "15 22 * * 1-5" (22:15 UTC) —
+  # 45 minutes after fx-ingestion.yml's "0 22 * * 1-5" (22:00 UTC,
+  # Monday-Friday only — after both US and UK markets close, see that
+  # workflow's comment) — so all three never overlap even if an earlier
+  # run takes longer than expected.
   schedule:
-    - cron: "0 2,8,14,20 * * *"
+    - cron: "45 22 * * 1-5"
   workflow_dispatch:
     inputs:
       environment:
@@ -57,30 +60,17 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Compute stock ticker chunks
-        id: plan
-        working-directory: packages/stock
-        run: |
-          CHUNKS=$(uv run equicast-stock-plan \
-            --config config/stocks.yaml \
-            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
-            --max-chunks 256)
-          echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
-          if [ "$CHUNKS" = "[]" ]; then
-            echo "has_chunks=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "has_chunks=true" >> "$GITHUB_OUTPUT"
-          fi
-
       # Scheduled runs always target production, regardless of the
       # workflow_dispatch default below — there's no input to read on a
       # cron trigger. Manual runs pick dev/production via the "environment"
-      # input. Resolved once here (not per matrix leg in the ingest job) so
-      # every chunk uploads to the same bucket and a missing variable fails
-      # fast, before any container spends time fetching data. Reuses the
-      # same MARKET_DATA_BUCKET_DEV/MARKET_DATA_BUCKET_PROD repo variables
-      # fx-ingestion.yml uses — stock profiles land in the same bucket.
-      - name: Resolve target environment and bucket
+      # input. Resolved once here, before the chunk computation below, so
+      # every chunk both reads the right config file (stocks.dev.yaml vs.
+      # stocks.prod.yaml) and uploads to the same bucket, and a missing
+      # variable fails fast, before any container spends time fetching data.
+      # Reuses the same MARKET_DATA_BUCKET_DEV/MARKET_DATA_BUCKET_PROD repo
+      # variables fx-ingestion.yml uses — stock profiles land in the same
+      # bucket.
+      - name: Resolve target environment, bucket, and config
         id: env
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
@@ -91,8 +81,10 @@ jobs:
 
           if [ "$ENVIRONMENT" = "production" ]; then
             BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
+            CONFIG="config/stocks.prod.yaml"
           else
             BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
+            CONFIG="config/stocks.dev.yaml"
           fi
 
           if [ -z "$BUCKET" ]; then
@@ -102,6 +94,22 @@ jobs:
 
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Compute stock ticker chunks
+        id: plan
+        working-directory: packages/stock
+        run: |
+          CHUNKS=$(uv run equicast-stock-plan \
+            --config "${{ steps.env.outputs.config }}" \
+            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
+            --max-chunks 256)
+          echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
+          if [ "$CHUNKS" = "[]" ]; then
+            echo "has_chunks=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_chunks=true" >> "$GITHUB_OUTPUT"
+          fi
 
   ingest:
     needs: plan

@@ -8,7 +8,8 @@ data actually contains, see the root [README](../README.md).
 ## Architecture
 
 ```
-packages/fx/config/fx_pairs.yaml   (the pairs to extract)
+packages/fx/config/fx_pairs.dev.yaml   (dev: the pairs to extract)
+packages/fx/config/fx_pairs.prod.yaml  (production: the pairs to extract)
         │
         ▼
 equicast-fx CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
@@ -27,7 +28,10 @@ GitHub Actions (fx-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-fx`). The
 FX pairs config isn't baked in as the only input — pairs can also be passed
 at runtime via `--pairs-json`, which is how the scheduled workflow feeds each
-parallel chunk its share of the work (see below).
+parallel chunk its share of the work (see below). The image's default `CMD`
+points at `config/fx_pairs.dev.yaml`; `fx-ingestion.yml` never relies on
+that default — it resolves `dev`/`prod` itself and always passes
+`--pairs-json` explicitly.
 
 Expect two `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed` (data via yfinance,
@@ -40,21 +44,23 @@ an error.
 
 ```bash
 cd packages/fx
-uv run equicast-fx --config config/fx_pairs.yaml --out ./output
+uv run equicast-fx --config config/fx_pairs.dev.yaml --out ./output
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output
 ```
 
 For each pair this writes:
 
 - `fx=<PAIR>/profile.parquet` — one row, current snapshot
-- `fx=<PAIR>/year=<YYYY>/price.parquet` — one row per trading day, for the
+- `fx=<PAIR>/price/current.parquet` — one row per trading day, for the
   current year only by default
 - `fx=<PAIR>/metrics.parquet` — one row, volatility/Sharpe/drawdown/CAGR
 
 Add `--full-load` to fetch each pair's entire available yfinance history for
-**prices**, writing one `price.parquet` per year found (current year
-included). It does not affect `metrics.parquet`, which always looks back far
-enough for `cagr_10y` regardless of this flag:
+**prices**, additionally writing `fx=<PAIR>/price/history.parquet` — every
+year before the current one, combined into that one file rather than split
+per year (`price/current.parquet` still gets just the current year). It
+does not affect `metrics.parquet`, which always looks back far enough for
+`cagr_10y` regardless of this flag:
 
 ```bash
 uv run equicast-fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output --full-load
@@ -85,7 +91,7 @@ you want to sanity-check the pipeline end to end.
 ```bash
 cd packages/fx
 
-# Defaults to every pair in config/fx_pairs.yaml, prints JSON to stdout
+# Defaults to every pair in config/fx_pairs.dev.yaml, prints JSON to stdout
 uv run python scripts/smoke_test.py
 
 # Only specific pairs
@@ -180,9 +186,19 @@ workflow*).
 
 ## Running the scheduled ingestion
 
-`fx-ingestion.yml` runs every 6 hours (`cron: "0 */6 * * *"`) and can also be
-triggered manually (Actions tab → *FX Ingestion* → *Run workflow*) with these
-inputs:
+`fx-ingestion.yml` runs once daily, Monday-Friday, at 22:00 UTC
+(`cron: "0 22 * * 1-5"`) — after both the US and UK markets close, so each
+day's fetch gets that day's complete OHLC bar rather than a partial one.
+Both markets are closed every Saturday/Sunday, so the day-of-week filter
+(`1-5`) skips those runs entirely rather than re-fetching Friday's
+already-current data twice — it doesn't account for weekday market
+holidays (Christmas, Thanksgiving, etc.), which still trigger a run that
+harmlessly re-writes the last available close. Can also be triggered
+manually (Actions tab → *FX Ingestion* → *Run workflow*, any day) with
+these inputs. It's first in the ingestion chain — `etf-ingestion.yml` runs
+15 minutes later, `stock-ingestion.yml` 30 minutes after that — see
+[etf-pipeline.md's "Running the scheduled
+ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -195,19 +211,21 @@ inputs:
 
 The scheduled (cron) trigger always targets **production** — there's no
 `environment` input to read on a timer, and a data feed running unattended
-every 6 hours should land in the real bucket, not dev. The `environment`
+once a weekday should land in the real bucket, not dev. The `environment`
 input only applies to manual `workflow_dispatch` runs, where it defaults to
 `dev` so an ad-hoc run doesn't write to production by accident.
 
 The workflow has three jobs:
 
-1. **plan** — runs `equicast-fx-plan` to split the configured pairs into
-   chunks, capped at 256 chunks (GitHub's per-workflow matrix job limit). If
-   the pair list would need more than 256 chunks at the target `chunk_size`,
-   the chunk size grows instead of pairs being dropped. It also resolves the
-   target environment/bucket once (schedule → `production`, dispatch → the
-   `environment` input) and fails fast if the corresponding
-   `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable isn't set.
+1. **plan** — first resolves the target environment/bucket/config (schedule
+   → `production`, dispatch → the `environment` input), failing fast if the
+   corresponding `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable
+   isn't set. Then runs `equicast-fx-plan` against `fx_pairs.dev.yaml` or
+   `fx_pairs.prod.yaml` (whichever the resolved environment picked) to split
+   the configured pairs into chunks, capped at 256 chunks (GitHub's
+   per-workflow matrix job limit). If the pair list would need more than 256
+   chunks at the target `chunk_size`, the chunk size grows instead of pairs
+   being dropped.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
    file) with one leg per chunk: pulls the image, passes its chunk via
    `--pairs-json`, uploads the resulting Parquet files to
@@ -242,8 +260,7 @@ s3://equicast-market-data-<env>/
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet
-    ├── year=2003/price.parquet
-    ├── year=2004/price.parquet
-    ├── ...
-    └── year=2026/price.parquet
+    └── price/
+        ├── history.parquet   (2003-2025, written once by a --full-load run)
+        └── current.parquet   (2026, rewritten by every run)
 ```

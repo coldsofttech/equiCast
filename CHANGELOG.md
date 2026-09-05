@@ -9,6 +9,109 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend holding detail page: `frontend/src/pages/holdings/HoldingTickerPage.jsx`
+  (`/holdings/:ticker`) is rewritten from a shallow "held in N places" list
+  into a full detail page, mostly backed by real data rather than the
+  synthetic samples every other detail page still uses. New API wrappers:
+  `frontend/src/api/market.js` gains `getProfile`/`getPrices` (wrapping the
+  already-existing but previously-unused `GET /api/market/<class>/<symbol>/
+  profile/`\ `/prices/` endpoints) and `searchTickers` gains an optional
+  `assetClass` filter; new `frontend/src/api/transactions.js` wraps
+  `GET`/`POST /api/transactions/` and `GET`/`PATCH`/`DELETE
+  /api/transactions/<holding_id>/<id>/` (backend existed, no frontend caller
+  did). New `frontend/src/pages/holdings/holdingFinancials.js` holds the
+  real (non-synthetic) calculation logic, mirroring `sampleFinancials.js`'s
+  split of pure calculation from JSX: `deriveAverageModeFinancials`/
+  `deriveTransactionModeFinancials`/`deriveInstanceFinancials` turn one
+  holding instance's raw transactions into shares/average price/invested
+  (the `TRANSACTION`-mode derivation uses weighted-average cost of
+  remaining `BUY` lots net of `SELL`s, not FIFO lot tracking — the backend
+  stores no computed average price itself); `rollupInstances` sums
+  multiple instances of the same ticker (direct-in-account and/or
+  in-pie) into one page-level total, safe as a plain currency-less sum
+  since every instance's average price and the ticker's current price are
+  both always in the instrument's own native currency, never the owning
+  account's; `resolveFxRate` converts that native currency into the
+  caller's `default_currency` for one table column via the real `fx` asset
+  class's own profile endpoint (trying the direct pair ticker then the
+  inverted one), resolving to `null` rather than throwing/blocking the page
+  when no rate is published; `extractPriceWindow` and
+  `buildPlaceholderMetrics` back the Stats panel (see below).
+
+  Page sections: real Total Invested/Profit-Loss StatTiles, shown in the
+  user's own `default_currency` rather than the holding's native currency
+  (via the same `resolveFxRate` the table below uses — "…" while the rate
+  resolves, "—" when none is published; falls back to a plain
+  currency-less number only when there's no market profile at all for the
+  ticker, since there's then no native currency to convert from), plus a
+  Profit-Loss % tile needing no conversion, being currency-free. All three
+  are shown whenever the ticker has at least one holding instance in the
+  portfolio, even a fully-sold one with 0 net shares — invested/P&L both
+  read as 0/— rather than the section vanishing. A real price chart
+  (`HoldingPriceChart.jsx`) with the same candle/line/area toggle, hover
+  tooltip and "compare against" overlay as the account/pie pages' existing
+  hand-rolled illustrative `PriceChart` — `PriceChart.jsx` gains an
+  optional `holdings=[]` prop (parallel to its existing `pies=[]`) adding
+  an "Other holdings" optgroup to the "Compare against" picker,
+  additive-only and verified backward-compatible with
+  `AccountDetailPage`/`PieDetailPage`'s existing `pies`-only usage; both
+  charts default to Line rather than Candles, toggle order Line/Area/
+  Candle. `HoldingPriceChart.jsx` additionally draws the holding's real
+  weighted-average buy price (native currency, matching the chart's own
+  price scale) as a grey dashed reference line with its own legend entry,
+  folded into the chart's y-domain alongside the series' own high/low so
+  it stays on-screen even when a short date range's price band sits well
+  outside it. An "Owned shares" table (`HoldingInstancesTable.jsx`, same
+  "shown whenever a holding instance exists" rule as the StatTiles above)
+  — one row per holding instance with shares, average price in both the
+  native and the caller's default currency (via `resolveFxRate`), its
+  account/pie location, and a per-row delete icon (`deleteHolding`,
+  previously wired up nowhere in the UI) opening a shared `ConfirmDialog`
+  naming that specific instance; a `HoldingStatsPanel.jsx` "Stats" card
+  modeled on a provided mockup — a 1 Day / 52 Weeks high-low range shown as
+  two vertical bars sharing one scale (the min low and max high across
+  *both* windows), so a given price lines up at the same height in either
+  bar, with each bar's own sub-range highlighted green/red by whether that
+  window's trading was net positive (`close >= open`) or negative and a
+  pointer marking the current price; 1 Day comes straight off the
+  profile's real `day_high`/`day_low` (there's no "1 week" figure anywhere
+  in the data); 52 Weeks uses the current calendar year's published price
+  history, falling back to the profile's year-to-date high/low early in
+  the year. Below the bars, one stacked metrics list grouped by subject —
+  market cap, P/E ratio, beta, volatility, average volume, then every
+  dividend-related field together (dividend yield, dividend rate, dividend
+  frequency, payout ratio) — rather than scattering real and placeholder
+  fields arbitrarily; market cap, dividend yield, beta, payout ratio and
+  dividend rate are real (market cap in K/M/B/T compact notation via the
+  new `formatCompactCurrency`, locale pinned to "en-US" since compact
+  abbreviations vary by locale — e.g. British English renders 1e12 as
+  "1tn" rather than "1T"), while volatility, average volume, P/E ratio and
+  dividend frequency stay the four seeded placeholders, called out as
+  sample data in a caption — no backend endpoint exposes these yet,
+  `packages/metrics`' computed fundamentals are never read back out by
+  `MarketDataClient`/`market_data/views.py`. No "See all" Drawer — every
+  real field the profile exposes is already in the main list, so the
+  50/200-day moving averages (the only fields that Drawer showed and the
+  main list doesn't) are dropped rather than kept behind a now-pointless
+  extra click. A `HoldingAboutSection.jsx` "About" card (real description
+  — truncated to ~220 characters at a word boundary, full text still in
+  its own "See all" Drawer — CEO(s)/sector/industry/IPO date, the last
+  formatted as "12 Dec 1980" via `en-GB` regardless of the viewer's own
+  locale) sits side by side with Stats via the existing
+  `.ec-account-columns` layout. Below that, "Financials" and "Transactions"
+  buttons each open a stub Drawer with an `EmptyState` ("coming soon") —
+  real functionality for both is a later phase. New shared
+  `frontend/src/components/core/FieldList.jsx`/`.css` (a plain label/value
+  list, skipping null/empty values) backs HoldingAboutSection's "See all"
+  Drawer — the first "truncated section + See all -> Drawer" pattern in
+  the app. `formatCurrency` (`sampleFinancials.js`) gains `currencyDisplay:
+  "narrowSymbol"` so USD renders as `$` rather than `US$` (a locale quirk
+  of the default `Intl.NumberFormat` locale) and now always shows exactly
+  2 decimal places rather than rounding to whole units — both fixed
+  app-wide, since `formatCurrency` is shared by every page; the new
+  `formatPrice`/`formatCompactCurrency` (`holdingFinancials.js`) match its
+  narrow-symbol style.
+
 - `frontend/public/brand/equicast-mark.png`: a 512x512 PNG export of the
   existing `equicast-mark.svg` (same gradient badge + Candlestick Spear
   icon), rasterized via `sharp`. Auth0's Application **Logo URL** field
@@ -19,6 +122,199 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
+  now decodes a stock profile's `ceos` field back into a real list before
+  returning it. `equicast_stock.writer.write_profile_parquet` deliberately
+  JSON-encodes `ceos` to a plain string column when writing `profile.parquet`
+  (a native `list<struct>` column round-trips fine through pandas/pyarrow,
+  but common Parquet viewers are JS-based and render it as
+  "[object Object]") — its docstring says "consumers `json.loads()` it
+  back", but `get_profile` never did, so every caller (the `ProfileView`
+  API endpoint included) got the raw JSON text through instead of a real
+  array. Surfaced by the frontend holding detail page's About section
+  always showing "—" for CEO even on tickers (e.g. AAPL, NVDA) with real
+  `companyOfficers` data. Only touches `ceos` when present and still a
+  string, so etf/fx profiles (which have no `ceos` field at all) are
+  unaffected. `packages/core/tests/test_client.py` gained regression
+  coverage for both the decode and the missing-field case.
+- Applied the same `history.parquet`/`current.parquet` split to
+  `equicast-etf`/`equicast-stock`'s dividend Parquet layout (fx has no
+  dividends) — `dividend/history.parquet` (every year before the current
+  one, written once by a `--full-load` run) and `dividend/current.parquet`
+  (the current year, rewritten by every run that has any current-year
+  ex-dividend rows), replacing `year=<YYYY>/dividend.parquet` per year, for
+  the same reasoning as the price split above: unchanged recurring monthly
+  PUT count/storage (each scheduled run already only touched one dividend
+  file), but the one-time `--full-load` backfill's combined price+dividend
+  PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
+  4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
+  tickers: 40,000 → 4,000 PUTs). Nothing currently reads dividend data back
+  from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
+  changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated again with the updated math; a real
+  `infracost breakdown` run confirms both projects' totals are still
+  unchanged (dev ~$0.05/month, prod ~$5.85/month).
+- Applied the same split to `equicast-etf`/`equicast-stock`'s events
+  Parquet layout, the last remaining `year=<YYYY>` partition —
+  `events/history.parquet` (every year before the current one) and
+  `events/current.parquet` (the current year *or later*, not an exact
+  match: earnings dates can be future-dated, e.g. a Q1 announcement
+  scheduled into next calendar year while this runs in December, and a
+  not-yet-happened event belongs in `current.parquet` regardless of which
+  calendar year it falls in — `write_events_parquet` masks on `date >=
+  current_year`, not `==`). Same reasoning as price/dividend: unchanged
+  recurring monthly PUT count/storage, but the one-time `--full-load`
+  backfill's combined price+dividend+events PUT count drops from up to
+  ~60/ticker (20 each) to at most 6 — still a 90% cut (9,000 stock
+  tickers: 540,000 → 54,000 PUTs). ETF's events specifically sees no
+  realistic PUT saving from this — a ticker has at most one split in its
+  whole history, so a full-load run already wrote at most 1 events PUT
+  before this split and still does after; only its storage accounting
+  changed (a split's row now lands in `events/history.parquet` rather
+  than a specific `year=<YYYY>/events.parquet`, same ~7KB either way).
+  Nothing currently reads events data back from S3, so no reader changes
+  were needed here either. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated once more; a real `infracost breakdown`
+  run confirms both projects' totals are still unchanged (dev
+  ~$0.05/month, prod ~$5.85/month).
+- Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
+  layout from one `year=<YYYY>/price.parquet` per year of history to just
+  two files: `price/history.parquet` (every year before the current one,
+  written once by a `--full-load` run) and `price/current.parquet` (the
+  current year, rewritten by every run — scheduled or manual). Each
+  scheduled run only ever fetches `ytd` data, so it only ever touched one
+  price file either way — this doesn't change the recurring monthly PUT
+  count (still 990,000/month for stock, 110,000/month for ETF, per
+  `infra/infracost-usage.prod.yml`) or total storage (still ~850KB/stock
+  ticker, ~532KB/ETF ticker — consolidating years into one file doesn't
+  shrink the row data). What it does cut is the one-time `--full-load`
+  backfill's PUT count for price specifically: up to ~20 PUTs/ticker (one
+  per year of history) down to at most 2 — a 90% reduction (9,000 stock
+  tickers: 180,000 → 18,000 PUTs; 1,000 ETF tickers: 20,000 → 2,000), not
+  part of the scheduled-runs figure either way since that backfill is a
+  manual `workflow_dispatch` run. `equicast_core.MarketDataClient.get_prices()`
+  now reads `price/current.parquet` instead of the current year's
+  `year=<YYYY>/price.parquet` — its return value (current calendar year's
+  rows) is unchanged, only the S3 key. `dividend.parquet`/`events.parquet`
+  keep their existing one-file-per-year layout; only prices were affected
+  by their put/get volume being singled out. Re-annotated (not
+  re-numbered) `infra/infracost-usage.{dev,prod}.yml`'s Stock/ETF sections
+  with the storage/request math above — a real `infracost breakdown` run
+  confirms both projects' totals are unchanged (dev ~$0.05/month, prod
+  ~$5.85/month), as expected since only comments changed there, not the
+  usage values themselves.
+- Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
+  scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
+  22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —
+  after both the US (NYSE/NASDAQ) and UK (LSE) markets close, so each
+  weekday's fetch gets that day's complete OHLC bar. yfinance's
+  daily-interval history only changes once a trading day closes, so the
+  previous 6-hourly schedule bought no real freshness, just repeated S3
+  writes of the same data; both markets are shut every Saturday/Sunday, so
+  the added day-of-week filter (`1-5`) skips those runs entirely rather than
+  harmlessly re-fetching Friday's already-current close — it doesn't account
+  for weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  trigger a run that harmlessly re-writes the last available close. The
+  15m/30m chain offsets between the three pipelines are unchanged. Re-sized
+  `infra/infracost-usage.prod.yml`'s `market_data_bucket` ingestion request
+  counts for the new ~22-runs/month weekday cadence (down from 120 at
+  6-hourly) — confirmed via a real `infracost breakdown` run: prod's
+  `market_data_bucket` PUT cost drops from ~$30.01/month to ~$5.50/month
+  (prod total ~$5.85/month, down from ~$30.36/month); dev is unaffected (it
+  was never on the scheduled trigger to begin with — see that file's
+  header).
+- Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
+  `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
+  previously shared one usage file, so the "dev" and "prod" cost estimates
+  were identical despite being very different deployments. Reworked the
+  numbers to actually reflect that: dev models ~2 users, no scheduled
+  ingestion (only ~12 manual `workflow_dispatch(environment=dev)` runs/month
+  against today's small `*.dev.yaml` pair/ticker lists), for development and
+  validation only; prod models ~50 active users and scheduled ingestion
+  sized against an expected ~10,000-instrument US/UK stock+ETF universe
+  (~9,000 stocks + ~1,000 ETFs, FX unchanged at 4 pairs) — a big jump from
+  today's small `*.prod.yaml` placeholders (see the prior "Split fx/stock/
+  etf ingestion configs" entry), reflected only in the cost model for now,
+  not the actual config files. Backend Lambda/API Gateway/DynamoDB/
+  `user_data_bucket` sizing now derives from an explicit per-session
+  request-count breakdown (identity, accounts, portfolios, watchlists,
+  holdings, transactions, market-data search — 15 HTTP calls/session, 20
+  sessions/user/month) instead of a flat unexplained "500 MAU" guess, with
+  dev/prod differing only in user count (2 vs. 50). `frontend_bucket`/
+  CloudFront page-load traffic scales the same way; `backend_deploy_bucket`
+  stays shared between dev/prod (deploy-frequency-driven, not
+  user-count-driven).
+- Tightened the three ingestion workflows' cron offsets from hours to
+  minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
+  (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
+  later (`15 */6 * * *`) instead of 4 hours later, and `stock-ingestion.yml`
+  now runs 30 minutes after ETF / 45 minutes after FX (`45 */6 * * *`)
+  instead of 2 hours after FX — swapping the stock/ETF run order in the
+  process (previously FX → stock → ETF, now FX → ETF → stock). Updated the
+  offset comments/docs (`docs/{fx,stock,etf}-pipeline.md`, root `README.md`,
+  `infra/infracost-usage.yml`) accordingly; the request-count estimates
+  themselves are unchanged since all three still run 4 times/day.
+- Split each ingestion pipeline's pair/ticker config into a `dev` and a
+  `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
+  `packages/stock/config/stocks.{dev,prod}.yaml`,
+  `packages/etf/config/etfs.{dev,prod}.yaml` — replacing the single
+  `fx_pairs.yaml`/`stocks.yaml`/`etfs.yaml` each package previously had.
+  `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`'s `plan` job
+  already resolved `dev`/`production` for which S3 bucket to upload to;
+  it now resolves the environment *before* computing chunks and picks the
+  matching config file for `equicast-{fx,stock,etf}-plan` too, so a manual
+  dev run and the scheduled production run can diverge on which
+  pairs/tickers get fetched, not just where the output lands. The `dev`
+  file in each pair keeps the previously-existing list; the `prod` file is
+  an exact copy for now (expand it independently as needed). Each
+  Dockerfile's default `CMD` and `scripts/smoke_test.py`'s default
+  `--config` now point at the `dev` file, since neither is used by the
+  ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
+  explicitly) — only by ad-hoc local runs, where dev is the safer default.
+- Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
+  & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
+  `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default
+  in-memory token cache was wiped on every hard reload, so refreshing any
+  authenticated route (e.g. `/accounts`) bounced back to the sign-in screen
+  even with a still-valid Auth0 session. (2) `DashboardPage`'s empty-state
+  "Create an account" now opens the same `Drawer`+`AccountForm` right there
+  instead of navigating to `/accounts` and needing a second click. (3)
+  `AccountForm`'s description field is no longer marked `required` — the
+  backend (`REQUIRED_CREATE_FIELDS` in `backend/accounts/views.py`) already
+  allowed it blank. (4) `AccountForm` gains a `defaultCurrency` prop, seeded
+  from the caller's own `profile.default_currency`, so a new account's
+  currency field starts pre-filled with the user's own default instead of
+  blank (editing an existing account still uses its own currency). (5)
+  `Drawer.css`'s `max-width` is now `900px` (previously `440px`), applying
+  to every drawer in the app. (6) `ConfirmDialog` now renders via `Modal`
+  instead of `Drawer` — a delete confirmation is a single yes/no decision,
+  not a form, so it no longer shares the wide side-drawer used for
+  account/pie editing. (7) `AccountsListPage`'s top-of-page "New account"
+  button is now hidden once the list has loaded and is empty (kept during
+  the initial load to avoid a flash), leaving only the centered empty-state
+  button, which duplicated it.
+
+  Also added: `frontend/src/api/sessionCache.js` (thin sessionStorage
+  read/write/clear helpers, tolerant of storage being unavailable) backs a
+  reworked `useCurrentUser.js` and a new `useAccounts.js`, both of which now
+  cache their GET result (`GET /api/identity/me/`, `GET /api/accounts/`) in
+  `sessionStorage` and serve every later mount of the hook (Topbar,
+  AccountsListPage, DashboardPage, ... each calls independently) from that
+  cache instead of re-fetching; a module-level in-flight promise in each
+  hook also collapses simultaneous first-mounts (e.g. Topbar + a page both
+  mounting on first load) into a single request. `setProfile`/`setAccounts`
+  write straight back to the cache, so a save from `SettingsModal` or a
+  create/edit/delete from `AccountsListPage`/`DashboardPage` is what every
+  later mount sees. `AccountDetailPage`/`PieDetailPage` load their own copy
+  via `getAccount`/`getPie` rather than the shared list, so their own
+  mutations (edit account, delete account, create/delete pie, allocation
+  sync) now also patch the cached accounts list directly, keeping
+  `/accounts`/`/dashboard` from showing stale data after a visit to a detail
+  page. Both caches are cleared on sign-out (`UserMenu.jsx`'s
+  `handleSignOut`) since `sessionStorage` survives the Auth0 logout/login
+  redirect round trip on the same tab — without this a different account
+  signing in on the same tab could briefly render the previous user's
+  cached profile/accounts.
 - `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
   `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
   existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With

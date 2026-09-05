@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
+import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -9,7 +10,9 @@ import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import AccountForm from "./AccountForm.jsx";
 import { useApi } from "../../api/useApi.js";
-import { createAccount, deleteAccount, listAccounts, updateAccount } from "../../api/accounts.js";
+import { useCurrentUser } from "../../api/useCurrentUser.js";
+import { useAccounts } from "../../api/useAccounts.js";
+import { createAccount, deleteAccount, updateAccount } from "../../api/accounts.js";
 import { MENU_ITEMS } from "../menuItems.js";
 
 /** True once an account has pies/holdings that a plain delete would refuse (see accounts/views.py). */
@@ -27,10 +30,8 @@ function needsForce(account) {
 function AccountsListPage() {
   const api = useApi();
   const navigate = useNavigate();
-
-  const [accounts, setAccounts] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+  const { profile } = useCurrentUser();
+  const { accounts, isLoading, error: loadError, setAccounts } = useAccounts();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,25 +44,6 @@ function AccountsListPage() {
   const [deletingAccount, setDeletingAccount] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setIsLoading(true);
-    setLoadError(null);
-    listAccounts(api)
-      .then((result) => {
-        if (!cancelled) setAccounts(result);
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError(err.message ?? "Couldn't load your accounts.");
-      })
-      .finally(() => {
-        if (!cancelled) setIsLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
 
   const closeCreate = () => {
     setIsCreateOpen(false);
@@ -122,11 +104,14 @@ function AccountsListPage() {
       eyebrow="Portfolio"
       title="Accounts"
       subtitle="Every account you're tracking, with its pies and holdings nested underneath."
+      footer={<SiteFooter />}
       actions={
-        <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
-          <i className="bi bi-plus-lg" aria-hidden="true" />
-          New account
-        </Button>
+        (isLoading || accounts.length > 0) && (
+          <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+            <i className="bi bi-plus-lg" aria-hidden="true" />
+            New account
+          </Button>
+        )
       }
     >
       {isLoading && <p className="ec-loading">Loading…</p>}
@@ -209,6 +194,7 @@ function AccountsListPage() {
 
       <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
         <AccountForm
+          defaultCurrency={profile?.default_currency}
           onSubmit={handleCreate}
           onCancel={closeCreate}
           isSubmitting={isSaving}

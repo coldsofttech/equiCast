@@ -64,31 +64,78 @@ class PricesViewTests(TestCase):
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_price_records(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_returns_price_series_for_the_default_range(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = [{"ticker": "VOO", "date": "2026-01-02"}]
+        mock_client.get_prices.return_value = {
+            "ticker": "VOO",
+            "currency": "USD",
+            "last_updated": "2026-01-02T21:00:00+00:00",
+            "source": "yfinance",
+            "prices": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
+        }
 
         response = self.client.get(reverse("prices", args=["etf", "voo"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertEqual(data["ticker"], "VOO")
-        self.assertEqual(data["results"], [{"ticker": "VOO", "date": "2026-01-02"}])
-        mock_client.get_prices.assert_called_once_with("etf", "voo")
+        self.assertEqual(data["currency"], "USD")
+        self.assertEqual(
+            data["prices"], [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}]
+        )
+        mock_client.get_prices.assert_called_once_with("etf", "voo", price_range="max")
 
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_empty_results_when_no_data(
+    def test_range_query_param_is_passed_through(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = []
+        mock_client.get_prices.return_value = {
+            "ticker": "VOO",
+            "currency": "USD",
+            "last_updated": None,
+            "source": None,
+            "prices": [],
+        }
+
+        self.client.get(reverse("prices", args=["etf", "voo"]), {"range": "1y"}, **AUTH_HEADER)
+
+        mock_client.get_prices.assert_called_once_with("etf", "voo", price_range="1y")
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_for_unknown_range(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(
+            reverse("prices", args=["etf", "voo"]), {"range": "3d"}, **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_empty_prices_when_no_data(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_prices.return_value = {
+            "ticker": "UNKNOWN",
+            "currency": None,
+            "last_updated": None,
+            "source": None,
+            "prices": [],
+        }
 
         response = self.client.get(reverse("prices", args=["etf", "unknown"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["results"], [])
+        self.assertEqual(response.json()["prices"], [])
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
