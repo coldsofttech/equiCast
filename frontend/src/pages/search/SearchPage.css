@@ -1,0 +1,17 @@
+.ec-search-count {
+  margin: 0 0 var(--ec-s-12);
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-13);
+}
+
+.ec-search-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--ec-s-16);
+}
+
+.ec-search-result-ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+}

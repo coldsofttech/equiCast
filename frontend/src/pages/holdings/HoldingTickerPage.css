@@ -1,3 +1,7 @@
+.ec-holding-notice {
+  margin-bottom: var(--ec-s-16);
+}
+
 .ec-holding-actions-row {
   display: flex;
   gap: var(--ec-s-8);

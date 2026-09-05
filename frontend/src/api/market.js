@@ -6,6 +6,15 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * @property {string} name
  * @property {"stock"|"etf"|"fx"} type
  * @property {number|null} current_price
+ * @property {string|null} currency
+ * @property {string|null} website
+ * @property {number|null} market_cap - a stock's real market cap, an
+ *   etf's total assets (fund AUM, the closest comparable "size" figure a
+ *   fund has), or `null` for fx, which has neither.
+ * @property {string|null} exchange - stock/etf's raw exchange code (e.g.
+ *   "NMS"/"PCX"), `null` for fx, which isn't traded on one.
+ * @property {string|null} region - stock/etf's short country code (e.g.
+ *   "us"/"gb"), `null` for fx, which isn't domiciled anywhere.
  */
 
 /**
@@ -20,21 +29,36 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
 /**
  * GET /api/market/search/?q=... — see backend/market_data/views.py's
  * SearchView. Ticker/name search across the published catalog (stock/etf/
- * fx), used by TickerSearchField to let a caller pick a real ticker rather
- * than typing one blind. Triggered explicitly (Enter/a Search click), not
- * on every keystroke — see TickerSearchField.jsx. `assetClass` narrows the
- * search to one catalog (e.g. "fx" when resolving a currency-pair ticker
- * for FX conversion — see holdings/holdingFinancials.js's resolveFxRate);
- * omitted, it searches every asset class, unchanged from before.
+ * fx). Used by TickerSearchField (a portfolio/account holdings picker,
+ * triggered explicitly on Enter/a Search click, not on every keystroke —
+ * see TickerSearchField.jsx), by SearchPage (the full results page, with
+ * `assetClass`/`page` for its Type filter and "Load more"), and for
+ * resolving a currency-pair ticker for FX conversion (`assetClass: "fx"`
+ * — see holdings/holdingFinancials.js's resolveFxRate). `assetClass`
+ * omitted searches every asset class. `minMarketCap`/`maxMarketCap`
+ * (SearchFilters' Market cap range slider), `exchange`, and `region`
+ * (SearchFilters' Exchange/Region dropdowns — see
+ * pages/search/searchFilterOptions.js for the static UK/US option lists)
+ * filter stock/etf rows by `market_cap`/`exchange`/`region` respectively;
+ * fx rows always match every one of these regardless (see
+ * `MarketDataClient.search`'s docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ pageSize?: number, assetClass?: "stock"|"etf"|"fx" }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string }} [options]
  * @returns {Promise<SearchResponse>}
  */
-export function searchTickers(api, query, { pageSize = 10, assetClass } = {}) {
-  const params = new URLSearchParams({ q: query, page_size: String(pageSize) });
+export function searchTickers(
+  api,
+  query,
+  { assetClass, page = 1, pageSize = 10, minMarketCap, maxMarketCap, exchange, region } = {}
+) {
+  const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) });
   if (assetClass) params.set("asset_class", assetClass);
+  if (minMarketCap != null) params.set("min_market_cap", String(minMarketCap));
+  if (maxMarketCap != null) params.set("max_market_cap", String(maxMarketCap));
+  if (exchange) params.set("exchange", exchange);
+  if (region) params.set("region", region);
   return /** @type {Promise<SearchResponse>} */ (api(`/market/search/?${params.toString()}`));
 }
 

@@ -36,21 +36,84 @@ def test_catalog_key_is_lowercased_and_namespaced() -> None:
 class TestBuildCatalogRows:
     def test_builds_one_row_per_ticker_stock_shape(self, tmp_path: Path) -> None:
         _write_profile(
-            tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc.", "day_close": 227.5}
+            tmp_path,
+            "stock",
+            "AAPL",
+            {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "day_close": 227.5,
+                "currency": "USD",
+                "website": "https://www.apple.com",
+                "market_cap": 3_400_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
+            },
         )
         _write_profile(
             tmp_path,
             "stock",
             "MSFT",
-            {"ticker": "MSFT", "name": "Microsoft Corp", "day_close": 410.1},
+            {
+                "ticker": "MSFT",
+                "name": "Microsoft Corp",
+                "day_close": 410.1,
+                "currency": "USD",
+                "website": "https://www.microsoft.com",
+                "market_cap": 3_050_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
+            },
         )
 
         rows = build_catalog_rows(tmp_path, "stock")
 
         assert rows == [
-            {"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5},
-            {"ticker": "MSFT", "name": "Microsoft Corp", "type": "stock", "current_price": 410.1},
+            {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "type": "stock",
+                "current_price": 227.5,
+                "currency": "USD",
+                "website": "https://www.apple.com",
+                "market_cap": 3_400_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
+            },
+            {
+                "ticker": "MSFT",
+                "name": "Microsoft Corp",
+                "type": "stock",
+                "current_price": 410.1,
+                "currency": "USD",
+                "website": "https://www.microsoft.com",
+                "market_cap": 3_050_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
+            },
         ]
+
+    def test_uses_total_assets_as_market_cap_for_etf_shape(self, tmp_path: Path) -> None:
+        _write_profile(
+            tmp_path,
+            "etf",
+            "VOO",
+            {
+                "ticker": "VOO",
+                "name": "Vanguard S&P 500",
+                "day_close": 624.5,
+                "currency": "USD",
+                "total_assets": 500_000_000_000,
+                "exchange": "PCX",
+                "region": "us",
+            },
+        )
+
+        rows = build_catalog_rows(tmp_path, "etf")
+
+        assert rows[0]["market_cap"] == 500_000_000_000
+        assert rows[0]["exchange"] == "PCX"
+        assert rows[0]["region"] == "us"
 
     def test_derives_ticker_from_directory_name_for_fx_shape(self, tmp_path: Path) -> None:
         _write_profile(
@@ -73,6 +136,11 @@ class TestBuildCatalogRows:
                 "name": "British Pound to US Dollar",
                 "type": "fx",
                 "current_price": 1.27,
+                "currency": "USD",
+                "website": None,
+                "market_cap": None,
+                "exchange": None,
+                "region": None,
             }
         ]
 
@@ -136,6 +204,16 @@ def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypat
     response = s3_client.get_object(Bucket=BUCKET, Key="catalog/etf.json")
     assert json.loads(response["Body"].read()) == {
         "tickers": [
-            {"ticker": "VOO", "name": "Vanguard S&P 500", "type": "etf", "current_price": 624.5}
+            {
+                "ticker": "VOO",
+                "name": "Vanguard S&P 500",
+                "type": "etf",
+                "current_price": 624.5,
+                "currency": None,
+                "website": None,
+                "market_cap": None,
+                "exchange": None,
+                "region": None,
+            }
         ]
     }

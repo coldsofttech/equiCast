@@ -1,6 +1,6 @@
 import { useState } from "react";
 import Button from "../../components/core/Button.jsx";
-import Badge from "../../components/core/Badge.jsx";
+import AssetTypeBadge from "../../components/core/AssetTypeBadge.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import "./TickerSearchField.css";
@@ -87,7 +87,7 @@ function TickerSearchField({ onSelect }) {
                 >
                   <span className="ec-ticker-search-result-ticker">{result.ticker}</span>
                   <span className="ec-ticker-search-result-name">{result.name}</span>
-                  <Badge tone="neutral">{result.type}</Badge>
+                  <AssetTypeBadge type={result.type} />
                 </button>
               </li>
             ))}

@@ -120,8 +120,131 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `frontend_bucket`/CloudFront distribution), that URL can be set as the
   `equiCast Web` Application's logo in the Auth0 dashboard.
 
+- Topbar ticker search (`frontend/src/components/shell/TopbarSearch.jsx`):
+  Enter now opens a preview dropdown of up to 7 matches (ticker, name, type,
+  favicon-style icon) instead of navigating straight to `/search?q=...` —
+  a "More results" row (showing the total match count once it exceeds the
+  preview) is now the only thing that does. `SearchPage.jsx`'s results
+  table gained the same icon next to each ticker, and its rows are now
+  clickable, navigating to `/holdings/:ticker` (passing the result's asset
+  class via router state so `HoldingTickerPage` doesn't need a second
+  lookup — see below). New shared
+  `frontend/src/components/core/AssetIcon.jsx` (a market instrument's
+  favicon, resolved from its `website` via the existing `websiteIconUrl`
+  util; renders nothing when there's none, e.g. fx pairs, so callers don't
+  need to guard around it; `size` controls both the rendered dimensions and
+  the resolution requested from the favicon service) and
+  `AssetTypeBadge.jsx` (spells "stock"/"etf"/"fx" out as "Stock"/"ETF"/"FX"
+  with `success`/`purple`/`warning` tones, kept distinct from
+  `MARKET_PROFILE_BADGE_TONES`'s exchange/quote-type/synced badges) replace
+  the ad hoc `<Badge tone="neutral">{result.type}</Badge>` and
+  per-page `websiteIconUrl`/`<img>` handling previously duplicated across
+  TopbarSearch, `TickerSearchField.jsx`, `SearchPage.jsx`, and
+  `HoldingTickerPage.jsx`'s title icon. `equicast_core.catalog.
+  build_catalog_rows` now includes each row's `website` (already written to
+  `profile.parquet` by the stock/etf pipelines — the etf one via its
+  fund-family issuer-website mapping; `None` for fx, which has none), so
+  AssetIcon has something to resolve for search results, not just an
+  already-fetched market profile.
+
+  `HoldingTickerPage` (`/holdings/:ticker`) no longer requires the
+  signed-in user to actually hold a ticker to show its market profile,
+  price chart, stats panel and About section — a ticker not held anywhere
+  resolves its asset class from `SearchPage`'s router state, or one
+  `searchTickers` lookup as a fallback (a direct link, refresh, or shared
+  URL), and renders the same page minus the Total invested/Profit-Loss
+  stat tiles and Owned shares table (both need real holdings to compute),
+  plus an info banner noting the ticker isn't held. A ticker that doesn't
+  resolve to a real catalog entry at all now shows a distinct
+  "`{ticker}` not found" empty state, replacing the previous
+  "No holdings of X" message for that case.
+
+- Search's Market cap filter (`SearchFilters.jsx`) is now real, backed by a
+  new two-handle `frontend/src/components/core/RangeSlider.jsx` (two
+  overlapping native `<input type="range">`s sharing one visual track, no
+  new dependency — reusable beyond this one filter) over log-spaced
+  breakpoints ($0/$10M/$50M/$200M/$1B/$10B/$50B/$200B/$1T/$1T+, see new
+  `pages/search/marketCapSteps.js`) rather than a continuous range, since
+  market cap spans ~$1M to ~$3T+ and a linear slider would make the low
+  end unusable next to mega-caps. `minCap`/`maxCap` live in the URL
+  alongside `q`/`type` (same reasoning as those — shareable/bookmarkable,
+  survives a refresh), and `marketCapSteps.js`'s
+  `indexesFromMarketCapRange` restores the closest enclosing slider
+  position from them.
+
+  This needed `market_cap` in the search catalog, which didn't carry it
+  before: `equicast_core.catalog.build_catalog_rows` now also publishes
+  `currency` (stock/etf's own `currency`; an fx pair's `to_currency`,
+  since that's what its price is quoted in) and `market_cap` (a stock's
+  real `market_cap`, an etf's `total_assets`/fund AUM as the closest
+  comparable "size" figure a fund has, `None` for fx, which has neither).
+  `MarketDataClient.search` gained `min_market_cap`/`max_market_cap`
+  filtering by that field — stock/etf rows with no resolved `market_cap`
+  are excluded whenever either bound is given (nothing to compare against),
+  while fx rows always match regardless, having no size concept of their
+  own. `SearchView`/`searchTickers` (`frontend/src/api/market.js`) pass
+  the two bounds straight through as `min_market_cap`/`max_market_cap`
+  query params, validated server-side (numeric, `min <= max`).
+  `SearchPage.jsx`'s Price column also now renders each result's real
+  `current_price` with its `currency` (e.g. `$379.99`) via the existing
+  `formatCurrency`, instead of a bare unlabeled number.
+
+- Search's Region and Exchange filters (`SearchFilters.jsx`) are now real,
+  replacing their "Coming soon" disabled placeholders — every filter the
+  panel offers now maps to a live search-endpoint param. Both use a new
+  static `frontend/src/pages/search/searchFilterOptions.js`
+  (`REGION_OPTIONS`/`EXCHANGE_OPTIONS`, exact-match, not a range like
+  Market cap) rather than a dropdown of catalog-derived distinct values —
+  equiCast's ticker list is presently hand-picked from just the US and UK,
+  so a curated two-country list is simpler than deriving one from data,
+  at the cost of needing a manual edit if a ticker outside those is ever
+  added. Values are the raw codes `MarketDataClient.search` matches
+  against (yfinance's own `region`/`exchange`, e.g. "us"/"gb",
+  "NMS"/"PCX" — not display strings like "United States"/"NASDAQ", which
+  are only the dropdown labels). `region`/`exchange` live in the URL
+  alongside the other filters, same shareable/bookmarkable reasoning.
+
+  Needed both fields in the search catalog: `equicast_core.catalog.
+  build_catalog_rows` now also publishes `exchange` and `region` (stock/
+  etf's own fields; `None` for fx, which is domiciled nowhere and trades
+  on no exchange). `MarketDataClient.search` gained `exchange`/`region`
+  params, matching case-insensitively against a row's exact value; a
+  stock/etf row missing the field being filtered on is excluded, while fx
+  rows always match regardless of value, same asymmetric-filtering
+  pattern as Market cap. `SearchView`/`searchTickers` pass both straight
+  through as `exchange`/`region` query params. Region required a genuine
+  new field on the ETF side: `equicast_etf.client.EtfClient.profile` now
+  also reads `region` off yfinance's `info` (etf profiles previously had
+  no country/region concept at all, unlike stock's already-real
+  `country`/`region`), so Region filters ETFs as well as stocks, not
+  stocks only — Exchange already applied to both.
+
+- Search's filter panel (`SearchFilters.jsx`) gained a header row with a
+  "Clear" icon button (resets every filter — Type, Region, Exchange,
+  Market cap, and the new Keyword field below — to its default and
+  applies immediately, rather than needing a separate Search click;
+  disabled once nothing is left to clear) in place of the previous
+  bottom "Clear" text button, and a new "Keyword" text field, letting a
+  search be edited/refined from inside the filter panel itself rather
+  than only from the topbar. The Keyword field starts pre-populated from
+  whatever query is currently applied (e.g. the term just typed into the
+  topbar search box), submits on Search or Enter, and, once cleared, also
+  clears the results back to the "Search for a ticker" empty state
+  (`SearchPage.jsx`'s `handleApplyFilters` now takes its `q` value from
+  the filter panel's own submitted keyword rather than always reusing the
+  URL's existing `q`).
+
 ### Changed
 
+- `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
+  the pointer cursor/hover cue for a table with no row actions) removed
+  now that `SearchPage`'s rows — its only user — are clickable.
+- `data/` (the local Parquet/dev-data cache — see `docs/local-setup.md`) is
+  no longer partially tracked: removed the placeholder `data/.gitkeep` and
+  collapsed `.gitignore`'s two piecemeal `data/*.parquet`/
+  `data/localstack-seed/` entries into one `data/` rule. Nothing needs the
+  directory to exist via git — `scripts/local-dev.ps1` and the ingestion
+  CLIs already create it on demand.
 - `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
   now decodes a stock profile's `ceos` field back into a real list before
   returning it. `equicast_stock.writer.write_profile_parquet` deliberately

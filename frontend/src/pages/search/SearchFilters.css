@@ -1,0 +1,63 @@
+.ec-search-filters {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-16);
+  padding: var(--ec-s-16);
+  border: 1px solid var(--ec-border);
+  border-radius: var(--ec-r-12);
+  background: var(--ec-surface);
+}
+
+.ec-search-filters-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ec-search-filters-title {
+  font-size: var(--ec-fs-13);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-search-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-6);
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+
+.ec-search-filter-group legend {
+  padding: 0;
+  margin-bottom: var(--ec-s-4);
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+}
+
+.ec-search-filter-option {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text);
+  cursor: pointer;
+}
+
+.ec-search-filter-hint {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-search-filter-actions {
+  display: flex;
+  gap: var(--ec-s-8);
+}
+
+.ec-search-filter-actions .ec-btn {
+  flex: 1;
+}

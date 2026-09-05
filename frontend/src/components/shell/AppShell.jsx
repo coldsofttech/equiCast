@@ -10,11 +10,13 @@ import "./AppShell.css";
  * `footer` is optional, rendered full-width below `<main>` (outside its
  * padding) rather than as part of `children` — DashboardPage uses it for
  * SiteFooter, matching the login page's footer/disclaimer edge-to-edge.
- * `titleIcon`, when given, renders to the left of the eyebrow/title/
- * subtitle block (e.g. HoldingTickerPage's website favicon) — it's the
- * caller's job to only pass it once whatever the icon depends on has
- * resolved. `titleBadges`, when given, renders below the subtitle (e.g.
- * HoldingTickerPage's Exchange/Quote type Badges).
+ * `sidebar` is also optional — when given, `children` renders beside it
+ * (SearchPage uses it for its filter pane) instead of taking the full
+ * page width. `titleIcon`, when given, renders to the left of the
+ * eyebrow/title/subtitle block (e.g. HoldingTickerPage's website favicon)
+ * — it's the caller's job to only pass it once whatever the icon depends
+ * on has resolved. `titleBadges`, when given, renders below the subtitle
+ * (e.g. HoldingTickerPage's Exchange/Quote type Badges).
  */
 function AppShell({
   menuItems,
@@ -26,6 +28,7 @@ function AppShell({
   actions,
   children,
   footer,
+  sidebar,
 }) {
   return (
     <div className="ec-app">
@@ -44,7 +47,14 @@ function AppShell({
           </div>
           {actions && <div className="ec-page-actions">{actions}</div>}
         </div>
-        {children}
+        {sidebar ? (
+          <div className="ec-page-with-sidebar">
+            <aside className="ec-page-sidebar">{sidebar}</aside>
+            <div className="ec-page-content">{children}</div>
+          </div>
+        ) : (
+          children
+        )}
       </main>
       {footer}
     </div>
