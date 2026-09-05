@@ -46,6 +46,8 @@ class TestBuildCatalogRows:
                 "currency": "USD",
                 "website": "https://www.apple.com",
                 "market_cap": 3_400_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
             },
         )
         _write_profile(
@@ -59,6 +61,8 @@ class TestBuildCatalogRows:
                 "currency": "USD",
                 "website": "https://www.microsoft.com",
                 "market_cap": 3_050_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
             },
         )
 
@@ -73,6 +77,8 @@ class TestBuildCatalogRows:
                 "currency": "USD",
                 "website": "https://www.apple.com",
                 "market_cap": 3_400_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
             },
             {
                 "ticker": "MSFT",
@@ -82,6 +88,8 @@ class TestBuildCatalogRows:
                 "currency": "USD",
                 "website": "https://www.microsoft.com",
                 "market_cap": 3_050_000_000_000,
+                "exchange": "NMS",
+                "region": "us",
             },
         ]
 
@@ -96,12 +104,16 @@ class TestBuildCatalogRows:
                 "day_close": 624.5,
                 "currency": "USD",
                 "total_assets": 500_000_000_000,
+                "exchange": "PCX",
+                "region": "us",
             },
         )
 
         rows = build_catalog_rows(tmp_path, "etf")
 
         assert rows[0]["market_cap"] == 500_000_000_000
+        assert rows[0]["exchange"] == "PCX"
+        assert rows[0]["region"] == "us"
 
     def test_derives_ticker_from_directory_name_for_fx_shape(self, tmp_path: Path) -> None:
         _write_profile(
@@ -127,6 +139,8 @@ class TestBuildCatalogRows:
                 "currency": "USD",
                 "website": None,
                 "market_cap": None,
+                "exchange": None,
+                "region": None,
             }
         ]
 
@@ -198,6 +212,8 @@ def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypat
                 "currency": None,
                 "website": None,
                 "market_cap": None,
+                "exchange": None,
+                "region": None,
             }
         ]
     }

@@ -206,7 +206,12 @@ class SearchViewTests(TestCase):
             [{"ticker": "V", "name": "Visa Inc.", "type": "stock", "current_price": 310.2}],
         )
         mock_client.search.assert_called_once_with(
-            "v", asset_classes=None, min_market_cap=None, max_market_cap=None
+            "v",
+            asset_classes=None,
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange=None,
+            region=None,
         )
 
     @patch("market_data.views._client")
@@ -221,7 +226,12 @@ class SearchViewTests(TestCase):
         self.client.get(reverse("search"), {"q": "v", "asset_class": "stock"}, **AUTH_HEADER)
 
         mock_client.search.assert_called_once_with(
-            "v", asset_classes=["stock"], min_market_cap=None, max_market_cap=None
+            "v",
+            asset_classes=["stock"],
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange=None,
+            region=None,
         )
 
     @patch("market_data.views._client")
@@ -240,7 +250,36 @@ class SearchViewTests(TestCase):
         )
 
         mock_client.search.assert_called_once_with(
-            "v", asset_classes=None, min_market_cap=1_000_000_000.0, max_market_cap=2_000_000_000.5
+            "v",
+            asset_classes=None,
+            min_market_cap=1_000_000_000.0,
+            max_market_cap=2_000_000_000.5,
+            exchange=None,
+            region=None,
+        )
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_exchange_and_region_are_passed_through(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
+
+        self.client.get(
+            reverse("search"),
+            {"q": "v", "exchange": "NMS", "region": "us"},
+            **AUTH_HEADER,
+        )
+
+        mock_client.search.assert_called_once_with(
+            "v",
+            asset_classes=None,
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange="NMS",
+            region="us",
         )
 
     @patch("identity.authentication.jwt.decode")

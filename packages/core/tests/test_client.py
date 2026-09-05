@@ -334,6 +334,8 @@ class TestSearch:
                     "type": "stock",
                     "current_price": 227.5,
                     "market_cap": 3_400_000_000_000,
+                    "exchange": "NMS",
+                    "region": "us",
                 },
                 {
                     "ticker": "NVDA",
@@ -341,6 +343,17 @@ class TestSearch:
                     "type": "stock",
                     "current_price": 178.9,
                     "market_cap": 4_300_000_000_000,
+                    "exchange": "NMS",
+                    "region": "us",
+                },
+                {
+                    "ticker": "HSBA",
+                    "name": "HSBC Holdings",
+                    "type": "stock",
+                    "current_price": 8.9,
+                    "market_cap": 150_000_000_000,
+                    "exchange": "LSE",
+                    "region": "gb",
                 },
             ],
         )
@@ -354,6 +367,8 @@ class TestSearch:
                     "type": "etf",
                     "current_price": 624.5,
                     "market_cap": 500_000_000_000,
+                    "exchange": "PCX",
+                    "region": "us",
                 }
             ],
         )
@@ -367,6 +382,8 @@ class TestSearch:
                     "type": "fx",
                     "current_price": 1.27,
                     "market_cap": None,
+                    "exchange": None,
+                    "region": None,
                 }
             ],
         )
@@ -393,7 +410,7 @@ class TestSearch:
 
         result = client.search("a")
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "VOO", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA", "VOO", "GBPUSD"}
 
     def test_asset_classes_filters_the_scan(self, s3_client) -> None:
         self._seed(s3_client)
@@ -401,7 +418,7 @@ class TestSearch:
 
         result = client.search("a", asset_classes=["stock"])
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA"}
 
     def test_results_are_sorted_by_ticker(self, s3_client) -> None:
         self._seed(s3_client)
@@ -465,4 +482,58 @@ class TestSearch:
 
         result = client.search("a")
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "VOO", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA", "VOO", "GBPUSD"}
+
+    def test_exchange_filters_stock_and_etf_case_insensitively(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # "a" also matches GBPUSD's name ("... US Dollar") — expected to stay
+        # regardless of the exchange given, per fx always matching (see
+        # test_exchange_filter_never_excludes_fx for a more targeted check).
+        result = client.search("a", exchange="nms")
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+
+    def test_exchange_filter_never_excludes_fx(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("gbp", exchange="LSE")
+
+        assert {r["ticker"] for r in result} == {"GBPUSD"}
+
+    def test_exchange_filter_excludes_a_row_on_a_different_exchange(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("hsba", exchange="NMS")
+
+        assert result == []
+
+    def test_region_filters_stock_and_etf_case_insensitively(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # "a" also matches GBPUSD's name — stays regardless of the region
+        # given, per fx always matching (see test_region_filter_never_
+        # excludes_fx for a more targeted check).
+        result = client.search("a", region="GB")
+
+        assert {r["ticker"] for r in result} == {"HSBA", "GBPUSD"}
+
+    def test_region_filter_never_excludes_fx(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("gbp", region="gb")
+
+        assert {r["ticker"] for r in result} == {"GBPUSD"}
+
+    def test_exchange_and_region_filters_combine(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a", exchange="NMS", region="us")
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}

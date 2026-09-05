@@ -189,6 +189,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `current_price` with its `currency` (e.g. `$379.99`) via the existing
   `formatCurrency`, instead of a bare unlabeled number.
 
+- Search's Region and Exchange filters (`SearchFilters.jsx`) are now real,
+  replacing their "Coming soon" disabled placeholders — every filter the
+  panel offers now maps to a live search-endpoint param. Both use a new
+  static `frontend/src/pages/search/searchFilterOptions.js`
+  (`REGION_OPTIONS`/`EXCHANGE_OPTIONS`, exact-match, not a range like
+  Market cap) rather than a dropdown of catalog-derived distinct values —
+  equiCast's ticker list is presently hand-picked from just the US and UK,
+  so a curated two-country list is simpler than deriving one from data,
+  at the cost of needing a manual edit if a ticker outside those is ever
+  added. Values are the raw codes `MarketDataClient.search` matches
+  against (yfinance's own `region`/`exchange`, e.g. "us"/"gb",
+  "NMS"/"PCX" — not display strings like "United States"/"NASDAQ", which
+  are only the dropdown labels). `region`/`exchange` live in the URL
+  alongside the other filters, same shareable/bookmarkable reasoning.
+
+  Needed both fields in the search catalog: `equicast_core.catalog.
+  build_catalog_rows` now also publishes `exchange` and `region` (stock/
+  etf's own fields; `None` for fx, which is domiciled nowhere and trades
+  on no exchange). `MarketDataClient.search` gained `exchange`/`region`
+  params, matching case-insensitively against a row's exact value; a
+  stock/etf row missing the field being filtered on is excluded, while fx
+  rows always match regardless of value, same asymmetric-filtering
+  pattern as Market cap. `SearchView`/`searchTickers` pass both straight
+  through as `exchange`/`region` query params. Region required a genuine
+  new field on the ETF side: `equicast_etf.client.EtfClient.profile` now
+  also reads `region` off yfinance's `info` (etf profiles previously had
+  no country/region concept at all, unlike stock's already-real
+  `country`/`region`), so Region filters ETFs as well as stocks, not
+  stocks only — Exchange already applied to both.
+
+- Search's filter panel (`SearchFilters.jsx`) gained a header row with a
+  "Clear" icon button (resets every filter — Type, Region, Exchange,
+  Market cap, and the new Keyword field below — to its default and
+  applies immediately, rather than needing a separate Search click;
+  disabled once nothing is left to clear) in place of the previous
+  bottom "Clear" text button, and a new "Keyword" text field, letting a
+  search be edited/refined from inside the filter panel itself rather
+  than only from the topbar. The Keyword field starts pre-populated from
+  whatever query is currently applied (e.g. the term just typed into the
+  topbar search box), submits on Search or Enter, and, once cleared, also
+  clears the results back to the "Search for a ticker" empty state
+  (`SearchPage.jsx`'s `handleApplyFilters` now takes its `q` value from
+  the filter panel's own submitted keyword rather than always reusing the
+  URL's existing `q`).
+
 ### Changed
 
 - `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped

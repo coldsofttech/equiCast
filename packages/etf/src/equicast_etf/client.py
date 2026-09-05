@@ -124,6 +124,7 @@ class ETFClient:
             "quote_type": info.get("quoteType"),
             "exchange": info.get("exchange"),
             "currency": info.get("currency"),
+            "region": info.get("region"),
             "description": info.get("longBusinessSummary"),
             "category": info.get("category"),
             "fund_family": info.get("fundFamily"),

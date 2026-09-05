@@ -17,13 +17,14 @@ const PAGE_SIZE = 25;
 
 /**
  * Results table + left filter pane for ticker search. `q` comes from the
- * URL (TopbarSearch sets it on Enter); `type`/`minCap`/`maxCap` mirror
- * SearchFilters' applied Type/Market cap selections, the two filters
- * that are real — see SearchFilters.jsx for why Region/Exchange are still
- * placeholders. All four live in the URL (not just component state) so a
- * search is shareable/bookmarkable and survives a refresh. Clicking a
- * result row goes to its holding detail page (HoldingTickerPage handles a
- * ticker the user doesn't actually hold with its own empty state).
+ * URL (TopbarSearch sets it on Enter, or SearchFilters' own Keyword field
+ * — pre-populated from `q` — on Search/Enter); `type`/`minCap`/`maxCap`/
+ * `region`/`exchange` mirror SearchFilters' applied Type/Market cap/Region/
+ * Exchange selections — every filter SearchFilters offers is real now. All
+ * six live in the URL (not just component state) so a search is
+ * shareable/bookmarkable and survives a refresh. Clicking a result row
+ * goes to its holding detail page (HoldingTickerPage handles a ticker the
+ * user doesn't actually hold with its own empty state).
  */
 function SearchPage() {
   const navigate = useNavigate();
@@ -34,6 +35,8 @@ function SearchPage() {
   const maxCapParam = searchParams.get("maxCap");
   const minMarketCap = minCapParam != null ? Number(minCapParam) : undefined;
   const maxMarketCap = maxCapParam != null ? Number(maxCapParam) : undefined;
+  const region = searchParams.get("region") ?? "";
+  const exchange = searchParams.get("exchange") ?? "";
   const api = useApi();
 
   const [results, setResults] = useState([]);
@@ -59,6 +62,8 @@ function SearchPage() {
       assetClass: type || undefined,
       minMarketCap,
       maxMarketCap,
+      region: region || undefined,
+      exchange: exchange || undefined,
       page: 1,
       pageSize: PAGE_SIZE,
     })
@@ -78,7 +83,7 @@ function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, query, type, minMarketCap, maxMarketCap]);
+  }, [api, query, type, minMarketCap, maxMarketCap, region, exchange]);
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
@@ -87,6 +92,8 @@ function SearchPage() {
       assetClass: type || undefined,
       minMarketCap,
       maxMarketCap,
+      region: region || undefined,
+      exchange: exchange || undefined,
       page: page + 1,
       pageSize: PAGE_SIZE,
     })
@@ -98,12 +105,21 @@ function SearchPage() {
       .finally(() => setIsLoadingMore(false));
   };
 
-  const handleApplyFilters = ({ type: nextType, minMarketCap: nextMin, maxMarketCap: nextMax }) => {
+  const handleApplyFilters = ({
+    q: nextQuery,
+    type: nextType,
+    minMarketCap: nextMin,
+    maxMarketCap: nextMax,
+    region: nextRegion,
+    exchange: nextExchange,
+  }) => {
     const next = {};
-    if (query) next.q = query;
+    if (nextQuery) next.q = nextQuery;
     if (nextType) next.type = nextType;
     if (nextMin != null) next.minCap = String(nextMin);
     if (nextMax != null) next.maxCap = String(nextMax);
+    if (nextRegion) next.region = nextRegion;
+    if (nextExchange) next.exchange = nextExchange;
     setSearchParams(next);
   };
 
@@ -115,9 +131,12 @@ function SearchPage() {
       subtitle={query ? `Results for “${query}”` : "Search for a ticker or company name."}
       sidebar={
         <SearchFilters
+          query={query}
           type={type}
           minMarketCap={minMarketCap}
           maxMarketCap={maxMarketCap}
+          region={region}
+          exchange={exchange}
           onApply={handleApplyFilters}
         />
       }

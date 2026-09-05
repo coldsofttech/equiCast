@@ -60,6 +60,24 @@ describe("market api", () => {
     expect(api).toHaveBeenCalledWith("/market/search/?q=vwrl&page=1&page_size=10");
   });
 
+  it("includes exchange/region when given", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, results: [] });
+
+    await searchTickers(api, "vwrl", { exchange: "NMS", region: "us" });
+
+    expect(api).toHaveBeenCalledWith(
+      "/market/search/?q=vwrl&page=1&page_size=10&exchange=NMS&region=us"
+    );
+  });
+
+  it("omits exchange/region entirely when not given", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, results: [] });
+
+    await searchTickers(api, "vwrl");
+
+    expect(api).toHaveBeenCalledWith("/market/search/?q=vwrl&page=1&page_size=10");
+  });
+
   it("fetches a symbol's profile", async () => {
     const api = vi.fn().mockResolvedValue({ ticker: "AAPL", currency: "USD" });
 

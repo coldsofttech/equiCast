@@ -53,11 +53,15 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     `current_price` is the exchange rate quoted *in* `to_currency`, so
     that's what a display of it should be formatted as), `website` (`None`
     for fx profiles, which carry no such field — a currency pair has no
-    issuer site to link/show a favicon for), and `market_cap` — a stock's
-    real `market_cap`, an etf's `total_assets` (fund AUM, the closest
-    comparable "size" figure a fund has — etf profiles carry no market cap
-    of their own), or `None` for fx, which has neither and isn't
-    size-filterable at all.
+    issuer site to link/show a favicon for), `market_cap` — a stock's real
+    `market_cap`, an etf's `total_assets` (fund AUM, the closest comparable
+    "size" figure a fund has — etf profiles carry no market cap of their
+    own), or `None` for fx, which has neither and isn't size-filterable at
+    all — `exchange` (stock/etf's own `exchange`, yfinance's raw code, e.g.
+    "NMS"/"PCX", not a bare "NASDAQ"/"NYSE" string; `None` for fx, which
+    isn't traded on one), and `region` (stock/etf's own `region`,
+    yfinance's short country code, e.g. "us"/"gb"; `None` for fx, which
+    isn't domiciled anywhere).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -75,6 +79,8 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "currency": profile.get("currency") or profile.get("to_currency"),
                 "website": profile.get("website"),
                 "market_cap": profile.get("market_cap") or profile.get("total_assets"),
+                "exchange": profile.get("exchange"),
+                "region": profile.get("region"),
             }
         )
     return rows

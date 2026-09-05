@@ -2,10 +2,13 @@ import { useEffect, useState } from "react";
 import Button from "../../components/core/Button.jsx";
 import RangeSlider from "../../components/core/RangeSlider.jsx";
 import {
+  MARKET_CAP_MAX_INDEX,
+  MARKET_CAP_MIN_INDEX,
   MARKET_CAP_STEPS,
   indexesFromMarketCapRange,
   marketCapRangeFromIndexes,
 } from "./marketCapSteps.js";
+import { EXCHANGE_OPTIONS, REGION_OPTIONS } from "./searchFilterOptions.js";
 import "./SearchFilters.css";
 
 const TYPES = [
@@ -16,31 +19,44 @@ const TYPES = [
 ];
 
 /**
- * SearchPage's left filter pane. Type and Market cap both actually filter
- * results (mapping to the search endpoint's `asset_class`/`min_market_cap`/
- * `max_market_cap` params); Region/Exchange are shown disabled with a
- * "Coming soon" note rather than silently doing nothing — that data lives
- * on each ticker's own profile, not in the bulk catalog search results
- * (see backend/market_data/views.py's SearchView and
- * equicast_core.catalog), so there's no efficient way to filter by them
- * yet. Market cap's `market_cap` field *is* in the catalog for exactly
- * this reason.
+ * SearchPage's left filter pane. Keyword, Type, Market cap, Region and
+ * Exchange all actually filter results now (mapping to the search
+ * endpoint's `q`/`asset_class`/`min_market_cap`/`max_market_cap`/`region`/
+ * `exchange` params) — Region/Exchange's option lists are a static UK/US-only
+ * config (searchFilterOptions.js) rather than derived from the catalog,
+ * since equiCast's ticker list is presently hand-picked from just those two
+ * countries. Type/Market cap/Region/Exchange only meaningfully narrow
+ * stock/etf rows — fx always matches every one of them regardless (see
+ * MarketDataClient.search's docstring) — but none of the controls call that
+ * out per-row; a fx-heavy result set simply won't visibly shrink as they
+ * tighten.
  *
- * `type`/`minMarketCap`/`maxMarketCap` are the currently-applied filters
- * (from the URL); local `draftType`/`draftRange` let a caller change them
- * without re-searching until "Search" is clicked, same reasoning as
- * TickerSearchField not searching per keystroke — one request per explicit
- * action, not per interaction. Market cap only meaningfully narrows
- * stock/etf rows — fx always matches it regardless (see
- * MarketDataClient.search's docstring) — but the slider itself doesn't
- * call that out per-row; a fx-heavy result set simply won't visibly shrink
- * as the range tightens.
+ * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange` are the
+ * currently-applied filters (from the URL — `query` is whatever the topbar
+ * search box was last submitted with); local `draftQuery`/`draftType`/
+ * `draftRange`/`draftRegion`/`draftExchange` let a caller change them
+ * without re-searching until "Search" is clicked (or Enter is pressed in
+ * the Keyword field), same reasoning as TickerSearchField not searching per
+ * keystroke — one request per explicit action, not per interaction. The
+ * header's Clear icon is the one exception — it resets every draft
+ * (Keyword included) to its default *and* applies immediately, rather than
+ * waiting for a separate "Search" click, since a reset with no visible
+ * effect until another click would confuse a user pressing it expecting an
+ * unfiltered result set right away; it's disabled once every draft is
+ * already at its default.
  */
-function SearchFilters({ type, minMarketCap, maxMarketCap, onApply }) {
+function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchange, onApply }) {
+  const [draftQuery, setDraftQuery] = useState(query ?? "");
   const [draftType, setDraftType] = useState(type);
   const [draftRange, setDraftRange] = useState(() =>
     indexesFromMarketCapRange(minMarketCap, maxMarketCap)
   );
+  const [draftRegion, setDraftRegion] = useState(region ?? "");
+  const [draftExchange, setDraftExchange] = useState(exchange ?? "");
+
+  useEffect(() => {
+    setDraftQuery(query ?? "");
+  }, [query]);
 
   useEffect(() => {
     setDraftType(type);
@@ -50,12 +66,79 @@ function SearchFilters({ type, minMarketCap, maxMarketCap, onApply }) {
     setDraftRange(indexesFromMarketCapRange(minMarketCap, maxMarketCap));
   }, [minMarketCap, maxMarketCap]);
 
+  useEffect(() => {
+    setDraftRegion(region ?? "");
+  }, [region]);
+
+  useEffect(() => {
+    setDraftExchange(exchange ?? "");
+  }, [exchange]);
+
   const handleSearch = () => {
-    onApply({ type: draftType, ...marketCapRangeFromIndexes(draftRange.lowIndex, draftRange.highIndex) });
+    onApply({
+      q: draftQuery.trim(),
+      type: draftType,
+      region: draftRegion,
+      exchange: draftExchange,
+      ...marketCapRangeFromIndexes(draftRange.lowIndex, draftRange.highIndex),
+    });
+  };
+
+  const isCleared =
+    !draftQuery &&
+    !draftType &&
+    !draftRegion &&
+    !draftExchange &&
+    draftRange.lowIndex === MARKET_CAP_MIN_INDEX &&
+    draftRange.highIndex === MARKET_CAP_MAX_INDEX;
+
+  const handleClear = () => {
+    const clearedRange = { lowIndex: MARKET_CAP_MIN_INDEX, highIndex: MARKET_CAP_MAX_INDEX };
+    setDraftQuery("");
+    setDraftType("");
+    setDraftRegion("");
+    setDraftExchange("");
+    setDraftRange(clearedRange);
+    onApply({
+      q: "",
+      type: "",
+      region: "",
+      exchange: "",
+      ...marketCapRangeFromIndexes(clearedRange.lowIndex, clearedRange.highIndex),
+    });
   };
 
   return (
     <div className="ec-search-filters">
+      <div className="ec-search-filters-head">
+        <span className="ec-search-filters-title">Filters</span>
+        <button
+          type="button"
+          className="ec-icon-btn"
+          onClick={handleClear}
+          disabled={isCleared}
+          aria-label="Clear filters"
+          title="Clear filters"
+        >
+          <i className="bi bi-arrow-counterclockwise" aria-hidden="true" />
+        </button>
+      </div>
+
+      <fieldset className="ec-search-filter-group">
+        <legend>Keyword</legend>
+        <input
+          type="text"
+          className="ec-input"
+          aria-label="Keyword"
+          value={draftQuery}
+          onChange={(event) => setDraftQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") handleSearch();
+          }}
+          placeholder="Ticker or company name"
+        />
+      </fieldset>
+
       <fieldset className="ec-search-filter-group">
         <legend>Type</legend>
         {TYPES.map((option) => (
@@ -72,20 +155,36 @@ function SearchFilters({ type, minMarketCap, maxMarketCap, onApply }) {
         ))}
       </fieldset>
 
-      <fieldset className="ec-search-filter-group" disabled>
+      <fieldset className="ec-search-filter-group">
         <legend>Region</legend>
-        <select className="ec-select" disabled defaultValue="">
-          <option value="">All regions</option>
+        <select
+          className="ec-select"
+          aria-label="Region"
+          value={draftRegion}
+          onChange={(event) => setDraftRegion(event.target.value)}
+        >
+          {REGION_OPTIONS.map((option) => (
+            <option key={option.value || "all"} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
-        <span className="ec-search-filter-soon">Coming soon</span>
       </fieldset>
 
-      <fieldset className="ec-search-filter-group" disabled>
+      <fieldset className="ec-search-filter-group">
         <legend>Exchange</legend>
-        <select className="ec-select" disabled defaultValue="">
-          <option value="">All exchanges</option>
+        <select
+          className="ec-select"
+          aria-label="Exchange"
+          value={draftExchange}
+          onChange={(event) => setDraftExchange(event.target.value)}
+        >
+          {EXCHANGE_OPTIONS.map((option) => (
+            <option key={option.value || "all"} value={option.value}>
+              {option.label}
+            </option>
+          ))}
         </select>
-        <span className="ec-search-filter-soon">Coming soon</span>
       </fieldset>
 
       <fieldset className="ec-search-filter-group">
@@ -99,9 +198,11 @@ function SearchFilters({ type, minMarketCap, maxMarketCap, onApply }) {
         <span className="ec-search-filter-hint">Stocks by market cap, ETFs by fund size</span>
       </fieldset>
 
-      <Button variant="primary" onClick={handleSearch}>
-        Search
-      </Button>
+      <div className="ec-search-filter-actions">
+        <Button variant="primary" onClick={handleSearch}>
+          Search
+        </Button>
+      </div>
     </div>
   );
 }

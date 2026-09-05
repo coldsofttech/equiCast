@@ -103,12 +103,17 @@ class SearchView(APIView):
         if None not in (min_market_cap, max_market_cap) and min_market_cap > max_market_cap:
             return Response({"detail": "min_market_cap must not exceed max_market_cap."}, status=400)
 
+        exchange = request.query_params.get("exchange")
+        region = request.query_params.get("region")
+
         asset_classes = [asset_class] if asset_class is not None else None
         matches = _client.search(
             query,
             asset_classes=asset_classes,
             min_market_cap=min_market_cap,
             max_market_cap=max_market_cap,
+            exchange=exchange,
+            region=region,
         )
 
         count = len(matches)
