@@ -41,10 +41,9 @@ profile = client.profile()
 #     "nav_price": 708.98,
 #     "volume": 8067208,
 #     "day_open": 709.39, "day_high": 712.6692, "day_low": 706.26,
-#     "day_close": 707.24, "day_average": 709.4646,
+#     "day_close": 707.24,
 #     "year_open": 588.29, "year_high": 716.39, "year_low": 578.46,
-#     "year_close": 707.24, "year_average": 647.425,
-#     "moving_average_50_days": 693.1996, "moving_average_200_days": 652.7322,
+#     "year_close": 707.24,
 #     "ytd_return": 10.11602,
 #     "three_year_average_return": 0.2217858,
 #     "five_year_average_return": 0.1294499,
@@ -109,15 +108,12 @@ uses.
 
 ### On the price-range fields
 
-`day_*`/`year_*`/`moving_average_*` work identically to
-`equicast-stock`/`equicast-fx`: `day_close` is the live price; `year_*` uses
-a trailing 52-week window (`year_open` from a `history(period="1y")` call,
-everything else from yfinance's own `fiftyTwoWeekHigh`/`fiftyTwoWeekLow`);
-`*_average` fields are the high/low midpoint, not a mean of daily closes;
-`moving_average_50_days`/`moving_average_200_days` come straight from
-yfinance's own 50/200-day averages. All rounded to 8 decimal places
-(`equicast-datafeed`'s `round_value`), `None` wherever the underlying
-yfinance field is missing.
+`day_*`/`year_*` work identically to `equicast-stock`/`equicast-fx`:
+`day_close` is the live price; `year_*` uses a trailing 52-week window
+(`year_open` from a `history(period="1y")` call, everything else from
+yfinance's own `fiftyTwoWeekHigh`/`fiftyTwoWeekLow`). All rounded to 8
+decimal places (`equicast-datafeed`'s `round_value`), `None` wherever the
+underlying yfinance field is missing.
 
 ### On `inception_date`
 

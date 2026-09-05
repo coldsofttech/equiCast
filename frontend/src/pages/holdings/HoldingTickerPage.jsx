@@ -354,7 +354,7 @@ function HoldingTickerPage() {
           {(() => {
             const nativeCurrency = marketProfile?.currency ?? null;
             const defaultCurrency = userProfile?.default_currency ?? null;
-            const currentPriceNative = marketProfile?.day_close ?? marketProfile?.day_average ?? null;
+            const currentPriceNative = marketProfile?.day_close ?? null;
 
             let avgPriceNative = null;
             let statGrid = null;

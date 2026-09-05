@@ -191,7 +191,7 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
 
   try {
     const direct = await getProfile(api, "fx", `${nativeCurrency}${defaultCurrency}`);
-    const rate = direct.day_close ?? direct.day_average;
+    const rate = direct.day_close;
     if (typeof rate === "number" && rate > 0) return rate;
   } catch {
     // No direct pair published — fall through and try the inverted one.
@@ -199,7 +199,7 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
 
   try {
     const inverted = await getProfile(api, "fx", `${defaultCurrency}${nativeCurrency}`);
-    const rate = inverted.day_close ?? inverted.day_average;
+    const rate = inverted.day_close;
     if (typeof rate === "number" && rate > 0) return 1 / rate;
   } catch {
     // Neither pair is published for this currency combination.

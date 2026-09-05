@@ -212,6 +212,8 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -232,6 +234,8 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -256,6 +260,8 @@ class SearchViewTests(TestCase):
             max_market_cap=2_000_000_000.5,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -280,6 +286,34 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange="NMS",
             region="us",
+            sector=None,
+            industry=None,
+        )
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_sector_and_industry_are_passed_through(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
+
+        self.client.get(
+            reverse("search"),
+            {"q": "v", "sector": "Technology", "industry": "Semiconductors"},
+            **AUTH_HEADER,
+        )
+
+        mock_client.search.assert_called_once_with(
+            "v",
+            asset_classes=None,
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange=None,
+            region=None,
+            sector="Technology",
+            industry="Semiconductors",
         )
 
     @patch("identity.authentication.jwt.decode")

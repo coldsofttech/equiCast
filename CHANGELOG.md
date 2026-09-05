@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `sector`/`industry` added to the search catalog (`equicast_core.catalog.build_catalog_rows`,
+  `catalog/<asset_class>.parquet`) and as new `SearchView`/`MarketDataClient.search`
+  filter params (`sector`/`industry`, matched case-insensitively against a
+  stock row's exact value, same as `exchange`/`region`) — sourced from a
+  stock profile's own `sector`/`industry` fields, always `None` for etf
+  (yfinance never populates these for a fund) and fx. `/search`'s filter
+  panel (`SearchFilters.jsx`) gained matching Sector/Industry dropdowns
+  (static option lists in `searchFilterOptions.js`, same reasoning as
+  Region/Exchange), wired through `SearchPage.jsx`'s URL params the same
+  way as every other filter.
 - Frontend holding detail page: `frontend/src/pages/holdings/HoldingTickerPage.jsx`
   (`/holdings/:ticker`) is rewritten from a shallow "held in N places" list
   into a full detail page, mostly backed by real data rather than the
@@ -236,6 +246,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The search catalog (`catalog/<asset_class>.json`) is now written/read as
+  Parquet (`catalog/<asset_class>.parquet`) instead of JSON —
+  `equicast_core.catalog.upload_catalog` writes against a new explicit
+  `CATALOG_SCHEMA` (so an empty ticker list still produces a valid file
+  rather than one with an unguessable/empty schema), and
+  `MarketDataClient.get_catalog` reads it via the same `_read_parquet`
+  helper `get_profile`/`get_prices` already use. Same format/tooling
+  (`pyarrow`) as every other published file now, and avoids JSON's
+  per-row repeated field names once the ticker universe grows well past
+  today's handful per asset class — `search()` still reads a catalog in
+  full on every call either way, so this doesn't change that access
+  pattern, just the bytes on disk.
 - `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
   the pointer cursor/hover cue for a table with no row actions) removed
   now that `SearchPage`'s rows — its only user — are clickable.
@@ -515,6 +537,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only *identifies* a caller, it doesn't by itself require authentication.
   `backend/market_data/tests.py` updated to mock the Auth0 JWT flow and
   assert 401 when no token is supplied.
+
+### Removed
+
+- `day_average`, `year_average`, `moving_average_50_days`, and
+  `moving_average_200_days` dropped from `equicast-stock`/`equicast-etf`/
+  `equicast-fx`'s `profile()` (and therefore `profile.parquet`) —
+  `StockClient`/`ETFClient`/`FXClient` (`packages/*/src/equicast_*/client.py`)
+  no longer compute or fetch these fields. Frontend fallbacks that read
+  `day_average` (`HoldingTickerPage.jsx`, `HoldingStatsPanel.jsx`,
+  `holdingFinancials.js`'s `resolveFxRate`) now use `day_close` alone.
 
 ### Added
 

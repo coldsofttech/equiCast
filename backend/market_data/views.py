@@ -113,6 +113,8 @@ class SearchView(APIView):
 
         exchange = request.query_params.get("exchange")
         region = request.query_params.get("region")
+        sector = request.query_params.get("sector")
+        industry = request.query_params.get("industry")
 
         asset_classes = [asset_class] if asset_class is not None else None
         matches = _client.search(
@@ -122,6 +124,8 @@ class SearchView(APIView):
             max_market_cap=max_market_cap,
             exchange=exchange,
             region=region,
+            sector=sector,
+            industry=industry,
         )
 
         count = len(matches)

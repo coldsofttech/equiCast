@@ -75,8 +75,8 @@ For each ticker this writes:
 - `etf=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
   currency, description, category, fund family, website, beta, expense
   ratio, dividend rate/yield, total assets, NAV price, volume, day/year
-  price range and moving averages, YTD/3yr/5yr average returns, inception
-  date, last updated, source
+  price range, YTD/3yr/5yr average returns, inception date, last updated,
+  source
 - `etf=<TICKER>/price/current.parquet` — one row per trading day, for
   the current year only by default: ticker, currency, date,
   open/high/low/close/average, last updated, source
@@ -258,7 +258,7 @@ The workflow has three jobs, structured identically to
    **ingest** into one local directory (no single leg ever sees the full
    ticker list, so the catalog can't be built inside one), then runs
    `equicast-core-build-catalog --asset-class etf` to rebuild
-   `catalog/etf.json` — the search catalog `MarketDataClient.search()`
+   `catalog/etf.parquet` — the search catalog `MarketDataClient.search()`
    reads (see [packages/core/README.md](../packages/core/README.md)).
    Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
    it reads the profiles from the downloaded artifacts, not back from S3.
@@ -268,7 +268,7 @@ The workflow has three jobs, structured identically to
 ```
 s3://equicast-market-data-<env>/
 ├── catalog/
-│   └── etf.json
+│   └── etf.parquet
 └── etf=VOO/
     ├── profile.parquet
     ├── metrics.parquet

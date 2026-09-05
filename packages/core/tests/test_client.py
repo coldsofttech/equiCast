@@ -6,6 +6,7 @@ import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from equicast_core.catalog import CATALOG_SCHEMA, upload_catalog
 from equicast_core.client import PRICE_RANGES, MarketDataClient
 from moto import mock_aws
 
@@ -300,12 +301,7 @@ class TestGetPrices:
 
 
 def _put_catalog(s3_client, asset_class: str, rows: list[dict]) -> None:
-    s3_client.put_object(
-        Bucket=BUCKET,
-        Key=f"catalog/{asset_class}.json",
-        Body=json.dumps({"tickers": rows}).encode("utf-8"),
-        ContentType="application/json",
-    )
+    upload_catalog(BUCKET, asset_class, rows, s3_client=s3_client)
 
 
 class TestGetCatalog:
@@ -314,7 +310,9 @@ class TestGetCatalog:
         _put_catalog(s3_client, "stock", rows)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        assert client.get_catalog("stock") == rows
+        expected = {field.name: None for field in CATALOG_SCHEMA}
+        expected.update(rows[0])
+        assert client.get_catalog("stock") == [expected]
 
     def test_returns_empty_list_when_no_catalog_published_yet(self, s3_client) -> None:
         client = MarketDataClient(BUCKET, s3_client=s3_client)
@@ -336,6 +334,8 @@ class TestSearch:
                     "market_cap": 3_400_000_000_000,
                     "exchange": "NMS",
                     "region": "us",
+                    "sector": "Technology",
+                    "industry": "Consumer Electronics",
                 },
                 {
                     "ticker": "NVDA",
@@ -345,6 +345,8 @@ class TestSearch:
                     "market_cap": 4_300_000_000_000,
                     "exchange": "NMS",
                     "region": "us",
+                    "sector": "Technology",
+                    "industry": "Semiconductors",
                 },
                 {
                     "ticker": "HSBA",
@@ -354,6 +356,8 @@ class TestSearch:
                     "market_cap": 150_000_000_000,
                     "exchange": "LSE",
                     "region": "gb",
+                    "sector": "Financial Services",
+                    "industry": "Banks—Diversified",
                 },
             ],
         )
@@ -369,6 +373,8 @@ class TestSearch:
                     "market_cap": 500_000_000_000,
                     "exchange": "PCX",
                     "region": "us",
+                    "sector": None,
+                    "industry": None,
                 }
             ],
         )
@@ -384,6 +390,8 @@ class TestSearch:
                     "market_cap": None,
                     "exchange": None,
                     "region": None,
+                    "sector": None,
+                    "industry": None,
                 }
             ],
         )
@@ -537,3 +545,62 @@ class TestSearch:
         result = client.search("a", exchange="NMS", region="us")
 
         assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+
+    def test_sector_filters_stock_case_insensitively(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # "a" also matches GBPUSD's name ("... US Dollar") — expected to stay
+        # regardless of the sector given, per fx always matching (see
+        # test_sector_filter_never_excludes_fx for a more targeted check).
+        result = client.search("a", sector="technology")
+
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+
+    def test_sector_filter_never_excludes_fx(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("gbp", sector="Technology")
+
+        assert {r["ticker"] for r in result} == {"GBPUSD"}
+
+    def test_sector_filter_excludes_a_row_in_a_different_sector(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("hsba", sector="Technology")
+
+        assert result == []
+
+    def test_sector_filter_excludes_an_etf_row_with_no_sector(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo", sector="Technology")
+
+        assert result == []
+
+    def test_industry_filters_stock_case_insensitively(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nvda", industry="semiconductors")
+
+        assert {r["ticker"] for r in result} == {"NVDA"}
+
+    def test_industry_filter_never_excludes_fx(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("gbp", industry="Semiconductors")
+
+        assert {r["ticker"] for r in result} == {"GBPUSD"}
+
+    def test_sector_and_industry_filters_combine(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("a", sector="Technology", industry="Semiconductors")
+
+        assert {r["ticker"] for r in result} == {"NVDA", "GBPUSD"}

@@ -1,4 +1,3 @@
-import json
 from pathlib import Path
 
 import boto3
@@ -8,6 +7,7 @@ import pytest
 from equicast_core.catalog import build_catalog_rows, catalog_key, main, upload_catalog
 from moto import mock_aws
 
+
 BUCKET = "equicast-market-data-test"
 
 
@@ -16,6 +16,30 @@ def _write_profile(output_dir: Path, asset_class: str, ticker: str, profile: dic
     directory.mkdir(parents=True, exist_ok=True)
     table = pa.Table.from_pylist([profile])
     pq.write_table(table, directory / "profile.parquet")
+
+
+def _read_catalog(s3_client, key: str) -> list[dict]:
+    response = s3_client.get_object(Bucket=BUCKET, Key=key)
+    return pq.read_table(pa.BufferReader(response["Body"].read())).to_pylist()
+
+
+#: Every CATALOG_SCHEMA column, `None`-defaulted — a row written through
+#: upload_catalog() always round-trips with every column present, even one
+#: built from a partial test dict, so expected rows in these tests spell
+#: out the full shape rather than just the fields the test cares about.
+_EMPTY_ROW = {
+    "ticker": None,
+    "name": None,
+    "type": None,
+    "current_price": None,
+    "currency": None,
+    "website": None,
+    "market_cap": None,
+    "exchange": None,
+    "region": None,
+    "sector": None,
+    "industry": None,
+}
 
 
 @pytest.fixture
@@ -30,7 +54,7 @@ def s3_client():
 
 
 def test_catalog_key_is_lowercased_and_namespaced() -> None:
-    assert catalog_key("STOCK") == "catalog/stock.json"
+    assert catalog_key("STOCK") == "catalog/stock.parquet"
 
 
 class TestBuildCatalogRows:
@@ -48,6 +72,8 @@ class TestBuildCatalogRows:
                 "market_cap": 3_400_000_000_000,
                 "exchange": "NMS",
                 "region": "us",
+                "sector": "Technology",
+                "industry": "Consumer Electronics",
             },
         )
         _write_profile(
@@ -63,6 +89,8 @@ class TestBuildCatalogRows:
                 "market_cap": 3_050_000_000_000,
                 "exchange": "NMS",
                 "region": "us",
+                "sector": "Technology",
+                "industry": "Software—Infrastructure",
             },
         )
 
@@ -79,6 +107,8 @@ class TestBuildCatalogRows:
                 "market_cap": 3_400_000_000_000,
                 "exchange": "NMS",
                 "region": "us",
+                "sector": "Technology",
+                "industry": "Consumer Electronics",
             },
             {
                 "ticker": "MSFT",
@@ -90,6 +120,8 @@ class TestBuildCatalogRows:
                 "market_cap": 3_050_000_000_000,
                 "exchange": "NMS",
                 "region": "us",
+                "sector": "Technology",
+                "industry": "Software—Infrastructure",
             },
         ]
 
@@ -141,6 +173,8 @@ class TestBuildCatalogRows:
                 "market_cap": None,
                 "exchange": None,
                 "region": None,
+                "sector": None,
+                "industry": None,
             }
         ]
 
@@ -164,21 +198,34 @@ class TestBuildCatalogRows:
 
 
 class TestUploadCatalog:
-    def test_uploads_the_rows_as_json(self, s3_client) -> None:
+    def test_uploads_the_rows_as_parquet(self, s3_client) -> None:
         rows = [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}]
 
         upload_catalog(BUCKET, "stock", rows, s3_client=s3_client)
 
-        response = s3_client.get_object(Bucket=BUCKET, Key="catalog/stock.json")
-        assert json.loads(response["Body"].read()) == {"tickers": rows}
+        result = _read_catalog(s3_client, "catalog/stock.parquet")
+        assert result == [
+            {
+                **_EMPTY_ROW,
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "type": "stock",
+                "current_price": 227.5,
+            }
+        ]
 
     def test_replaces_a_previous_catalog_outright(self, s3_client) -> None:
         upload_catalog(BUCKET, "stock", [{"ticker": "OLD"}], s3_client=s3_client)
 
         upload_catalog(BUCKET, "stock", [{"ticker": "NEW"}], s3_client=s3_client)
 
-        response = s3_client.get_object(Bucket=BUCKET, Key="catalog/stock.json")
-        assert json.loads(response["Body"].read()) == {"tickers": [{"ticker": "NEW"}]}
+        result = _read_catalog(s3_client, "catalog/stock.parquet")
+        assert result == [{**_EMPTY_ROW, "ticker": "NEW"}]
+
+    def test_uploads_a_valid_file_for_an_empty_ticker_list(self, s3_client) -> None:
+        upload_catalog(BUCKET, "stock", [], s3_client=s3_client)
+
+        assert _read_catalog(s3_client, "catalog/stock.parquet") == []
 
 
 def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypatch) -> None:
@@ -201,19 +248,13 @@ def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypat
 
     main()
 
-    response = s3_client.get_object(Bucket=BUCKET, Key="catalog/etf.json")
-    assert json.loads(response["Body"].read()) == {
-        "tickers": [
-            {
-                "ticker": "VOO",
-                "name": "Vanguard S&P 500",
-                "type": "etf",
-                "current_price": 624.5,
-                "currency": None,
-                "website": None,
-                "market_cap": None,
-                "exchange": None,
-                "region": None,
-            }
-        ]
-    }
+    result = _read_catalog(s3_client, "catalog/etf.parquet")
+    assert result == [
+        {
+            **_EMPTY_ROW,
+            "ticker": "VOO",
+            "name": "Vanguard S&P 500",
+            "type": "etf",
+            "current_price": 624.5,
+        }
+    ]

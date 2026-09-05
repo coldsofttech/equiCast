@@ -169,7 +169,7 @@ jobs:
           path: output/etf=*/profile.parquet
           retention-days: 1
 
-  # Rebuilds catalog/etf.json (see equicast_core.catalog) from every
+  # Rebuilds catalog/etf.parquet (see equicast_core.catalog) from every
   # chunk's freshly-fetched profiles, merged back together here since no
   # single ingest leg above ever sees the full ticker list. Needs no new S3
   # permission beyond what ingest already has (s3:PutObject) — it reads the

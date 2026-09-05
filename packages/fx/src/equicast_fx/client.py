@@ -11,7 +11,7 @@ from equicast_datafeed import YFINANCE_DATA_DISCLAIMER, DatafeedClient, round_va
 logger = logging.getLogger(__name__)
 
 #: yfinance's own trailing 52-week window, reused as the "year" window for
-#: year_open/year_high/year_low/year_close/year_average.
+#: year_open/year_high/year_low/year_close.
 YEAR_HISTORY_PERIOD = "1y"
 
 #: Default `prices()` window: this calendar year only.
@@ -47,7 +47,7 @@ class FXClient:
         return f"{self.from_currency}{self.to_currency}=X"
 
     def profile(self) -> dict[str, Any]:
-        """Return profile, price-range, and moving-average data for this FX pair."""
+        """Return profile and price-range data for this FX pair."""
         info = self._datafeed.get_info(self.symbol)
         history = self._datafeed.get_history(self.symbol, period=YEAR_HISTORY_PERIOD)
 
@@ -78,14 +78,10 @@ class FXClient:
             "day_high": round_value(day_high),
             "day_low": round_value(day_low),
             "day_close": round_value(day_close),
-            "day_average": round_value(_midpoint(day_low, day_high)),
             "year_open": round_value(year_open),
             "year_high": round_value(year_high),
             "year_low": round_value(year_low),
             "year_close": round_value(day_close),
-            "year_average": round_value(_midpoint(year_low, year_high)),
-            "moving_average_50_days": round_value(info.get("fiftyDayAverage")),
-            "moving_average_200_days": round_value(info.get("twoHundredDayAverage")),
         }
 
     def prices(self, full_load: bool = False) -> list[dict[str, Any]]:

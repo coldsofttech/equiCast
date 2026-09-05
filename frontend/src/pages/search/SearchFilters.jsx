@@ -8,7 +8,12 @@ import {
   indexesFromMarketCapRange,
   marketCapRangeFromIndexes,
 } from "./marketCapSteps.js";
-import { EXCHANGE_OPTIONS, REGION_OPTIONS } from "./searchFilterOptions.js";
+import {
+  EXCHANGE_OPTIONS,
+  INDUSTRY_OPTIONS,
+  REGION_OPTIONS,
+  SECTOR_OPTIONS,
+} from "./searchFilterOptions.js";
 import "./SearchFilters.css";
 
 const TYPES = [
@@ -19,22 +24,24 @@ const TYPES = [
 ];
 
 /**
- * SearchPage's left filter pane. Keyword, Type, Market cap, Region and
- * Exchange all actually filter results now (mapping to the search
- * endpoint's `q`/`asset_class`/`min_market_cap`/`max_market_cap`/`region`/
- * `exchange` params) — Region/Exchange's option lists are a static UK/US-only
- * config (searchFilterOptions.js) rather than derived from the catalog,
- * since equiCast's ticker list is presently hand-picked from just those two
- * countries. Type/Market cap/Region/Exchange only meaningfully narrow
- * stock/etf rows — fx always matches every one of them regardless (see
- * MarketDataClient.search's docstring) — but none of the controls call that
- * out per-row; a fx-heavy result set simply won't visibly shrink as they
- * tighten.
+ * SearchPage's left filter pane. Keyword, Type, Market cap, Region,
+ * Exchange, Sector and Industry all actually filter results now (mapping
+ * to the search endpoint's `q`/`asset_class`/`min_market_cap`/
+ * `max_market_cap`/`region`/`exchange`/`sector`/`industry` params) —
+ * Region/Exchange/Sector/Industry's option lists are static config
+ * (searchFilterOptions.js) rather than derived from the catalog, since
+ * equiCast's ticker list is presently hand-picked from a small fixed set.
+ * Type/Market cap/Region/Exchange only meaningfully narrow stock/etf rows,
+ * and Sector/Industry only stock rows — fx always matches every one of
+ * them regardless (see MarketDataClient.search's docstring) — but none of
+ * the controls call that out per-row; a fx-heavy result set simply won't
+ * visibly shrink as they tighten.
  *
- * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange` are the
- * currently-applied filters (from the URL — `query` is whatever the topbar
- * search box was last submitted with); local `draftQuery`/`draftType`/
- * `draftRange`/`draftRegion`/`draftExchange` let a caller change them
+ * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange`/
+ * `sector`/`industry` are the currently-applied filters (from the URL —
+ * `query` is whatever the topbar search box was last submitted with);
+ * local `draftQuery`/`draftType`/`draftRange`/`draftRegion`/
+ * `draftExchange`/`draftSector`/`draftIndustry` let a caller change them
  * without re-searching until "Search" is clicked (or Enter is pressed in
  * the Keyword field), same reasoning as TickerSearchField not searching per
  * keystroke — one request per explicit action, not per interaction. The
@@ -45,7 +52,17 @@ const TYPES = [
  * unfiltered result set right away; it's disabled once every draft is
  * already at its default.
  */
-function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchange, onApply }) {
+function SearchFilters({
+  query,
+  type,
+  minMarketCap,
+  maxMarketCap,
+  region,
+  exchange,
+  sector,
+  industry,
+  onApply,
+}) {
   const [draftQuery, setDraftQuery] = useState(query ?? "");
   const [draftType, setDraftType] = useState(type);
   const [draftRange, setDraftRange] = useState(() =>
@@ -53,6 +70,8 @@ function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchan
   );
   const [draftRegion, setDraftRegion] = useState(region ?? "");
   const [draftExchange, setDraftExchange] = useState(exchange ?? "");
+  const [draftSector, setDraftSector] = useState(sector ?? "");
+  const [draftIndustry, setDraftIndustry] = useState(industry ?? "");
 
   useEffect(() => {
     setDraftQuery(query ?? "");
@@ -74,12 +93,22 @@ function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchan
     setDraftExchange(exchange ?? "");
   }, [exchange]);
 
+  useEffect(() => {
+    setDraftSector(sector ?? "");
+  }, [sector]);
+
+  useEffect(() => {
+    setDraftIndustry(industry ?? "");
+  }, [industry]);
+
   const handleSearch = () => {
     onApply({
       q: draftQuery.trim(),
       type: draftType,
       region: draftRegion,
       exchange: draftExchange,
+      sector: draftSector,
+      industry: draftIndustry,
       ...marketCapRangeFromIndexes(draftRange.lowIndex, draftRange.highIndex),
     });
   };
@@ -89,6 +118,8 @@ function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchan
     !draftType &&
     !draftRegion &&
     !draftExchange &&
+    !draftSector &&
+    !draftIndustry &&
     draftRange.lowIndex === MARKET_CAP_MIN_INDEX &&
     draftRange.highIndex === MARKET_CAP_MAX_INDEX;
 
@@ -98,12 +129,16 @@ function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchan
     setDraftType("");
     setDraftRegion("");
     setDraftExchange("");
+    setDraftSector("");
+    setDraftIndustry("");
     setDraftRange(clearedRange);
     onApply({
       q: "",
       type: "",
       region: "",
       exchange: "",
+      sector: "",
+      industry: "",
       ...marketCapRangeFromIndexes(clearedRange.lowIndex, clearedRange.highIndex),
     });
   };
@@ -180,6 +215,38 @@ function SearchFilters({ query, type, minMarketCap, maxMarketCap, region, exchan
           onChange={(event) => setDraftExchange(event.target.value)}
         >
           {EXCHANGE_OPTIONS.map((option) => (
+            <option key={option.value || "all"} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </fieldset>
+
+      <fieldset className="ec-search-filter-group">
+        <legend>Sector</legend>
+        <select
+          className="ec-select"
+          aria-label="Sector"
+          value={draftSector}
+          onChange={(event) => setDraftSector(event.target.value)}
+        >
+          {SECTOR_OPTIONS.map((option) => (
+            <option key={option.value || "all"} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </fieldset>
+
+      <fieldset className="ec-search-filter-group">
+        <legend>Industry</legend>
+        <select
+          className="ec-select"
+          aria-label="Industry"
+          value={draftIndustry}
+          onChange={(event) => setDraftIndustry(event.target.value)}
+        >
+          {INDUSTRY_OPTIONS.map((option) => (
             <option key={option.value || "all"} value={option.value}>
               {option.label}
             </option>

@@ -27,3 +27,30 @@ export const EXCHANGE_OPTIONS = [
   { value: "ASE", label: "NYSE American" },
   { value: "LSE", label: "London Stock Exchange" },
 ];
+
+/**
+ * Sector/Industry only ever narrow stock rows — etf/fx rows carry neither
+ * field at all (see equicast_core.catalog.build_catalog_rows and
+ * MarketDataClient.search's docstring) and are excluded whenever either
+ * filter is applied, the same as a stock row missing the field. Values are
+ * yfinance's own `sector`/`industry` strings for the currently configured
+ * stock tickers (see packages/stock/config/*.yaml) — a curated list, same
+ * reasoning as REGION_OPTIONS/EXCHANGE_OPTIONS above; extend it if/when a
+ * ticker in a new sector/industry is added.
+ */
+export const SECTOR_OPTIONS = [
+  { value: "", label: "All sectors" },
+  { value: "Technology", label: "Technology" },
+  { value: "Communication Services", label: "Communication Services" },
+  { value: "Consumer Cyclical", label: "Consumer Cyclical" },
+];
+
+export const INDUSTRY_OPTIONS = [
+  { value: "", label: "All industries" },
+  { value: "Consumer Electronics", label: "Consumer Electronics" },
+  { value: "Software—Infrastructure", label: "Software—Infrastructure" },
+  { value: "Internet Content & Information", label: "Internet Content & Information" },
+  { value: "Internet Retail", label: "Internet Retail" },
+  { value: "Semiconductors", label: "Semiconductors" },
+  { value: "Auto Manufacturers", label: "Auto Manufacturers" },
+];

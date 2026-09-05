@@ -15,6 +15,11 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  *   "NMS"/"PCX"), `null` for fx, which isn't traded on one.
  * @property {string|null} region - stock/etf's short country code (e.g.
  *   "us"/"gb"), `null` for fx, which isn't domiciled anywhere.
+ * @property {string|null} sector - a stock's own sector (e.g.
+ *   "Technology"), `null` for etf (yfinance never populates this for a
+ *   fund) and fx (no such concept for a currency pair).
+ * @property {string|null} industry - a stock's own industry (e.g.
+ *   "Semiconductors"), `null` for etf and fx for the same reason as `sector`.
  */
 
 /**
@@ -36,22 +41,33 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * resolving a currency-pair ticker for FX conversion (`assetClass: "fx"`
  * — see holdings/holdingFinancials.js's resolveFxRate). `assetClass`
  * omitted searches every asset class. `minMarketCap`/`maxMarketCap`
- * (SearchFilters' Market cap range slider), `exchange`, and `region`
- * (SearchFilters' Exchange/Region dropdowns — see
- * pages/search/searchFilterOptions.js for the static UK/US option lists)
- * filter stock/etf rows by `market_cap`/`exchange`/`region` respectively;
- * fx rows always match every one of these regardless (see
- * `MarketDataClient.search`'s docstring for why).
+ * (SearchFilters' Market cap range slider), `exchange`, `region`,
+ * `sector`, and `industry` (SearchFilters' Exchange/Region/Sector/Industry
+ * dropdowns — see pages/search/searchFilterOptions.js for the static
+ * option lists) filter stock/etf rows by `market_cap`/`exchange`/`region`
+ * and stock rows by `sector`/`industry` respectively; fx rows always
+ * match every one of these regardless (see `MarketDataClient.search`'s
+ * docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
  * @returns {Promise<SearchResponse>}
  */
 export function searchTickers(
   api,
   query,
-  { assetClass, page = 1, pageSize = 10, minMarketCap, maxMarketCap, exchange, region } = {}
+  {
+    assetClass,
+    page = 1,
+    pageSize = 10,
+    minMarketCap,
+    maxMarketCap,
+    exchange,
+    region,
+    sector,
+    industry,
+  } = {}
 ) {
   const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) });
   if (assetClass) params.set("asset_class", assetClass);
@@ -59,6 +75,8 @@ export function searchTickers(
   if (maxMarketCap != null) params.set("max_market_cap", String(maxMarketCap));
   if (exchange) params.set("exchange", exchange);
   if (region) params.set("region", region);
+  if (sector) params.set("sector", sector);
+  if (industry) params.set("industry", industry);
   return /** @type {Promise<SearchResponse>} */ (api(`/market/search/?${params.toString()}`));
 }
 
@@ -83,14 +101,10 @@ export function searchTickers(
  * @property {number|null} day_high
  * @property {number|null} day_low
  * @property {number|null} day_close
- * @property {number|null} day_average
  * @property {number|null} year_open
  * @property {number|null} year_high
  * @property {number|null} year_low
  * @property {number|null} year_close
- * @property {number|null} year_average
- * @property {number|null} moving_average_50_days
- * @property {number|null} moving_average_200_days
  * @property {string|null} address
  * @property {string|null} country
  * @property {string|null} region

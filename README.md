@@ -78,15 +78,13 @@ FXClient("GBP", "USD").profile()
 #  "region": "US", "description": "GBP/USD",
 #  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance",
 #  "day_open": 1.3594, "day_high": 1.3598, "day_low": 1.3527,
-#  "day_close": 1.3537, "day_average": 1.3563,
+#  "day_close": 1.3537,
 #  "year_open": 1.3505, "year_high": 1.3847, "year_low": 1.3012,
-#  "year_close": 1.3537, "year_average": 1.3429,
-#  "moving_average_50_days": 1.3417, "moving_average_200_days": 1.3431}
+#  "year_close": 1.3537}
 ```
 
 `day_close` is the live price — FX trades ~24/5, so there's no settled daily
-close. `year_*` uses a trailing 52-week window; `*_average` fields are the
-high/low midpoint, not a mean of daily closes.
+close. `year_*` uses a trailing 52-week window.
 
 ### Prices — daily history
 
@@ -159,10 +157,8 @@ StockClient("AAPL").profile()
 #  "website": "https://www.apple.com", "beta": 1.2, "payout_ratio": 0.15,
 #  "dividend_rate": 1.0, "dividend_yield": 0.005, "market_cap": 3000000000000,
 #  "volume": 50000000, "day_open": 227.5, "day_high": 229.1, "day_low": 226.8,
-#  "day_close": 228.5, "day_average": 227.95, "year_open": 180.0,
+#  "day_close": 228.5, "year_open": 180.0,
 #  "year_high": 260.1, "year_low": 164.08, "year_close": 228.5,
-#  "year_average": 212.09, "moving_average_50_days": 220.45,
-#  "moving_average_200_days": 200.12,
 #  "address": "One Apple Park Way, Cupertino, CA 95014",
 #  "country": "United States", "region": "North America",
 #  "full_time_employees": 164000,
@@ -295,10 +291,9 @@ ETFClient("VOO").profile()
 #  "dividend_rate": None, "dividend_yield": 0.0107,
 #  "total_assets": 1686884319232, "nav_price": 708.98, "volume": 8067208,
 #  "day_open": 709.39, "day_high": 712.6692, "day_low": 706.26,
-#  "day_close": 707.24, "day_average": 709.4646, "year_open": 588.29,
+#  "day_close": 707.24, "year_open": 588.29,
 #  "year_high": 716.39, "year_low": 578.46, "year_close": 707.24,
-#  "year_average": 647.425, "moving_average_50_days": 693.1996,
-#  "moving_average_200_days": 652.7322, "ytd_return": 10.11602,
+#  "ytd_return": 10.11602,
 #  "three_year_average_return": 0.2217858, "five_year_average_return": 0.1294499,
 #  "inception_date": "2010-09-07T00:00:00+00:00",
 #  "last_updated": "2026-08-28T20:00:00+00:00", "source": "yfinance"}

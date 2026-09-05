@@ -111,7 +111,7 @@ function HoldingStatsPanel({ ticker, marketProfile, priceResults }) {
   const fiftyTwoWeeksLow = fiftyTwoWeeks.sufficient ? fiftyTwoWeeks.low : marketProfile?.year_low;
   const placeholders = buildPlaceholderMetrics(ticker);
   const currency = marketProfile?.currency;
-  const currentPrice = marketProfile?.day_close ?? marketProfile?.day_average ?? null;
+  const currentPrice = marketProfile?.day_close ?? null;
 
   const dayHigh = marketProfile?.day_high;
   const dayLow = marketProfile?.day_low;
