@@ -1,0 +1,7 @@
+.ec-asset-icon {
+  display: block;
+  flex-shrink: 0;
+  border-radius: var(--ec-r-6);
+  background: var(--ec-surface-2);
+  object-fit: contain;
+}

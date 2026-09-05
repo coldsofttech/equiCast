@@ -45,17 +45,6 @@
   background: var(--ec-surface-hover);
 }
 
-/** For a table whose rows aren't clickable (e.g. SearchPage's results,
- * until row actions exist) — drops the pointer cursor/hover cue so a
- * static row doesn't look interactive. */
-.ec-table--static tbody tr {
-  cursor: default;
-}
-
-.ec-table--static tbody tr:hover {
-  background: none;
-}
-
 .ec-table-name {
   font-weight: 600;
   color: var(--ec-text);

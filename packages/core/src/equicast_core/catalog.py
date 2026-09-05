@@ -47,8 +47,10 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     uniformly across stock/etf profiles carrying a `ticker` field and fx
     profiles which don't — see equicast_fx.writer), `name` (`name` for
     stock/etf, `description` for fx — same "no literal name field" reason),
-    `type` (`asset_class`), and `current_price` (`day_close`, the same
-    field all three pipelines' profile() methods already compute).
+    `type` (`asset_class`), `current_price` (`day_close`, the same field
+    all three pipelines' profile() methods already compute), and `website`
+    (`None` for fx profiles, which carry no such field — a currency pair
+    has no issuer site to link/show a favicon for).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -63,6 +65,7 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "name": profile.get("name") or profile.get("description"),
                 "type": asset_class.lower(),
                 "current_price": profile.get("day_close"),
+                "website": profile.get("website"),
             }
         )
     return rows

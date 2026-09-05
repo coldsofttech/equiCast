@@ -36,20 +36,45 @@ def test_catalog_key_is_lowercased_and_namespaced() -> None:
 class TestBuildCatalogRows:
     def test_builds_one_row_per_ticker_stock_shape(self, tmp_path: Path) -> None:
         _write_profile(
-            tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc.", "day_close": 227.5}
+            tmp_path,
+            "stock",
+            "AAPL",
+            {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "day_close": 227.5,
+                "website": "https://www.apple.com",
+            },
         )
         _write_profile(
             tmp_path,
             "stock",
             "MSFT",
-            {"ticker": "MSFT", "name": "Microsoft Corp", "day_close": 410.1},
+            {
+                "ticker": "MSFT",
+                "name": "Microsoft Corp",
+                "day_close": 410.1,
+                "website": "https://www.microsoft.com",
+            },
         )
 
         rows = build_catalog_rows(tmp_path, "stock")
 
         assert rows == [
-            {"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5},
-            {"ticker": "MSFT", "name": "Microsoft Corp", "type": "stock", "current_price": 410.1},
+            {
+                "ticker": "AAPL",
+                "name": "Apple Inc.",
+                "type": "stock",
+                "current_price": 227.5,
+                "website": "https://www.apple.com",
+            },
+            {
+                "ticker": "MSFT",
+                "name": "Microsoft Corp",
+                "type": "stock",
+                "current_price": 410.1,
+                "website": "https://www.microsoft.com",
+            },
         ]
 
     def test_derives_ticker_from_directory_name_for_fx_shape(self, tmp_path: Path) -> None:
@@ -73,6 +98,7 @@ class TestBuildCatalogRows:
                 "name": "British Pound to US Dollar",
                 "type": "fx",
                 "current_price": 1.27,
+                "website": None,
             }
         ]
 
@@ -136,6 +162,12 @@ def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypat
     response = s3_client.get_object(Bucket=BUCKET, Key="catalog/etf.json")
     assert json.loads(response["Body"].read()) == {
         "tickers": [
-            {"ticker": "VOO", "name": "Vanguard S&P 500", "type": "etf", "current_price": 624.5}
+            {
+                "ticker": "VOO",
+                "name": "Vanguard S&P 500",
+                "type": "etf",
+                "current_price": 624.5,
+                "website": None,
+            }
         ]
     }

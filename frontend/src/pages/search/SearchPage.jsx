@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import Alert from "../../components/core/Alert.jsx";
-import Badge from "../../components/core/Badge.jsx";
+import AssetTypeBadge from "../../components/core/AssetTypeBadge.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import SearchFilters from "./SearchFilters.jsx";
@@ -20,9 +21,11 @@ const PAGE_SIZE = 25;
  * SearchFilters.jsx for why Region/Exchange/Market cap are placeholders.
  * Both live in the URL (not just component state) so a search is
  * shareable/bookmarkable and survives a refresh. Clicking a result row
- * does nothing yet — that's a later phase.
+ * goes to its holding detail page (HoldingTickerPage handles a ticker the
+ * user doesn't actually hold with its own "No holdings of X" state).
  */
 function SearchPage() {
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const query = searchParams.get("q") ?? "";
   const type = searchParams.get("type") ?? "";
@@ -117,7 +120,7 @@ function SearchPage() {
             {count} match{count === 1 ? "" : "es"}
           </p>
           <div className="ec-table-wrap">
-            <table className="ec-table ec-table--static">
+            <table className="ec-table">
               <thead>
                 <tr>
                   <th>Ticker</th>
@@ -128,11 +131,21 @@ function SearchPage() {
               </thead>
               <tbody>
                 {results.map((result) => (
-                  <tr key={`${result.type}:${result.ticker}`}>
-                    <td className="ec-table-name">{result.ticker}</td>
+                  <tr
+                    key={`${result.type}:${result.ticker}`}
+                    onClick={() =>
+                      navigate(`/holdings/${result.ticker}`, { state: { assetClass: result.type } })
+                    }
+                  >
+                    <td className="ec-table-name">
+                      <span className="ec-search-result-ticker">
+                        <AssetIcon website={result.website} size={20} />
+                        {result.ticker}
+                      </span>
+                    </td>
                     <td>{result.name}</td>
                     <td>
-                      <Badge tone="neutral">{result.type}</Badge>
+                      <AssetTypeBadge type={result.type} />
                     </td>
                     <td>{result.current_price != null ? result.current_price.toFixed(2) : "—"}</td>
                   </tr>

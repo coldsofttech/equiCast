@@ -6,6 +6,7 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * @property {string} name
  * @property {"stock"|"etf"|"fx"} type
  * @property {number|null} current_price
+ * @property {string|null} website
  */
 
 /**

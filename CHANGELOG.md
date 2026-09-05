@@ -120,8 +120,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `frontend_bucket`/CloudFront distribution), that URL can be set as the
   `equiCast Web` Application's logo in the Auth0 dashboard.
 
+- Topbar ticker search (`frontend/src/components/shell/TopbarSearch.jsx`):
+  Enter now opens a preview dropdown of up to 7 matches (ticker, name, type,
+  favicon-style icon) instead of navigating straight to `/search?q=...` —
+  a "More results" row (showing the total match count once it exceeds the
+  preview) is now the only thing that does. `SearchPage.jsx`'s results
+  table gained the same icon next to each ticker, and its rows are now
+  clickable, navigating to `/holdings/:ticker` (passing the result's asset
+  class via router state so `HoldingTickerPage` doesn't need a second
+  lookup — see below). New shared
+  `frontend/src/components/core/AssetIcon.jsx` (a market instrument's
+  favicon, resolved from its `website` via the existing `websiteIconUrl`
+  util; renders nothing when there's none, e.g. fx pairs, so callers don't
+  need to guard around it; `size` controls both the rendered dimensions and
+  the resolution requested from the favicon service) and
+  `AssetTypeBadge.jsx` (spells "stock"/"etf"/"fx" out as "Stock"/"ETF"/"FX"
+  with `success`/`purple`/`warning` tones, kept distinct from
+  `MARKET_PROFILE_BADGE_TONES`'s exchange/quote-type/synced badges) replace
+  the ad hoc `<Badge tone="neutral">{result.type}</Badge>` and
+  per-page `websiteIconUrl`/`<img>` handling previously duplicated across
+  TopbarSearch, `TickerSearchField.jsx`, `SearchPage.jsx`, and
+  `HoldingTickerPage.jsx`'s title icon. `equicast_core.catalog.
+  build_catalog_rows` now includes each row's `website` (already written to
+  `profile.parquet` by the stock/etf pipelines — the etf one via its
+  fund-family issuer-website mapping; `None` for fx, which has none), so
+  AssetIcon has something to resolve for search results, not just an
+  already-fetched market profile.
+
+  `HoldingTickerPage` (`/holdings/:ticker`) no longer requires the
+  signed-in user to actually hold a ticker to show its market profile,
+  price chart, stats panel and About section — a ticker not held anywhere
+  resolves its asset class from `SearchPage`'s router state, or one
+  `searchTickers` lookup as a fallback (a direct link, refresh, or shared
+  URL), and renders the same page minus the Total invested/Profit-Loss
+  stat tiles and Owned shares table (both need real holdings to compute),
+  plus an info banner noting the ticker isn't held. A ticker that doesn't
+  resolve to a real catalog entry at all now shows a distinct
+  "`{ticker}` not found" empty state, replacing the previous
+  "No holdings of X" message for that case.
+
 ### Changed
 
+- `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
+  the pointer cursor/hover cue for a table with no row actions) removed
+  now that `SearchPage`'s rows — its only user — are clickable.
+- `data/` (the local Parquet/dev-data cache — see `docs/local-setup.md`) is
+  no longer partially tracked: removed the placeholder `data/.gitkeep` and
+  collapsed `.gitignore`'s two piecemeal `data/*.parquet`/
+  `data/localstack-seed/` entries into one `data/` rule. Nothing needs the
+  directory to exist via git — `scripts/local-dev.ps1` and the ingestion
+  CLIs already create it on demand.
 - `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
   now decodes a stock profile's `ceos` field back into a real list before
   returning it. `equicast_stock.writer.write_profile_parquet` deliberately

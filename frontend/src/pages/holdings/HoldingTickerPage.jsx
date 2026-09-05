@@ -9,6 +9,7 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
 import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
@@ -16,13 +17,12 @@ import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getProfile, getPrices, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import { getProfile, getPrices, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { TICKER_NAMES, formatCurrency, plTone } from "../sampleFinancials.js";
 import { deriveInstanceFinancials, resolveFxRate, rollupInstances } from "./holdingFinancials.js";
-import { websiteIconUrl } from "../../utils/websiteIcon.js";
 import "./HoldingTickerPage.css";
 
 /** formatCurrency requires a currency code — this page's totals are real,
@@ -60,7 +60,14 @@ function formatSyncedDate(isoDatetime) {
  * Reached by ticker, not holding id — the same ticker can be a separate
  * holding record directly in an account and/or inside one or more pies
  * (see the `instances` memo below), so this page aggregates every one of
- * them rather than assuming just one.
+ * them rather than assuming just one. A ticker the user doesn't hold
+ * anywhere still shows its market profile/chart/about section (just
+ * without the Total invested/P&L stats or Owned shares table, which need
+ * real holdings to compute) — SearchPage links every result here, held or
+ * not, and getProfile/getPrices need an asset class no owned instance
+ * supplies in that case, so it's resolved from SearchPage's router state
+ * when available, falling back to one searchTickers lookup otherwise (a
+ * direct link, refresh, or share of the URL).
  */
 function HoldingTickerPage() {
   const { ticker } = useParams();
@@ -132,15 +139,57 @@ function HoldingTickerPage() {
     return [...seen.values()];
   }, [accounts, ticker]);
 
+  const isOwned = instances.length > 0;
+
+  // Only needed when the ticker isn't held anywhere — an owned instance
+  // already carries its asset class. `location.state?.assetClass` (set by
+  // SearchPage's row click) skips the extra lookup for that flow; anything
+  // else (a direct link, a refresh) falls back to one searchTickers call.
+  const [resolvedAssetClass, setResolvedAssetClass] = useState(null);
+  const [assetClassStatus, setAssetClassStatus] = useState("idle");
+
   useEffect(() => {
-    if (instances.length === 0) {
+    if (isOwned) return undefined;
+
+    const stateAssetClass = location.state?.assetClass;
+    if (stateAssetClass) {
+      setResolvedAssetClass(stateAssetClass);
+      setAssetClassStatus("resolved");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setAssetClassStatus("loading");
+    setResolvedAssetClass(null);
+    searchTickers(api, ticker, { pageSize: 5 })
+      .then((response) => {
+        if (cancelled) return;
+        const match = response.results.find(
+          (result) => result.ticker.toUpperCase() === ticker.toUpperCase()
+        );
+        setResolvedAssetClass(match ? match.type : null);
+        setAssetClassStatus(match ? "resolved" : "not-found");
+      })
+      .catch(() => {
+        if (!cancelled) setAssetClassStatus("not-found");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, ticker, isOwned, location.state]);
+
+  const assetClass = isOwned ? instances[0].holding.asset_class : resolvedAssetClass;
+  const notFound = !isOwned && assetClassStatus === "not-found";
+  const isResolvingAssetClass = !isOwned && (assetClassStatus === "idle" || assetClassStatus === "loading");
+
+  useEffect(() => {
+    if (!assetClass) {
       setIsDataLoading(false);
       return undefined;
     }
 
     let cancelled = false;
     setIsDataLoading(true);
-    const assetClass = instances[0].holding.asset_class;
 
     const profilePromise = getProfile(api, assetClass, ticker)
       .then((profile) => ({ status: "ok", profile }))
@@ -153,13 +202,15 @@ function HoldingTickerPage() {
       .then((res) => res.prices)
       .catch(() => null);
 
-    const transactionsPromise = Promise.all(
-      instances.map((instance) =>
-        listTransactions(api, { holdingId: instance.holding.id })
-          .then((transactions) => ({ holdingId: instance.holding.id, transactions, error: false }))
-          .catch(() => ({ holdingId: instance.holding.id, transactions: [], error: true }))
-      )
-    );
+    const transactionsPromise = isOwned
+      ? Promise.all(
+          instances.map((instance) =>
+            listTransactions(api, { holdingId: instance.holding.id })
+              .then((transactions) => ({ holdingId: instance.holding.id, transactions, error: false }))
+              .catch(() => ({ holdingId: instance.holding.id, transactions: [], error: true }))
+          )
+        )
+      : Promise.resolve([]);
 
     Promise.all([profilePromise, pricesPromise, transactionsPromise]).then(
       ([profileResult, prices, transactionsResults]) => {
@@ -177,7 +228,7 @@ function HoldingTickerPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, ticker, instances]);
+  }, [api, ticker, assetClass, isOwned, instances]);
 
   useEffect(() => {
     if (!marketProfile || !userProfile) return undefined;
@@ -219,7 +270,6 @@ function HoldingTickerPage() {
   };
 
   const name = TICKER_NAMES[ticker];
-  const iconUrl = websiteIconUrl(marketProfile?.website);
 
   // Only known when this page was reached via a row click from
   // AccountDetailPage/PieDetailPage (they pass it as router state) — a
@@ -239,7 +289,7 @@ function HoldingTickerPage() {
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
-      titleIcon={iconUrl && <img src={iconUrl} alt="" />}
+      titleIcon={<AssetIcon website={marketProfile?.website} size={32} />}
       titleBadges={
         marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
           <>
@@ -273,70 +323,82 @@ function HoldingTickerPage() {
       {isLoading && <p className="ec-loading">Loading…</p>}
       {error && <Alert tone="danger">{error}</Alert>}
 
-      {!isLoading && !error && instances.length === 0 && (
+      {!isLoading && !error && notFound && (
         <EmptyState
-          title={`No holdings of ${ticker}`}
-          description="This ticker isn't held directly or inside a pie in any of your accounts."
+          title={`${ticker} not found`}
+          description="This isn't a ticker we recognize, and you don't hold it in any account or pie."
         />
       )}
 
-      {!isLoading && !error && instances.length > 0 && isDataLoading && (
+      {!isLoading && !error && !notFound && (isResolvingAssetClass || isDataLoading) && (
         <p className="ec-loading">Loading…</p>
       )}
 
-      {!isLoading && !error && instances.length > 0 && !isDataLoading && (
+      {!isLoading && !error && !notFound && !isResolvingAssetClass && !isDataLoading && (
         <>
-          {marketProfileStatus === "missing" && (
-            <Alert tone="info">
-              No real market data is published for {ticker} yet — showing what&rsquo;s available
-              from your recorded transactions only.
-            </Alert>
+          {marketProfileStatus === "missing" ? (
+            <div className="ec-holding-notice">
+              <Alert tone="info">
+                No real market data is published for {ticker} yet
+                {isOwned ? " — showing what’s available from your recorded transactions only." : "."}
+              </Alert>
+            </div>
+          ) : (
+            !isOwned && (
+              <div className="ec-holding-notice">
+                <Alert tone="info">You don&rsquo;t currently hold {ticker} in any account or pie.</Alert>
+              </div>
+            )
           )}
 
           {(() => {
-            const instanceFinancials = instances.map((instance) => {
-              const entry = transactionsByHolding[instance.holding.id];
-              if (!entry || entry.error) {
-                return { ...instance, shares: 0, avgPriceNative: null, invested: 0, transactionsError: Boolean(entry?.error) };
-              }
-              const financials = deriveInstanceFinancials(entry.transactions, instance.transactionType);
-              return { ...instance, ...financials, transactionsError: false };
-            });
-
             const nativeCurrency = marketProfile?.currency ?? null;
             const defaultCurrency = userProfile?.default_currency ?? null;
-            const assetClass = instances[0].holding.asset_class;
             const currentPriceNative = marketProfile?.day_close ?? marketProfile?.day_average ?? null;
-            const totals = rollupInstances(instanceFinancials, currentPriceNative);
-            const totalsTone = plTone(totals.plPct ?? 0);
-            const avgPriceNative = totals.shares > 0 ? totals.invested / totals.shares : null;
 
-            // Total invested/Profit-loss are shown in the user's own default
-            // currency (fxRate converts nativeCurrency -> defaultCurrency —
-            // see resolveFxRate), not the holding's native currency: a GBP
-            // account holding a USD stock should read in GBP here, same
-            // reasoning as HoldingInstancesTable's own default-currency
-            // column. Profit/loss % needs no conversion, being currency-free.
-            // When there's no market profile at all (marketProfileStatus ===
-            // "missing"), nativeCurrency is null, so there's nothing to
-            // convert from/to — shown as a plain currency-less number
-            // instead of blocking forever on an fx lookup the page never
-            // even attempts in that case (see the fxRate effect above).
-            const totalsLoading = nativeCurrency != null && fxState === "loading";
-            const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
-            const investedDefault =
-              nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
-            const plValueDefault =
-              totals.plValue == null
-                ? null
-                : nativeCurrency == null
-                  ? totals.plValue
-                  : fxRate != null
-                    ? totals.plValue * fxRate
-                    : null;
+            let avgPriceNative = null;
+            let statGrid = null;
+            let ownedSharesSection = null;
 
-            return (
-              <>
+            if (isOwned) {
+              const instanceFinancials = instances.map((instance) => {
+                const entry = transactionsByHolding[instance.holding.id];
+                if (!entry || entry.error) {
+                  return { ...instance, shares: 0, avgPriceNative: null, invested: 0, transactionsError: Boolean(entry?.error) };
+                }
+                const financials = deriveInstanceFinancials(entry.transactions, instance.transactionType);
+                return { ...instance, ...financials, transactionsError: false };
+              });
+
+              const totals = rollupInstances(instanceFinancials, currentPriceNative);
+              const totalsTone = plTone(totals.plPct ?? 0);
+              avgPriceNative = totals.shares > 0 ? totals.invested / totals.shares : null;
+
+              // Total invested/Profit-loss are shown in the user's own default
+              // currency (fxRate converts nativeCurrency -> defaultCurrency —
+              // see resolveFxRate), not the holding's native currency: a GBP
+              // account holding a USD stock should read in GBP here, same
+              // reasoning as HoldingInstancesTable's own default-currency
+              // column. Profit/loss % needs no conversion, being currency-free.
+              // When there's no market profile at all (marketProfileStatus ===
+              // "missing"), nativeCurrency is null, so there's nothing to
+              // convert from/to — shown as a plain currency-less number
+              // instead of blocking forever on an fx lookup the page never
+              // even attempts in that case (see the fxRate effect above).
+              const totalsLoading = nativeCurrency != null && fxState === "loading";
+              const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
+              const investedDefault =
+                nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
+              const plValueDefault =
+                totals.plValue == null
+                  ? null
+                  : nativeCurrency == null
+                    ? totals.plValue
+                    : fxRate != null
+                      ? totals.plValue * fxRate
+                      : null;
+
+              statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
                     label="Total invested"
@@ -368,7 +430,29 @@ function HoldingTickerPage() {
                     hint="Real data"
                   />
                 </div>
+              );
 
+              ownedSharesSection = (
+                <>
+                  <div className="ec-section-head">
+                    <h2 className="ec-section-title">Owned shares</h2>
+                  </div>
+                  <HoldingInstancesTable
+                    instances={instanceFinancials}
+                    nativeCurrency={nativeCurrency}
+                    defaultCurrency={defaultCurrency}
+                    fxRate={fxRate}
+                    fxState={fxState}
+                    onDelete={setDeletingInstance}
+                    onRowClick={(instance) => navigate(instance.destination)}
+                  />
+                </>
+              );
+            }
+
+            return (
+              <>
+                {statGrid}
                 <HoldingPriceChart
                   assetClass={assetClass}
                   ticker={ticker}
@@ -376,19 +460,7 @@ function HoldingTickerPage() {
                   holdings={otherHoldings}
                   avgPrice={avgPriceNative}
                 />
-
-                <div className="ec-section-head">
-                  <h2 className="ec-section-title">Owned shares</h2>
-                </div>
-                <HoldingInstancesTable
-                  instances={instanceFinancials}
-                  nativeCurrency={nativeCurrency}
-                  defaultCurrency={defaultCurrency}
-                  fxRate={fxRate}
-                  fxState={fxState}
-                  onDelete={setDeletingInstance}
-                  onRowClick={(instance) => navigate(instance.destination)}
-                />
+                {ownedSharesSection}
               </>
             );
           })()}

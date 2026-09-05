@@ -260,8 +260,8 @@ class MarketDataClient:
         }
 
     def get_catalog(self, asset_class: str) -> list[dict[str, Any]]:
-        """Return every `{ticker, name, type, current_price}` row this
-        asset class's ingestion pipeline last published (see
+        """Return every `{ticker, name, type, current_price, website}` row
+        this asset class's ingestion pipeline last published (see
         `equicast_core.catalog`), or `[]` if no catalog has been uploaded
         yet for it."""
         try:

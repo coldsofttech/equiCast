@@ -1,3 +1,8 @@
+.ec-topbar-search-wrap {
+  position: relative;
+  margin-right: var(--ec-s-4);
+}
+
 .ec-topbar-search {
   display: flex;
   align-items: center;
@@ -9,7 +14,6 @@
   background: var(--ec-surface-2);
   color: var(--ec-text-subtle);
   width: 200px;
-  margin-right: var(--ec-s-4);
 }
 
 .ec-topbar-search i {
@@ -36,4 +40,85 @@
   .ec-topbar-search {
     width: 140px;
   }
+}
+
+.ec-topbar-search-panel {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + var(--ec-s-8));
+  left: 0;
+  width: 320px;
+  padding: var(--ec-s-6);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+  box-shadow: var(--ec-shadow-lg);
+}
+
+.ec-topbar-search-status {
+  margin: 0;
+  padding: var(--ec-s-8);
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-13);
+}
+
+.ec-topbar-search-status--error {
+  color: var(--ec-danger-soft-text);
+}
+
+.ec-topbar-search-results {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.ec-topbar-search-result {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-8);
+  border-radius: var(--ec-r-6);
+}
+
+.ec-topbar-search-results li:hover .ec-topbar-search-result {
+  background: var(--ec-surface-hover);
+}
+
+.ec-topbar-search-result-ticker {
+  font-family: var(--ec-font-mono);
+  font-weight: 700;
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text);
+}
+
+.ec-topbar-search-result-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-topbar-search-more {
+  display: block;
+  width: 100%;
+  margin-top: var(--ec-s-4);
+  padding: var(--ec-s-8);
+  border: 0;
+  border-top: 1px solid var(--ec-divider);
+  border-radius: var(--ec-r-6);
+  background: none;
+  color: var(--ec-accent);
+  font-weight: 600;
+  font-size: var(--ec-fs-13);
+  text-align: center;
+  cursor: pointer;
+}
+
+.ec-topbar-search-more:hover {
+  background: var(--ec-surface-hover);
 }

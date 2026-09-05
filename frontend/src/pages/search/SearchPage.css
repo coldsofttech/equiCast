@@ -9,3 +9,9 @@
   justify-content: center;
   margin-top: var(--ec-s-16);
 }
+
+.ec-search-result-ticker {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+}

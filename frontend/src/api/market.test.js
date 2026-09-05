@@ -39,7 +39,7 @@ describe("market api", () => {
 
     await searchTickers(api, "usdgbp", { assetClass: "fx" });
 
-    expect(api).toHaveBeenCalledWith("/market/search/?q=usdgbp&page_size=10&asset_class=fx");
+    expect(api).toHaveBeenCalledWith("/market/search/?q=usdgbp&page=1&page_size=10&asset_class=fx");
   });
 
   it("fetches a symbol's profile", async () => {
