@@ -99,9 +99,13 @@ class SearchView(APIView):
             min_market_cap = _parse_market_cap(request.query_params.get("min_market_cap"))
             max_market_cap = _parse_market_cap(request.query_params.get("max_market_cap"))
         except ValueError:
-            return Response({"detail": "min_market_cap/max_market_cap must be numbers."}, status=400)
+            return Response(
+                {"detail": "min_market_cap/max_market_cap must be numbers."}, status=400
+            )
         if None not in (min_market_cap, max_market_cap) and min_market_cap > max_market_cap:
-            return Response({"detail": "min_market_cap must not exceed max_market_cap."}, status=400)
+            return Response(
+                {"detail": "min_market_cap must not exceed max_market_cap."}, status=400
+            )
 
         exchange = request.query_params.get("exchange")
         region = request.query_params.get("region")
