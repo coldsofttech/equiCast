@@ -66,9 +66,11 @@ function UserMenu({ profile, onProfileUpdate }) {
   const showImage = Boolean(user?.picture) && !imgFailed;
 
   const handleSignOut = () => {
-    // sessionStorage survives the Auth0 logout/login redirect round trip
-    // (same tab), so clear it here rather than leaving a stale profile/
-    // accounts cache for whoever signs in next on this tab.
+    // Both caches survive the Auth0 logout/login redirect round trip (the
+    // profile's sessionStorage survives it same-tab; accounts' IndexedDB
+    // survives it — and a browser restart — on any tab), so clear them here
+    // rather than leaving a stale profile/accounts cache for whoever signs
+    // in next.
     clearCachedProfile();
     clearCachedAccounts();
     logout({ logoutParams: { returnTo: window.location.origin } });
