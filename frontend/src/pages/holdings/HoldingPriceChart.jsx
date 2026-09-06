@@ -4,18 +4,9 @@ import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
 import { seededRandom } from "../../utils/deterministicRandom.js";
 import { formatPrice } from "./holdingFinancials.js";
+import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
 import "./HoldingPriceChart.css";
-
-/** Same benchmark list PriceChart.jsx offers — duplicated rather than
- * imported/exported since it's a tiny, purely-illustrative constant (real
- * benchmark data is a later phase, same disclaimer as the account/pie
- * chart's compare overlay). */
-const BENCHMARKS = [
-  { id: "sp500", name: "S&P 500" },
-  { id: "nasdaq100", name: "NASDAQ 100" },
-  { id: "ftse100", name: "FTSE 100" },
-];
 
 /** Every range this picker offers (see market.js's PRICE_RANGES for the
  * full set the backend accepts) — "1d" is deliberately omitted: only
@@ -88,9 +79,13 @@ const X_AXIS_MAX_TICKS = 6;
  * tooltip and "compare against" overlay as accounts/PriceChart.jsx, but its
  * own subject series (`ticker`) is real data from GET .../prices/ (range
  * picker wired straight to the backend's `?range=`), not a synthetic random
- * walk. The compare overlay (other holdings/benchmarks) stays synthetic —
- * real multi-series comparison is a later phase — so it's built the same
- * way PriceChart.jsx's is, just resized to this chart's real bar count.
+ * walk. A ticker comparison (picked via HoldingComparePicker, which can
+ * search any stock/ETF in the app's catalog, not just something the caller
+ * already holds) is real too — its own GET .../prices/ call for the same
+ * range, rebased to this ticker's starting close and date-aligned against
+ * `bars` (see the compareCloses memo for why) so both plot on one shared
+ * price-scale y-axis. Only a benchmark comparison (S&P 500 etc.) stays a
+ * synthetic random walk — there's no real index data source wired up yet.
  *
  * Unlike PriceChart.jsx, this owns its own data fetching (re-fetching
  * whenever `rangeId` changes) rather than receiving pre-built bars as
@@ -105,13 +100,13 @@ const X_AXIS_MAX_TICKS = 6;
  * short "5d" window whose price band sits well above/below where the
  * ticker was originally bought).
  *
- * @param {{ assetClass: string, ticker: string, currency: string|null, holdings?: {id: string, name: string}[], avgPrice?: number|null }} props
+ * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null }} props
  */
-function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPrice = null }) {
+function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   const api = useApi();
   const [chartType, setChartType] = useState("line");
   const [rangeId, setRangeId] = useState("max");
-  const [compareId, setCompareId] = useState("");
+  const [compare, setCompare] = useState({ id: "", label: null, ticker: null, assetClass: null });
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
 
@@ -140,18 +135,68 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
   const bars = useMemo(() => series?.prices ?? [], [series]);
   const seriesCurrency = series?.currency ?? currency ?? null;
 
-  const compareLabel = useMemo(() => {
-    if (!compareId) return null;
-    if (compareId.startsWith("holding:")) {
-      return holdings.find((h) => `holding:${h.id}` === compareId)?.name ?? null;
-    }
-    return BENCHMARKS.find((b) => `benchmark:${b.id}` === compareId)?.name ?? null;
-  }, [compareId, holdings]);
+  // A ticker comparison (compare.ticker set) fetches that ticker's own real
+  // prices for the same range; a benchmark comparison (compare.id set,
+  // compare.ticker null) has no real series to fetch yet, so it's skipped
+  // here and stays synthetic below.
+  const [compareSeries, setCompareSeries] = useState(null);
+  const [compareStatus, setCompareStatus] = useState("idle");
 
-  const compareCloses = useMemo(
-    () => (compareId && bars.length > 0 ? buildCompareCloses(bars.length, `${compareId}:${ticker}:${rangeId}`) : null),
-    [compareId, bars.length, ticker, rangeId]
-  );
+  useEffect(() => {
+    if (!compare.ticker || !compare.assetClass) {
+      setCompareSeries(null);
+      setCompareStatus("idle");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCompareStatus("loading");
+    getPrices(api, compare.assetClass, compare.ticker, { range: rangeId })
+      .then((result) => {
+        if (cancelled) return;
+        setCompareSeries(result);
+        setCompareStatus(result.prices.length > 0 ? "ok" : "empty");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCompareStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, compare.ticker, compare.assetClass, rangeId]);
+
+  const compareBars = useMemo(() => compareSeries?.prices ?? [], [compareSeries]);
+
+  // Real comparisons are rebased to the main series' own starting close
+  // (rather than a fixed index like 100) so both lines share this chart's
+  // single price-scale y-axis and start together — the ratio-based rebase
+  // (compareClose / compareFirstClose * mainFirstClose) makes the overlay
+  // meaningful even when the two tickers trade in different currencies,
+  // since only relative movement carries over, not absolute price levels.
+  // The two series are date-aligned (not just zipped by index) since
+  // different tickers/exchanges don't always share the same trading
+  // calendar — a compare date missing from the main series' bars forward-
+  // fills from the last known compare close, same idea as a real trading
+  // desk holding a stale price over a market holiday.
+  const compareCloses = useMemo(() => {
+    if (!compare.id || bars.length === 0) return null;
+
+    if (!compare.ticker) {
+      return buildCompareCloses(bars.length, `${compare.id}:${ticker}:${rangeId}`);
+    }
+
+    if (compareStatus !== "ok" || compareBars.length === 0) return null;
+    const closeByDate = new Map(compareBars.map((b) => [b.date, b.close]));
+    let lastKnown = compareBars[0].close;
+    const rawCloses = bars.map((b) => {
+      if (closeByDate.has(b.date)) lastKnown = closeByDate.get(b.date);
+      return lastKnown;
+    });
+    const firstCompare = rawCloses[0];
+    const firstMain = bars[0].close;
+    return rawCloses.map((c) => (c / firstCompare) * firstMain);
+  }, [compare.id, compare.ticker, compareStatus, compareBars, bars, ticker, rangeId]);
 
   const { min, max } = useMemo(() => {
     if (bars.length === 0) return { min: 0, max: 1 };
@@ -228,30 +273,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
           ))}
         </div>
 
-        <select
-          className="ec-pchart-compare"
-          value={compareId}
-          onChange={(event) => setCompareId(event.target.value)}
-          aria-label="Compare against"
-        >
-          <option value="">Compare against…</option>
-          {holdings.length > 0 && (
-            <optgroup label="Other holdings">
-              {holdings.map((holding) => (
-                <option key={holding.id} value={`holding:${holding.id}`}>
-                  {holding.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          <optgroup label="Benchmarks">
-            {BENCHMARKS.map((benchmark) => (
-              <option key={benchmark.id} value={`benchmark:${benchmark.id}`}>
-                {benchmark.name}
-              </option>
-            ))}
-          </optgroup>
-        </select>
+        <HoldingComparePicker
+          currentTicker={ticker}
+          compareId={compare.id}
+          compareLabel={compare.label}
+          onSelect={({ compareId, label, ticker: compareTicker, assetClass: compareAssetClass }) =>
+            setCompare({ id: compareId, label, ticker: compareTicker, assetClass: compareAssetClass })
+          }
+          onClear={() => setCompare({ id: "", label: null, ticker: null, assetClass: null })}
+        />
       </div>
 
       <div className="ec-pchart-ranges" role="group" aria-label="Date range">
@@ -285,10 +315,10 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
                 </span>
               )}
             </span>
-            {compareLabel && compareChangePct !== null && (
+            {compare.label && compareChangePct !== null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-dot ec-pchart-dot--compare" aria-hidden="true" />
-                {compareLabel}
+                {compare.label}
                 <span className={`ec-chart-change${compareChangePct >= 0 ? " is-up" : " is-down"}`}>
                   {compareChangePct >= 0 ? "▲" : "▼"} {Math.abs(compareChangePct).toFixed(1)}%
                 </span>
@@ -394,10 +424,18 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
             </div>
           )}
 
-          {compareLabel && (
+          {compare.label && !compare.ticker && (
             <p className="ec-chart-caption">
-              {compareLabel}&rsquo;s comparison line is illustrative sample data — real
-              multi-series comparison is a later phase.
+              {compare.label}&rsquo;s comparison line is illustrative sample data — real
+              benchmark data is a later phase.
+            </p>
+          )}
+          {compare.ticker && compareStatus === "loading" && (
+            <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
+          )}
+          {compare.ticker && (compareStatus === "error" || compareStatus === "empty") && (
+            <p className="ec-chart-caption">
+              No price history published for {compare.ticker} for this range yet.
             </p>
           )}
         </>

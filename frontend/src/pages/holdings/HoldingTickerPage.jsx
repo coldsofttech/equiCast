@@ -128,25 +128,6 @@ function HoldingTickerPage() {
     return list;
   }, [accounts, ticker]);
 
-  const otherHoldings = useMemo(() => {
-    const seen = new Map();
-    const addAll = (holdings) => {
-      for (const holding of holdings) {
-        if (holding.ticker !== ticker && !seen.has(holding.ticker)) {
-          seen.set(holding.ticker, {
-            id: holding.ticker,
-            name: TICKER_NAMES[holding.ticker] ?? holding.ticker,
-          });
-        }
-      }
-    };
-    for (const account of accounts) {
-      addAll(account.holdings ?? []);
-      for (const pie of account.pies ?? []) addAll(pie.holdings ?? []);
-    }
-    return [...seen.values()];
-  }, [accounts, ticker]);
-
   const isOwned = instances.length > 0;
 
   // Only needed when the ticker isn't held anywhere — an owned instance
@@ -294,7 +275,7 @@ function HoldingTickerPage() {
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
-      titleIcon={<AssetIcon website={marketProfile?.website} size={32} />}
+      titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
       titleBadges={
         marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
           <>
@@ -462,7 +443,6 @@ function HoldingTickerPage() {
                   assetClass={assetClass}
                   ticker={ticker}
                   currency={nativeCurrency}
-                  holdings={otherHoldings}
                   avgPrice={avgPriceNative}
                 />
                 {ownedSharesSection}
