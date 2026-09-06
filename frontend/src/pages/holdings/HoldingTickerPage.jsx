@@ -7,6 +7,7 @@ import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
+import Modal from "../../components/core/Modal.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
@@ -133,6 +134,7 @@ function HoldingTickerPage() {
   const [deletingInstance, setDeletingInstance] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [pieDeleteNotice, setPieDeleteNotice] = useState(null);
 
   const instances = useMemo(() => {
     const list = [];
@@ -143,6 +145,7 @@ function HoldingTickerPage() {
           holding,
           location: account.name,
           destination: `/accounts/${account.id}`,
+          isPieHolding: false,
         });
       }
       for (const pie of account.pies ?? []) {
@@ -152,6 +155,7 @@ function HoldingTickerPage() {
             holding,
             location: `${account.name} / ${pie.name}`,
             destination: `/accounts/${account.id}/pies/${pie.id}`,
+            isPieHolding: true,
           });
         }
       }
@@ -297,6 +301,24 @@ function HoldingTickerPage() {
         })),
       }))
     );
+  };
+
+  // Pie-scoped holdings reject DELETE /api/holdings/<id>/ outright (see
+  // backend/holdings/views.py — "Pie-scoped holdings are removed via PUT
+  // /api/pies/<id>/holdings/.", since a pie's holdings must always sum to
+  // exactly 100% allocation, so removing one is really a re-sync of the
+  // whole set, not a single-item delete). Caught here before the
+  // confirmation dialog even opens, so clicking delete on one of these rows
+  // never hits the API just to be told no.
+  const handleDeleteClick = (instance) => {
+    setDeleteError(null);
+    if (instance.isPieHolding) {
+      setDeletingInstance(null);
+      setPieDeleteNotice(instance);
+      return;
+    }
+    setPieDeleteNotice(null);
+    setDeletingInstance(instance);
   };
 
   const handleDelete = () => {
@@ -558,7 +580,7 @@ function HoldingTickerPage() {
                     defaultCurrency={defaultCurrency}
                     fxRate={fxRate}
                     fxState={fxState}
-                    onDelete={setDeletingInstance}
+                    onDelete={handleDeleteClick}
                     onRowClick={(instance) => navigate(instance.destination)}
                   />
                 </>
@@ -638,6 +660,22 @@ function HoldingTickerPage() {
           <Alert tone="danger">{deleteError}</Alert>
         </div>
       )}
+      <Modal
+        open={Boolean(pieDeleteNotice)}
+        onClose={() => setPieDeleteNotice(null)}
+        title="Can't delete from here"
+        footer={
+          <Button variant="secondary" onClick={() => setPieDeleteNotice(null)}>
+            OK
+          </Button>
+        }
+      >
+        <p>
+          {pieDeleteNotice
+            ? `${ticker} in ${pieDeleteNotice.location} is part of a pie's allocation and can't be deleted from here — edit the pie's composition to remove it instead.`
+            : ""}
+        </p>
+      </Modal>
     </AppShell>
   );
 }
