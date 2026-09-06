@@ -74,10 +74,12 @@
   equicast-stock/packages/stock/config/stocks.dev.yaml,
   equicast-etf/packages/etf/config/etfs.dev.yaml) and builds/uploads each
   asset class's catalog into LocalStack, so /api/market/... has something
-  to return. These CLIs hit live Yahoo Finance data, so this makes real
-  network calls even though everything else stays local. The three
-  pipelines run in parallel (PowerShell background jobs), not one after
-  another.
+  to return. Also runs equicast-forecasting (packages/forecasting) for
+  stock and ETF tickers, writing forecasting/dividends.parquet alongside
+  each ticker's other output (fx has no dividends, so it's skipped there).
+  These CLIs hit live Yahoo Finance data, so this makes real network calls
+  even though everything else stays local. The three pipelines run in
+  parallel (PowerShell background jobs), not one after another.
 
   LocalStack keeps no data across container removal (a fresh
   `docker run`, or `-Reset`), so everything this ingests would otherwise
@@ -557,6 +559,24 @@ try {
                         uv @ingestArgs
                         if ($LASTEXITCODE -ne 0) {
                             throw "$($pipeline.Cli) failed (exit $LASTEXITCODE)."
+                        }
+
+                        # equicast-forecasting isn't one of the three pipelines above
+                        # (it has its own independent DividendsClient fetch, not a
+                        # read-back of dividend.parquet) but writes into this same
+                        # ./output before the one S3 upload below, so its
+                        # forecasting/dividends.parquet rides along automatically.
+                        # fx has no dividends, so it's skipped there.
+                        if ($pipeline.AssetClass -eq "stock" -or $pipeline.AssetClass -eq "etf") {
+                            $pipelineOutput = Join-Path $RepoRoot "packages\$($pipeline.Package)\output"
+                            $pipelineConfig = Join-Path $RepoRoot "packages\$($pipeline.Package)\$($pipeline.Config)"
+                            Push-Location (Join-Path $RepoRoot "packages\forecasting")
+                            uv run equicast-forecasting --asset-class $pipeline.AssetClass --config $pipelineConfig --out $pipelineOutput
+                            $forecastExitCode = $LASTEXITCODE
+                            Pop-Location
+                            if ($forecastExitCode -ne 0) {
+                                throw "equicast-forecasting failed (exit $forecastExitCode)."
+                            }
                         }
 
                         aws --endpoint-url $Endpoint s3 cp .\output\ "s3://$MarketDataBucket/" --recursive

@@ -1,0 +1,40 @@
+name: Build Forecasting Image
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/dividends/**"
+      - "packages/forecasting/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/forecasting-image.yml"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push equicast-forecasting (private)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: packages/forecasting/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest
+            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:${{ github.sha }}

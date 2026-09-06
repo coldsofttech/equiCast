@@ -95,6 +95,14 @@ For each ticker this writes:
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
   max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,
   price-to-book/sales, EV/EBITDA, margins, returns, debt-to-equity, FCF/share)
+- `stock=<TICKER>/forecasting/dividends.parquet` — one row per projected
+  future ex-dividend date, up to `--years` (default 10) years out, via
+  `equicast-forecasting` (see
+  [packages/forecasting/README.md](../packages/forecasting/README.md)).
+  Rewritten wholesale from that run's freshly-fetched dividend history —
+  not split into history/current — and not written at all for a ticker
+  with no dependable payout cadence to extend (an `"irregular"`/
+  `"not_applicable"` payer, same cases `dividend_frequency()` flags)
 
 See [packages/stock/README.md](../packages/stock/README.md) for the exact
 field lists, including how `address`, `ceos`, and `ipo_date` are derived
@@ -209,18 +217,33 @@ via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
 
 ## Running the scheduled ingestion
 
-`stock-ingestion.yml` runs once daily, Monday-Friday, at 22:45 UTC
-(`cron: "45 22 * * 1-5"`) and can also be triggered manually (Actions tab →
-*Stock Ingestion* → *Run workflow*, any day) with these inputs:
+`stock-ingestion.yml` runs on two schedules and can also be triggered
+manually (Actions tab → *Stock Ingestion* → *Run workflow*, any day):
+
+- Monday-Friday at 22:45 UTC (`cron: "45 22 * * 1-5"`) — the regular
+  **ingest** run: `equicast-stock` only, no forecasting.
+- Saturday at 22:45 UTC (`cron: "45 22 * * 6"`) — a **forecasting-only**
+  run: `equicast-forecasting` only, no `equicast-stock`, no catalog rebuild.
+  Forecasting is a full recompute from whatever dividend history is already
+  on file, not new market data, so once a week is enough — running it
+  Monday-Friday alongside the regular ingest would just repeat the same
+  projection five times over.
+
+Which mode a run is in is resolved once, in the `plan` job (see below), from
+the day of the week (schedule) or the `forecast_only` input (dispatch) —
+every `ingest` matrix leg reads that same resolved mode rather than each
+recomputing it.
 
 | Input | Default | Meaning |
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
-| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year |
+| `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year. Ignored when `forecast_only` is set |
 | `chunk_size` | `300` | Target stock tickers per parallel chunk |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
+| `forecast_years` | `10` | Dividend forecast horizon in years (`equicast-forecasting`'s `--years`). Only used when forecasting actually runs (Saturday, or a manual run with `forecast_only`) |
+| `forecast_only` | `false` | Run only `equicast-forecasting` for this dispatch, skipping the regular ingest — mirrors the Saturday schedule, useful for testing forecasting on demand |
 
 **Deliberately offset from `etf-ingestion.yml`'s schedule** (`15 22 * * 1-5`
 — 22:15 UTC): stock runs 30 minutes after each ETF run (22:45 UTC) — 45
@@ -243,19 +266,32 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
 1. **plan** — first resolves the target environment/bucket/config (schedule
    → `production`, dispatch → the `environment` input), failing fast if the
    corresponding `MARKET_DATA_BUCKET_DEV`/`MARKET_DATA_BUCKET_PROD` variable
-   isn't set. Then runs `equicast-stock-plan` against `stocks.dev.yaml` or
-   `stocks.prod.yaml` (whichever the resolved environment picked) to split
-   the configured tickers into chunks, capped at 256 chunks (GitHub's
-   per-workflow matrix job limit).
+   isn't set, and also resolves the run mode: `run_ingest`/`run_forecasting`
+   — both from the day of the week on a schedule trigger (Saturday, ISO
+   weekday 6, forecasts; any other day ingests) or from the `forecast_only`
+   input on a dispatch trigger. Then runs `equicast-stock-plan` against
+   `stocks.dev.yaml` or `stocks.prod.yaml` (whichever the resolved
+   environment picked) to split the configured tickers into chunks, capped
+   at 256 chunks (GitHub's per-workflow matrix job limit) — the same chunks
+   feed either mode's `--tickers-json` below.
 2. **ingest** — a matrix job (`max-parallel: 20`, tunable in the workflow
-   file) with one leg per chunk: pulls the image, passes its chunk via
-   `--tickers-json`, uploads the resulting Parquet files to
+   file) with one leg per chunk. When `run_ingest` is true: pulls the
+   `equicast-stock` image and extracts the chunk's
+   profiles/prices/dividends/events/metrics. When `run_forecasting` is true:
+   pulls the `equicast-forecasting` image and forecasts the same chunk's
+   future dividend payouts (its own independent `DividendsClient` fetch, not
+   a read-back of `dividend.parquet`) — into the same `/output` directory,
+   so on a normal weekday only the first happens and on Saturday only the
+   second does. Either way, uploads whatever landed in `/output` to
    `s3://equicast-market-data-<env>/` (the bucket the `plan` job resolved),
-   and publishes just its `profile.parquet` files as a short-lived (1 day)
-   build artifact for the `build-catalog` job below.
-3. **build-catalog** — downloads and merges every leg's artifact from
-   **ingest** into one local directory (no single leg ever sees the full
-   ticker list, so the catalog can't be built inside one), then runs
+   and — only when `run_ingest` was true, since a forecasting-only run wrote
+   no `profile.parquet` — publishes the chunk's profiles as a short-lived
+   (1 day) build artifact for the `build-catalog` job below.
+3. **build-catalog** — skipped entirely when `run_ingest` is false (nothing
+   new to rebuild the catalog from). Otherwise downloads and merges every
+   leg's artifact from **ingest** into one local directory (no single leg
+   ever sees the full ticker list, so the catalog can't be built inside one),
+   then runs
    `equicast-core-build-catalog --asset-class stock` to rebuild
    `catalog/stock.parquet` — the search catalog `MarketDataClient.search()`
    reads (see [packages/core/README.md](../packages/core/README.md)).
@@ -277,7 +313,9 @@ s3://equicast-market-data-<env>/
     ├── dividend/
     │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
     │   └── current.parquet   (2026, rewritten by every run)
-    └── events/
-        ├── history.parquet   (every year before 2026, written once by a --full-load run)
-        └── current.parquet   (2026 or later, rewritten by every run)
+    ├── events/
+    │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
+    │   └── current.parquet   (2026 or later, rewritten by every run)
+    └── forecasting/
+        └── dividends.parquet   (rewritten wholesale by every run, not history/current-split)
 ```

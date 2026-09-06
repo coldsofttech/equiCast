@@ -48,18 +48,24 @@ Every projected payout starts from the most recent *actual* amount, then
 compounds once per calendar year crossed (relative to that last actual
 payout) at a trailing dividend growth rate:
 
-1. Sum actual payouts into one total per full calendar year (the current
-   year is excluded — it may not be complete yet, and including a partial
-   year would understate its eventual total).
+1. Sum actual payouts into one total per *complete* calendar year — the
+   current year is excluded (it may not be complete yet), and so is any
+   earlier year with fewer payouts than the cadence expects (52/12/4/2/1 for
+   weekly/monthly/quarterly/half_yearly/yearly): typically the payer's first
+   year, if dividends started partway through it. Comparing a partial first
+   year against a later full year would manufacture a growth rate out of
+   when the payer started paying, not out of how its dividend actually grew
+   — this is what previously made a newly-initiated payer (started mid-year,
+   one full year on the books since) look like it was compounding at ~35-40%
+   a year.
 2. Compare the oldest to the newest of the most recent 6 such years (5
    year-over-year steps) as a CAGR: `(newest / oldest) ** (1 / years) - 1`.
 3. Clamp the result to ±50%/year, so one outlier historical year (a special
    dividend inflating a single year's total, or a one-off cut) can't produce
    an implausible runaway compound over a long horizon.
 4. Fall back to `0.0` (flat — every projected payout repeats the last actual
-   amount) if there are fewer than 2 full years to compare, or the older
-   year's total is `0` (nothing meaningful to ratio against — e.g. payouts
-   only started partway through that year).
+   amount) if there are fewer than 2 complete years to compare, or the older
+   year's total is `0`.
 
 This is a projection from historical *rate*, not a prediction of specific
 future dividend announcements — treat it as "if this ticker's recent cadence

@@ -17,17 +17,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cadence (`equicast_dividends.median_payout_gap_days()`, not a fixed
   per-label constant), and each projected amount compounds once per calendar
   year crossed at a trailing dividend growth rate — computed by comparing the
-  oldest to the newest of the most recent 6 full calendar years of summed
-  payouts as a CAGR, clamped to ±50%/year so one outlier historical year
-  can't produce a runaway compound over a long horizon, falling back to flat
-  (repeat the last actual amount) when there isn't enough full-year history
-  to compute a rate. Also ships a CLI (`equicast-forecasting`) and Dockerfile
+  oldest to the newest of the most recent 6 *complete* calendar years of
+  summed payouts as a CAGR, clamped to ±50%/year so one outlier historical
+  year can't produce a runaway compound over a long horizon, falling back to
+  flat (repeat the last actual amount) when there isn't enough complete-year
+  history to compute a rate. A year counts as complete only once it has as
+  many payouts as its cadence expects (52/12/4/2/1 for
+  weekly/monthly/quarterly/half_yearly/yearly) — a payer's first, partial
+  year (dividends started partway through it) is excluded rather than
+  compared against a later full year as if it were one, which previously
+  manufactured a ~35-40%/year growth rate out of nothing but a newly
+  dividend-initiating payer's start date (e.g. GOOGL: $0.20/$0.21/$0.21
+  actual quarterly payouts were forecast to jump to $0.30, $0.42, ...).
+  Also ships a CLI (`equicast-forecasting`) and Dockerfile
   — fetches a ticker's full dividend history live via
   `DividendsClient.dividends(full_load=True)`, forecasts it, and writes
   `<asset_class>=<TICKER>/forecasting/dividends.parquet` (nothing for a
-  ticker with no dependable cadence). Not yet wired into
-  stock-ingestion.yml/etf-ingestion.yml as a scheduled step — that's a
-  follow-up.
+  ticker with no dependable cadence). See below for how it's wired into
+  stock-ingestion.yml/etf-ingestion.yml as a scheduled step.
 - `equicast_dividends.median_payout_gap_days()`: the raw median day-gap
   `dividend_frequency()` classifies (a `float`, or `None` below its 2-payout
   minimum), exposed separately for `equicast-forecasting` to step forward
@@ -50,6 +57,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   costs no extra yfinance calls over fetching it a second time from a
   separate profile task would have. fx has no dividends, so its profile is
   unaffected.
+- `equicast-forecasting` wired into `stock-ingestion.yml`/`etf-ingestion.yml`
+  as a scheduled step, but on a separate Saturday-only cron rather than
+  every weekday alongside the regular ingest — it's a full recompute from
+  whatever dividend history is already on file, not new market data, so
+  daily reruns would just repeat the same projection five times over.
+  New `forecasting-image.yml` builds/pushes its image to GHCR the same way
+  `stock-image.yml`/`etf-image.yml` do. Each workflow's `plan` job now also
+  resolves a `run_ingest`/`run_forecasting` mode — from the day of the week
+  on the scheduled trigger (Saturday, ISO weekday 6, forecasts; any other
+  day ingests) or from a new `forecast_only` `workflow_dispatch` input
+  (default `false`) on a manual trigger — and every `ingest` matrix leg
+  reads it: when ingesting, pulls `equicast-stock`/`equicast-etf` as
+  before; when forecasting, pulls `equicast-forecasting` and runs it
+  (`--asset-class stock`/`etf`) against the same chunk into the same
+  `/output` directory, so `forecasting/dividends.parquet` rides along in
+  the existing upload step with no separate one needed — the two never run
+  in the same leg. `build-catalog` is skipped on a forecasting-only run
+  (no fresh `profile.parquet` to rebuild it from). New `forecast_years`
+  `workflow_dispatch` input (default `10`) maps to the CLI's `--years` on
+  both workflows. Also wired into `scripts/local-dev.ps1`'s
+  `-SeedMarketData` flow for stock and ETF (run unconditionally there,
+  alongside the regular seed, since local dev has no daily/weekly cadence
+  to split across), so it can be exercised against LocalStack without
+  touching GitHub Actions at all — fx is skipped there, having no
+  dividends.
 - `sector`/`industry` added to the search catalog (`equicast_core.catalog.build_catalog_rows`,
   `catalog/<asset_class>.parquet`) and as new `SearchView`/`MarketDataClient.search`
   filter params (`sector`/`industry`, matched case-insensitively against a

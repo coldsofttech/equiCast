@@ -127,6 +127,30 @@ def test_extreme_historical_growth_is_clamped() -> None:
     assert last_price <= 1.0 * 1.5**max_years_ahead
 
 
+def test_partial_first_year_excluded_from_growth_rate() -> None:
+    # A newly dividend-initiating payer (e.g. GOOGL): 3 payouts in its first,
+    # partial calendar year, then a full 4 in the next. Only 1 *complete*
+    # year exists - there's nothing to compare it against, so the growth
+    # rate must fall back to flat, not treat the partial first year as a real
+    # annual total and manufacture a growth rate out of it (previously
+    # comparing 3 payouts @ 0.20 against 4 payouts @ 0.21 read as ~40%/year
+    # growth, purely from the payer's start date).
+    first_year = date.today().year - 2
+    second_year = date.today().year - 1
+    records = [
+        _record("GOOGL", date(first_year, month, day), 0.20)
+        for month, day in ((5, 10), (8, 10), (11, 10))  # only 3 payouts - partial year
+    ] + [
+        _record("GOOGL", date(second_year, month, day), 0.21)
+        for month, day in ((2, 10), (5, 10), (8, 10), (11, 10))  # a full 4
+    ]
+
+    forecast = dividends(records, years=3)
+
+    assert forecast
+    assert all(row["price"] == 0.21 for row in forecast)
+
+
 def test_years_parameter_controls_horizon_length() -> None:
     records = _quarterly_history("AAPL", 0.5, num_years=5)
 

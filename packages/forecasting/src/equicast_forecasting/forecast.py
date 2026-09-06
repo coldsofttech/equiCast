@@ -26,31 +26,55 @@ _GROWTH_LOOKBACK_YEARS = 5
 #: runaway compound over a long horizon.
 _GROWTH_RATE_CLAMP = (-0.5, 0.5)
 
+#: Payouts a calendar year must have, per cadence, to count as "complete" for
+#: the growth-rate comparison below - a payer's first calendar year (started
+#: mid-year, so only a handful of its payouts fall in it) is a partial year,
+#: not a real annual total, and comparing it to a later full year manufactures
+#: a growth rate out of when the payer started, not how its dividend actually
+#: grew.
+_EXPECTED_PAYOUTS_PER_YEAR = {
+    "weekly": 52,
+    "monthly": 12,
+    "quarterly": 4,
+    "half_yearly": 2,
+    "yearly": 1,
+}
 
-def _annual_totals(dates_amounts: list[tuple[date, float]], before_year: int) -> dict[int, float]:
-    """Sum `dates_amounts` into one total per calendar year, for years strictly
-    before `before_year` only - the current year may not be complete yet, so
-    including it would understate that year's eventual total and skew the
-    growth rate toward a false slowdown."""
+
+def _annual_totals(
+    dates_amounts: list[tuple[date, float]], before_year: int
+) -> tuple[dict[int, float], dict[int, int]]:
+    """Sum `dates_amounts` into one total (and count) per calendar year, for
+    years strictly before `before_year` only - the current year may not be
+    complete yet, so including it would understate that year's eventual total
+    and skew the growth rate toward a false slowdown."""
     totals: dict[int, float] = {}
+    counts: dict[int, int] = {}
     for payout_date, amount in dates_amounts:
         if payout_date.year < before_year:
             totals[payout_date.year] = totals.get(payout_date.year, 0.0) + amount
-    return totals
+            counts[payout_date.year] = counts.get(payout_date.year, 0) + 1
+    return totals, counts
 
 
-def _dividend_growth_rate(dates_amounts: list[tuple[date, float]], today: date) -> float:
+def _dividend_growth_rate(
+    dates_amounts: list[tuple[date, float]], today: date, frequency: str
+) -> float:
     """Trailing annualized dividend growth rate, comparing the oldest to the
-    newest of the most recent `_GROWTH_LOOKBACK_YEARS + 1` full calendar years
-    of summed payouts.
+    newest of the most recent `_GROWTH_LOOKBACK_YEARS + 1` *complete* calendar
+    years of summed payouts - a year short of `_EXPECTED_PAYOUTS_PER_YEAR`
+    payouts for `frequency` (the payer's first, partial year, most commonly)
+    is excluded rather than treated as a real annual total.
 
     Returns `0.0` (flat - no growth or decline assumed) if there are fewer
-    than 2 full years to compare, or if the older year's total is 0 (can't
-    compute a meaningful ratio from it - e.g. payouts only started partway
-    through that year). Otherwise clamped to `_GROWTH_RATE_CLAMP`.
+    than 2 complete years to compare, or if the older year's total is 0
+    (can't compute a meaningful ratio from it). Otherwise clamped to
+    `_GROWTH_RATE_CLAMP`.
     """
-    totals = _annual_totals(dates_amounts, before_year=today.year)
-    years = sorted(totals)[-(_GROWTH_LOOKBACK_YEARS + 1) :]
+    totals, counts = _annual_totals(dates_amounts, before_year=today.year)
+    expected = _EXPECTED_PAYOUTS_PER_YEAR[frequency]
+    complete_years = sorted(year for year, count in counts.items() if count >= expected)
+    years = complete_years[-(_GROWTH_LOOKBACK_YEARS + 1) :]
     if len(years) < 2:
         return 0.0
 
@@ -106,7 +130,7 @@ def dividends(records: list[dict[str, Any]], years: int = 10) -> list[dict[str, 
     last_date, last_amount = dates_amounts[-1]
 
     today = datetime.now(UTC).date()
-    growth_rate = _dividend_growth_rate(dates_amounts, today)
+    growth_rate = _dividend_growth_rate(dates_amounts, today, frequency)
     horizon_end = today + timedelta(days=365 * years)
     fetched_at = datetime.now(UTC).isoformat()
     ticker = records[0]["ticker"]

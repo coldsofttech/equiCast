@@ -6,8 +6,19 @@ on:
   # Monday-Friday only — after both US and UK markets close, see that
   # workflow's comment) — so all three never overlap even if an earlier
   # run takes longer than expected.
+  #
+  # The second entry (Saturday, same time) is forecasting-only — see
+  # "Resolve target environment, bucket, and config" below. equicast-stock
+  # itself stays Monday-Friday: both US markets are shut every
+  # Saturday/Sunday, so a weekend ingest run would only ever refetch
+  # Friday's already-fetched data (same reasoning as fx-pipeline.md's
+  # Monday-Friday schedule). equicast-forecasting has no such calendar
+  # dependency (it's a full recompute from whatever dividend history is
+  # already on file, not new market data), so it runs the other direction:
+  # once a week is plenty, daily would just repeat the same projection.
   schedule:
     - cron: "45 22 * * 1-5"
+    - cron: "45 22 * * 6"
   workflow_dispatch:
     inputs:
       environment:
@@ -33,6 +44,13 @@ on:
       period_seconds:
         description: "Rate-limit window in seconds, per container"
         default: "1.0"
+      forecast_years:
+        description: "Dividend forecast horizon in years"
+        default: "10"
+      forecast_only:
+        description: "Run only equicast-forecasting, skipping the regular ingest (mirrors the Saturday schedule)"
+        type: boolean
+        default: false
 
 permissions:
   id-token: write
@@ -52,6 +70,8 @@ jobs:
       has_chunks: ${{ steps.plan.outputs.has_chunks }}
       environment: ${{ steps.env.outputs.environment }}
       bucket: ${{ steps.env.outputs.bucket }}
+      run_ingest: ${{ steps.env.outputs.run_ingest }}
+      run_forecasting: ${{ steps.env.outputs.run_forecasting }}
     steps:
       - uses: actions/checkout@v4
 
@@ -70,13 +90,29 @@ jobs:
       # Reuses the same MARKET_DATA_BUCKET_DEV/MARKET_DATA_BUCKET_PROD repo
       # variables fx-ingestion.yml uses — stock profiles land in the same
       # bucket.
-      - name: Resolve target environment, bucket, and config
+      - name: Resolve target environment, bucket, config, and run mode
         id: env
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             ENVIRONMENT=production
+            # ISO weekday, 1=Monday..7=Sunday: only the Saturday (6) cron
+            # entry above forecasts; the Monday-Friday entry ingests.
+            if [ "$(date -u +%u)" = "6" ]; then
+              RUN_INGEST=false
+              RUN_FORECASTING=true
+            else
+              RUN_INGEST=true
+              RUN_FORECASTING=false
+            fi
           else
             ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+            if [ "${{ github.event.inputs.forecast_only || 'false' }}" = "true" ]; then
+              RUN_INGEST=false
+              RUN_FORECASTING=true
+            else
+              RUN_INGEST=true
+              RUN_FORECASTING=false
+            fi
           fi
 
           if [ "$ENVIRONMENT" = "production" ]; then
@@ -95,6 +131,8 @@ jobs:
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "run_ingest=$RUN_INGEST" >> "$GITHUB_OUTPUT"
+          echo "run_forecasting=$RUN_FORECASTING" >> "$GITHUB_OUTPUT"
 
       - name: Compute stock ticker chunks
         id: plan
@@ -132,12 +170,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Prepare output directory
+        run: mkdir -p output
+
       - name: Pull equicast-stock image
+        if: needs.plan.outputs.run_ingest == 'true'
         run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-stock:latest
 
       - name: Extract this chunk's stock ticker profiles and prices
+        if: needs.plan.outputs.run_ingest == 'true'
         run: |
-          mkdir -p output
           docker run --rm \
             -v "${PWD}/output:/output" \
             ghcr.io/${{ github.repository_owner }}/equicast-stock:latest \
@@ -148,13 +190,35 @@ jobs:
             --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
+      - name: Pull equicast-forecasting image
+        if: needs.plan.outputs.run_forecasting == 'true'
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest
+
+      # Independent of the equicast-stock step above — its own DividendsClient
+      # fetch, not a read-back of dividend.parquet — but writes into the same
+      # /output directory, so this chunk's forecasting/dividends.parquet rides
+      # along in the one upload step below rather than needing its own.
+      - name: Forecast this chunk's stock dividend payouts
+        if: needs.plan.outputs.run_forecasting == 'true'
+        run: |
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest \
+            --asset-class stock \
+            --tickers-json '${{ toJson(matrix.chunk) }}' \
+            --out /output \
+            --years "${{ github.event.inputs.forecast_years || '10' }}" \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
       - name: Configure AWS credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
-      - name: Upload stock profiles and prices to S3
+      - name: Upload stock profiles, prices, and forecasts to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
 
       # Feeds build-catalog below — that job needs every chunk's
@@ -164,6 +228,7 @@ jobs:
       # reference (see equicast_core.catalog's module docstring for why the
       # catalog can't be built inside this per-chunk job at all).
       - name: Publish this chunk's profiles for the catalog build
+        if: needs.plan.outputs.run_ingest == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: stock-profiles-${{ strategy.job-index }}
@@ -175,9 +240,12 @@ jobs:
   # single ingest leg above ever sees the full ticker list. Needs no new S3
   # permission beyond what ingest already has (s3:PutObject) — it reads the
   # profiles locally, from the downloaded artifacts, not back from S3.
+  # Skipped on a forecasting-only run (Saturday, or manual forecast_only) —
+  # ingest didn't publish any profile artifacts that run, so there's nothing
+  # new to rebuild the catalog from.
   build-catalog:
     needs: [plan, ingest]
-    if: needs.plan.outputs.has_chunks == 'true'
+    if: needs.plan.outputs.has_chunks == 'true' && needs.plan.outputs.run_ingest == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
