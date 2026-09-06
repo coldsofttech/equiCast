@@ -4,6 +4,7 @@ import pandas as pd
 from equicast_etf.writer import (
     write_dividend_parquet,
     write_events_parquet,
+    write_future_dividend_parquet,
     write_metrics_parquet,
     write_price_parquet,
     write_profile_parquet,
@@ -150,6 +151,31 @@ def test_write_dividend_parquet_current_year_only_writes_no_history_file(
 
 def test_write_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_dividend_parquet([], tmp_path) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_write_future_dividend_parquet_writes_the_one_record(tmp_path: Path) -> None:
+    records = [
+        {
+            "ticker": "MNG.L",
+            "currency": "GBp",
+            "ex_dividend_date": "2026-09-10",
+            "payment_date": "2026-10-15",
+            "price": 0.068,
+            "last_updated": "2026-09-06T09:00:00+00:00",
+            "source": "yfinance",
+        }
+    ]
+
+    paths = write_future_dividend_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "etf=MNG.L" / "dividend" / "future.parquet"]
+    result = pd.read_parquet(paths[0])
+    assert result.to_dict(orient="records") == records
+
+
+def test_write_future_dividend_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_future_dividend_parquet([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
 
 

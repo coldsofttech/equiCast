@@ -5,6 +5,8 @@ classes (`fx`/`stock`/`etf`) — it only knows the S3 key layout the ingestion
 pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
 `<asset_class>=<symbol>/price/current.parquet` and
 `<asset_class>=<symbol>/price/history.parquet`,
+`<asset_class>=<symbol>/dividend/{history,current,future}.parquet`,
+`<asset_class>=<symbol>/forecasting/dividends.parquet`,
 `catalog/<asset_class>.parquet` — see `equicast_core.catalog` for how the
 latter is built/uploaded by each ingestion pipeline), nothing about Django
 or any particular caller.
@@ -169,6 +171,97 @@ class MarketDataClient:
         if not rows:
             return None
         return rows[0]
+
+    def get_dividends(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return `{ticker, currency, last_updated, dividends}` for `symbol`,
+        combining every dividend Parquet an ingestion pipeline writes into
+        one chronological list, or `None` if none of them exist for this
+        ticker/pair yet.
+
+        Each entry in `dividends` is tagged by a `status`:
+          - `"paid"` — an already-happened payout, from `dividend/
+            history.parquet` and `dividend/current.parquet` (see
+            `equicast_stock/equicast_etf`'s `write_dividend_parquet`).
+            `payment_date` is always `None` here — yfinance's dividend
+            history has no payment-date field (see
+            `equicast_dividends.DividendsClient.dividends`'s docstring).
+          - `"declared"` — a real, yfinance-confirmed upcoming payout, from
+            `dividend/future.parquet` (see `DividendsClient.
+            future_dividends`) — 0 or 1 row, per ticker. `payment_date` is
+            whatever that row has (sometimes `None` too, when yfinance
+            hasn't reported one yet).
+          - `"estimated"` — a computed projection, from `forecasting/
+            dividends.parquet` (see `equicast_forecasting.dividends`).
+            `payment_date` is always `None` — this is a projected ex-date
+            only, with no payment-date concept.
+
+        Deliberately unfiltered by date (`"estimated"` rows in particular
+        span years on both sides of today - see `equicast_forecasting.
+        dividends`'s docstring) and not deduplicated where a `"declared"`
+        and an `"estimated"` row estimate the same real-world payout -
+        callers needing "upcoming only" or "declared wins over an
+        overlapping estimate" (e.g. a holding page's upcoming-dividends
+        cards) apply that themselves, the same way callers of `get_prices`
+        pick their own display range rather than this client guessing one.
+        """
+        prefix = f"{asset_class.lower()}={symbol.upper()}"
+        paid_rows = (self._read_parquet(f"{prefix}/dividend/history.parquet") or []) + (
+            self._read_parquet(f"{prefix}/dividend/current.parquet") or []
+        )
+        declared_rows = self._read_parquet(f"{prefix}/dividend/future.parquet") or []
+        estimated_rows = self._read_parquet(f"{prefix}/forecasting/dividends.parquet") or []
+        if not (paid_rows or declared_rows or estimated_rows):
+            return None
+
+        dividends = [
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": None,
+                    "price": row["price"],
+                    "status": "paid",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in paid_rows
+            ),
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": row.get("payment_date"),
+                    "price": row["price"],
+                    "status": "declared",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in declared_rows
+            ),
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": None,
+                    "price": row["price"],
+                    "status": "estimated",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in estimated_rows
+            ),
+        ]
+        dividends.sort(key=lambda record: record["ex_dividend_date"])
+
+        return {
+            "ticker": dividends[0]["ticker"],
+            "currency": dividends[0]["currency"],
+            "last_updated": max(record["last_updated"] for record in dividends),
+            "dividends": dividends,
+        }
 
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE

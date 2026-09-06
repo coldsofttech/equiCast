@@ -146,6 +146,139 @@ def test_get_profile_leaves_a_missing_ceos_field_untouched(s3_client) -> None:
     assert client.get_profile("fx", "GBPUSD") == {"ticker": "GBPUSD"}
 
 
+def _dividend_row(
+    ex_dividend_date: str,
+    *,
+    price: float = 0.26,
+    currency: str = "USD",
+    last_updated: str | None = None,
+    source: str = "yfinance",
+    ticker: str = "AAPL",
+    payment_date: str | None = None,
+) -> dict:
+    row = {
+        "ticker": ticker,
+        "currency": currency,
+        "ex_dividend_date": ex_dividend_date,
+        "price": price,
+        "last_updated": last_updated or f"{ex_dividend_date}T21:00:00+00:00",
+        "source": source,
+    }
+    if payment_date is not None:
+        row["payment_date"] = payment_date
+    return row
+
+
+def test_get_dividends_returns_none_when_nothing_published(s3_client) -> None:
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+    assert client.get_dividends("stock", "AAPL") is None
+
+
+def test_get_dividends_combines_paid_declared_and_estimated_rows(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/history.parquet",
+        Body=_parquet_bytes(
+            [_dividend_row("2025-02-10", last_updated="2026-08-30T09:00:00+00:00")]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/current.parquet",
+        Body=_parquet_bytes(
+            [_dividend_row("2026-02-10", last_updated="2026-08-30T09:00:01+00:00")]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/future.parquet",
+        Body=_parquet_bytes(
+            [
+                _dividend_row(
+                    "2026-09-10",
+                    payment_date="2026-09-20",
+                    last_updated="2026-08-30T09:00:02+00:00",
+                )
+            ]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/forecasting/dividends.parquet",
+        Body=_parquet_bytes(
+            [
+                _dividend_row(
+                    "2026-12-10", source="equicast", last_updated="2026-08-30T09:00:03+00:00"
+                )
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_dividends("stock", "aapl")
+
+    assert result == {
+        "ticker": "AAPL",
+        "currency": "USD",
+        "last_updated": "2026-08-30T09:00:03+00:00",
+        "dividends": [
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2025-02-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "paid",
+                "last_updated": "2026-08-30T09:00:00+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-02-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "paid",
+                "last_updated": "2026-08-30T09:00:01+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-09-10",
+                "payment_date": "2026-09-20",
+                "price": 0.26,
+                "status": "declared",
+                "last_updated": "2026-08-30T09:00:02+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-12-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "estimated",
+                "last_updated": "2026-08-30T09:00:03+00:00",
+                "source": "equicast",
+            },
+        ],
+    }
+
+
+def test_get_dividends_declared_row_with_no_payment_date_yet(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/future.parquet",
+        Body=_parquet_bytes([_dividend_row("2026-09-10", payment_date=None)]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_dividends("stock", "AAPL")
+
+    assert result["dividends"][0]["payment_date"] is None
+
+
 class TestGetPrices:
     def test_price_ranges_are_exactly(self) -> None:
         assert PRICE_RANGES == ("1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max")

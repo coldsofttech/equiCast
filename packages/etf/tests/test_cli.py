@@ -63,7 +63,9 @@ def _fake_etf_client_factory(created: list[MagicMock] | None = None):
 
 
 def _fake_dividends_client_factory(
-    created: list[MagicMock] | None = None, records: list[dict] | None = None
+    created: list[MagicMock] | None = None,
+    records: list[dict] | None = None,
+    future_records: list[dict] | None = None,
 ):
     def fake_dividends_client(symbol: str, datafeed=None) -> MagicMock:
         client = MagicMock()
@@ -78,6 +80,11 @@ def _fake_dividends_client_factory(
                 "source": "yfinance",
             }
         ]
+        # No future dividend by default - most tickers don't have one (see
+        # DividendsClient.future_dividends' docstring), and write_future_
+        # dividend_parquet omits the file entirely for an empty list, so
+        # existing tests' written-file-count assertions stay unaffected.
+        client.future_dividends.return_value = future_records or []
         if created is not None:
             created.append(client)
         return client
@@ -142,13 +149,16 @@ def _patch_clients(
     events_created: list[MagicMock] | None = None,
     metrics_created: list[MagicMock] | None = None,
     dividend_records: list[dict] | None = None,
+    future_dividend_records: list[dict] | None = None,
 ):
     return (
         patch("equicast_etf.cli.DatafeedClient"),
         patch("equicast_etf.cli.ETFClient", side_effect=_fake_etf_client_factory(etf_created)),
         patch(
             "equicast_etf.cli.DividendsClient",
-            side_effect=_fake_dividends_client_factory(dividends_created, records=dividend_records),
+            side_effect=_fake_dividends_client_factory(
+                dividends_created, records=dividend_records, future_records=future_dividend_records
+            ),
         ),
         patch(
             "equicast_etf.cli.EventsClient",
@@ -217,6 +227,44 @@ def test_run_dividend_frequency_is_not_applicable_with_too_little_history(
 
     profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
     assert profile["dividend_frequency"].iloc[0] == "not_applicable"
+
+
+def test_run_writes_future_dividend_parquet_when_a_future_dividend_exists(
+    tmp_path: Path,
+) -> None:
+    out_dir = tmp_path / "output"
+    future_records = [
+        {
+            "ticker": "VOO",
+            "currency": "USD",
+            "ex_dividend_date": "2026-09-19",
+            "payment_date": "2026-09-30",
+            "price": 1.85,
+            "last_updated": "2026-08-30T09:00:02+00:00",
+            "source": "yfinance",
+        }
+    ]
+
+    datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
+        future_dividend_records=future_records
+    )
+    with datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch:
+        written = run(None, out_dir, tickers_json='["VOO"]')
+
+    path = out_dir / "etf=VOO" / "dividend" / "future.parquet"
+    assert path in written
+    assert pd.read_parquet(path).to_dict(orient="records") == future_records
+
+
+def test_run_omits_future_dividend_parquet_when_none_exists(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    # Default fixture dividends_client returns no future dividend.
+    datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
+    with datafeed_patch, etf_patch, dividends_patch, events_patch, metrics_patch:
+        run(None, out_dir, tickers_json='["VOO"]')
+
+    assert not (out_dir / "etf=VOO" / "dividend" / "future.parquet").exists()
 
 
 def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:

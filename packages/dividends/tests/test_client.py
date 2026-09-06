@@ -1,5 +1,5 @@
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
 import pandas as pd
@@ -130,3 +130,85 @@ def test_dividends_full_load_returns_every_year() -> None:
 def test_dividends_empty_series_returns_no_records() -> None:
     client = DividendsClient("TSLA", datafeed=_datafeed({}, pd.Series(dtype=float)))
     assert client.dividends() == []
+
+
+def test_future_dividends_returns_a_record_when_the_ex_date_is_still_ahead() -> None:
+    future_ex_date = datetime.now(UTC) + timedelta(days=10)
+    future_payment_date = datetime.now(UTC) + timedelta(days=13)
+    info = {
+        "currency": "GBp",
+        "exDividendDate": int(future_ex_date.timestamp()),
+        "dividendDate": int(future_payment_date.timestamp()),
+        "lastDividendValue": 0.068,
+    }
+    client = DividendsClient("MNG.L", datafeed=_datafeed(info, pd.Series(dtype=float)))
+
+    records = client.future_dividends()
+
+    assert records == [
+        {
+            "ticker": "MNG.L",
+            "currency": "GBp",
+            "ex_dividend_date": future_ex_date.date().isoformat(),
+            "payment_date": future_payment_date.date().isoformat(),
+            "price": 0.068,
+            "last_updated": records[0]["last_updated"],
+            "source": "yfinance",
+        }
+    ]
+
+
+def test_future_dividends_payment_date_is_none_when_yfinance_has_not_reported_one() -> None:
+    future_ex_date = datetime.now(UTC) + timedelta(days=10)
+    info = {
+        "currency": "USD",
+        "exDividendDate": int(future_ex_date.timestamp()),
+        "lastDividendValue": 0.26,
+    }
+    client = DividendsClient("AAPL", datafeed=_datafeed(info, pd.Series(dtype=float)))
+
+    records = client.future_dividends()
+
+    assert records[0]["payment_date"] is None
+
+
+def test_future_dividends_excludes_an_ex_date_already_in_the_past() -> None:
+    # yfinance's exDividendDate/dividendDate/lastDividendValue point at
+    # whichever dividend it most recently became aware of, which is often
+    # one that's already gone ex-dividend rather than a still-upcoming one
+    # (see e.g. AAPL/MSFT some quarters) - future_dividends() must not
+    # report that as if it were still ahead.
+    past_ex_date = datetime.now(UTC) - timedelta(days=5)
+    info = {
+        "currency": "USD",
+        "exDividendDate": int(past_ex_date.timestamp()),
+        "lastDividendValue": 0.26,
+    }
+    client = DividendsClient("AAPL", datafeed=_datafeed(info, pd.Series(dtype=float)))
+
+    assert client.future_dividends() == []
+
+
+def test_future_dividends_excludes_an_ex_date_of_today() -> None:
+    info = {
+        "currency": "USD",
+        "exDividendDate": int(datetime.now(UTC).timestamp()),
+        "lastDividendValue": 0.26,
+    }
+    client = DividendsClient("AAPL", datafeed=_datafeed(info, pd.Series(dtype=float)))
+
+    assert client.future_dividends() == []
+
+
+def test_future_dividends_missing_ex_dividend_date_returns_no_records() -> None:
+    info = {"currency": "USD", "lastDividendValue": 0.26}
+    client = DividendsClient("AAPL", datafeed=_datafeed(info, pd.Series(dtype=float)))
+    assert client.future_dividends() == []
+
+
+def test_future_dividends_missing_amount_returns_no_records() -> None:
+    future_ex_date = datetime.now(UTC) + timedelta(days=10)
+    info = {"currency": "USD", "exDividendDate": int(future_ex_date.timestamp())}
+    client = DividendsClient("AAPL", datafeed=_datafeed(info, pd.Series(dtype=float)))
+
+    assert client.future_dividends() == []

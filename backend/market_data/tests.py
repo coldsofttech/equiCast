@@ -99,6 +99,66 @@ class MetricsViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class DividendsViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.get(reverse("dividends", args=["stock", "aapl"]))
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_dividends_for_known_symbol(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-08-30T09:00:00+00:00",
+            "dividends": [
+                {
+                    "ticker": "AAPL",
+                    "currency": "USD",
+                    "ex_dividend_date": "2026-09-10",
+                    "payment_date": "2026-09-20",
+                    "price": 0.26,
+                    "status": "declared",
+                    "last_updated": "2026-08-30T09:00:00+00:00",
+                    "source": "yfinance",
+                }
+            ],
+        }
+
+        response = self.client.get(reverse("dividends", args=["stock", "aapl"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), mock_client.get_dividends.return_value)
+        mock_client.get_dividends.assert_called_once_with("stock", "aapl")
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_404_when_symbol_not_found(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_dividends.return_value = None
+
+        response = self.client.get(reverse("dividends", args=["stock", "unknown"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_for_unknown_asset_class(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(reverse("dividends", args=["crypto", "btc"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 400)
+
+
 class PricesViewTests(TestCase):
     def test_returns_401_when_unauthenticated(self) -> None:
         response = self.client.get(reverse("prices", args=["etf", "voo"]))
