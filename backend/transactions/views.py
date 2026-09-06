@@ -400,8 +400,13 @@ class TransactionDetailView(APIView):
                 },
                 status=400,
             )
-        except ValueError as exc:
-            return Response({"detail": str(exc)}, status=400)
+        except ValueError:
+            # Static, caller-agnostic message rather than str(exc) — same
+            # py/stack-trace-exposure reasoning as TransactionListView.post's
+            # 409 above (and PieHoldingsView.put's, see pies/views.py).
+            return Response(
+                {"detail": "This transaction can't be updated with the given fields."}, status=400
+            )
         _refresh_holding_rollup(user_id, holding_id, mode)
         return Response(transaction)
 
