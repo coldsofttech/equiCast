@@ -97,6 +97,9 @@ export function formatRatio(value, digits = 2) {
  * @property {number|null} avgPriceNative - null when there are no
  *   transactions recorded yet for this holding.
  * @property {number} invested - shares * avgPriceNative (0 when avgPriceNative is null).
+ * @property {number} dividendsNative - total dividend cash received so far,
+ *   in the holding's own native currency (holding.dividends_native — see
+ *   equicast_core.transactions.compute_holding_rollup).
  */
 
 /**
@@ -149,19 +152,20 @@ export function selectRecentTradeTransactions(transactions, limit = MAX_RECENT_T
  *
  * @param {InstanceFinancials[]} instanceFinancials
  * @param {number|null} currentPriceNative
- * @returns {{ shares: number, invested: number, currentValue: number|null, plValue: number|null, plPct: number|null }}
+ * @returns {{ shares: number, invested: number, dividendsNative: number, currentValue: number|null, plValue: number|null, plPct: number|null }}
  */
 export function rollupInstances(instanceFinancials, currentPriceNative) {
   const shares = instanceFinancials.reduce((sum, f) => sum + f.shares, 0);
   const invested = instanceFinancials.reduce((sum, f) => sum + f.invested, 0);
+  const dividendsNative = instanceFinancials.reduce((sum, f) => sum + (f.dividendsNative ?? 0), 0);
 
   if (currentPriceNative == null) {
-    return { shares, invested, currentValue: null, plValue: null, plPct: null };
+    return { shares, invested, dividendsNative, currentValue: null, plValue: null, plPct: null };
   }
   const currentValue = shares * currentPriceNative;
   const plValue = currentValue - invested;
   const plPct = invested !== 0 ? (plValue / invested) * 100 : 0;
-  return { shares, invested, currentValue, plValue, plPct };
+  return { shares, invested, dividendsNative, currentValue, plValue, plPct };
 }
 
 /**

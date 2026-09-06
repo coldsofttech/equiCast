@@ -492,12 +492,13 @@ function HoldingTickerPage() {
             let ownedSharesSection = null;
 
             if (isOwned) {
-              // Shares/avg price/invested come straight off the holding
-              // record now (no_of_shares/average_price_native/invested_native
-              // — see equicast_core.transactions.compute_holding_rollup),
-              // not derived from a transaction fetch here — correct even
-              // when a holding has more transactions than one page covers,
-              // and unaffected by transactionsByHolding's own fetch state.
+              // Shares/avg price/invested/dividends come straight off the
+              // holding record now (no_of_shares/average_price_native/
+              // invested_native/dividends_native — see equicast_core.
+              // transactions.compute_holding_rollup), not derived from a
+              // transaction fetch here — correct even when a holding has
+              // more transactions than one page covers, and unaffected by
+              // transactionsByHolding's own fetch state.
               const instanceFinancials = instances.map((instance) => {
                 const holding = instance.holding;
                 return {
@@ -506,6 +507,7 @@ function HoldingTickerPage() {
                   avgPriceNative:
                     holding.average_price_native != null ? Number(holding.average_price_native) : null,
                   invested: Number(holding.invested_native ?? 0),
+                  dividendsNative: Number(holding.dividends_native ?? 0),
                   transactionsError: false,
                 };
               });
@@ -529,6 +531,14 @@ function HoldingTickerPage() {
               const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
               const investedDefault =
                 nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
+              const currentValueDefault =
+                totals.currentValue == null
+                  ? null
+                  : nativeCurrency == null
+                    ? totals.currentValue
+                    : fxRate != null
+                      ? totals.currentValue * fxRate
+                      : null;
               const plValueDefault =
                 totals.plValue == null
                   ? null
@@ -537,18 +547,35 @@ function HoldingTickerPage() {
                     : fxRate != null
                       ? totals.plValue * fxRate
                       : null;
+              const dividendsDefault =
+                nativeCurrency == null
+                  ? totals.dividendsNative
+                  : fxRate != null
+                    ? totals.dividendsNative * fxRate
+                    : null;
 
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
-                    label="Total invested"
+                    label="Value"
                     value={
                       totalsLoading
                         ? "…"
-                        : investedDefault != null
-                          ? formatMoney(investedDefault, totalsCurrency)
+                        : currentValueDefault != null
+                          ? formatMoney(currentValueDefault, totalsCurrency)
                           : "—"
                     }
+                    hint={
+                      totalsLoading
+                        ? "…"
+                        : `Invested ${investedDefault != null ? formatMoney(investedDefault, totalsCurrency) : "—"}`
+                    }
+                    tone={totalsTone}
+                  />
+                  <StatTile
+                    label="Shares"
+                    value={totals.shares}
+                    hint={`Avg price ${avgPriceNative != null ? formatMoney(avgPriceNative, nativeCurrency) : "—"}`}
                   />
                   <StatTile
                     label="Profit / loss"
@@ -559,12 +586,19 @@ function HoldingTickerPage() {
                           ? `${plValueDefault >= 0 ? "+" : "-"}${formatMoney(Math.abs(plValueDefault), totalsCurrency)}`
                           : "—"
                     }
+                    hint={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
                     tone={totalsTone}
+                    hintTone={totalsTone}
                   />
                   <StatTile
-                    label="Profit / loss %"
-                    value={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
-                    tone={totalsTone}
+                    label="Dividends"
+                    value={
+                      totalsLoading
+                        ? "…"
+                        : dividendsDefault != null
+                          ? formatMoney(dividendsDefault, totalsCurrency)
+                          : "—"
+                    }
                   />
                 </div>
               );

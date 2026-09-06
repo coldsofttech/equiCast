@@ -77,20 +77,22 @@ class AllocationError(Exception):
 
 def _normalize(holding: dict[str, Any]) -> dict[str, Any]:
     """Backfill the position-rollup fields (`no_of_shares`/
-    `average_price_native`/`average_price`/`invested_native`/`invested` —
-    see `update_holding_financials`) onto a holding loaded from S3 that
-    predates them, so reads of old data don't `KeyError` on a new key. Same
-    "stable shape, backfilled at read time" reasoning as
-    `equicast_core.transactions._normalize`. A holding predating this
-    feature has no recorded position yet from this client's point of view —
-    it's brought current the next time one of its transactions is created/
-    updated/deleted (see `_refresh_holding_rollup` in
-    backend/transactions/views.py), not backfilled by computation here."""
+    `average_price_native`/`average_price`/`invested_native`/`invested`/
+    `dividends_native`/`dividends` — see `update_holding_financials`) onto a
+    holding loaded from S3 that predates them, so reads of old data don't
+    `KeyError` on a new key. Same "stable shape, backfilled at read time"
+    reasoning as `equicast_core.transactions._normalize`. A holding
+    predating this feature has no recorded position yet from this client's
+    point of view — it's brought current the next time one of its
+    transactions is created/updated/deleted (see `_refresh_holding_rollup`
+    in backend/transactions/views.py), not backfilled by computation here."""
     holding.setdefault("no_of_shares", 0)
     holding.setdefault("average_price_native", None)
     holding.setdefault("average_price", None)
     holding.setdefault("invested_native", 0)
     holding.setdefault("invested", 0)
+    holding.setdefault("dividends_native", 0)
+    holding.setdefault("dividends", 0)
     return holding
 
 
@@ -206,6 +208,8 @@ class HoldingsClient:
         average_price: float | None,
         invested_native: float,
         invested: float | None,
+        dividends_native: float,
+        dividends: float | None,
     ) -> dict[str, Any]:
         """Overwrite `holding_id`'s position-rollup fields — everything
         `equicast_core.transactions.compute_holding_rollup` returns — leaving
@@ -222,6 +226,8 @@ class HoldingsClient:
             "average_price": average_price,
             "invested_native": invested_native,
             "invested": invested,
+            "dividends_native": dividends_native,
+            "dividends": dividends,
         }
         for _ in range(_MAX_CONFLICT_RETRIES):
             holdings, etag = self._load(user_id)
@@ -285,6 +291,8 @@ class HoldingsClient:
                 "average_price": None,
                 "invested_native": 0,
                 "invested": 0,
+                "dividends_native": 0,
+                "dividends": 0,
             }
             try:
                 self._save(user_id, [*holdings, holding], etag)
@@ -458,6 +466,8 @@ class HoldingsClient:
                         "average_price": None,
                         "invested_native": 0,
                         "invested": 0,
+                        "dividends_native": 0,
+                        "dividends": 0,
                     }
                 )
 
