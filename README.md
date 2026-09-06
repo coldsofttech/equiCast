@@ -437,7 +437,7 @@ field-by-field breakdown.
 
 ```python
 BenchmarkClient("SP500", "^GSPC").prices()
-# [{"key": "SP500", "symbol": "^GSPC", "date": "2026-01-02",
+# [{"key": "SP500", "symbol": "^GSPC", "currency": "USD", "date": "2026-01-02",
 #   "open": 6400.0, "high": 6420.0, "low": 6390.0, "close": 6410.0,
 #   "average": 6405.0, "last_updated": "2026-08-29T11:10:39+00:00",
 #   "source": "yfinance"},

@@ -7,8 +7,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `equicast_core.client.MarketDataClient.get_prices()` raised `KeyError:
+  'currency'` for any asset class whose price rows carry no `currency`
+  field — a pre-existing gap in `fx` (a pair converts *between* two
+  currencies rather than being priced *in* one, so its price rows never
+  had one) that `equicast-benchmark`'s prices inherited by copying the fx
+  writer's shape too closely. Surfaced as a benchmark comparison on the
+  holding page getting stuck on "Loading ... price history…" forever (the
+  request 500'd; found by reproducing it directly against a real
+  LocalStack-seeded bucket — `client.get_prices("fx", ...)` 500s the exact
+  same way, though nothing in the app calls it for fx today). Now reads
+  `rows[0].get("currency")`, degrading to `None` (same as
+  `holdingFinancials.formatPrice` already handles) instead of crashing.
+  Also gave `equicast_benchmark.client.BenchmarkClient.prices()` a real
+  `currency` field (an index *is* priced in one, unlike an fx pair — same
+  `get_info(...).get("currency")` `equicast-stock`'s prices() already
+  does), so a freshly re-ingested benchmark's price rows carry it
+  properly rather than relying on the `None` fallback.
+- `HoldingPriceChart`'s "compare against" overlay plotted the comparison
+  series on the main holding's own absolute price axis, which flattens the
+  comparison into an unreadable line near the bottom whenever the two
+  series' price growth differs by orders of magnitude (e.g. AAPL up
+  ~325,992% vs. the S&P 500's ~5,585% over "MAX" — both real, but 57x
+  apart). Switching to a linear "% change since range start" axis wasn't
+  enough either — a 57x gap in cumulative % is still a rounding error on a
+  scale that has to span 0 to 325,992. Comparison mode now plots
+  `log(close / firstClose)` for both series instead of a plain % or price
+  value, so equal vertical distance represents equal *rate* of growth
+  rather than equal absolute/percentage magnitude — the same "log scale"
+  treatment any real charting platform applies for exactly this case, and
+  it keeps both lines visibly dynamic and able to cross throughout the
+  whole range instead of one flatlining. The Line/Area/Candles toggle is
+  hidden while a comparison is active (OHLC candles and an area fill don't
+  carry meaning once both series are normalized to log-growth lines), and
+  a 0%-baseline reference line marks where both series started.
+
 ### Added
 
+- The holding page's "Compare against" picker (`HoldingComparePicker`/
+  `HoldingPriceChart`) now supports real benchmark comparisons, not just
+  another stock/ETF. Its search box additionally queries the `benchmark`
+  catalog (`GET /market/search/?asset_class=benchmark`) alongside
+  stock/etf, and its benchmark quick-pick row (S&P 500/FTSE 100/MSCI
+  World/DAX/STOXX Europe 600 — every key `benchmarks.dev.yaml` ships, so it
+  always resolves in both dev and prod) now selects a real
+  `equicast-benchmark` key instead of an illustrative placeholder. Either
+  path fetches that benchmark's real prices via the same `GET .../prices/`
+  call (and same same-day IndexedDB cache — see `utils/priceCache.js`) the
+  chart's own subject series and ticker comparisons already use, so a
+  benchmark comparison is now indistinguishable from a ticker one: real
+  data, rebased/date-aligned against the main series, cached the same way.
+  Removed the old synthetic-random-walk fallback (`buildCompareCloses`)
+  entirely, since every comparison now carries a real `ticker`/`assetClass`.
+  `equicast_core.client.ASSET_CLASSES` now includes `"benchmark"` (so
+  `/api/market/benchmark/<key>/{profile,prices,metrics}/` work), but a new
+  `DEFAULT_SEARCH_ASSET_CLASSES` (`fx`/`stock`/`etf`, unchanged) keeps
+  `benchmark` out of a plain, unfiltered search — TopbarSearch/SearchPage's
+  "All types" behavior is unaffected; only an explicit
+  `asset_classes=["benchmark"]` (what the compare picker sends) scans it.
+  `AssetTypeBadge` gained a `"benchmark"` label/tone.
 - New `equicast-benchmark` package: extracts market-index (benchmark)
   profiles, daily prices, and risk metrics from yfinance — MSCI World, MSCI
   ACWI, MSCI Emerging Markets, S&P 500, Dow Jones, Nasdaq-100, Russell

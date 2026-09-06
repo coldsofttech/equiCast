@@ -91,6 +91,7 @@ class BenchmarkClient:
         instead.
         """
         period = PRICES_FULL_LOAD_PERIOD if full_load else PRICES_DEFAULT_PERIOD
+        currency = self._datafeed.get_info(self.symbol).get("currency")
         history = self._datafeed.get_history(self.symbol, period=period)
         fetched_at = datetime.now(UTC).isoformat()
 
@@ -102,6 +103,7 @@ class BenchmarkClient:
                 {
                     "key": self.key,
                     "symbol": self.symbol,
+                    "currency": currency,
                     "date": date.date().isoformat(),
                     "open": round_value(float(row["Open"])),
                     "high": round_value(high),

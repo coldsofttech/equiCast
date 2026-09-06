@@ -27,9 +27,11 @@ async function selectCompareTicker(result) {
   vi.mocked(searchTickers).mockImplementation((_api, _q, { assetClass }) =>
     Promise.resolve({ results: assetClass === result.type ? [result] : [] })
   );
-  fireEvent.focus(screen.getByLabelText("Compare against a stock or ETF"));
-  fireEvent.change(screen.getByLabelText("Compare against a stock or ETF"), { target: { value: result.ticker } });
-  fireEvent.keyDown(screen.getByLabelText("Compare against a stock or ETF"), { key: "Enter" });
+  fireEvent.focus(screen.getByLabelText("Compare against a stock, ETF, or benchmark"));
+  fireEvent.change(screen.getByLabelText("Compare against a stock, ETF, or benchmark"), {
+    target: { value: result.ticker },
+  });
+  fireEvent.keyDown(screen.getByLabelText("Compare against a stock, ETF, or benchmark"), { key: "Enter" });
   fireEvent.click(await screen.findByText(result.ticker));
 }
 
@@ -86,16 +88,19 @@ describe("HoldingPriceChart", () => {
     expect(screen.getAllByText("▲ 10.0%")).toHaveLength(2);
   });
 
-  it("keeps benchmark comparisons synthetic", async () => {
+  it("fetches and plots a quick-pick benchmark's own real prices, rebased to this ticker's start", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
-    mockPrices({ AAPL: MAIN_BARS });
+    mockPrices({ AAPL: MAIN_BARS, SP500: COMPARE_BARS });
 
     render(<HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />);
 
-    fireEvent.focus(screen.getByLabelText("Compare against a stock or ETF"));
+    fireEvent.focus(screen.getByLabelText("Compare against a stock, ETF, or benchmark"));
     fireEvent.click(await screen.findByRole("button", { name: "S&P 500" }));
 
-    expect(await screen.findByText(/is illustrative sample data/)).toBeInTheDocument();
-    expect(getPrices).toHaveBeenCalledTimes(1);
+    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500", { range: "max" });
+
+    expect(await screen.findByText("S&P 500")).toBeInTheDocument();
+    const changes = screen.getAllByText("▲ 10.0%");
+    expect(changes).toHaveLength(2);
   });
 });

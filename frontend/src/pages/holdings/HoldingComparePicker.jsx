@@ -4,14 +4,22 @@ import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import "./HoldingComparePicker.css";
 
-/** Same benchmark list PriceChart.jsx offers — duplicated rather than
- * imported/exported since it's a tiny, purely-illustrative constant (real
- * benchmark data is a later phase, same disclaimer as the account/pie
- * chart's compare overlay). */
+/** Quick-pick benchmarks — real `equicast-benchmark` keys (see
+ * packages/benchmark/config/benchmarks.*.yaml), not the illustrative,
+ * unrelated list accounts/PriceChart.jsx still offers (that chart's own
+ * subject series is itself synthetic, so a real benchmark overlay there
+ * wouldn't mean anything yet — see its module docstring). Deliberately
+ * every one of benchmarks.dev.yaml's 5 keys (a subset of prod's 15 by
+ * design), so this quick-pick always resolves in both environments rather
+ * than 404ing locally for a prod-only benchmark. Anything not listed here
+ * is still reachable through the search box above (assetClass:
+ * "benchmark"). */
 const BENCHMARKS = [
-  { id: "sp500", name: "S&P 500" },
-  { id: "nasdaq100", name: "NASDAQ 100" },
-  { id: "ftse100", name: "FTSE 100" },
+  { key: "SP500", name: "S&P 500" },
+  { key: "FTSE100", name: "FTSE 100" },
+  { key: "MSCI_WORLD", name: "MSCI World" },
+  { key: "DAX", name: "DAX" },
+  { key: "STOXX_EUROPE_600", name: "STOXX Europe 600" },
 ];
 
 /** How many search matches to show — enough to be useful in a compact
@@ -20,31 +28,36 @@ const RESULT_LIMIT = 8;
 
 /**
  * HoldingPriceChart's "Compare against" control. Searches the app's full
- * stock/ETF catalog (GET /market/search/ — same endpoint SearchPage and
- * TickerSearchField use) rather than only tickers the user already owns,
- * so e.g. an AVGO page can compare against AAPL or VOO whether or not
- * they're actually held. FX is excluded — a price overlay against a
- * currency pair isn't a meaningful comparison — by querying "stock" and
- * "etf" separately and merging, since the search endpoint only accepts one
+ * stock/ETF/benchmark catalog (GET /market/search/ — same endpoint
+ * SearchPage and TickerSearchField use for stock/etf; benchmark is
+ * explicitly opt-in there, see api/market.js's searchTickers docstring)
+ * rather than only tickers the user already owns, so e.g. an AVGO page can
+ * compare against AAPL, VOO, or the S&P 500 whether or not they're
+ * actually held. FX is excluded — a price overlay against a currency pair
+ * isn't a meaningful comparison — by querying "stock"/"etf"/"benchmark"
+ * separately and merging, since the search endpoint only accepts one
  * asset_class filter at a time. Search runs on Enter, not per keystroke,
  * matching TickerSearchField's one-call-per-lookup convention; the
  * dropdown panel and outside-click/Escape-to-close behavior mirror
  * TopbarSearch.
  *
- * Benchmarks stay a static quick-pick list inside the same panel —
- * unchanged, real benchmark data is a later phase.
+ * A curated set of benchmarks also stays a quick-pick list inside the same
+ * panel (see BENCHMARKS above) — real `equicast-benchmark` keys, not a
+ * placeholder; anything not in that short list is still reachable by
+ * typing its name/ticker into the search box.
  *
  * Once something is selected, the control collapses to a chip (matching
  * the account/pie chart's plain "Compare against…" select's spirit of
  * showing one active comparison at a time) with a clear button that
  * restores the search box.
  *
- * A ticker selection's `onSelect` includes `ticker`/`assetClass` (from the
- * search result) so the caller can fetch that ticker's own real price
- * series — a benchmark selection passes `ticker`/`assetClass: null` since
- * there's no real series to fetch for those yet.
+ * A selection's `onSelect` always includes a real `ticker`/`assetClass` —
+ * a search result's own, or a quick-pick benchmark's `key`/`"benchmark"` —
+ * so the caller (HoldingPriceChart) can fetch that symbol's own real price
+ * series via the same GET .../prices/ call (and same IndexedDB cache) it
+ * uses for its main subject.
  *
- * @param {{ currentTicker: string, compareId: string, compareLabel: string|null, onSelect: (next: { compareId: string, label: string, ticker: string|null, assetClass: string|null }) => void, onClear: () => void }} props
+ * @param {{ currentTicker: string, compareId: string, compareLabel: string|null, onSelect: (next: { compareId: string, label: string, ticker: string, assetClass: string }) => void, onClear: () => void }} props
  */
 function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect, onClear }) {
   const api = useApi();
@@ -84,9 +97,10 @@ function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect
     Promise.all([
       searchTickers(api, trimmed, { assetClass: "stock", pageSize: RESULT_LIMIT }),
       searchTickers(api, trimmed, { assetClass: "etf", pageSize: RESULT_LIMIT }),
+      searchTickers(api, trimmed, { assetClass: "benchmark", pageSize: RESULT_LIMIT }),
     ])
-      .then(([stocks, etfs]) => {
-        const matches = [...stocks.results, ...etfs.results]
+      .then(([stocks, etfs, benchmarks]) => {
+        const matches = [...stocks.results, ...etfs.results, ...benchmarks.results]
           .filter((result) => result.ticker.toUpperCase() !== currentTicker.toUpperCase())
           .slice(0, RESULT_LIMIT);
         setResults(matches);
@@ -118,7 +132,12 @@ function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect
   };
 
   const handleSelectBenchmark = (benchmark) => {
-    onSelect({ compareId: `benchmark:${benchmark.id}`, label: benchmark.name, ticker: null, assetClass: null });
+    onSelect({
+      compareId: `benchmark:${benchmark.key}`,
+      label: benchmark.name,
+      ticker: benchmark.key,
+      assetClass: "benchmark",
+    });
     setQuery("");
     setResults(null);
     setIsOpen(false);
@@ -147,12 +166,12 @@ function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect
         <input
           type="search"
           className="ec-compare-search-input"
-          placeholder="Compare against a stock or ETF…"
+          placeholder="Compare against a stock, ETF, or benchmark…"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
           onKeyDown={handleKeyDown}
           onFocus={() => setIsOpen(true)}
-          aria-label="Compare against a stock or ETF"
+          aria-label="Compare against a stock, ETF, or benchmark"
         />
       </div>
 
@@ -163,7 +182,9 @@ function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect
           ) : error ? (
             <p className="ec-compare-status ec-compare-status--error">{error}</p>
           ) : results && results.length === 0 ? (
-            <p className="ec-compare-status">No stocks or ETFs matched &ldquo;{query.trim()}&rdquo;.</p>
+            <p className="ec-compare-status">
+              No stocks, ETFs, or benchmarks matched &ldquo;{query.trim()}&rdquo;.
+            </p>
           ) : (
             results && (
               <ul className="ec-compare-results">
@@ -189,7 +210,7 @@ function HoldingComparePicker({ currentTicker, compareId, compareLabel, onSelect
             <div className="ec-compare-benchmarks-row">
               {BENCHMARKS.map((benchmark) => (
                 <button
-                  key={benchmark.id}
+                  key={benchmark.key}
                   type="button"
                   className="ec-compare-benchmark-btn"
                   onClick={() => handleSelectBenchmark(benchmark)}

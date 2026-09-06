@@ -1,7 +1,8 @@
 # equicast-backend
 
-Django REST API exposing equicast's market data (FX/stock/ETF profiles and
-prices, read from S3 via [`equicast-core`](../packages/core/README.md)).
+Django REST API exposing equicast's market data (FX/stock/ETF/benchmark
+profiles and prices, read from S3 via
+[`equicast-core`](../packages/core/README.md)).
 Deployed as a zip-based AWS Lambda function (via `mangum`) behind API
 Gateway — not a container; `Dockerfile` exists for local testing only.
 
@@ -42,7 +43,8 @@ transactions-per-holding cap — see `infra/variables.tf`'s
 `max_transactions_for_holding`.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
-- `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
+- `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of
+  `fx`/`stock`/`etf`/`benchmark`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — `{ticker, currency,
   last_updated, source, prices: [{date, open, high, low, close}, ...]}`.
   Optional `?range=` (one of `1d`/`5d`/`1m`/`6m`/`ytd`/`1y`/`2y`/`3y`/`5y`/
@@ -53,7 +55,10 @@ transactions-per-holding cap — see `infra/variables.tf`'s
   character), case-insensitive substring match against every published
   catalog's `ticker`/`name` (see `equicast_core.catalog`), so results are
   only as fresh as the last ingestion run — not a live bucket scan. Optional
-  `?asset_class=` narrows to one of `fx`/`stock`/`etf`. Paginated
+  `?asset_class=` narrows to one of `fx`/`stock`/`etf`/`benchmark` — omitted,
+  it scans only `fx`/`stock`/`etf` (`benchmark` is opt-in only, e.g. the
+  holding page's "compare against a benchmark" picker — see
+  `equicast_core.client.DEFAULT_SEARCH_ASSET_CLASSES`). Paginated
   (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`),
   returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;

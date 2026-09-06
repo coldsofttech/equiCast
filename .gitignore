@@ -257,3 +257,7 @@ packages/benchmark/smoke_output/
 backend/build/
 backend/build_requirements.txt
 backend/lambda_package.zip
+
+# Local Claude Code working rules (see the file itself) - personal
+# workflow preferences, not project documentation to share via git
+CLAUDE.md

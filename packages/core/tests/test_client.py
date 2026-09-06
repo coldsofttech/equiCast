@@ -283,6 +283,38 @@ class TestGetPrices:
     def test_price_ranges_are_exactly(self) -> None:
         assert PRICE_RANGES == ("1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max")
 
+    def test_currency_is_none_when_price_rows_carry_no_currency_field(self, s3_client) -> None:
+        # fx's price rows carry from_currency/to_currency instead of a
+        # single `currency` (see equicast_fx.writer) — get_prices must
+        # degrade to `None` here rather than KeyError.
+        year = datetime.now(UTC).year
+        row = {
+            "from_currency": "GBP",
+            "to_currency": "USD",
+            "date": f"{year}-01-02",
+            "open": 1.3,
+            "high": 1.31,
+            "low": 1.29,
+            "close": 1.305,
+            "last_updated": "2026-01-02T21:00:00+00:00",
+            "source": "yfinance",
+        }
+        _put_year(s3_client, "fx", "GBPUSD", year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_prices("fx", "GBPUSD", price_range="ytd")
+
+        assert result["currency"] is None
+        assert result["prices"] == [
+            {
+                "date": row["date"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+            }
+        ]
+
     def test_returns_dict_shape_with_trimmed_price_rows(self, s3_client) -> None:
         # "ytd" (daily granularity, no aggregation) rather than the default
         # "max" — two same-month rows would otherwise collapse into one
@@ -545,6 +577,23 @@ class TestSearch:
                 }
             ],
         )
+        _put_catalog(
+            s3_client,
+            "benchmark",
+            [
+                {
+                    "ticker": "NASDAQ100",
+                    "name": "Nasdaq 100",
+                    "type": "benchmark",
+                    "current_price": 22400.5,
+                    "market_cap": None,
+                    "exchange": "NGM",
+                    "region": "us",
+                    "sector": None,
+                    "industry": None,
+                }
+            ],
+        )
 
     def test_matches_ticker_substring_case_insensitively(self, s3_client) -> None:
         self._seed(s3_client)
@@ -568,6 +617,9 @@ class TestSearch:
 
         result = client.search("a")
 
+        # "NASDAQ100" (the seeded benchmark row) matches "a" too, but the
+        # default scan deliberately excludes benchmark — see
+        # DEFAULT_SEARCH_ASSET_CLASSES's docstring.
         assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA", "VOO", "GBPUSD"}
 
     def test_asset_classes_filters_the_scan(self, s3_client) -> None:
@@ -577,6 +629,22 @@ class TestSearch:
         result = client.search("a", asset_classes=["stock"])
 
         assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA"}
+
+    def test_benchmark_is_excluded_from_the_default_scan(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq")
+
+        assert result == []
+
+    def test_asset_classes_can_explicitly_include_benchmark(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq", asset_classes=["benchmark"])
+
+        assert {r["ticker"] for r in result} == {"NASDAQ100"}
 
     def test_results_are_sorted_by_ticker(self, s3_client) -> None:
         self._seed(s3_client)
@@ -633,6 +701,16 @@ class TestSearch:
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         assert client.search("newco", min_market_cap=1) == []
+
+    def test_market_cap_filter_excludes_a_benchmark_with_no_market_cap_concept(
+        self, s3_client
+    ) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq", asset_classes=["benchmark"], min_market_cap=1)
+
+        assert result == []
 
     def test_no_market_cap_bounds_leaves_every_asset_class_unfiltered(self, s3_client) -> None:
         self._seed(s3_client)

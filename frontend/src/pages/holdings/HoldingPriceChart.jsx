@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
-import { seededRandom } from "../../utils/deterministicRandom.js";
 import { formatPrice } from "./holdingFinancials.js";
 import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
@@ -31,26 +30,18 @@ const RANGES = [
 const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
 const VERY_LONG_RANGES = new Set(["10y", "max"]);
 
-/** A synthetic close-price random walk, indexed to 100 at the first bar —
- * only ever used for the "compare against" overlay (other holdings/
- * benchmarks), never for this chart's own subject series, which is real.
- * Sized to match the real series' own bar count so both lines plot against
- * the same x-axis. */
-function buildCompareCloses(count, seedLabel) {
-  const rand = seededRandom(seedLabel);
-  const closes = [100];
-  for (let i = 1; i < count; i += 1) {
-    const changePct = (rand() - 0.48) * 3;
-    closes.push(Math.max(20, closes[i - 1] * (1 + changePct / 100)));
-  }
-  return closes;
-}
-
 function formatAxisDate(dateStr, rangeId) {
   const d = new Date(dateStr);
   if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
   if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Y-axis tick label: a signed percentage in comparison (pctMode) charts,
+ * the usual currency-formatted price otherwise. */
+function formatYAxisLabel(value, pctMode, currency) {
+  if (pctMode) return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+  return formatPrice(value, currency);
 }
 
 /** Evenly spaced bar indices to label on the x-axis — at most `maxTicks`,
@@ -79,13 +70,28 @@ const X_AXIS_MAX_TICKS = 6;
  * tooltip and "compare against" overlay as accounts/PriceChart.jsx, but its
  * own subject series (`ticker`) is real data from GET .../prices/ (range
  * picker wired straight to the backend's `?range=`), not a synthetic random
- * walk. A ticker comparison (picked via HoldingComparePicker, which can
- * search any stock/ETF in the app's catalog, not just something the caller
- * already holds) is real too — its own GET .../prices/ call for the same
- * range, rebased to this ticker's starting close and date-aligned against
- * `bars` (see the compareCloses memo for why) so both plot on one shared
- * price-scale y-axis. Only a benchmark comparison (S&P 500 etc.) stays a
- * synthetic random walk — there's no real index data source wired up yet.
+ * walk. A comparison (picked via HoldingComparePicker, which can search any
+ * stock/ETF/benchmark in the app's catalog, not just something the caller
+ * already holds — including a real market-index benchmark like the S&P
+ * 500) is real too — its own GET .../prices/ call for the same range.
+ *
+ * Once a comparison is active the chart switches from an absolute price
+ * scale to a log-scaled "growth since range start" scale (0% baseline,
+ * both positive and negative) instead of overlaying the two series on one
+ * price axis. A plain price axis fails outright — a mega-cap stock's price
+ * appreciation over a long range can dwarf a benchmark's by orders of
+ * magnitude, flattening the benchmark into the bottom few pixels. A LINEAR
+ * % axis doesn't fix it either: a holding up 325,992% (a ~3,260x multiple)
+ * and a benchmark up "only" 5,585% (a ~57x multiple) are still a rounding
+ * error apart on a scale that has to span 0 to 325,992. Log-scaling the
+ * growth ratio (see mainLog/compareLog below) means equal vertical
+ * distance represents equal *rate* of growth regardless of the starting
+ * multiple, so both series stay visibly dynamic and can cross each other
+ * throughout the whole range — same idea as a "log scale" toggle on any
+ * real charting platform. The Line/Area/Candles toggle is hidden in this
+ * mode — OHLC candles and an area fill don't carry meaning once everything
+ * is normalized to two overlaid log-growth lines, so comparison mode is
+ * always a plain line chart.
  *
  * Unlike PriceChart.jsx, this owns its own data fetching (re-fetching
  * whenever `rangeId` changes) rather than receiving pre-built bars as
@@ -135,10 +141,10 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   const bars = useMemo(() => series?.prices ?? [], [series]);
   const seriesCurrency = series?.currency ?? currency ?? null;
 
-  // A ticker comparison (compare.ticker set) fetches that ticker's own real
-  // prices for the same range; a benchmark comparison (compare.id set,
-  // compare.ticker null) has no real series to fetch yet, so it's skipped
-  // here and stays synthetic below.
+  // Fetches the selected comparison's (a ticker or a benchmark, both carry
+  // a real ticker/assetClass — see HoldingComparePicker) own real prices
+  // for the same range; skipped entirely while nothing is selected yet
+  // (compare.ticker/compare.assetClass still null).
   const [compareSeries, setCompareSeries] = useState(null);
   const [compareStatus, setCompareStatus] = useState("idle");
 
@@ -168,43 +174,80 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
 
   const compareBars = useMemo(() => compareSeries?.prices ?? [], [compareSeries]);
 
-  // Real comparisons are rebased to the main series' own starting close
-  // (rather than a fixed index like 100) so both lines share this chart's
-  // single price-scale y-axis and start together — the ratio-based rebase
-  // (compareClose / compareFirstClose * mainFirstClose) makes the overlay
-  // meaningful even when the two tickers trade in different currencies,
-  // since only relative movement carries over, not absolute price levels.
-  // The two series are date-aligned (not just zipped by index) since
+  // A comparison is always shown as % change from its own first bar, on the
+  // same 0%-baseline scale as the main series (see pctMode below) — so,
+  // unlike a shared price axis, no rebasing to the main series' price level
+  // is needed; each series just needs to be internally consistent. The two
+  // series are still date-aligned (not just zipped by index) since
   // different tickers/exchanges don't always share the same trading
   // calendar — a compare date missing from the main series' bars forward-
   // fills from the last known compare close, same idea as a real trading
   // desk holding a stale price over a market holiday.
-  const compareCloses = useMemo(() => {
+  const compareAlignedCloses = useMemo(() => {
     if (!compare.id || bars.length === 0) return null;
-
-    if (!compare.ticker) {
-      return buildCompareCloses(bars.length, `${compare.id}:${ticker}:${rangeId}`);
-    }
-
     if (compareStatus !== "ok" || compareBars.length === 0) return null;
+
     const closeByDate = new Map(compareBars.map((b) => [b.date, b.close]));
     let lastKnown = compareBars[0].close;
-    const rawCloses = bars.map((b) => {
+    return bars.map((b) => {
       if (closeByDate.has(b.date)) lastKnown = closeByDate.get(b.date);
       return lastKnown;
     });
-    const firstCompare = rawCloses[0];
-    const firstMain = bars[0].close;
-    return rawCloses.map((c) => (c / firstCompare) * firstMain);
-  }, [compare.id, compare.ticker, compareStatus, compareBars, bars, ticker, rangeId]);
+  }, [compare.id, compareStatus, compareBars, bars]);
+
+  // Comparison mode is driven purely by whether a comparison is selected —
+  // it engages as soon as the picker makes a selection, before that
+  // selection's own prices have even finished loading, so the axis doesn't
+  // jump from price to % mid-flight once compareAlignedCloses resolves.
+  const pctMode = Boolean(compare.id);
+
+  // Growth ratio (close / first close) rather than a plain % difference —
+  // this is what gets log-scaled below. A holding up 325,992% (a ~3,260x
+  // multiple) and a benchmark up "only" 5,585% (a ~57x multiple) still look
+  // like a rounding error apart on a LINEAR % axis, since the axis has to
+  // span 0 to 325,992 — the smaller series flatlines near zero. Plotting
+  // log(ratio) instead means equal vertical distance = equal *rate* of
+  // growth (e.g. any doubling looks the same height, whether it's 3,260x
+  // growing to 6,520x or 57x growing to 114x), so both series stay visibly
+  // dynamic and can cross each other throughout the whole range.
+  const mainRatio = useMemo(() => {
+    if (bars.length === 0) return null;
+    const first = bars[0].close;
+    return bars.map((b) => b.close / first);
+  }, [bars]);
+
+  const compareRatio = useMemo(() => {
+    if (!compareAlignedCloses) return null;
+    const first = compareAlignedCloses[0];
+    return compareAlignedCloses.map((c) => c / first);
+  }, [compareAlignedCloses]);
+
+  const avgRatio = useMemo(() => {
+    if (avgPrice == null || bars.length === 0) return null;
+    return avgPrice / bars[0].close;
+  }, [avgPrice, bars]);
+
+  const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
+  const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
+  const avgLog = avgRatio != null ? Math.log(avgRatio) : null;
+
+  // The legend's total-change badges stay in plain (linear) %, since "up
+  // 27,918%" reads naturally there — only the chart's own y-positions use
+  // the log-scaled values above.
+  const compareChangePct = compareRatio ? (compareRatio[compareRatio.length - 1] - 1) * 100 : null;
 
   const { min, max } = useMemo(() => {
     if (bars.length === 0) return { min: 0, max: 1 };
+    if (pctMode) {
+      const values = [...(mainLog ?? []), 0];
+      if (compareLog) values.push(...compareLog);
+      if (avgLog != null) values.push(avgLog);
+      return { min: Math.min(...values), max: Math.max(...values) };
+    }
     const values = bars.flatMap((b) => [b.high, b.low]);
-    if (compareCloses) values.push(...compareCloses);
     if (avgPrice != null) values.push(avgPrice);
     return { min: Math.min(...values), max: Math.max(...values) };
-  }, [bars, compareCloses, avgPrice]);
+  }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice]);
 
   const rangeSpan = max - min || 1;
   const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT;
@@ -217,18 +260,17 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
 
   const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.close)}`).join(" ");
   const areaPath = bars.length > 0 ? `${linePath} L${xFor(bars.length - 1)},${bottomY} L${xFor(0)},${bottomY} Z` : "";
-  const comparePath = compareCloses
-    ? compareCloses.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+  const pctLinePath = mainLog
+    ? mainLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+    : "";
+  const comparePctPath = compareLog
+    ? compareLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
     : null;
 
   const first = bars[0];
   const last = bars[bars.length - 1];
   const changePct = first && last ? ((last.close - first.open) / first.open) * 100 : null;
   const isUp = (changePct ?? 0) >= 0;
-
-  const compareChangePct = compareCloses
-    ? ((compareCloses[compareCloses.length - 1] - compareCloses[0]) / compareCloses[0]) * 100
-    : null;
 
   const handleMove = (event) => {
     if (!svgRef.current || bars.length === 0) return;
@@ -260,18 +302,20 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
-        <div className="ec-chart-toggle" role="group" aria-label="Chart type">
-          {["line", "area", "candle"].map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
-              onClick={() => setChartType(type)}
-            >
-              {type === "candle" ? "Candles" : type === "line" ? "Line" : "Area"}
-            </button>
-          ))}
-        </div>
+        {!pctMode && (
+          <div className="ec-chart-toggle" role="group" aria-label="Chart type">
+            {["line", "area", "candle"].map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
+                onClick={() => setChartType(type)}
+              >
+                {type === "candle" ? "Candles" : type === "line" ? "Line" : "Area"}
+              </button>
+            ))}
+          </div>
+        )}
 
         <HoldingComparePicker
           currentTicker={ticker}
@@ -339,7 +383,11 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
             onMouseMove={handleMove}
             onMouseLeave={() => setHoverIndex(null)}
             role="img"
-            aria-label={`${chartType} chart of ${ticker}'s real price history for the ${rangeId} range`}
+            aria-label={
+              pctMode
+                ? `Line chart of ${ticker}'s % change vs ${compare.label} for the ${rangeId} range`
+                : `${chartType} chart of ${ticker}'s real price history for the ${rangeId} range`
+            }
           >
             {yTicks.map(({ key, value, y }) => (
               <g key={key}>
@@ -351,7 +399,9 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
                   className="ec-chart-gridline"
                 />
                 <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
-                  {formatPrice(value, seriesCurrency)}
+                  {pctMode
+                    ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, seriesCurrency)
+                    : formatYAxisLabel(value, false, seriesCurrency)}
                 </text>
               </g>
             ))}
@@ -367,40 +417,63 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
               </text>
             ))}
 
-            {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
-            {(chartType === "line" || chartType === "area") && (
-              <path d={linePath} className="ec-chart-line" fill="none" />
-            )}
-            {chartType === "candle" &&
-              bars.map((b, i) => (
-                <g key={b.date}>
+            {pctMode ? (
+              <>
+                <line
+                  x1={PADDING_LEFT}
+                  x2={WIDTH - PADDING_RIGHT}
+                  y1={yFor(0)}
+                  y2={yFor(0)}
+                  className="ec-chart-zero-line"
+                />
+                <path d={pctLinePath} className="ec-chart-line" fill="none" />
+                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                {avgLog != null && (
                   <line
-                    x1={xFor(i)}
-                    x2={xFor(i)}
-                    y1={yFor(b.high)}
-                    y2={yFor(b.low)}
-                    className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
+                    x1={PADDING_LEFT}
+                    x2={WIDTH - PADDING_RIGHT}
+                    y1={yFor(avgLog)}
+                    y2={yFor(avgLog)}
+                    className="ec-chart-avg-line"
                   />
-                  <rect
-                    x={xFor(i) - step * 0.3}
-                    y={yFor(Math.max(b.open, b.close))}
-                    width={step * 0.6}
-                    height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
-                    className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
+                )}
+              </>
+            ) : (
+              <>
+                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
+                {(chartType === "line" || chartType === "area") && (
+                  <path d={linePath} className="ec-chart-line" fill="none" />
+                )}
+                {chartType === "candle" &&
+                  bars.map((b, i) => (
+                    <g key={b.date}>
+                      <line
+                        x1={xFor(i)}
+                        x2={xFor(i)}
+                        y1={yFor(b.high)}
+                        y2={yFor(b.low)}
+                        className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
+                      />
+                      <rect
+                        x={xFor(i) - step * 0.3}
+                        y={yFor(Math.max(b.open, b.close))}
+                        width={step * 0.6}
+                        height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
+                        className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
+                      />
+                    </g>
+                  ))}
+
+                {avgPrice != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={WIDTH - PADDING_RIGHT}
+                    y1={yFor(avgPrice)}
+                    y2={yFor(avgPrice)}
+                    className="ec-chart-avg-line"
                   />
-                </g>
-              ))}
-
-            {comparePath && <path d={comparePath} className="ec-pchart-compare-line" fill="none" />}
-
-            {avgPrice != null && (
-              <line
-                x1={PADDING_LEFT}
-                x2={WIDTH - PADDING_RIGHT}
-                y1={yFor(avgPrice)}
-                y2={yFor(avgPrice)}
-                className="ec-chart-avg-line"
-              />
+                )}
+              </>
             )}
 
             {hoverIndex !== null && (
@@ -424,12 +497,6 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
             </div>
           )}
 
-          {compare.label && !compare.ticker && (
-            <p className="ec-chart-caption">
-              {compare.label}&rsquo;s comparison line is illustrative sample data — real
-              benchmark data is a later phase.
-            </p>
-          )}
           {compare.ticker && compareStatus === "loading" && (
             <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
           )}

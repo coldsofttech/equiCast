@@ -7,7 +7,7 @@ import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils
  * @typedef {Object} SearchResult
  * @property {string} ticker
  * @property {string} name
- * @property {"stock"|"etf"|"fx"} type
+ * @property {"stock"|"etf"|"fx"|"benchmark"} type
  * @property {number|null} current_price
  * @property {string|null} currency
  * @property {string|null} website
@@ -37,24 +37,32 @@ import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils
 /**
  * GET /api/market/search/?q=... — see backend/market_data/views.py's
  * SearchView. Ticker/name search across the published catalog (stock/etf/
- * fx). Used by TickerSearchField (a portfolio/account holdings picker,
- * triggered explicitly on Enter/a Search click, not on every keystroke —
- * see TickerSearchField.jsx), by SearchPage (the full results page, with
- * `assetClass`/`page` for its Type filter and "Load more"), and for
- * resolving a currency-pair ticker for FX conversion (`assetClass: "fx"`
- * — see holdings/holdingFinancials.js's resolveFxRate). `assetClass`
- * omitted searches every asset class. `minMarketCap`/`maxMarketCap`
- * (SearchFilters' Market cap range slider), `exchange`, `region`,
- * `sector`, and `industry` (SearchFilters' Exchange/Region/Sector/Industry
- * dropdowns — see pages/search/searchFilterOptions.js for the static
- * option lists) filter stock/etf rows by `market_cap`/`exchange`/`region`
- * and stock rows by `sector`/`industry` respectively; fx rows always
- * match every one of these regardless (see `MarketDataClient.search`'s
+ * fx, plus benchmark when explicitly asked for — see below). Used by
+ * TickerSearchField (a portfolio/account holdings picker, triggered
+ * explicitly on Enter/a Search click, not on every keystroke — see
+ * TickerSearchField.jsx), by SearchPage (the full results page, with
+ * `assetClass`/`page` for its Type filter and "Load more"), by
+ * HoldingComparePicker (`assetClass: "benchmark"`, alongside "stock"/"etf"
+ * — see HoldingComparePicker.jsx), and for resolving a currency-pair
+ * ticker for FX conversion (`assetClass: "fx"` — see
+ * holdings/holdingFinancials.js's resolveFxRate). `assetClass` omitted
+ * searches `fx`/`stock`/`etf` only — `benchmark` is opt-in-only, never
+ * part of an unfiltered search (see `equicast_core.client.
+ * DEFAULT_SEARCH_ASSET_CLASSES`), so TopbarSearch/SearchPage's "All types"
+ * never surfaces one. `minMarketCap`/`maxMarketCap` (SearchFilters' Market
+ * cap range slider), `exchange`, `region`, `sector`, and `industry`
+ * (SearchFilters' Exchange/Region/Sector/Industry dropdowns — see
+ * pages/search/searchFilterOptions.js for the static option lists) filter
+ * stock/etf rows by `market_cap`/`exchange`/`region` and stock rows by
+ * `sector`/`industry` respectively; fx rows always match every one of
+ * these regardless, and a benchmark row always matches `market_cap`
+ * (having no such concept, like fx) but is filtered by
+ * `exchange`/`region` like stock/etf (see `MarketDataClient.search`'s
  * docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx"|"benchmark", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
  * @returns {Promise<SearchResponse>}
  */
 export function searchTickers(

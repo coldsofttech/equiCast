@@ -116,7 +116,8 @@ _PRICE_HISTORY = pd.DataFrame(
 
 
 def test_prices_returns_one_record_per_row() -> None:
-    client = BenchmarkClient("SP500", "^GSPC", datafeed=_datafeed({}, _PRICE_HISTORY))
+    datafeed = _datafeed({"currency": "USD"}, _PRICE_HISTORY)
+    client = BenchmarkClient("SP500", "^GSPC", datafeed=datafeed)
 
     records = client.prices()
 
@@ -124,6 +125,7 @@ def test_prices_returns_one_record_per_row() -> None:
         {
             "key": "SP500",
             "symbol": "^GSPC",
+            "currency": "USD",
             "date": "2026-01-02",
             "open": 6400.0,
             "high": 6420.0,
@@ -136,6 +138,7 @@ def test_prices_returns_one_record_per_row() -> None:
         {
             "key": "SP500",
             "symbol": "^GSPC",
+            "currency": "USD",
             "date": "2026-01-05",
             "open": 6410.0,
             "high": 6430.0,
@@ -147,6 +150,14 @@ def test_prices_returns_one_record_per_row() -> None:
         },
     ]
     assert records[0]["last_updated"] == records[1]["last_updated"]
+
+
+def test_prices_currency_is_none_when_yfinance_has_none() -> None:
+    client = BenchmarkClient("SP500", "^GSPC", datafeed=_datafeed({}, _PRICE_HISTORY))
+
+    records = client.prices()
+
+    assert all(record["currency"] is None for record in records)
 
 
 def test_prices_default_uses_ytd_period() -> None:
