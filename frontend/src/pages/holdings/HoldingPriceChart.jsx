@@ -1,21 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
-import { seededRandom } from "../../utils/deterministicRandom.js";
 import { formatPrice } from "./holdingFinancials.js";
+import HoldingBenchmarkRating from "./HoldingBenchmarkRating.jsx";
+import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
 import "./HoldingPriceChart.css";
-
-/** Same benchmark list PriceChart.jsx offers — duplicated rather than
- * imported/exported since it's a tiny, purely-illustrative constant (real
- * benchmark data is a later phase, same disclaimer as the account/pie
- * chart's compare overlay). */
-const BENCHMARKS = [
-  { id: "sp500", name: "S&P 500" },
-  { id: "nasdaq100", name: "NASDAQ 100" },
-  { id: "ftse100", name: "FTSE 100" },
-];
 
 /** Every range this picker offers (see market.js's PRICE_RANGES for the
  * full set the backend accepts) — "1d" is deliberately omitted: only
@@ -40,26 +31,18 @@ const RANGES = [
 const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
 const VERY_LONG_RANGES = new Set(["10y", "max"]);
 
-/** A synthetic close-price random walk, indexed to 100 at the first bar —
- * only ever used for the "compare against" overlay (other holdings/
- * benchmarks), never for this chart's own subject series, which is real.
- * Sized to match the real series' own bar count so both lines plot against
- * the same x-axis. */
-function buildCompareCloses(count, seedLabel) {
-  const rand = seededRandom(seedLabel);
-  const closes = [100];
-  for (let i = 1; i < count; i += 1) {
-    const changePct = (rand() - 0.48) * 3;
-    closes.push(Math.max(20, closes[i - 1] * (1 + changePct / 100)));
-  }
-  return closes;
-}
-
 function formatAxisDate(dateStr, rangeId) {
   const d = new Date(dateStr);
   if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
   if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Y-axis tick label: a signed percentage in comparison (pctMode) charts,
+ * the usual currency-formatted price otherwise. */
+function formatYAxisLabel(value, pctMode, currency) {
+  if (pctMode) return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+  return formatPrice(value, currency);
 }
 
 /** Evenly spaced bar indices to label on the x-axis — at most `maxTicks`,
@@ -74,8 +57,18 @@ function axisTickIndices(count, maxTicks) {
   return [...indices].sort((a, b) => a - b);
 }
 
-const WIDTH = 720;
-const HEIGHT = 260;
+// The SVG's viewBox width is tracked live (see the ResizeObserver effect
+// below) so it always matches the element's real rendered pixel width —
+// DEFAULT_WIDTH is only the value used for that one first render, before
+// the observer has measured anything. HEIGHT matches ec-chart-svg's fixed
+// CSS height exactly (see styles/chart.css) for the same reason: with
+// both dimensions equal to the real box, preserveAspectRatio's default
+// ("meet") scale factor is exactly 1 on both axes — no letterboxing (gaps
+// down the sides) and no distortion (mismatched x/y scale stretching
+// text/strokes), unlike either a mismatched fixed viewBox or a forced
+// preserveAspectRatio="none" would produce.
+const DEFAULT_WIDTH = 720;
+const HEIGHT = 220;
 const PADDING_TOP = 16;
 const PADDING_RIGHT = 12;
 const PADDING_BOTTOM = 28;
@@ -88,9 +81,28 @@ const X_AXIS_MAX_TICKS = 6;
  * tooltip and "compare against" overlay as accounts/PriceChart.jsx, but its
  * own subject series (`ticker`) is real data from GET .../prices/ (range
  * picker wired straight to the backend's `?range=`), not a synthetic random
- * walk. The compare overlay (other holdings/benchmarks) stays synthetic —
- * real multi-series comparison is a later phase — so it's built the same
- * way PriceChart.jsx's is, just resized to this chart's real bar count.
+ * walk. A comparison (picked via HoldingComparePicker, which can search any
+ * stock/ETF/benchmark in the app's catalog, not just something the caller
+ * already holds — including a real market-index benchmark like the S&P
+ * 500) is real too — its own GET .../prices/ call for the same range.
+ *
+ * Once a comparison is active the chart switches from an absolute price
+ * scale to a log-scaled "growth since range start" scale (0% baseline,
+ * both positive and negative) instead of overlaying the two series on one
+ * price axis. A plain price axis fails outright — a mega-cap stock's price
+ * appreciation over a long range can dwarf a benchmark's by orders of
+ * magnitude, flattening the benchmark into the bottom few pixels. A LINEAR
+ * % axis doesn't fix it either: a holding up 325,992% (a ~3,260x multiple)
+ * and a benchmark up "only" 5,585% (a ~57x multiple) are still a rounding
+ * error apart on a scale that has to span 0 to 325,992. Log-scaling the
+ * growth ratio (see mainLog/compareLog below) means equal vertical
+ * distance represents equal *rate* of growth regardless of the starting
+ * multiple, so both series stay visibly dynamic and can cross each other
+ * throughout the whole range — same idea as a "log scale" toggle on any
+ * real charting platform. The Line/Area/Candles toggle is hidden in this
+ * mode — OHLC candles and an area fill don't carry meaning once everything
+ * is normalized to two overlaid log-growth lines, so comparison mode is
+ * always a plain line chart.
  *
  * Unlike PriceChart.jsx, this owns its own data fetching (re-fetching
  * whenever `rangeId` changes) rather than receiving pre-built bars as
@@ -105,15 +117,38 @@ const X_AXIS_MAX_TICKS = 6;
  * short "5d" window whose price band sits well above/below where the
  * ticker was originally bought).
  *
- * @param {{ assetClass: string, ticker: string, currency: string|null, holdings?: {id: string, name: string}[], avgPrice?: number|null }} props
+ * Picking a benchmark (not a holding/ticker) as the comparison also renders
+ * HoldingBenchmarkRating below the chart — a real 0-100 rating derived
+ * from both sides' `GET .../metrics/`, independent of this chart's own
+ * range picker (see that component's docstring for the exact formula).
+ *
+ * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null }} props
  */
-function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPrice = null }) {
+function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   const api = useApi();
   const [chartType, setChartType] = useState("line");
   const [rangeId, setRangeId] = useState("max");
-  const [compareId, setCompareId] = useState("");
+  const [compare, setCompare] = useState({ id: "", label: null, ticker: null, assetClass: null });
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+
+  // Keeps the viewBox's width equal to the SVG's own real rendered width
+  // (see DEFAULT_WIDTH's comment above) — measured on layout (before
+  // paint, so there's no visible flash of the fallback width) and again on
+  // every resize (a window resize, or the sidebar/page layout otherwise
+  // changing this element's box).
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const boxWidth = entries[0]?.contentRect.width;
+      if (boxWidth) setWidth(boxWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const [series, setSeries] = useState(null);
   const [status, setStatus] = useState("loading");
@@ -140,29 +175,116 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
   const bars = useMemo(() => series?.prices ?? [], [series]);
   const seriesCurrency = series?.currency ?? currency ?? null;
 
-  const compareLabel = useMemo(() => {
-    if (!compareId) return null;
-    if (compareId.startsWith("holding:")) {
-      return holdings.find((h) => `holding:${h.id}` === compareId)?.name ?? null;
-    }
-    return BENCHMARKS.find((b) => `benchmark:${b.id}` === compareId)?.name ?? null;
-  }, [compareId, holdings]);
+  // Fetches the selected comparison's (a ticker or a benchmark, both carry
+  // a real ticker/assetClass — see HoldingComparePicker) own real prices
+  // for the same range; skipped entirely while nothing is selected yet
+  // (compare.ticker/compare.assetClass still null).
+  const [compareSeries, setCompareSeries] = useState(null);
+  const [compareStatus, setCompareStatus] = useState("idle");
 
-  const compareCloses = useMemo(
-    () => (compareId && bars.length > 0 ? buildCompareCloses(bars.length, `${compareId}:${ticker}:${rangeId}`) : null),
-    [compareId, bars.length, ticker, rangeId]
-  );
+  useEffect(() => {
+    if (!compare.ticker || !compare.assetClass) {
+      setCompareSeries(null);
+      setCompareStatus("idle");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCompareStatus("loading");
+    getPrices(api, compare.assetClass, compare.ticker, { range: rangeId })
+      .then((result) => {
+        if (cancelled) return;
+        setCompareSeries(result);
+        setCompareStatus(result.prices.length > 0 ? "ok" : "empty");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCompareStatus("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, compare.ticker, compare.assetClass, rangeId]);
+
+  const compareBars = useMemo(() => compareSeries?.prices ?? [], [compareSeries]);
+
+  // A comparison is always shown as % change from its own first bar, on the
+  // same 0%-baseline scale as the main series (see pctMode below) — so,
+  // unlike a shared price axis, no rebasing to the main series' price level
+  // is needed; each series just needs to be internally consistent. The two
+  // series are still date-aligned (not just zipped by index) since
+  // different tickers/exchanges don't always share the same trading
+  // calendar — a compare date missing from the main series' bars forward-
+  // fills from the last known compare close, same idea as a real trading
+  // desk holding a stale price over a market holiday.
+  const compareAlignedCloses = useMemo(() => {
+    if (!compare.id || bars.length === 0) return null;
+    if (compareStatus !== "ok" || compareBars.length === 0) return null;
+
+    const closeByDate = new Map(compareBars.map((b) => [b.date, b.close]));
+    let lastKnown = compareBars[0].close;
+    return bars.map((b) => {
+      if (closeByDate.has(b.date)) lastKnown = closeByDate.get(b.date);
+      return lastKnown;
+    });
+  }, [compare.id, compareStatus, compareBars, bars]);
+
+  // Comparison mode is driven purely by whether a comparison is selected —
+  // it engages as soon as the picker makes a selection, before that
+  // selection's own prices have even finished loading, so the axis doesn't
+  // jump from price to % mid-flight once compareAlignedCloses resolves.
+  const pctMode = Boolean(compare.id);
+
+  // Growth ratio (close / first close) rather than a plain % difference —
+  // this is what gets log-scaled below. A holding up 325,992% (a ~3,260x
+  // multiple) and a benchmark up "only" 5,585% (a ~57x multiple) still look
+  // like a rounding error apart on a LINEAR % axis, since the axis has to
+  // span 0 to 325,992 — the smaller series flatlines near zero. Plotting
+  // log(ratio) instead means equal vertical distance = equal *rate* of
+  // growth (e.g. any doubling looks the same height, whether it's 3,260x
+  // growing to 6,520x or 57x growing to 114x), so both series stay visibly
+  // dynamic and can cross each other throughout the whole range.
+  const mainRatio = useMemo(() => {
+    if (bars.length === 0) return null;
+    const first = bars[0].close;
+    return bars.map((b) => b.close / first);
+  }, [bars]);
+
+  const compareRatio = useMemo(() => {
+    if (!compareAlignedCloses) return null;
+    const first = compareAlignedCloses[0];
+    return compareAlignedCloses.map((c) => c / first);
+  }, [compareAlignedCloses]);
+
+  const avgRatio = useMemo(() => {
+    if (avgPrice == null || bars.length === 0) return null;
+    return avgPrice / bars[0].close;
+  }, [avgPrice, bars]);
+
+  const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
+  const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
+  const avgLog = avgRatio != null ? Math.log(avgRatio) : null;
+
+  // The legend's total-change badges stay in plain (linear) %, since "up
+  // 27,918%" reads naturally there — only the chart's own y-positions use
+  // the log-scaled values above.
+  const compareChangePct = compareRatio ? (compareRatio[compareRatio.length - 1] - 1) * 100 : null;
 
   const { min, max } = useMemo(() => {
     if (bars.length === 0) return { min: 0, max: 1 };
+    if (pctMode) {
+      const values = [...(mainLog ?? []), 0];
+      if (compareLog) values.push(...compareLog);
+      if (avgLog != null) values.push(avgLog);
+      return { min: Math.min(...values), max: Math.max(...values) };
+    }
     const values = bars.flatMap((b) => [b.high, b.low]);
-    if (compareCloses) values.push(...compareCloses);
     if (avgPrice != null) values.push(avgPrice);
     return { min: Math.min(...values), max: Math.max(...values) };
-  }, [bars, compareCloses, avgPrice]);
+  }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice]);
 
   const rangeSpan = max - min || 1;
-  const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT;
+  const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
   const plotHeight = HEIGHT - PADDING_TOP - PADDING_BOTTOM;
   const step = bars.length > 0 ? plotWidth / bars.length : plotWidth;
 
@@ -172,8 +294,11 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
 
   const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.close)}`).join(" ");
   const areaPath = bars.length > 0 ? `${linePath} L${xFor(bars.length - 1)},${bottomY} L${xFor(0)},${bottomY} Z` : "";
-  const comparePath = compareCloses
-    ? compareCloses.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+  const pctLinePath = mainLog
+    ? mainLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+    : "";
+  const comparePctPath = compareLog
+    ? compareLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
     : null;
 
   const first = bars[0];
@@ -181,20 +306,17 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
   const changePct = first && last ? ((last.close - first.open) / first.open) * 100 : null;
   const isUp = (changePct ?? 0) >= 0;
 
-  const compareChangePct = compareCloses
-    ? ((compareCloses[compareCloses.length - 1] - compareCloses[0]) / compareCloses[0]) * 100
-    : null;
-
   const handleMove = (event) => {
     if (!svgRef.current || bars.length === 0) return;
     const svg = svgRef.current;
     // Mapping clientX through getBoundingClientRect()'s width (a plain
-    // pixel-ratio scale) assumes the viewBox fills that box exactly — the
-    // rendered box's aspect ratio rarely matches WIDTH:HEIGHT exactly, so
-    // the default preserveAspectRatio ("xMidYMid meet") letterboxes it,
-    // which throws that mapping off from where the cursor actually is.
-    // getScreenCTM() is the real screen-pixel-to-viewBox transform, so
-    // it's correct regardless of any letterboxing.
+    // pixel-ratio scale) assumes the viewBox fills that box exactly — true
+    // here (viewBox width == the SVG's own live-measured width, see the
+    // ResizeObserver effect above), but getScreenCTM() is the real
+    // screen-pixel-to-viewBox transform regardless, so this stays correct
+    // even for a stale `width` in the render this event fires during (the
+    // observer callback and this handler aren't guaranteed to be in sync
+    // on the exact same frame).
     const point = svg.createSVGPoint();
     point.x = event.clientX;
     point.y = event.clientY;
@@ -215,43 +337,30 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
-        <div className="ec-chart-toggle" role="group" aria-label="Chart type">
-          {["line", "area", "candle"].map((type) => (
-            <button
-              key={type}
-              type="button"
-              className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
-              onClick={() => setChartType(type)}
-            >
-              {type === "candle" ? "Candles" : type === "line" ? "Line" : "Area"}
-            </button>
-          ))}
-        </div>
-
-        <select
-          className="ec-pchart-compare"
-          value={compareId}
-          onChange={(event) => setCompareId(event.target.value)}
-          aria-label="Compare against"
-        >
-          <option value="">Compare against…</option>
-          {holdings.length > 0 && (
-            <optgroup label="Other holdings">
-              {holdings.map((holding) => (
-                <option key={holding.id} value={`holding:${holding.id}`}>
-                  {holding.name}
-                </option>
-              ))}
-            </optgroup>
-          )}
-          <optgroup label="Benchmarks">
-            {BENCHMARKS.map((benchmark) => (
-              <option key={benchmark.id} value={`benchmark:${benchmark.id}`}>
-                {benchmark.name}
-              </option>
+        {!pctMode && (
+          <div className="ec-chart-toggle" role="group" aria-label="Chart type">
+            {["line", "area", "candle"].map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
+                onClick={() => setChartType(type)}
+              >
+                {type === "candle" ? "Candles" : type === "line" ? "Line" : "Area"}
+              </button>
             ))}
-          </optgroup>
-        </select>
+          </div>
+        )}
+
+        <HoldingComparePicker
+          currentTicker={ticker}
+          compareId={compare.id}
+          compareLabel={compare.label}
+          onSelect={({ compareId, label, ticker: compareTicker, assetClass: compareAssetClass }) =>
+            setCompare({ id: compareId, label, ticker: compareTicker, assetClass: compareAssetClass })
+          }
+          onClear={() => setCompare({ id: "", label: null, ticker: null, assetClass: null })}
+        />
       </div>
 
       <div className="ec-pchart-ranges" role="group" aria-label="Date range">
@@ -285,10 +394,10 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
                 </span>
               )}
             </span>
-            {compareLabel && compareChangePct !== null && (
+            {compare.label && compareChangePct !== null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-dot ec-pchart-dot--compare" aria-hidden="true" />
-                {compareLabel}
+                {compare.label}
                 <span className={`ec-chart-change${compareChangePct >= 0 ? " is-up" : " is-down"}`}>
                   {compareChangePct >= 0 ? "▲" : "▼"} {Math.abs(compareChangePct).toFixed(1)}%
                 </span>
@@ -305,23 +414,29 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
           <svg
             ref={svgRef}
             className="ec-chart-svg"
-            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            viewBox={`0 0 ${width} ${HEIGHT}`}
             onMouseMove={handleMove}
             onMouseLeave={() => setHoverIndex(null)}
             role="img"
-            aria-label={`${chartType} chart of ${ticker}'s real price history for the ${rangeId} range`}
+            aria-label={
+              pctMode
+                ? `Line chart of ${ticker}'s % change vs ${compare.label} for the ${rangeId} range`
+                : `${chartType} chart of ${ticker}'s real price history for the ${rangeId} range`
+            }
           >
             {yTicks.map(({ key, value, y }) => (
               <g key={key}>
                 <line
                   x1={PADDING_LEFT}
-                  x2={WIDTH - PADDING_RIGHT}
+                  x2={width - PADDING_RIGHT}
                   y1={y}
                   y2={y}
                   className="ec-chart-gridline"
                 />
                 <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
-                  {formatPrice(value, seriesCurrency)}
+                  {pctMode
+                    ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, seriesCurrency)
+                    : formatYAxisLabel(value, false, seriesCurrency)}
                 </text>
               </g>
             ))}
@@ -337,40 +452,63 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
               </text>
             ))}
 
-            {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
-            {(chartType === "line" || chartType === "area") && (
-              <path d={linePath} className="ec-chart-line" fill="none" />
-            )}
-            {chartType === "candle" &&
-              bars.map((b, i) => (
-                <g key={b.date}>
+            {pctMode ? (
+              <>
+                <line
+                  x1={PADDING_LEFT}
+                  x2={width - PADDING_RIGHT}
+                  y1={yFor(0)}
+                  y2={yFor(0)}
+                  className="ec-chart-zero-line"
+                />
+                <path d={pctLinePath} className="ec-chart-line" fill="none" />
+                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                {avgLog != null && (
                   <line
-                    x1={xFor(i)}
-                    x2={xFor(i)}
-                    y1={yFor(b.high)}
-                    y2={yFor(b.low)}
-                    className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(avgLog)}
+                    y2={yFor(avgLog)}
+                    className="ec-chart-avg-line"
                   />
-                  <rect
-                    x={xFor(i) - step * 0.3}
-                    y={yFor(Math.max(b.open, b.close))}
-                    width={step * 0.6}
-                    height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
-                    className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
+                )}
+              </>
+            ) : (
+              <>
+                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
+                {(chartType === "line" || chartType === "area") && (
+                  <path d={linePath} className="ec-chart-line" fill="none" />
+                )}
+                {chartType === "candle" &&
+                  bars.map((b, i) => (
+                    <g key={b.date}>
+                      <line
+                        x1={xFor(i)}
+                        x2={xFor(i)}
+                        y1={yFor(b.high)}
+                        y2={yFor(b.low)}
+                        className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
+                      />
+                      <rect
+                        x={xFor(i) - step * 0.3}
+                        y={yFor(Math.max(b.open, b.close))}
+                        width={step * 0.6}
+                        height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
+                        className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
+                      />
+                    </g>
+                  ))}
+
+                {avgPrice != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(avgPrice)}
+                    y2={yFor(avgPrice)}
+                    className="ec-chart-avg-line"
                   />
-                </g>
-              ))}
-
-            {comparePath && <path d={comparePath} className="ec-pchart-compare-line" fill="none" />}
-
-            {avgPrice != null && (
-              <line
-                x1={PADDING_LEFT}
-                x2={WIDTH - PADDING_RIGHT}
-                y1={yFor(avgPrice)}
-                y2={yFor(avgPrice)}
-                className="ec-chart-avg-line"
-              />
+                )}
+              </>
             )}
 
             {hoverIndex !== null && (
@@ -394,11 +532,22 @@ function HoldingPriceChart({ assetClass, ticker, currency, holdings = [], avgPri
             </div>
           )}
 
-          {compareLabel && (
+          {compare.ticker && compareStatus === "loading" && (
+            <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
+          )}
+          {compare.ticker && (compareStatus === "error" || compareStatus === "empty") && (
             <p className="ec-chart-caption">
-              {compareLabel}&rsquo;s comparison line is illustrative sample data — real
-              multi-series comparison is a later phase.
+              No price history published for {compare.ticker} for this range yet.
             </p>
+          )}
+
+          {compare.assetClass === "benchmark" && (
+            <HoldingBenchmarkRating
+              assetClass={assetClass}
+              ticker={ticker}
+              benchmarkKey={compare.ticker}
+              benchmarkLabel={compare.label}
+            />
           )}
         </>
       )}

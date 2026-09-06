@@ -146,9 +146,174 @@ def test_get_profile_leaves_a_missing_ceos_field_untouched(s3_client) -> None:
     assert client.get_profile("fx", "GBPUSD") == {"ticker": "GBPUSD"}
 
 
+def _dividend_row(
+    ex_dividend_date: str,
+    *,
+    price: float = 0.26,
+    currency: str = "USD",
+    last_updated: str | None = None,
+    source: str = "yfinance",
+    ticker: str = "AAPL",
+    payment_date: str | None = None,
+) -> dict:
+    row = {
+        "ticker": ticker,
+        "currency": currency,
+        "ex_dividend_date": ex_dividend_date,
+        "price": price,
+        "last_updated": last_updated or f"{ex_dividend_date}T21:00:00+00:00",
+        "source": source,
+    }
+    if payment_date is not None:
+        row["payment_date"] = payment_date
+    return row
+
+
+def test_get_dividends_returns_none_when_nothing_published(s3_client) -> None:
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+    assert client.get_dividends("stock", "AAPL") is None
+
+
+def test_get_dividends_combines_paid_declared_and_estimated_rows(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/history.parquet",
+        Body=_parquet_bytes(
+            [_dividend_row("2025-02-10", last_updated="2026-08-30T09:00:00+00:00")]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/current.parquet",
+        Body=_parquet_bytes(
+            [_dividend_row("2026-02-10", last_updated="2026-08-30T09:00:01+00:00")]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/future.parquet",
+        Body=_parquet_bytes(
+            [
+                _dividend_row(
+                    "2026-09-10",
+                    payment_date="2026-09-20",
+                    last_updated="2026-08-30T09:00:02+00:00",
+                )
+            ]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/forecasting/dividends.parquet",
+        Body=_parquet_bytes(
+            [
+                _dividend_row(
+                    "2026-12-10", source="equicast", last_updated="2026-08-30T09:00:03+00:00"
+                )
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_dividends("stock", "aapl")
+
+    assert result == {
+        "ticker": "AAPL",
+        "currency": "USD",
+        "last_updated": "2026-08-30T09:00:03+00:00",
+        "dividends": [
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2025-02-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "paid",
+                "last_updated": "2026-08-30T09:00:00+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-02-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "paid",
+                "last_updated": "2026-08-30T09:00:01+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-09-10",
+                "payment_date": "2026-09-20",
+                "price": 0.26,
+                "status": "declared",
+                "last_updated": "2026-08-30T09:00:02+00:00",
+                "source": "yfinance",
+            },
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "ex_dividend_date": "2026-12-10",
+                "payment_date": None,
+                "price": 0.26,
+                "status": "estimated",
+                "last_updated": "2026-08-30T09:00:03+00:00",
+                "source": "equicast",
+            },
+        ],
+    }
+
+
+def test_get_dividends_declared_row_with_no_payment_date_yet(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/dividend/future.parquet",
+        Body=_parquet_bytes([_dividend_row("2026-09-10", payment_date=None)]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_dividends("stock", "AAPL")
+
+    assert result["dividends"][0]["payment_date"] is None
+
+
 class TestGetPrices:
     def test_price_ranges_are_exactly(self) -> None:
         assert PRICE_RANGES == ("1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max")
+
+    def test_currency_is_none_when_price_rows_carry_no_currency_field(self, s3_client) -> None:
+        # fx's price rows carry from_currency/to_currency instead of a
+        # single `currency` (see equicast_fx.writer) — get_prices must
+        # degrade to `None` here rather than KeyError.
+        year = datetime.now(UTC).year
+        row = {
+            "from_currency": "GBP",
+            "to_currency": "USD",
+            "date": f"{year}-01-02",
+            "open": 1.3,
+            "high": 1.31,
+            "low": 1.29,
+            "close": 1.305,
+            "last_updated": "2026-01-02T21:00:00+00:00",
+            "source": "yfinance",
+        }
+        _put_year(s3_client, "fx", "GBPUSD", year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_prices("fx", "GBPUSD", price_range="ytd")
+
+        assert result["currency"] is None
+        assert result["prices"] == [
+            {
+                "date": row["date"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+            }
+        ]
 
     def test_returns_dict_shape_with_trimmed_price_rows(self, s3_client) -> None:
         # "ytd" (daily granularity, no aggregation) rather than the default
@@ -412,6 +577,23 @@ class TestSearch:
                 }
             ],
         )
+        _put_catalog(
+            s3_client,
+            "benchmark",
+            [
+                {
+                    "ticker": "NASDAQ100",
+                    "name": "Nasdaq 100",
+                    "type": "benchmark",
+                    "current_price": 22400.5,
+                    "market_cap": None,
+                    "exchange": "NGM",
+                    "region": "us",
+                    "sector": None,
+                    "industry": None,
+                }
+            ],
+        )
 
     def test_matches_ticker_substring_case_insensitively(self, s3_client) -> None:
         self._seed(s3_client)
@@ -435,6 +617,9 @@ class TestSearch:
 
         result = client.search("a")
 
+        # "NASDAQ100" (the seeded benchmark row) matches "a" too, but the
+        # default scan deliberately excludes benchmark — see
+        # DEFAULT_SEARCH_ASSET_CLASSES's docstring.
         assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA", "VOO", "GBPUSD"}
 
     def test_asset_classes_filters_the_scan(self, s3_client) -> None:
@@ -444,6 +629,22 @@ class TestSearch:
         result = client.search("a", asset_classes=["stock"])
 
         assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "HSBA"}
+
+    def test_benchmark_is_excluded_from_the_default_scan(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq")
+
+        assert result == []
+
+    def test_asset_classes_can_explicitly_include_benchmark(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq", asset_classes=["benchmark"])
+
+        assert {r["ticker"] for r in result} == {"NASDAQ100"}
 
     def test_results_are_sorted_by_ticker(self, s3_client) -> None:
         self._seed(s3_client)
@@ -500,6 +701,16 @@ class TestSearch:
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         assert client.search("newco", min_market_cap=1) == []
+
+    def test_market_cap_filter_excludes_a_benchmark_with_no_market_cap_concept(
+        self, s3_client
+    ) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("nasdaq", asset_classes=["benchmark"], min_market_cap=1)
+
+        assert result == []
 
     def test_no_market_cap_bounds_leaves_every_asset_class_unfiltered(self, s3_client) -> None:
         self._seed(s3_client)

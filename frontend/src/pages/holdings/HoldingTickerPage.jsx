@@ -13,12 +13,20 @@ import AssetIcon from "../../components/core/AssetIcon.jsx";
 import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
+import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
+import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getMetrics, getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import {
+  getDividends,
+  getMetrics,
+  getProfile,
+  searchTickers,
+  MARKET_PROFILE_BADGE_TONES,
+} from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -54,9 +62,7 @@ function formatSyncedDate(isoDatetime) {
  * which stays illustrative since there's no real portfolio-valuation
  * series to plot yet), a per-instance shares/avg price table with delete,
  * a two-pane stats section, and an About section —
- * both real data from the market profile endpoint where it exists, with the
- * handful of fields the backend doesn't expose yet (P/E, volatility,
- * average volume, dividend frequency) shown as clearly-hinted placeholders.
+ * both real data from the market profile endpoint where it exists.
  *
  * Reached by ticker, not holding id — the same ticker can be a separate
  * holding record directly in an account and/or inside one or more pies
@@ -81,6 +87,7 @@ function HoldingTickerPage() {
   const [marketProfile, setMarketProfile] = useState(null);
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
   const [marketMetrics, setMarketMetrics] = useState(null);
+  const [marketDividends, setMarketDividends] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -119,25 +126,6 @@ function HoldingTickerPage() {
       }
     }
     return list;
-  }, [accounts, ticker]);
-
-  const otherHoldings = useMemo(() => {
-    const seen = new Map();
-    const addAll = (holdings) => {
-      for (const holding of holdings) {
-        if (holding.ticker !== ticker && !seen.has(holding.ticker)) {
-          seen.set(holding.ticker, {
-            id: holding.ticker,
-            name: TICKER_NAMES[holding.ticker] ?? holding.ticker,
-          });
-        }
-      }
-    };
-    for (const account of accounts) {
-      addAll(account.holdings ?? []);
-      for (const pie of account.pies ?? []) addAll(pie.holdings ?? []);
-    }
-    return [...seen.values()];
   }, [accounts, ticker]);
 
   const isOwned = instances.length > 0;
@@ -197,6 +185,7 @@ function HoldingTickerPage() {
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
+    const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
 
     const transactionsPromise = isOwned
       ? Promise.all(
@@ -208,12 +197,13 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, metricsPromise, transactionsPromise]).then(
-      ([profileResult, metrics, transactionsResults]) => {
+    Promise.all([profilePromise, metricsPromise, dividendsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, dividends, transactionsResults]) => {
         if (cancelled) return;
         setMarketProfileStatus(profileResult.status);
         setMarketProfile(profileResult.profile);
         setMarketMetrics(metrics);
+        setMarketDividends(dividends);
         const map = {};
         for (const result of transactionsResults) map[result.holdingId] = result;
         setTransactionsByHolding(map);
@@ -285,7 +275,7 @@ function HoldingTickerPage() {
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
-      titleIcon={<AssetIcon website={marketProfile?.website} size={32} />}
+      titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
       titleBadges={
         marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
           <>
@@ -453,7 +443,6 @@ function HoldingTickerPage() {
                   assetClass={assetClass}
                   ticker={ticker}
                   currency={nativeCurrency}
-                  holdings={otherHoldings}
                   avgPrice={avgPriceNative}
                 />
                 {ownedSharesSection}
@@ -461,10 +450,14 @@ function HoldingTickerPage() {
             );
           })()}
 
+          <HoldingCagrSection marketMetrics={marketMetrics} />
+
           <div className="ec-account-columns">
-            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} marketMetrics={marketMetrics} />
+            <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
+
+          <HoldingDividendsSection dividends={marketDividends} />
 
           <div className="ec-holding-actions-row">
             <Button variant="secondary" onClick={() => setIsFinancialsOpen(true)}>

@@ -57,6 +57,30 @@ class MetricsView(APIView):
         return Response(metrics)
 
 
+class DividendsView(APIView):
+    """`dividends` combines every dividend record equicast_core.
+    MarketDataClient.get_dividends knows about (already-paid history/
+    current-year payouts, a real yfinance-declared upcoming one, and
+    computed future projections) into one chronological, status-tagged
+    list — see that method's docstring for the full shape. Unfiltered by
+    date and not deduplicated; a caller wanting only upcoming payouts (or
+    to prefer a declared one over an overlapping estimate) does that
+    itself, same division of responsibility as PricesView leaving range
+    selection to the caller."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        dividends = _client.get_dividends(asset_class, symbol)
+        if dividends is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(dividends)
+
+
 class PricesView(APIView):
     """`prices` is trimmed/aggregated to the requested `range` query param
     (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see

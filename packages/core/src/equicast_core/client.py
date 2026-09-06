@@ -1,10 +1,12 @@
 """Class-based client for reading equicast's S3 market-data layout.
 
 Generic across consumers (Django backend, Lambda, scripts) and across asset
-classes (`fx`/`stock`/`etf`) — it only knows the S3 key layout the ingestion
-pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
+classes (`fx`/`stock`/`etf`/`benchmark`) — it only knows the S3 key layout
+the ingestion pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
 `<asset_class>=<symbol>/price/current.parquet` and
 `<asset_class>=<symbol>/price/history.parquet`,
+`<asset_class>=<symbol>/dividend/{history,current,future}.parquet`,
+`<asset_class>=<symbol>/forecasting/dividends.parquet`,
 `catalog/<asset_class>.parquet` — see `equicast_core.catalog` for how the
 latter is built/uploaded by each ingestion pipeline), nothing about Django
 or any particular caller.
@@ -23,10 +25,22 @@ from pyarrow import BufferReader
 
 from equicast_core.catalog import catalog_key
 
+#: Every asset class this client (and the backend views built on it) will
+#: accept for a direct, explicit request — a symbol's own profile/metrics/
+#: prices/dividends, or a `search()` call that explicitly names it via
+#: `asset_classes`. Deliberately broader than `DEFAULT_SEARCH_ASSET_CLASSES`
+#: below: `benchmark` is fetchable/searchable on request (e.g. the holding
+#: page's "compare against a benchmark" picker explicitly searches
+#: `asset_classes=["benchmark"]`), but isn't one of the classes a plain,
+#: unfiltered search (TopbarSearch, SearchPage's "All types") scans.
+ASSET_CLASSES = ("fx", "stock", "etf", "benchmark")
+
 #: Every asset class `search()` scans when no `asset_classes` filter is
 #: given, in a fixed order so results are grouped predictably rather than
 #: interleaved by whatever order a caller happened to pass filters in.
-ASSET_CLASSES = ("fx", "stock", "etf")
+#: Narrower than `ASSET_CLASSES` on purpose — see that constant's docstring
+#: for why `benchmark` is opt-in only, not part of this default set.
+DEFAULT_SEARCH_ASSET_CLASSES = ("fx", "stock", "etf")
 
 #: Every price range get_prices()/PricesView accepts, in the order a range
 #: picker should offer them. "max" is also the default when none is given
@@ -170,6 +184,97 @@ class MarketDataClient:
             return None
         return rows[0]
 
+    def get_dividends(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return `{ticker, currency, last_updated, dividends}` for `symbol`,
+        combining every dividend Parquet an ingestion pipeline writes into
+        one chronological list, or `None` if none of them exist for this
+        ticker/pair yet.
+
+        Each entry in `dividends` is tagged by a `status`:
+          - `"paid"` — an already-happened payout, from `dividend/
+            history.parquet` and `dividend/current.parquet` (see
+            `equicast_stock/equicast_etf`'s `write_dividend_parquet`).
+            `payment_date` is always `None` here — yfinance's dividend
+            history has no payment-date field (see
+            `equicast_dividends.DividendsClient.dividends`'s docstring).
+          - `"declared"` — a real, yfinance-confirmed upcoming payout, from
+            `dividend/future.parquet` (see `DividendsClient.
+            future_dividends`) — 0 or 1 row, per ticker. `payment_date` is
+            whatever that row has (sometimes `None` too, when yfinance
+            hasn't reported one yet).
+          - `"estimated"` — a computed projection, from `forecasting/
+            dividends.parquet` (see `equicast_forecasting.dividends`).
+            `payment_date` is always `None` — this is a projected ex-date
+            only, with no payment-date concept.
+
+        Deliberately unfiltered by date (`"estimated"` rows in particular
+        span years on both sides of today - see `equicast_forecasting.
+        dividends`'s docstring) and not deduplicated where a `"declared"`
+        and an `"estimated"` row estimate the same real-world payout -
+        callers needing "upcoming only" or "declared wins over an
+        overlapping estimate" (e.g. a holding page's upcoming-dividends
+        cards) apply that themselves, the same way callers of `get_prices`
+        pick their own display range rather than this client guessing one.
+        """
+        prefix = f"{asset_class.lower()}={symbol.upper()}"
+        paid_rows = (self._read_parquet(f"{prefix}/dividend/history.parquet") or []) + (
+            self._read_parquet(f"{prefix}/dividend/current.parquet") or []
+        )
+        declared_rows = self._read_parquet(f"{prefix}/dividend/future.parquet") or []
+        estimated_rows = self._read_parquet(f"{prefix}/forecasting/dividends.parquet") or []
+        if not (paid_rows or declared_rows or estimated_rows):
+            return None
+
+        dividends = [
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": None,
+                    "price": row["price"],
+                    "status": "paid",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in paid_rows
+            ),
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": row.get("payment_date"),
+                    "price": row["price"],
+                    "status": "declared",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in declared_rows
+            ),
+            *(
+                {
+                    "ticker": row["ticker"],
+                    "currency": row["currency"],
+                    "ex_dividend_date": row["ex_dividend_date"],
+                    "payment_date": None,
+                    "price": row["price"],
+                    "status": "estimated",
+                    "last_updated": row["last_updated"],
+                    "source": row["source"],
+                }
+                for row in estimated_rows
+            ),
+        ]
+        dividends.sort(key=lambda record: record["ex_dividend_date"])
+
+        return {
+            "ticker": dividends[0]["ticker"],
+            "currency": dividends[0]["currency"],
+            "last_updated": max(record["last_updated"] for record in dividends),
+            "dividends": dividends,
+        }
+
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE
     ) -> dict[str, Any]:
@@ -193,7 +298,10 @@ class MarketDataClient:
         year's Jan 1.
 
         `currency` is read off the first matched daily row (a symbol's
-        currency doesn't change day to day); `last_updated`/`source` reflect
+        currency doesn't change day to day) — `None` for an asset class
+        whose price rows carry no `currency` field at all (fx: a pair
+        converts *between* two currencies rather than being priced *in*
+        one, see `equicast_fx.writer`); `last_updated`/`source` reflect
         whichever matched daily row was written most recently (same "max of
         the parts" pattern as equicast_stock.cli's combined `last_updated`)
         — `history.parquet`/`current.parquet` are written independently
@@ -272,7 +380,7 @@ class MarketDataClient:
         prices = _aggregate_prices(daily, _PRICE_RANGE_GRANULARITY[price_range])
         return {
             "ticker": symbol.upper(),
-            "currency": rows[0]["currency"],
+            "currency": rows[0].get("currency"),
             "last_updated": freshest["last_updated"],
             "source": freshest["source"],
             "prices": prices,
@@ -300,7 +408,9 @@ class MarketDataClient:
     ) -> list[dict[str, Any]]:
         """Case-insensitive substring match of `query` against every
         catalog row's `ticker` and `name`, across `asset_classes` (default:
-        every asset class — see `ASSET_CLASSES`). Reads each scanned asset
+        `DEFAULT_SEARCH_ASSET_CLASSES` — `benchmark` is scanned only when a
+        caller explicitly asks for it, e.g. `asset_classes=["benchmark"]`;
+        see that constant's docstring for why). Reads each scanned asset
         class's catalog file once (via `get_catalog`) rather than the
         bucket itself — no per-ticker S3 reads here, unlike
         `get_profile`/`get_prices`.
@@ -312,20 +422,23 @@ class MarketDataClient:
         `exchange`, `region`, `sector`, and `industry` respectively (see
         `equicast_core.catalog.build_catalog_rows`) — fx rows always match
         every one of these regardless, having none of those concepts for a
-        currency pair; etf rows have no `sector`/`industry` of their own
-        either (always `None`), so an etf row is excluded whenever either
-        of those two filters is given, the same as a stock row missing the
-        field. `exchange`/`region`/`sector`/`industry` match
+        currency pair; etf/benchmark rows have no `sector`/`industry` of
+        their own either (always `None`), so a row from either is excluded
+        whenever either of those two filters is given, the same as a stock
+        row missing the field — a benchmark row is likewise excluded
+        whenever `min_market_cap`/`max_market_cap` is given, having no
+        market-cap concept of its own (unlike etf's `total_assets` stand-
+        in). `exchange`/`region`/`sector`/`industry` match
         case-insensitively against the row's exact value (not a substring,
         unlike `query`), since all four are short codes/labels (e.g.
-        "NMS"/"us"/"Technology"), not free text. A stock/etf row missing
-        the field being filtered on is excluded whenever that filter is
-        given, rather than guessed to match — there's nothing to compare
-        it against.
+        "NMS"/"us"/"Technology"), not free text. A stock/etf/benchmark row
+        missing the field being filtered on is excluded whenever that
+        filter is given, rather than guessed to match — there's nothing to
+        compare it against.
 
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""
-        classes = asset_classes if asset_classes is not None else ASSET_CLASSES
+        classes = asset_classes if asset_classes is not None else DEFAULT_SEARCH_ASSET_CLASSES
         query_lower = query.lower()
         filter_by_market_cap = min_market_cap is not None or max_market_cap is not None
         exchange_lower = exchange.lower() if exchange is not None else None

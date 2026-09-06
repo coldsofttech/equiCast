@@ -2,6 +2,20 @@
   margin-bottom: var(--ec-s-24);
 }
 
+/** Bleeds the chart itself to the panel's own left/right border, canceling
+ * out the Card's own horizontal padding (see components/core/Card.css) —
+ * the plot area was otherwise inset by that padding same as the toolbar/
+ * legend/captions around it, making the actual graph look small relative
+ * to the panel. Everything else in the panel stays normally padded; only
+ * the SVG (width already 100% — see styles/chart.css) widens to fill the
+ * reclaimed space, and the viewBox scales proportionally into it, so
+ * nothing inside it (axis labels included) gets clipped. */
+.ec-pchart .ec-chart-svg {
+  width: calc(100% + var(--ec-s-20) * 2);
+  margin-left: calc(var(--ec-s-20) * -1);
+  margin-right: calc(var(--ec-s-20) * -1);
+}
+
 .ec-pchart-toolbar {
   display: flex;
   align-items: center;

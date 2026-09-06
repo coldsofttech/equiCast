@@ -7,7 +7,7 @@ script), not tied to Django.
 ## `MarketDataClient` — S3 market data
 
 Reads equicast's S3 market-data layout — the Parquet files written by
-`equicast-fx`/`equicast-stock`/`equicast-etf`
+`equicast-fx`/`equicast-stock`/`equicast-etf`/`equicast-benchmark`
 (`<asset_class>=<symbol>/profile.parquet`,
 `<asset_class>=<symbol>/price/current.parquet`,
 `<asset_class>=<symbol>/price/history.parquet`). Has no
@@ -75,9 +75,21 @@ client.get_catalog("stock")
 
 client.search("v")
 # every fx/stock/etf catalog row whose ticker or name contains "v",
-# sorted by ticker — e.g. ticker "V" and any name containing a "v"
+# sorted by ticker — e.g. ticker "V" and any name containing a "v".
+# benchmark is NOT scanned here (see DEFAULT_SEARCH_ASSET_CLASSES below).
 client.search("v", asset_classes=["stock"])  # narrow the scan
+client.search("s&p", asset_classes=["benchmark"])  # benchmark is opt-in only
 ```
+
+`ASSET_CLASSES` (`"fx"`, `"stock"`, `"etf"`, `"benchmark"`) is every asset
+class a *direct*, explicit request accepts — a symbol's own profile/
+metrics/prices/dividends, or a `search()` call that explicitly names
+`"benchmark"` via `asset_classes`. `DEFAULT_SEARCH_ASSET_CLASSES` (`"fx"`,
+`"stock"`, `"etf"` — no `"benchmark"`) is what `search()` scans when
+`asset_classes` is omitted: a plain, unfiltered search never surfaces a
+benchmark row, since comparing a holding against a market index (e.g. the
+equiCast holding page's "compare against a benchmark" picker) is the only
+place today that searches for one on purpose.
 
 `get_catalog()` returns `[]` (not an exception) if this asset class's
 pipeline hasn't published a catalog yet, the same "not configured" shape
@@ -89,8 +101,8 @@ ingestion run that built the catalog — same staleness model as
 
 The write side of the `catalog/<asset_class>.parquet` contract
 `MarketDataClient.get_catalog`/`.search` read. Deliberately generic across
-all three ingestion pipelines and asset-class-agnostic — every pipeline
-already writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
+every ingestion pipeline and asset-class-agnostic — each pipeline already
+writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
 local layout before uploading, so this only needs a local directory and an
 `asset_class` string, no per-pipeline config parsing:
 
@@ -115,7 +127,8 @@ upload_catalog(bucket="equicast-market-data-dev", asset_class="stock", rows=rows
 Also installs as a CLI, `equicast-core-build-catalog --asset-class stock
 --output-dir output --bucket equicast-market-data-dev`, which each
 ingestion workflow (`stock-ingestion.yml`/`etf-ingestion.yml`/
-`fx-ingestion.yml`) runs once per run, in a `build-catalog` job **after**
+`fx-ingestion.yml`/`benchmark-ingestion.yml`) runs once per run, in a
+`build-catalog` job **after**
 every parallel ingest matrix leg finishes — a single leg only ever
 processes its own chunk of the full ticker list (GitHub Actions caps a
 matrix at 256 legs), so the catalog can't be built inside any one leg;

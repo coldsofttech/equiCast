@@ -28,6 +28,14 @@
   stroke-dasharray: 6 4;
 }
 
+/** The 0% baseline in comparison (pctMode) charts — a plain gridline
+ * doesn't stand out enough to read as "this is where both series started",
+ * so it gets its own slightly bolder, more opaque treatment. */
+.ec-chart-zero-line {
+  stroke: var(--ec-text-subtle);
+  stroke-width: 1.25;
+}
+
 .ec-pchart-swatch {
   width: 14px;
   height: 0;

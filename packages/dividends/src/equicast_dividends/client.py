@@ -75,3 +75,56 @@ class DividendsClient:
                 }
             )
         return records
+
+    def future_dividends(self) -> list[dict[str, Any]]:
+        """Return zero or one record for `symbol`'s next declared dividend:
+        {ticker, currency, ex_dividend_date, payment_date, price,
+        last_updated, source} - not derived from `dividends()`'s
+        ex-dividend-date history (which yfinance only ever backfills *after*
+        an ex-dividend date has passed - see that method's docstring), but
+        from three `.info` fields yfinance keeps pointed at whichever
+        dividend it most recently became aware of: `exDividendDate`,
+        `dividendDate` (the payment date), and `lastDividendValue` (the
+        per-share cash amount tied to that ex-date).
+
+        That "most recently became aware of" dividend is often one that's
+        already gone ex-dividend (yfinance doesn't always have next
+        quarter's announcement lined up right after the current one pays),
+        so this returns an empty list unless `exDividendDate` is strictly
+        after today - reporting a stale already-happened "next" dividend
+        would be worse than reporting none. Also empty when either
+        `exDividendDate` or `lastDividendValue` is unset (nothing forward-
+        looking to report yet, or the symbol has no dividend history at
+        all). `payment_date` is `None` when yfinance hasn't reported
+        `dividendDate` yet even though `exDividendDate` is set - unlike
+        `dividends()`'s historical records, which never have a payment date
+        at all.
+        """
+        info = self._datafeed.get_info(self.symbol)
+        ex_dividend_date = info.get("exDividendDate")
+        amount = info.get("lastDividendValue")
+        if ex_dividend_date is None or amount is None:
+            return []
+
+        ex_date = datetime.fromtimestamp(ex_dividend_date, tz=UTC).date()
+        if ex_date <= datetime.now(UTC).date():
+            return []
+
+        payment_date_timestamp = info.get("dividendDate")
+        payment_date = (
+            datetime.fromtimestamp(payment_date_timestamp, tz=UTC).date().isoformat()
+            if payment_date_timestamp
+            else None
+        )
+
+        return [
+            {
+                "ticker": self.symbol,
+                "currency": info.get("currency"),
+                "ex_dividend_date": ex_date.isoformat(),
+                "payment_date": payment_date,
+                "price": round_value(float(amount)),
+                "last_updated": datetime.now(UTC).isoformat(),
+                "source": "yfinance",
+            }
+        ]

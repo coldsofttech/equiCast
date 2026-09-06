@@ -3,8 +3,8 @@
 How GitHub Actions authenticates to AWS — for `terraform.yml` (managing
 infrastructure), `deploy.yml` (backend deployment package to Lambda via S3,
 frontend to S3 + CloudFront invalidation), and
-`fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`
-(FX/stock/ETF Parquet files to S3, same bucket). This is the detailed reference;
+`fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`/`benchmark-ingestion.yml`
+(FX/stock/ETF/benchmark Parquet files to S3, same bucket). This is the detailed reference;
 [fx-pipeline.md](fx-pipeline.md) has the quick-start version.
 
 ## Why this is created manually, not by Terraform

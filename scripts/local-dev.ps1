@@ -69,17 +69,19 @@
   Run the frontend dev server (`npm run dev`) in its own window.
 
 .PARAMETER SeedMarketData
-  Only applies with -StartLocalStack: also ingests all three asset classes
+  Only applies with -StartLocalStack: also ingests all four asset classes
   via their CLI/config (equicast-fx/packages/fx/config/fx_pairs.dev.yaml,
   equicast-stock/packages/stock/config/stocks.dev.yaml,
-  equicast-etf/packages/etf/config/etfs.dev.yaml) and builds/uploads each
-  asset class's catalog into LocalStack, so /api/market/... has something
-  to return. Also runs equicast-forecasting (packages/forecasting) for
-  stock and ETF tickers, writing forecasting/dividends.parquet alongside
-  each ticker's other output (fx has no dividends, so it's skipped there).
-  These CLIs hit live Yahoo Finance data, so this makes real network calls
-  even though everything else stays local. The three pipelines run in
-  parallel (PowerShell background jobs), not one after another.
+  equicast-etf/packages/etf/config/etfs.dev.yaml,
+  equicast-benchmark/packages/benchmark/config/benchmarks.dev.yaml) and
+  builds/uploads each asset class's catalog into LocalStack, so
+  /api/market/... has something to return. Also runs equicast-forecasting
+  (packages/forecasting) for stock and ETF tickers, writing
+  forecasting/dividends.parquet alongside each ticker's other output (fx
+  and benchmark have no dividends, so both are skipped there). These CLIs
+  hit live Yahoo Finance data, so this makes real network calls even
+  though everything else stays local. The four pipelines run in parallel
+  (PowerShell background jobs), not one after another.
 
   LocalStack keeps no data across container removal (a fresh
   `docker run`, or `-Reset`), so everything this ingests would otherwise
@@ -494,7 +496,7 @@ try {
             Restore-LocalStackAppData
         }
 
-        # --- Optionally seed all three asset classes' catalogs ---------------
+        # --- Optionally seed all four asset classes' catalogs ---------------
         if ($SeedMarketData) {
             # A previous run's seed, if its -FullLoad mode matches this run's -
             # see the cache-write side below for what gets written here and why.
@@ -519,18 +521,19 @@ try {
                 # Each pipeline package shares the same CLI shape (--config/--out
                 # [--full-load]) and writes <asset_class>=<TICKER>/... under its own
                 # ./output, which equicast-core-build-catalog then reads to build
-                # that asset class's catalog.parquet. The three run as parallel
+                # that asset class's catalog.parquet. The four run as parallel
                 # background jobs (each its own process, so no Push-Location/
                 # $env: interference between them) rather than one after another -
                 # they're independent, network-bound CLI calls, so there's nothing
                 # to gain from serializing them.
                 $pipelines = @(
-                    @{ AssetClass = "fx";    Package = "fx";    Cli = "equicast-fx";    Config = "config\fx_pairs.dev.yaml" },
-                    @{ AssetClass = "stock"; Package = "stock"; Cli = "equicast-stock"; Config = "config\stocks.dev.yaml" },
-                    @{ AssetClass = "etf";   Package = "etf";   Cli = "equicast-etf";   Config = "config\etfs.dev.yaml" }
+                    @{ AssetClass = "fx";        Package = "fx";        Cli = "equicast-fx";        Config = "config\fx_pairs.dev.yaml" },
+                    @{ AssetClass = "stock";     Package = "stock";     Cli = "equicast-stock";     Config = "config\stocks.dev.yaml" },
+                    @{ AssetClass = "etf";       Package = "etf";       Cli = "equicast-etf";       Config = "config\etfs.dev.yaml" },
+                    @{ AssetClass = "benchmark"; Package = "benchmark"; Cli = "equicast-benchmark"; Config = "config\benchmarks.dev.yaml" }
                 )
 
-                Write-Host "Seeding fx/stock/etf market data into $MarketDataBucket in parallel (FullLoad=$([bool]$FullLoad))..."
+                Write-Host "Seeding fx/stock/etf/benchmark market data into $MarketDataBucket in parallel (FullLoad=$([bool]$FullLoad))..."
                 $seedJobs = foreach ($pipeline in $pipelines) {
                     Start-Job -Name $pipeline.AssetClass -ScriptBlock {
                         param($RepoRoot, $Endpoint, $MarketDataBucket, $FullLoad, $pipeline)
@@ -561,12 +564,12 @@ try {
                             throw "$($pipeline.Cli) failed (exit $LASTEXITCODE)."
                         }
 
-                        # equicast-forecasting isn't one of the three pipelines above
+                        # equicast-forecasting isn't one of the four pipelines above
                         # (it has its own independent DividendsClient fetch, not a
                         # read-back of dividend.parquet) but writes into this same
                         # ./output before the one S3 upload below, so its
                         # forecasting/dividends.parquet rides along automatically.
-                        # fx has no dividends, so it's skipped there.
+                        # fx and benchmark have no dividends, so both are skipped there.
                         if ($pipeline.AssetClass -eq "stock" -or $pipeline.AssetClass -eq "etf") {
                             $pipelineOutput = Join-Path $RepoRoot "packages\$($pipeline.Package)\output"
                             $pipelineConfig = Join-Path $RepoRoot "packages\$($pipeline.Package)\$($pipeline.Config)"

@@ -5,9 +5,12 @@ For each ticker, writes one profile.parquet snapshot (including a
 `dividend_frequency` field derived from dividend history - see
 `equicast_dividends.dividend_frequency`), a price/current.parquet and
 dividend/current.parquet (plus price/history.parquet and
-dividend/history.parquet too, but only on a --full-load run), an
-events/current.parquet (and events/history.parquet on --full-load), and one
-metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
+dividend/history.parquet too, but only on a --full-load run), a
+dividend/future.parquet when yfinance reports a still-upcoming dividend for
+this ticker (see `equicast_dividends.DividendsClient.future_dividends` -
+omitted entirely otherwise, not written empty), an events/current.parquet
+(and events/history.parquet on --full-load), and one metrics.parquet
+snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
 metrics.parquet only carries MetricsClient.metrics() - not
 .fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
 events.parquet in practice only ever has "split" rows for an ETF ticker -
@@ -40,6 +43,7 @@ from equicast_etf.config import ETFTicker, load_etf_tickers, parse_etf_tickers_j
 from equicast_etf.writer import (
     write_dividend_parquet,
     write_events_parquet,
+    write_future_dividend_parquet,
     write_metrics_parquet,
     write_price_parquet,
     write_profile_parquet,
@@ -105,8 +109,11 @@ def _profile_and_dividends_task(
     full_load: bool,
 ) -> list[Path]:
     """Write profile.parquet (with a `dividend_frequency` field derived from
-    dividend history) and dividend/current.parquet (plus
-    dividend/history.parquet on a --full-load run).
+    dividend history), dividend/current.parquet (plus
+    dividend/history.parquet on a --full-load run), and dividend/future.parquet
+    when yfinance reports a still-upcoming dividend (see
+    `DividendsClient.future_dividends` - omitted entirely when there isn't
+    one, regardless of `full_load`).
 
     Combined into one task, rather than two independent ones like
     prices/events, because both need the same dividend history:
@@ -129,6 +136,7 @@ def _profile_and_dividends_task(
         current_year = str(datetime.now(UTC).year)
         to_write = [d for d in dividends if d["ex_dividend_date"][:4] == current_year]
     paths.extend(write_dividend_parquet(to_write, output_dir))
+    paths.extend(write_future_dividend_parquet(dividends_client.future_dividends(), output_dir))
     return paths
 
 

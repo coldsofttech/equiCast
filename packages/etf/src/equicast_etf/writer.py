@@ -127,6 +127,27 @@ def write_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> l
     return written
 
 
+def write_future_dividend_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
+    """Write `records` (0 or 1 row - see DividendsClient.future_dividends())
+    to `<output_dir>/etf=<TICKER>/dividend/future.parquet`, only when
+    there's a still-upcoming dividend to report. Most tickers have nothing
+    here - yfinance hasn't declared one far enough ahead yet, or the ticker
+    doesn't pay dividends at all - and this omits the file entirely for
+    them rather than writing an empty one, same convention as
+    `write_price_parquet`/`write_dividend_parquet`.
+    """
+    if not records:
+        return []
+
+    ticker = records[0]["ticker"]
+    directory = output_dir / f"etf={ticker}" / "dividend"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "future.parquet"
+    pd.DataFrame(records).to_parquet(path, index=False)
+    return [path]
+
+
 def write_metrics_parquet(metrics: dict[str, Any], ticker: str, output_dir: Path) -> Path:
     """Write `metrics` to `<output_dir>/etf=<TICKER>/metrics.parquet`.
 
