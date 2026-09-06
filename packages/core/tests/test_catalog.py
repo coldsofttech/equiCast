@@ -7,7 +7,6 @@ import pytest
 from equicast_core.catalog import build_catalog_rows, catalog_key, main, upload_catalog
 from moto import mock_aws
 
-
 BUCKET = "equicast-market-data-test"
 
 
