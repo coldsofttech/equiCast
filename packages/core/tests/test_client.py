@@ -51,6 +51,22 @@ def _price_row(
     }
 
 
+def _fx_row(date: str, *, close: float, last_updated: str | None = None) -> dict:
+    """A raw fx price.parquet row — no `currency` field at all (a pair
+    converts *between* two currencies rather than being priced *in* one,
+    see equicast_fx.writer); get_price_on_date/get_fx_rate_on_date only
+    ever read `date`/`close` off this shape, nothing pair-identifying."""
+    return {
+        "date": date,
+        "open": close,
+        "high": close,
+        "low": close,
+        "close": close,
+        "last_updated": last_updated or f"{date}T21:00:00+00:00",
+        "source": "yfinance",
+    }
+
+
 def _put_year(s3_client, asset_class: str, symbol: str, year: int, rows: list[dict]) -> None:
     """Writes `rows` to whichever of `price/current.parquet` (this calendar
     year) or `price/history.parquet` (any earlier year) `year` belongs to —
@@ -480,6 +496,98 @@ class TestGetPrices:
 
         with pytest.raises(ValueError):
             client.get_prices("etf", "voo", price_range="3d")
+
+
+class TestGetPriceOnDate:
+    def test_exact_date_match(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(
+            s3_client,
+            "etf",
+            "VOO",
+            year,
+            [_price_row(f"{year}-01-02", close=100.0), _price_row(f"{year}-01-03", close=101.0)],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_on_date("etf", "voo", f"{year}-01-03")
+
+        assert result == {"date": f"{year}-01-03", "close": 101.0, "currency": "USD"}
+
+    def test_falls_back_to_nearest_prior_trading_day_when_on_date_has_no_row(
+        self, s3_client
+    ) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "etf", "VOO", year, [_price_row(f"{year}-01-03", close=101.0)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # "-05" has no row of its own (e.g. a weekend/holiday) — resolves to
+        # the nearest earlier published trading day instead.
+        result = client.get_price_on_date("etf", "voo", f"{year}-01-05")
+
+        assert result == {"date": f"{year}-01-03", "close": 101.0, "currency": "USD"}
+
+    def test_reads_history_parquet_when_on_date_is_in_a_prior_year(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "etf", "VOO", year - 1, [_price_row(f"{year - 1}-06-15", close=90.0)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_on_date("etf", "voo", f"{year - 1}-06-20")
+
+        assert result == {"date": f"{year - 1}-06-15", "close": 90.0, "currency": "USD"}
+
+    def test_returns_none_when_nothing_published_on_or_before_on_date(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "etf", "VOO", year, [_price_row(f"{year}-06-15", close=90.0)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_price_on_date("etf", "voo", f"{year}-01-01") is None
+
+    def test_returns_none_when_no_data_published_at_all(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_price_on_date("etf", "MISSING", "2026-01-01") is None
+
+    def test_currency_is_none_for_fx_rows(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "fx", "GBPUSD", year, [_fx_row(f"{year}-01-02", close=1.305)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_on_date("fx", "GBPUSD", f"{year}-01-02")
+
+        assert result == {"date": f"{year}-01-02", "close": 1.305, "currency": None}
+
+
+class TestGetFxRateOnDate:
+    def test_same_currency_returns_one_with_no_lookup(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # No fx data seeded at all — proves this never even attempts a
+        # lookup when the two currencies are identical.
+        assert client.get_fx_rate_on_date("GBP", "GBP", "2026-01-01") == 1.0
+
+    def test_uses_the_direct_pair_when_published(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "fx", "USDGBP", year, [_fx_row(f"{year}-01-02", close=0.8)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_fx_rate_on_date("USD", "GBP", f"{year}-01-02") == 0.8
+
+    def test_falls_back_to_the_inverted_pair_when_direct_is_missing(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        # Only GBPUSD is published (1 GBP = 1.25 USD) — converting USD->GBP
+        # needs the reciprocal.
+        _put_year(s3_client, "fx", "GBPUSD", year, [_fx_row(f"{year}-01-02", close=1.25)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_fx_rate_on_date("USD", "GBP", f"{year}-01-02")
+
+        assert result == pytest.approx(1 / 1.25)
+
+    def test_returns_none_when_neither_pair_is_published(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_fx_rate_on_date("USD", "GBP", "2026-01-01") is None
 
 
 def _put_catalog(s3_client, asset_class: str, rows: list[dict]) -> None:

@@ -2,6 +2,7 @@
  * @typedef {Object} UserProfile
  * @property {string} user_id
  * @property {string} default_currency
+ * @property {"AVERAGE"|"TRANSACTION"} transaction_type
  */
 
 /**
@@ -31,5 +32,21 @@ export function getMe(api) {
 export function updateDefaultCurrency(api, defaultCurrency) {
   return /** @type {Promise<UserProfile>} */ (
     api("/identity/me/", { method: "PATCH", body: { default_currency: defaultCurrency } })
+  );
+}
+
+/**
+ * PATCH /api/identity/me/ — see MeView.patch. A single setting governing
+ * how every holding across every one of the user's accounts/pies records
+ * transactions (see equicast_core.transactions module docstring); 409s if
+ * the user already has any transaction recorded anywhere.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {"AVERAGE"|"TRANSACTION"} transactionType
+ * @returns {Promise<UserProfile>}
+ */
+export function updateTransactionType(api, transactionType) {
+  return /** @type {Promise<UserProfile>} */ (
+    api("/identity/me/", { method: "PATCH", body: { transaction_type: transactionType } })
   );
 }

@@ -6,7 +6,7 @@
  * per-origin quota is far above sessionStorage's ~5-10MB, so caching many
  * tickers/ranges/accounts across a session can't realistically fill it.
  *
- * Two object stores, for two different freshness models:
+ * Three object stores, for three different freshness models:
  *  - "holdings" — price/profile/metrics entries, keyed by the caller's own
  *    namespaced key ("...:prices:...", "...:profile", "...:metrics" — see
  *    each cache module's own `*CacheKey`). The backend's published market
@@ -20,6 +20,13 @@
  *    fresh by the caller overwriting it on every mutation rather than by a
  *    calendar-day expiry — `readAccountsValue`/`writeAccountsValue`/
  *    `deleteAccountsValue` store/return the raw value, undated.
+ *  - "transactions" — one holding's paginated transactions (see
+ *    transactionsCache.js), keyed `${holdingId}:${page}`. Same "mutated
+ *    directly by the user, not calendar-expired" model as "accounts" —
+ *    `readTransactionsValue`/`writeTransactionsValue` store/return the raw
+ *    page, and `deleteTransactionsForHolding` drops every page cached for
+ *    one holding (via a key-range delete over that prefix) so a
+ *    create/update/delete against it can't leave a stale page behind.
  *
  * Every read/write here is best-effort: IndexedDB can be unavailable (a
  * test environment, a browser/private-mode without it) or a call can fail
@@ -29,9 +36,10 @@
  */
 
 const DB_NAME = "equicast-cache";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const HOLDINGS_STORE_NAME = "holdings";
 const ACCOUNTS_STORE_NAME = "accounts";
+const TRANSACTIONS_STORE_NAME = "transactions";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -40,6 +48,7 @@ function openDb() {
       const db = request.result;
       if (!db.objectStoreNames.contains(HOLDINGS_STORE_NAME)) db.createObjectStore(HOLDINGS_STORE_NAME);
       if (!db.objectStoreNames.contains(ACCOUNTS_STORE_NAME)) db.createObjectStore(ACCOUNTS_STORE_NAME);
+      if (!db.objectStoreNames.contains(TRANSACTIONS_STORE_NAME)) db.createObjectStore(TRANSACTIONS_STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -144,6 +153,78 @@ export async function deleteAccountsValue(key) {
     await new Promise((resolve, reject) => {
       const tx = db.transaction(ACCOUNTS_STORE_NAME, "readwrite");
       tx.objectStore(ACCOUNTS_STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
+ * @param {string} key - `${holdingId}:${page}`, see transactionsCache.js.
+ * @returns {Promise<unknown|null>} `null` on a cache miss or any failure.
+ */
+export async function readTransactionsValue(key) {
+  try {
+    const db = await openDb();
+    const value = await new Promise((resolve, reject) => {
+      const request = db
+        .transaction(TRANSACTIONS_STORE_NAME, "readonly")
+        .objectStore(TRANSACTIONS_STORE_NAME)
+        .get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} key - `${holdingId}:${page}`, see transactionsCache.js.
+ * @param {unknown} value
+ * @returns {Promise<void>}
+ */
+export async function writeTransactionsValue(key, value) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(TRANSACTIONS_STORE_NAME, "readwrite");
+      tx.objectStore(TRANSACTIONS_STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
+ * Drops every page cached for `holdingId` (every key in the "transactions"
+ * store prefixed `${holdingId}:`) in one key-range delete — call after any
+ * create/update/delete against this holding's transactions so a stale page
+ * never gets served back. Cheaper and simpler than patching individual
+ * cached pages in place, and correct regardless of which pages happen to be
+ * cached at the time.
+ *
+ * @param {string} holdingId
+ * @returns {Promise<void>}
+ */
+export async function deleteTransactionsForHolding(holdingId) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(TRANSACTIONS_STORE_NAME, "readwrite");
+      const range = IDBKeyRange.bound(
+        `${holdingId}:`,
+        `${holdingId}:` + String.fromCharCode(0xffff)
+      );
+      tx.objectStore(TRANSACTIONS_STORE_NAME).delete(range);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

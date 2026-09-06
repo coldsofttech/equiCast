@@ -25,7 +25,6 @@
  * @property {string} description
  * @property {string} account_type
  * @property {string} currency
- * @property {"AVERAGE"|"TRANSACTION"} transaction_type
  * @property {Pie[]} [pies]
  * @property {Holding[]} [holdings]
  */
@@ -57,7 +56,7 @@ export function getAccount(api, accountId) {
  * POST /api/accounts/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ name: string, description: string, account_type: string, currency: string, transaction_type: "AVERAGE"|"TRANSACTION" }} data
+ * @param {{ name: string, description: string, account_type: string, currency: string }} data
  * @returns {Promise<Account>}
  */
 export function createAccount(api, data) {
@@ -70,7 +69,7 @@ export function createAccount(api, data) {
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} accountId
- * @param {Partial<{ name: string, description: string, account_type: string, currency: string, transaction_type: "AVERAGE"|"TRANSACTION" }>} fields
+ * @param {Partial<{ name: string, description: string, account_type: string, currency: string }>} fields
  * @returns {Promise<Account>}
  */
 export function updateAccount(api, accountId, fields) {

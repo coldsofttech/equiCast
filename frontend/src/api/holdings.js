@@ -18,6 +18,22 @@ export function createHolding(api, data) {
 }
 
 /**
+ * GET /api/holdings/<id>/ — see backend/holdings/views.py's
+ * HoldingDetailView.get. Used to re-fetch a holding's rollup fields
+ * (no_of_shares/average_price_native/average_price/invested_native/invested
+ * — see equicast_core.transactions.compute_holding_rollup) right after a
+ * transaction create/update/delete against it, so HoldingTickerPage's stats
+ * reflect the mutation without a full accounts refetch.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} holdingId
+ * @returns {Promise<Holding>}
+ */
+export function getHolding(api, holdingId) {
+  return /** @type {Promise<Holding>} */ (api(`/holdings/${holdingId}/`));
+}
+
+/**
  * DELETE /api/holdings/<id>/ — also cascades to delete any transactions
  * recorded against this holding (see backend/holdings/views.py's
  * HoldingDetailView.delete).

@@ -386,6 +386,63 @@ class MarketDataClient:
             "prices": prices,
         }
 
+    def get_price_on_date(
+            self, asset_class: str, symbol: str, on_date: str
+    ) -> dict[str, Any] | None:
+        """Return `{date, close, currency}` for the nearest published
+        trading day on or before `on_date` ("YYYY-MM-DD") — weekends/
+        holidays have no row, so e.g. a Saturday `on_date` resolves to that
+        week's Friday close. `None` if nothing is published on or before
+        `on_date` for this symbol (before this ticker's earliest published
+        history, or no data at all).
+
+        Unlike `get_prices`, always reads both `price/current.parquet` and
+        `price/history.parquet` regardless of `on_date` — a single-date
+        lookup near a year boundary can't cheaply rule out needing the
+        other file the way a whole-range cutoff can (see `get_prices`'s
+        `needs_history`). `currency` is `None` for fx (a pair converts
+        *between* two currencies rather than being priced *in* one — see
+        `get_prices`).
+        """
+        prefix = f"{asset_class.lower()}={symbol.upper()}/price"
+        rows: list[dict[str, Any]] = []
+        history_rows = self._read_parquet(f"{prefix}/history.parquet")
+        if history_rows:
+            rows.extend(history_rows)
+        current_rows = self._read_parquet(f"{prefix}/current.parquet")
+        if current_rows:
+            rows.extend(current_rows)
+
+        eligible = [r for r in rows if r["date"] <= on_date]
+        if not eligible:
+            return None
+        latest = max(eligible, key=lambda r: r["date"])
+        return {
+            "date": latest["date"], "close": latest["close"], "currency": latest.get("currency")
+        }
+
+    def get_fx_rate_on_date(
+        self, from_currency: str, to_currency: str, on_date: str
+    ) -> float | None:
+        """Convert 1 unit of `from_currency` into `to_currency` as of the
+        nearest published trading day on or before `on_date` — `1.0` with
+        no lookup at all when the two currencies are the same. Tries the
+        direct pair (`<from><to>`, e.g. "USDGBP" quotes GBP per 1 USD — see
+        `equicast_fx.client`) first, then the inverted pair (taking its
+        reciprocal) if that's what's published instead — same fallback the
+        frontend's `resolveFxRate` (holdingFinancials.js) uses for the
+        current-only rate, just at a historical date here. `None` if
+        neither pair has anything published on or before `on_date`."""
+        if from_currency == to_currency:
+            return 1.0
+        direct = self.get_price_on_date("fx", f"{from_currency}{to_currency}", on_date)
+        if direct is not None and direct["close"]:
+            return direct["close"]
+        inverted = self.get_price_on_date("fx", f"{to_currency}{from_currency}", on_date)
+        if inverted is not None and inverted["close"]:
+            return 1 / inverted["close"]
+        return None
+
     def get_catalog(self, asset_class: str) -> list[dict[str, Any]]:
         """Return every `{ticker, name, type, current_price, currency,
         website, market_cap, exchange, region, sector, industry}` row this

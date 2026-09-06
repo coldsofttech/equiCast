@@ -53,6 +53,7 @@ describe("SettingsModal", () => {
     render(
       <SettingsModal open onClose={onClose} profile={{ default_currency: "GBP" }} onSaved={vi.fn()} />
     );
+    fireEvent.change(screen.getByLabelText("Default currency"), { target: { value: "INR" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Nope.");

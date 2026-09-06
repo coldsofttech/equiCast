@@ -16,11 +16,8 @@ from rest_framework.views import APIView
 
 #: Fields required to create an account; description may be blank but must
 #: be present so a caller doesn't silently omit it.
-REQUIRED_CREATE_FIELDS = {"name", "description", "account_type", "currency", "transaction_type"}
-UPDATABLE_FIELDS = {"name", "description", "account_type", "currency", "transaction_type"}
-
-#: Valid values for an account's transaction_type — see TransactionsClient.
-TRANSACTION_TYPES = {"AVERAGE", "TRANSACTION"}
+REQUIRED_CREATE_FIELDS = {"name", "description", "account_type", "currency"}
+UPDATABLE_FIELDS = {"name", "description", "account_type", "currency"}
 
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
@@ -47,26 +44,14 @@ _holdings_client = HoldingsClient(
     max_holdings_for_pie=settings.MAX_HOLDINGS_FOR_PIE,
     max_holdings_for_watchlist=settings.MAX_HOLDINGS_FOR_WATCHLIST,
 )
-#: Needed to guard PATCHing transaction_type (rejected once the account has
-#: any transactions recorded under it — see AccountDetailView.patch) and to
-#: cascade-delete transactions under AccountDetailView.delete's force path
-#: — transactions/views.py holds the client actually used for transactions
-#: CRUD.
+#: Needed only to cascade-delete transactions under AccountDetailView.delete's
+#: force path — transactions/views.py holds the client actually used for
+#: transactions CRUD.
 _transactions_client = TransactionsClient(
     settings.USER_DATA_BUCKET,
     region_name=settings.AWS_REGION,
     max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
 )
-
-
-def _holding_ids_for_account(user_id: str, account_id: str, pies: list) -> list[str]:
-    """Every holding_id under `account_id` — directly, or via one of
-    `pies` (already fetched by the caller) — used to check for/cascade-
-    delete this account's transactions, which are keyed by holding_id
-    rather than account_id."""
-    pie_ids = {p["id"] for p in pies}
-    holdings = _holdings_client.list_holdings(user_id)
-    return [h["id"] for h in holdings if h["account_id"] == account_id or h["pie_id"] in pie_ids]
 
 
 def _nest_pies_and_holdings(accounts, pies, holdings):
@@ -120,12 +105,6 @@ class AccountListView(APIView):
                 {"detail": f"Missing field(s): {', '.join(sorted(missing))}."}, status=400
             )
 
-        transaction_type = request.data["transaction_type"]
-        if transaction_type not in TRANSACTION_TYPES:
-            return Response(
-                {"detail": f"Unknown transaction_type '{transaction_type}'."}, status=400
-            )
-
         try:
             account = _client.create_account(
                 request.user.user_id,
@@ -133,7 +112,6 @@ class AccountListView(APIView):
                 description=request.data["description"],
                 account_type=request.data["account_type"],
                 currency=request.data["currency"],
-                transaction_type=transaction_type,
             )
         except AccountAlreadyExistsError:
             return Response(
@@ -170,25 +148,6 @@ class AccountDetailView(APIView):
     def patch(self, request: Request, account_id: str) -> Response:
         user_id = request.user.user_id
         fields = {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
-
-        if "transaction_type" in fields:
-            if fields["transaction_type"] not in TRANSACTION_TYPES:
-                return Response(
-                    {"detail": f"Unknown transaction_type '{fields['transaction_type']}'."},
-                    status=400,
-                )
-            pies = _pies_client.list_pies(user_id, account_id=account_id)
-            holding_ids = _holding_ids_for_account(user_id, account_id, pies)
-            if holding_ids and _transactions_client.has_transactions_for_holdings(
-                user_id, holding_ids
-            ):
-                return Response(
-                    {
-                        "detail": "Account has transactions recorded; transaction_type can't "
-                        "be changed once transactions exist."
-                    },
-                    status=409,
-                )
 
         try:
             account = _client.update_account(user_id, account_id, **fields)

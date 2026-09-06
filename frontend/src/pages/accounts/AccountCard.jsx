@@ -56,9 +56,6 @@ function AccountCard({ account, onClick }) {
       </div>
       <div className="ec-account-card-meta">
         <Badge tone="neutral">{account.currency}</Badge>
-        <Badge tone={account.transaction_type === "TRANSACTION" ? "purple" : "info"}>
-          {account.transaction_type === "TRANSACTION" ? "Per-transaction" : "Average cost"}
-        </Badge>
         <span className="ec-account-card-counts">
           <span className="ec-account-card-count">{pies.length} pies</span>
           <span className="ec-account-card-count">{holdingsCount} holdings</span>

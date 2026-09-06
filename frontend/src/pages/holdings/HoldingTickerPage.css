@@ -136,6 +136,59 @@
   color: var(--ec-text);
 }
 
+.ec-section-head-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-16);
+  flex-shrink: 0;
+}
+
+.ec-transaction-card-location {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-badge i.bi {
+  margin-right: var(--ec-s-4);
+}
+
+.ec-transaction-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-8);
+}
+
+.ec-transaction-row-card {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-16);
+  padding: var(--ec-s-8) var(--ec-s-16);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+}
+
+.ec-transaction-row-card .ec-badge {
+  flex-shrink: 0;
+}
+
+.ec-transaction-row-card .ec-badge i.bi {
+  margin-right: 0;
+}
+
+.ec-transaction-row-date {
+  flex: 1;
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text);
+}
+
+.ec-transaction-row-value {
+  font-family: var(--ec-font-mono);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
 .ec-dividend-bar {
   fill: var(--ec-accent);
 }

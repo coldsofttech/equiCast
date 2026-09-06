@@ -8,7 +8,6 @@ const ACCOUNT = {
   description: "Long-term holdings",
   account_type: "ISA",
   currency: "GBP",
-  transaction_type: "AVERAGE",
   pies: [
     { id: "p-1", holdings: [{ id: "h-1" }] },
     { id: "p-2", holdings: [{ id: "h-2" }, { id: "h-3" }] },
@@ -24,15 +23,8 @@ describe("AccountCard", () => {
     expect(screen.getByText("ISA")).toBeInTheDocument();
     expect(screen.getByText("Long-term holdings")).toBeInTheDocument();
     expect(screen.getByText("GBP")).toBeInTheDocument();
-    expect(screen.getByText("Average cost")).toBeInTheDocument();
     expect(screen.getByText("2 pies")).toBeInTheDocument();
     expect(screen.getByText("4 holdings")).toBeInTheDocument();
-  });
-
-  it("shows Per-transaction for TRANSACTION accounts", () => {
-    render(<AccountCard account={{ ...ACCOUNT, transaction_type: "TRANSACTION" }} onClick={vi.fn()} />);
-
-    expect(screen.getByText("Per-transaction")).toBeInTheDocument();
   });
 
   it("calls onClick when clicked or activated via keyboard", () => {

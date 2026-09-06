@@ -85,3 +85,9 @@
   background: var(--ec-danger-soft);
   color: var(--ec-danger-soft-text);
 }
+
+.ec-table-load-more {
+  display: flex;
+  justify-content: center;
+  margin-top: var(--ec-s-16);
+}

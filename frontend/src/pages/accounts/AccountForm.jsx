@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { TextField, SelectField, TextAreaField } from "../../components/core/Field.jsx";
+import { TextField, TextAreaField } from "../../components/core/Field.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import ACCOUNT_TYPE_SUGGESTIONS from "../../config/accountTypes.json";
@@ -26,7 +26,6 @@ const EMPTY_VALUES = {
   description: "",
   account_type: "",
   currency: "",
-  transaction_type: "AVERAGE",
 };
 
 function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSubmitting, error }) {
@@ -88,17 +87,6 @@ function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSub
           <option key={option} value={option} />
         ))}
       </datalist>
-      <SelectField
-        id="account-transaction-type"
-        label="Transaction type"
-        required
-        value={values.transaction_type}
-        onChange={setField("transaction_type")}
-        hint="AVERAGE tracks one running average cost per holding; TRANSACTION keeps every buy/sell separately. Locked once the account has recorded transactions."
-      >
-        <option value="AVERAGE">Average cost</option>
-        <option value="TRANSACTION">Per-transaction</option>
-      </SelectField>
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancel

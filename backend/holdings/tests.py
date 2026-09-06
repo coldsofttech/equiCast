@@ -20,13 +20,17 @@ HOLDING = {
     "watchlist_id": None,
     "timestamp": "2026-01-01T00:00:00+00:00",
 }
-ACCOUNT = {"id": "acc-1", "transaction_type": "TRANSACTION"}
+ACCOUNT = {"id": "acc-1"}
 TRANSACTION = {
     "id": "t-1",
     "holding_id": "h-1",
     "no_of_shares": 10,
+    "average_price_native": None,
     "average_price": None,
-    "price": 152.5,
+    "price_native": 152.5,
+    "price": None,
+    "amount_native": None,
+    "amount": None,
     "date": "2026-01-15",
     "type": "BUY",
     "created_at": "2026-01-15T00:00:00+00:00",
@@ -362,6 +366,8 @@ class HoldingListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
 
+    @patch("transactions.views._market_data_client")
+    @patch("holdings.views._profile_client")
     @patch("holdings.views._transactions_client")
     @patch("holdings.views._market_data_client")
     @patch("holdings.views._accounts_client")
@@ -376,12 +382,23 @@ class HoldingListViewTests(TestCase):
         mock_accounts_client,
         mock_market_data_client,
         mock_transactions_client,
+        mock_profile_client,
+        mock_transactions_views_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+        # resolve_converted_amounts (imported from transactions.views) reads
+        # transactions.views' own module-level _market_data_client, a
+        # separate instance from holdings.views' — both need mocking.
+        mock_transactions_views_market_data_client.get_profile.return_value = None
         mock_client.create_holding.return_value = HOLDING
+        mock_client.update_holding_financials.return_value = HOLDING
         mock_transactions_client.create_transaction.return_value = TRANSACTION
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
 
         response = self.client.post(
             reverse("holdings-list"),
@@ -391,7 +408,7 @@ class HoldingListViewTests(TestCase):
                 "account_id": "acc-1",
                 "transaction": {
                     "no_of_shares": 10,
-                    "price": 152.5,
+                    "price_native": 152.5,
                     "date": "2026-01-15",
                     "type": "BUY",
                 },
@@ -406,9 +423,13 @@ class HoldingListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "TRANSACTION",
-            no_of_shares=10,
+            no_of_shares=10.0,
+            average_price_native=None,
             average_price=None,
-            price=152.5,
+            price_native=152.5,
+            price=None,
+            amount_native=None,
+            amount=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -459,16 +480,23 @@ class HoldingListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("holdings.views._profile_client")
     @patch("holdings.views._market_data_client")
     @patch("holdings.views._accounts_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_with_nested_transaction_returns_400_for_wrong_shape(
-        self, mock_jwks_client, mock_decode, mock_accounts_client, mock_market_data_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_accounts_client,
+        mock_market_data_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+        mock_profile_client.get_or_create_profile.return_value = {"transaction_type": "TRANSACTION"}
 
         response = self.client.post(
             reverse("holdings-list"),
@@ -476,7 +504,8 @@ class HoldingListViewTests(TestCase):
                 "ticker": "AAPL",
                 "asset_class": "stock",
                 "account_id": "acc-1",
-                # TRANSACTION-mode account, but AVERAGE-shaped payload.
+                # Caller's transaction_type is TRANSACTION, but this is an
+                # AVERAGE-shaped payload.
                 "transaction": {"no_of_shares": 10, "average_price": 100},
             },
             content_type="application/json",
@@ -485,6 +514,8 @@ class HoldingListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
+    @patch("holdings.views._profile_client")
     @patch("holdings.views._transactions_client")
     @patch("holdings.views._market_data_client")
     @patch("holdings.views._accounts_client")
@@ -499,12 +530,19 @@ class HoldingListViewTests(TestCase):
         mock_accounts_client,
         mock_market_data_client,
         mock_transactions_client,
+        mock_profile_client,
+        mock_transactions_views_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_accounts_client.get_account.return_value = ACCOUNT
         mock_market_data_client.get_profile.return_value = {"ticker": "AAPL"}
+        mock_transactions_views_market_data_client.get_profile.return_value = None
         mock_client.create_holding.return_value = HOLDING
         mock_transactions_client.create_transaction.side_effect = InsufficientSharesError("nope")
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
 
         response = self.client.post(
             reverse("holdings-list"),
@@ -514,7 +552,7 @@ class HoldingListViewTests(TestCase):
                 "account_id": "acc-1",
                 "transaction": {
                     "no_of_shares": 10,
-                    "price": 152.5,
+                    "price_native": 152.5,
                     "date": "2026-01-15",
                     "type": "SELL",
                 },

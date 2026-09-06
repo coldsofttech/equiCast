@@ -174,9 +174,6 @@ function AccountDetailPage() {
       <div className="ec-account-detail-badges">
         <Badge tone="accent">{account.account_type}</Badge>
         <Badge tone="neutral">{account.currency}</Badge>
-        <Badge tone={account.transaction_type === "TRANSACTION" ? "purple" : "info"}>
-          {account.transaction_type === "TRANSACTION" ? "Per-transaction" : "Average cost"}
-        </Badge>
       </div>
 
       <div className="ec-stat-grid">

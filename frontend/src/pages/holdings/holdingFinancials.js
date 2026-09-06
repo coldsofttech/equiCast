@@ -100,74 +100,41 @@ export function formatRatio(value, digits = 2) {
  */
 
 /**
- * An AVERAGE-mode account has at most one transaction record per holding —
- * a mutable running snapshot rather than a log (see
- * equicast_core.transactions's module docstring) — so this is a direct
- * read, not a rollup.
+ * An AVERAGE-mode holding has at most one BUY-type record — a mutable
+ * running snapshot the user corrects over time rather than a log entry
+ * (see equicast_core.transactions's module docstring) — plus, alongside
+ * it, any number of DIVIDEND-type records that don't affect shares/cost.
+ * A legacy record predating the BUY/DIVIDEND shape still has `type: null`;
+ * treated the same as `"BUY"` here, same as the backend does.
  *
  * @param {import("../../api/transactions.js").Transaction[]} transactions
- * @returns {InstanceFinancials}
+ * @returns {import("../../api/transactions.js").Transaction|null}
  */
-export function deriveAverageModeFinancials(transactions) {
-  const record = transactions[0];
-  if (!record) return { shares: 0, avgPriceNative: null, invested: 0 };
-  const shares = Number(record.no_of_shares);
-  const avgPriceNative = Number(record.average_price);
-  return { shares, avgPriceNative, invested: shares * avgPriceNative };
+export function selectPositionEntry(transactions) {
+  return transactions.find((t) => t.type === "BUY" || t.type == null) ?? null;
 }
 
-/**
- * A TRANSACTION-mode account logs discrete BUY/SELL events with no
- * computed average price stored anywhere (see equicast_core.transactions's
- * module docstring) — this derives one via the weighted-average-cost
- * method: each BUY adds to the running cost basis at its own price; each
- * SELL removes shares at the *current* running average cost (not FIFO lot
- * tracking), leaving the average cost of whatever remains unchanged. This
- * is the same method most brokerage "average cost" statements use, and the
- * simplest one that stays correct through repeated buys/sells without
- * tracking individual lots.
- *
- * @param {import("../../api/transactions.js").Transaction[]} transactions
- * @returns {InstanceFinancials}
- */
-export function deriveTransactionModeFinancials(transactions) {
-  const sorted = [...transactions].sort((a, b) => (a.date ?? "").localeCompare(b.date ?? ""));
-
-  let shares = 0;
-  let cost = 0;
-  for (const record of sorted) {
-    const qty = Number(record.no_of_shares);
-    const price = Number(record.price);
-    if (record.type === "BUY") {
-      shares += qty;
-      cost += qty * price;
-    } else if (record.type === "SELL" && shares > 0) {
-      const costPerShare = cost / shares;
-      const sold = Math.min(qty, shares);
-      cost -= sold * costPerShare;
-      shares -= sold;
-    }
-  }
-
-  return {
-    shares,
-    avgPriceNative: shares > 0 ? cost / shares : null,
-    invested: shares > 0 ? cost : 0,
-  };
-}
+/** Cards `selectRecentTradeTransactions` returns, most recent first. */
+export const MAX_RECENT_TRANSACTIONS = 5;
 
 /**
- * Dispatches to the AVERAGE/TRANSACTION derivation above based on the
- * holding's owning account's transaction_type.
+ * The `limit` most recent BUY/SELL records across `transactions` (already
+ * merged across every instance of a ticker by the caller — a TRANSACTION-
+ * mode holding logs discrete events, so unlike the AVERAGE-mode position
+ * card there's no single "current" record to show, just the latest
+ * activity), most recent first. DIVIDEND records are excluded here — this
+ * is deliberately just the buy/sell activity feed the Transactions panel's
+ * card grid shows; see `selectDividendEntries` for dividends.
  *
  * @param {import("../../api/transactions.js").Transaction[]} transactions
- * @param {"AVERAGE"|"TRANSACTION"} transactionType
- * @returns {InstanceFinancials}
+ * @param {number} [limit]
+ * @returns {import("../../api/transactions.js").Transaction[]}
  */
-export function deriveInstanceFinancials(transactions, transactionType) {
-  return transactionType === "TRANSACTION"
-    ? deriveTransactionModeFinancials(transactions)
-    : deriveAverageModeFinancials(transactions);
+export function selectRecentTradeTransactions(transactions, limit = MAX_RECENT_TRANSACTIONS) {
+  return transactions
+    .filter((t) => t.type === "BUY" || t.type === "SELL")
+    .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
+    .slice(0, limit);
 }
 
 /**

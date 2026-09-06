@@ -137,7 +137,6 @@ function AccountsListPage() {
                 <th>Name</th>
                 <th>Type</th>
                 <th>Currency</th>
-                <th>Transaction type</th>
                 <th>Pies</th>
                 <th aria-label="Actions" />
               </tr>
@@ -153,11 +152,6 @@ function AccountsListPage() {
                     <Badge tone="accent">{account.account_type}</Badge>
                   </td>
                   <td>{account.currency}</td>
-                  <td>
-                    <Badge tone={account.transaction_type === "TRANSACTION" ? "purple" : "info"}>
-                      {account.transaction_type === "TRANSACTION" ? "Per-transaction" : "Average cost"}
-                    </Badge>
-                  </td>
                   <td>{(account.pies ?? []).length}</td>
                   <td>
                     <div className="ec-table-actions">

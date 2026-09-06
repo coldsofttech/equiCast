@@ -26,12 +26,37 @@ def test_get_or_create_profile_creates_with_default_currency_on_first_login(
 
     profile = client.get_or_create_profile("auth0|new-user")
 
-    assert profile == {"user_id": "auth0|new-user", "default_currency": "GBP"}
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+    }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|new-user"})["Item"]
     assert stored == profile
 
 
 def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION"
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "TRANSACTION",
+    }
+
+
+def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
     dynamodb_resource.Table(TABLE).put_item(
         Item={"user_id": "auth0|existing", "default_currency": "EUR"}
     )
@@ -39,7 +64,13 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
 
     profile = client.get_or_create_profile("auth0|existing")
 
-    assert profile == {"user_id": "auth0|existing", "default_currency": "EUR"}
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "AVERAGE",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
 
 
 def test_get_or_create_profile_returns_winner_on_concurrent_create_race(dynamodb_resource) -> None:
@@ -65,13 +96,17 @@ def test_get_or_create_profile_returns_winner_on_concurrent_create_race(dynamodb
 
 def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> None:
     dynamodb_resource.Table(TABLE).put_item(
-        Item={"user_id": "auth0|existing", "default_currency": "GBP"}
+        Item={"user_id": "auth0|existing", "default_currency": "GBP", "transaction_type": "AVERAGE"}
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
 
     profile = client.update_default_currency("auth0|existing", "EUR")
 
-    assert profile == {"user_id": "auth0|existing", "default_currency": "EUR"}
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "AVERAGE",
+    }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
 
@@ -81,4 +116,37 @@ def test_update_default_currency_creates_profile_first_if_missing(dynamodb_resou
 
     profile = client.update_default_currency("auth0|new-user", "INR")
 
-    assert profile == {"user_id": "auth0|new-user", "default_currency": "INR"}
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "INR",
+        "transaction_type": "AVERAGE",
+    }
+
+
+def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={"user_id": "auth0|existing", "default_currency": "GBP", "transaction_type": "AVERAGE"}
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_transaction_type("auth0|existing", "TRANSACTION")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "GBP",
+        "transaction_type": "TRANSACTION",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_update_transaction_type_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_transaction_type("auth0|new-user", "TRANSACTION")
+
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "GBP",
+        "transaction_type": "TRANSACTION",
+    }

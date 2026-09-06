@@ -62,19 +62,23 @@ transactions-per-holding cap — see `infra/variables.tf`'s
   (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`),
   returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;
-  returns the caller's profile (`user_id`, `default_currency`), creating it
-  with `default_currency: "GBP"` on first login
+  returns the caller's profile (`user_id`, `default_currency`,
+  `transaction_type`), creating it with `default_currency: "GBP"`,
+  `transaction_type: "AVERAGE"` on first login
+- `PATCH /api/identity/me/` — updates `default_currency` and/or
+  `transaction_type` (a single setting governing how every holding across
+  every one of the caller's accounts/pies records transactions — see
+  `POST /api/transactions/` below); `transaction_type` is rejected with
+  `409` once the caller has any transaction recorded, across any holding
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists
   the caller's accounts
 - `POST /api/accounts/` — creates an account (`name`, `description`,
-  `account_type`, `currency`, `transaction_type` — `AVERAGE` or
-  `TRANSACTION`); `409` once the caller has `MAX_ACCOUNTS`
+  `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
   (each with its own nested `holdings`) and the account's own direct
   `holdings`
-- `PATCH /api/accounts/<id>/` — partially updates an account;
-  `transaction_type` is rejected with `409` once the account has any
-  transactions recorded under it (directly, or via one of its pies)
+- `PATCH /api/accounts/<id>/` — partially updates an account
+  (`name`/`description`/`account_type`/`currency`)
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
   pies and/or direct holdings — pass `?force=true` to delete those along
   with the account
@@ -117,7 +121,7 @@ transactions-per-holding cap — see `infra/variables.tf`'s
   a duplicate ticker in that parent or once it's at its cap
   (`MAX_HOLDINGS_FOR_ACCOUNT`/`MAX_HOLDINGS_FOR_WATCHLIST`)
   Optionally pairs the holding with its first transaction in the same
-  request: a nested `"transaction"` field, shaped by the owning account's
+  request: a nested `"transaction"` field, shaped by the caller's
   `transaction_type` (see below), validated before the holding is written;
   if the transaction can't be recorded, the holding it was paired with
   isn't created either (S3 has no cross-object transaction of its own, so
@@ -128,30 +132,33 @@ transactions-per-holding cap — see `infra/variables.tf`'s
   instead); no `PATCH` — a holding's fields are immutable. Cascades into
   deleting the holding's own transactions
 - `GET /api/transactions/` — lists the caller's transactions; optional
-  `?holding_id=`, `?year=`, `?date_from=`/`?date_to=` filters (the date
-  filters only ever match `TRANSACTION`-mode records — an `AVERAGE`
-  record has no date). Transactions are stored one JSON object per
-  holding rather than per user (see `packages/core/README.md`), so
-  omitting `?holding_id=` reads every one of the caller's holding files
+  `?holding_id=`, `?year=`, `?date_from=`/`?date_to=` filters (a legacy
+  record predating the mandatory `date` field never matches the date
+  filters). Transactions are stored one JSON object per holding rather
+  than per user (see `packages/core/README.md`), so omitting
+  `?holding_id=` reads every one of the caller's holding files
 - `POST /api/transactions/` — records a transaction against an existing
   `holding_id`; `400` if the holding is fx or watchlist-scoped (neither
-  supports transactions). Field shape depends on the holding's account's
-  `transaction_type`: `AVERAGE` requires `no_of_shares`/`average_price`
-  (`409` for a second record against the same holding — `PATCH` it
-  instead of creating another); `TRANSACTION` requires
-  `no_of_shares`/`price`/`date`/`type` (`BUY` or `SELL`; `409` if a `SELL`
-  would take the holding's net recorded shares below zero, or once the
-  holding is at `MAX_TRANSACTIONS_FOR_HOLDING`)
+  supports transactions). Field shape depends on the caller's
+  `transaction_type` and `type`: an `AVERAGE`-mode `BUY` requires
+  `no_of_shares`/`average_price`/`date` (`409` for a second `BUY` against
+  the same holding — `PATCH` it instead of creating another); a
+  `TRANSACTION`-mode `BUY`/`SELL` requires `no_of_shares`/`price`/`date`
+  (`409` if a `SELL` would take the holding's net recorded shares below
+  zero, or once the holding is at `MAX_TRANSACTIONS_FOR_HOLDING`); a
+  `DIVIDEND` (either mode, uncapped, doesn't affect shares/cost) requires
+  `amount`/`date` — `amount` is the total cash received, not per-share
 - `GET /api/transactions/<holding_id>/<id>/` — a transaction's details.
   Nested under its holding rather than a flat id, since a bare
   `transaction_id` would otherwise mean scanning every holding's file to
   find it — the caller already has `holding_id` in hand wherever a
   transaction is shown, since transactions are only ever listed scoped
   to a holding
-- `PATCH /api/transactions/<holding_id>/<id>/` — updates an
-  `AVERAGE`-mode record's `no_of_shares`/`average_price`; `400` for a
-  `TRANSACTION`-mode record (immutable — buy/sell events are a log, not
-  a snapshot)
+- `PATCH /api/transactions/<holding_id>/<id>/` — updates an `AVERAGE`-mode
+  `BUY` record's `no_of_shares`/`average_price`/`date`, or any `DIVIDEND`
+  record's `date`/`amount` (either mode); `400` for a `TRANSACTION`-mode
+  `BUY`/`SELL` record (immutable — buy/sell events are a log, not a
+  snapshot)
 - `DELETE /api/transactions/<holding_id>/<id>/` — deletes a transaction
 
 ## Lambda packaging
