@@ -78,7 +78,9 @@ class PieListViewTests(TestCase):
         other_pie = {**PIE, "id": "pie-2"}
         mock_client.list_pies.return_value = [PIE, other_pie]
         holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
-        other_holding = {"id": "h-2", "ticker": "VXUS", "asset_class": "etf", "pie_id": "not-this-user-list"}
+        other_holding = {
+            "id": "h-2", "ticker": "VXUS", "asset_class": "etf", "pie_id": "not-this-user-list"
+        }
         mock_holdings_client.list_holdings.return_value = [holding, other_holding]
         mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
         mock_market_data_client.get_profile.return_value = {
