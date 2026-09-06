@@ -33,15 +33,20 @@ FX_HOLDING = {**ACCOUNT_HOLDING, "id": "h-4", "asset_class": "fx"}
 
 #: transaction_type is a single per-user profile setting now, not an
 #: account field — see UserProfileClient/resolve_transaction_mode.
-AVERAGE_PROFILE = {"transaction_type": "AVERAGE"}
-TRANSACTION_PROFILE = {"transaction_type": "TRANSACTION"}
+#: default_currency is needed by resolve_converted_amounts, called on every
+#: successful create/update.
+AVERAGE_PROFILE = {"transaction_type": "AVERAGE", "default_currency": "GBP"}
+TRANSACTION_PROFILE = {"transaction_type": "TRANSACTION", "default_currency": "GBP"}
 
 AVERAGE_TRANSACTION = {
     "id": "t-1",
     "holding_id": "h-1",
     "no_of_shares": 10,
+    "average_price_native": 152.5,
     "average_price": 152.5,
+    "price_native": None,
     "price": None,
+    "amount_native": None,
     "amount": None,
     "date": "2026-01-15",
     "type": "BUY",
@@ -52,8 +57,11 @@ BUY_TRANSACTION = {
     "id": "t-2",
     "holding_id": "h-1",
     "no_of_shares": 10,
+    "average_price_native": None,
     "average_price": None,
+    "price_native": 152.5,
     "price": 152.5,
+    "amount_native": None,
     "amount": None,
     "date": "2026-01-15",
     "type": "BUY",
@@ -64,8 +72,11 @@ DIVIDEND_TRANSACTION = {
     "id": "t-3",
     "holding_id": "h-1",
     "no_of_shares": None,
+    "average_price_native": None,
     "average_price": None,
+    "price_native": None,
     "price": None,
+    "amount_native": 42.10,
     "amount": 42.10,
     "date": "2026-03-01",
     "type": "DIVIDEND",
@@ -266,6 +277,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -278,6 +290,7 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         """transaction_type is a single per-user setting now (see
         UserProfileClient) — resolving it no longer depends on whether the
@@ -285,6 +298,7 @@ class TransactionListViewTests(TestCase):
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = PIE_HOLDING
         mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.return_value = {**AVERAGE_TRANSACTION, "holding_id": "h-2"}
 
         response = self.client.post(
@@ -292,7 +306,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-2",
                 "no_of_shares": 10,
-                "average_price": 152.5,
+                "average_price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "BUY",
             },
@@ -305,9 +319,12 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-2",
             "AVERAGE",
-            no_of_shares=10,
-            average_price=152.5,
+            no_of_shares=10.0,
+            average_price_native=152.5,
+            average_price=None,
+            price_native=None,
             price=None,
+            amount_native=None,
             amount=None,
             date="2026-01-15",
             type="BUY",
@@ -362,6 +379,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -374,10 +392,12 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.return_value = AVERAGE_TRANSACTION
 
         response = self.client.post(
@@ -385,7 +405,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-1",
                 "no_of_shares": 10,
-                "average_price": 152.5,
+                "average_price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "BUY",
             },
@@ -399,14 +419,18 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "AVERAGE",
-            no_of_shares=10,
-            average_price=152.5,
+            no_of_shares=10.0,
+            average_price_native=152.5,
+            average_price=None,
+            price_native=None,
             price=None,
+            amount_native=None,
             amount=None,
             date="2026-01-15",
             type="BUY",
         )
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -419,10 +443,12 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.side_effect = TransactionAlreadyExistsError("dup")
 
         response = self.client.post(
@@ -430,7 +456,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-1",
                 "no_of_shares": 10,
-                "average_price": 152.5,
+                "average_price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "BUY",
             },
@@ -486,6 +512,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -498,10 +525,12 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.return_value = BUY_TRANSACTION
 
         response = self.client.post(
@@ -509,7 +538,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-1",
                 "no_of_shares": 10,
-                "price": 152.5,
+                "price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "BUY",
             },
@@ -523,14 +552,18 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "TRANSACTION",
-            no_of_shares=10,
+            no_of_shares=10.0,
+            average_price_native=None,
             average_price=None,
-            price=152.5,
+            price_native=152.5,
+            price=None,
+            amount_native=None,
             amount=None,
             date="2026-01-15",
             type="BUY",
         )
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -543,10 +576,12 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.side_effect = InsufficientSharesError("nope")
 
         response = self.client.post(
@@ -554,7 +589,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-1",
                 "no_of_shares": 10,
-                "price": 152.5,
+                "price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "SELL",
             },
@@ -564,6 +599,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -576,10 +612,12 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.side_effect = TransactionLimitExceededError("limit")
         mock_client.max_transactions_for_holding = 500
 
@@ -588,7 +626,7 @@ class TransactionListViewTests(TestCase):
             data={
                 "holding_id": "h-1",
                 "no_of_shares": 10,
-                "price": 152.5,
+                "price_native": 152.5,
                 "date": "2026-01-15",
                 "type": "BUY",
             },
@@ -631,6 +669,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -643,15 +682,22 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.return_value = DIVIDEND_TRANSACTION
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "type": "DIVIDEND", "amount": 42.10, "date": "2026-03-01"},
+            data={
+                "holding_id": "h-1",
+                "type": "DIVIDEND",
+                "amount_native": 42.10,
+                "date": "2026-03-01",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -663,13 +709,17 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "AVERAGE",
             no_of_shares=None,
+            average_price_native=None,
             average_price=None,
+            price_native=None,
             price=None,
-            amount=42.10,
+            amount_native=42.10,
+            amount=None,
             date="2026-03-01",
             type="DIVIDEND",
         )
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -682,15 +732,22 @@ class TransactionListViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_market_data_client.get_profile.return_value = None
         mock_client.create_transaction.return_value = DIVIDEND_TRANSACTION
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "type": "DIVIDEND", "amount": 42.10, "date": "2026-03-01"},
+            data={
+                "holding_id": "h-1",
+                "type": "DIVIDEND",
+                "amount_native": 42.10,
+                "date": "2026-03-01",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -702,9 +759,12 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "TRANSACTION",
             no_of_shares=None,
+            average_price_native=None,
             average_price=None,
+            price_native=None,
             price=None,
-            amount=42.10,
+            amount_native=42.10,
+            amount=None,
             date="2026-03-01",
             type="DIVIDEND",
         )
@@ -891,6 +951,7 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
@@ -903,18 +964,25 @@ class TransactionDetailViewTests(TestCase):
         mock_holdings_client,
         mock_client,
         mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         """A DIVIDEND record is mutable even under TRANSACTION mode, unlike
-        a BUY/SELL record — see equicast_core.transactions."""
+        a BUY/SELL record — see equicast_core.transactions. Patching
+        amount_native re-resolves the converted amount (see
+        resolve_converted_amounts), so this needs get_transaction (to read
+        the existing record's date/type) and _market_data_client mocked the
+        same as a create."""
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
-        updated = {**DIVIDEND_TRANSACTION, "amount": 50}
+        mock_market_data_client.get_profile.return_value = None
+        mock_client.get_transaction.return_value = DIVIDEND_TRANSACTION
+        updated = {**DIVIDEND_TRANSACTION, "amount_native": 50, "amount": None}
         mock_client.update_transaction.return_value = updated
 
         response = self.client.patch(
             reverse("transactions-detail", args=["h-1", "t-3"]),
-            data={"amount": 50},
+            data={"amount_native": 50},
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -922,7 +990,7 @@ class TransactionDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_transaction.assert_called_once_with(
-            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount=50
+            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount_native=50.0, amount=None
         )
 
     @patch("transactions.views._profile_client")
