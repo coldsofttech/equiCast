@@ -7,6 +7,7 @@ import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
+import Modal from "../../components/core/Modal.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
@@ -41,7 +42,7 @@ import {
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
 import { MENU_ITEMS } from "../menuItems.js";
-import { TICKER_NAMES, formatCurrency, plTone } from "../sampleFinancials.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
@@ -133,6 +134,7 @@ function HoldingTickerPage() {
   const [deletingInstance, setDeletingInstance] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
+  const [pieDeleteNotice, setPieDeleteNotice] = useState(null);
 
   const instances = useMemo(() => {
     const list = [];
@@ -143,6 +145,7 @@ function HoldingTickerPage() {
           holding,
           location: account.name,
           destination: `/accounts/${account.id}`,
+          isPieHolding: false,
         });
       }
       for (const pie of account.pies ?? []) {
@@ -152,6 +155,7 @@ function HoldingTickerPage() {
             holding,
             location: `${account.name} / ${pie.name}`,
             destination: `/accounts/${account.id}/pies/${pie.id}`,
+            isPieHolding: true,
           });
         }
       }
@@ -299,6 +303,24 @@ function HoldingTickerPage() {
     );
   };
 
+  // Pie-scoped holdings reject DELETE /api/holdings/<id>/ outright (see
+  // backend/holdings/views.py — "Pie-scoped holdings are removed via PUT
+  // /api/pies/<id>/holdings/.", since a pie's holdings must always sum to
+  // exactly 100% allocation, so removing one is really a re-sync of the
+  // whole set, not a single-item delete). Caught here before the
+  // confirmation dialog even opens, so clicking delete on one of these rows
+  // never hits the API just to be told no.
+  const handleDeleteClick = (instance) => {
+    setDeleteError(null);
+    if (instance.isPieHolding) {
+      setDeletingInstance(null);
+      setPieDeleteNotice(instance);
+      return;
+    }
+    setPieDeleteNotice(null);
+    setDeletingInstance(instance);
+  };
+
   const handleDelete = () => {
     setIsDeleting(true);
     setDeleteError(null);
@@ -378,7 +400,7 @@ function HoldingTickerPage() {
       });
   };
 
-  const name = TICKER_NAMES[ticker];
+  const name = marketProfile?.name ?? null;
 
   // Only known when this page was reached via a row click from
   // AccountDetailPage/PieDetailPage (they pass it as router state) — a
@@ -470,12 +492,13 @@ function HoldingTickerPage() {
             let ownedSharesSection = null;
 
             if (isOwned) {
-              // Shares/avg price/invested come straight off the holding
-              // record now (no_of_shares/average_price_native/invested_native
-              // — see equicast_core.transactions.compute_holding_rollup),
-              // not derived from a transaction fetch here — correct even
-              // when a holding has more transactions than one page covers,
-              // and unaffected by transactionsByHolding's own fetch state.
+              // Shares/avg price/invested/dividends come straight off the
+              // holding record now (no_of_shares/average_price_native/
+              // invested_native/dividends_native — see equicast_core.
+              // transactions.compute_holding_rollup), not derived from a
+              // transaction fetch here — correct even when a holding has
+              // more transactions than one page covers, and unaffected by
+              // transactionsByHolding's own fetch state.
               const instanceFinancials = instances.map((instance) => {
                 const holding = instance.holding;
                 return {
@@ -484,6 +507,7 @@ function HoldingTickerPage() {
                   avgPriceNative:
                     holding.average_price_native != null ? Number(holding.average_price_native) : null,
                   invested: Number(holding.invested_native ?? 0),
+                  dividendsNative: Number(holding.dividends_native ?? 0),
                   transactionsError: false,
                 };
               });
@@ -507,6 +531,14 @@ function HoldingTickerPage() {
               const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
               const investedDefault =
                 nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
+              const currentValueDefault =
+                totals.currentValue == null
+                  ? null
+                  : nativeCurrency == null
+                    ? totals.currentValue
+                    : fxRate != null
+                      ? totals.currentValue * fxRate
+                      : null;
               const plValueDefault =
                 totals.plValue == null
                   ? null
@@ -515,18 +547,35 @@ function HoldingTickerPage() {
                     : fxRate != null
                       ? totals.plValue * fxRate
                       : null;
+              const dividendsDefault =
+                nativeCurrency == null
+                  ? totals.dividendsNative
+                  : fxRate != null
+                    ? totals.dividendsNative * fxRate
+                    : null;
 
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
-                    label="Total invested"
+                    label="Value"
                     value={
                       totalsLoading
                         ? "…"
-                        : investedDefault != null
-                          ? formatMoney(investedDefault, totalsCurrency)
+                        : currentValueDefault != null
+                          ? formatMoney(currentValueDefault, totalsCurrency)
                           : "—"
                     }
+                    hint={
+                      totalsLoading
+                        ? "…"
+                        : `Invested ${investedDefault != null ? formatMoney(investedDefault, totalsCurrency) : "—"}`
+                    }
+                    tone={totalsTone}
+                  />
+                  <StatTile
+                    label="Shares"
+                    value={totals.shares}
+                    hint={`Avg price ${avgPriceNative != null ? formatMoney(avgPriceNative, nativeCurrency) : "—"}`}
                   />
                   <StatTile
                     label="Profit / loss"
@@ -537,12 +586,19 @@ function HoldingTickerPage() {
                           ? `${plValueDefault >= 0 ? "+" : "-"}${formatMoney(Math.abs(plValueDefault), totalsCurrency)}`
                           : "—"
                     }
+                    hint={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
                     tone={totalsTone}
+                    hintTone={totalsTone}
                   />
                   <StatTile
-                    label="Profit / loss %"
-                    value={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
-                    tone={totalsTone}
+                    label="Dividends"
+                    value={
+                      totalsLoading
+                        ? "…"
+                        : dividendsDefault != null
+                          ? formatMoney(dividendsDefault, totalsCurrency)
+                          : "—"
+                    }
                   />
                 </div>
               );
@@ -558,7 +614,7 @@ function HoldingTickerPage() {
                     defaultCurrency={defaultCurrency}
                     fxRate={fxRate}
                     fxState={fxState}
-                    onDelete={setDeletingInstance}
+                    onDelete={handleDeleteClick}
                     onRowClick={(instance) => navigate(instance.destination)}
                   />
                 </>
@@ -573,6 +629,7 @@ function HoldingTickerPage() {
                   ticker={ticker}
                   currency={nativeCurrency}
                   avgPrice={avgPriceNative}
+                  currentPrice={currentPriceNative}
                 />
                 {ownedSharesSection}
               </>
@@ -637,6 +694,22 @@ function HoldingTickerPage() {
           <Alert tone="danger">{deleteError}</Alert>
         </div>
       )}
+      <Modal
+        open={Boolean(pieDeleteNotice)}
+        onClose={() => setPieDeleteNotice(null)}
+        title="Can't delete from here"
+        footer={
+          <Button variant="secondary" onClick={() => setPieDeleteNotice(null)}>
+            OK
+          </Button>
+        }
+      >
+        <p>
+          {pieDeleteNotice
+            ? `${ticker} in ${pieDeleteNotice.location} is part of a pie's allocation and can't be deleted from here — edit the pie's composition to remove it instead.`
+            : ""}
+        </p>
+      </Modal>
     </AppShell>
   );
 }

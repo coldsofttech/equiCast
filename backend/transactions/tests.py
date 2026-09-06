@@ -1020,6 +1020,8 @@ class TransactionDetailViewTests(TestCase):
             average_price=None,
             invested_native=0,
             invested=0,
+            dividends_native=0.0,
+            dividends=0.0,
         )
 
     @patch("transactions.views._client")

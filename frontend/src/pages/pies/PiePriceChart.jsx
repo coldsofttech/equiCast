@@ -1,0 +1,640 @@
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Card from "../../components/core/Card.jsx";
+import { useApi } from "../../api/useApi.js";
+import { getPrices } from "../../api/market.js";
+import { getPie, listPies } from "../../api/pies.js";
+import { resolveFxRate, formatPrice } from "../holdings/holdingFinancials.js";
+import PieComparePicker from "./PieComparePicker.jsx";
+import PieBenchmarkRating from "./PieBenchmarkRating.jsx";
+import "../accounts/PriceChart.css";
+import "../holdings/HoldingPriceChart.css";
+
+/** Same range set HoldingPriceChart offers — "1d" omitted since only daily
+ * bars are ever stored (see market.js's PRICE_RANGES for the full set the
+ * backend accepts). */
+const RANGES = [
+  { id: "5d", label: "1W" },
+  { id: "1m", label: "1M" },
+  { id: "6m", label: "6M" },
+  { id: "ytd", label: "YTD" },
+  { id: "1y", label: "1Y" },
+  { id: "2y", label: "2Y" },
+  { id: "3y", label: "3Y" },
+  { id: "5y", label: "5Y" },
+  { id: "10y", label: "10Y" },
+  { id: "max", label: "MAX" },
+];
+
+const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
+const VERY_LONG_RANGES = new Set(["10y", "max"]);
+
+function formatAxisDate(dateStr, rangeId) {
+  const d = new Date(dateStr);
+  if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
+  if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** Y-axis tick label: a signed percentage in comparison (pctMode) charts,
+ * the usual currency-formatted value otherwise — same split
+ * HoldingPriceChart's own formatYAxisLabel makes. */
+function formatYAxisLabel(value, pctMode, currency) {
+  if (pctMode) return `${value > 0 ? "+" : ""}${value.toFixed(1)}%`;
+  return formatPrice(value, currency);
+}
+
+/** Evenly spaced bar indices to label on the x-axis — at most `maxTicks`,
+ * always including the first and last bar. */
+function axisTickIndices(count, maxTicks) {
+  if (count <= 1) return [0].slice(0, count);
+  const tickCount = Math.min(maxTicks, count);
+  const indices = new Set();
+  for (let i = 0; i < tickCount; i += 1) {
+    indices.add(Math.round((i * (count - 1)) / (tickCount - 1)));
+  }
+  return [...indices].sort((a, b) => a - b);
+}
+
+// See HoldingPriceChart.jsx's identical constants for why width is tracked
+// live via ResizeObserver and HEIGHT/DEFAULT_WIDTH match the SVG's real box.
+const DEFAULT_WIDTH = 720;
+const HEIGHT = 220;
+const PADDING_TOP = 16;
+const PADDING_RIGHT = 12;
+const PADDING_BOTTOM = 28;
+const PADDING_LEFT = 56;
+const Y_AXIS_TICKS = 4;
+const X_AXIS_MAX_TICKS = 6;
+
+/** The most recent bar at or before `date` in `sortedBars` (ascending by
+ * `date`, as `getPrices` already returns them), or `null` if `sortedBars`
+ * has nothing that far back yet. */
+function lastKnownBar(sortedBars, date) {
+  let result = null;
+  for (const bar of sortedBars) {
+    if (bar.date > date) break;
+    result = bar;
+  }
+  return result;
+}
+
+/**
+ * Combines each holding's own real price series (already fetched, in
+ * `targetCurrency`'s worth per share via `fxRate`) into one aggregate
+ * portfolio-value curve: at every date across the union of every holding's
+ * bar dates, values *today's* share count of each holding at that date's
+ * own price — forward-filled (flat) from its last known bar when a holding
+ * has no bar dated exactly that day, since different tickers don't always
+ * share a trading calendar — and sums the results. A holding with no bar
+ * that far back yet (its own history starts later than this date) is left
+ * out of that date's total entirely rather than estimated.
+ *
+ * This is deliberately "what today's holdings would have been worth over
+ * time," not a true historical-performance line — that would need a full
+ * transaction-level position history to know what was actually held on
+ * each past date, which this doesn't have.
+ */
+function buildAggregateBars(holdingSeries) {
+  const dateSet = new Set();
+  holdingSeries.forEach((h) => h.bars.forEach((b) => dateSet.add(b.date)));
+  const dates = [...dateSet].sort();
+
+  return dates
+    .map((date) => {
+      let open = 0;
+      let high = 0;
+      let low = 0;
+      let close = 0;
+      let hasData = false;
+      holdingSeries.forEach((h) => {
+        const exactBar = h.barsByDate.get(date);
+        const bar = exactBar ?? lastKnownBar(h.bars, date);
+        if (!bar) return;
+        hasData = true;
+        const weight = h.shares * h.fxRate;
+        // A forward-filled holding only carries a flat close (no real
+        // open/high/low for a date it has no bar on) — its contribution
+        // to open/high/low is its own close, same as a candle with no
+        // intraday range.
+        open += weight * (exactBar ? bar.open : bar.close);
+        high += weight * (exactBar ? bar.high : bar.close);
+        low += weight * (exactBar ? bar.low : bar.close);
+        close += weight * bar.close;
+      });
+      return hasData ? { date, open, high, low, close } : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Fetches every held (`no_of_shares > 0`) holding's own real price series
+ * for `rangeId` and combines them via `buildAggregateBars`, converting each
+ * to `targetCurrency` via a single current FX rate (see resolveFxRate) —
+ * shared by the main pie (PiePriceChart's own `holdings` prop) and a
+ * "compare against" pie (fetched fresh via `getPie` once selected), so both
+ * go through the exact same aggregation. A holding whose price/FX can't be
+ * resolved is dropped rather than failing the whole fetch. `targetCurrency`
+ * only has to be *some* consistent currency across the holdings it's
+ * aggregating — for a compare pie, its choice doesn't affect the % growth
+ * ratio the comparison actually plots (a constant FX rate cancels out of a
+ * ratio), so the caller doesn't need the compare pie's own default
+ * currency, just any one currency.
+ */
+async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
+  const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
+  if (heldHoldings.length === 0) return [];
+
+  const results = await Promise.all(
+    heldHoldings.map(async (holding) => {
+      try {
+        const series = await getPrices(api, holding.asset_class, holding.ticker, { range: rangeId });
+        if (series.prices.length === 0) return null;
+        const fxRate = await resolveFxRate(api, series.currency, targetCurrency);
+        if (fxRate == null) return null;
+        return {
+          shares: Number(holding.no_of_shares),
+          fxRate,
+          bars: series.prices,
+          barsByDate: new Map(series.prices.map((b) => [b.date, b])),
+        };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  const holdingSeries = results.filter(Boolean);
+  return holdingSeries.length > 0 ? buildAggregateBars(holdingSeries) : [];
+}
+
+/**
+ * PieDetailPage's price chart — same real range picker, hover tooltip and
+ * "compare against" overlay as HoldingPriceChart.jsx, but its own subject
+ * series is every one of the pie's holdings combined into one aggregate
+ * value curve (see buildAggregateBars) rather than a single ticker's own
+ * price. There's no Candles chart type: unlike one ticker's own real daily
+ * OHLC bar, an aggregate's per-date open/high/low is itself a
+ * value-weighted sum across holdings' own bars, not a real traded range, so
+ * rendering it as a candle would imply a precision the underlying number
+ * doesn't have. Line/Area are the only two types.
+ *
+ * The "Compare against" control (PieComparePicker) reuses HoldingComparePicker's
+ * own visual styling (same CSS classes/collapsed-trigger/open-panel/selected-
+ * chip states) but is deliberately narrower in content: only this account's
+ * other portfolios (fetched via `listPies`) or a real benchmark (the same
+ * curated set HoldingComparePicker offers as quick-picks, see BENCHMARKS) —
+ * no free-text stock/ETF/fx search, since comparing an aggregate against one
+ * arbitrary ticker isn't a meaningful comparison the way it is for a single
+ * holding. Picking another pie re-runs the exact same `fetchAggregateBars`
+ * pipeline against that pie's own holdings; picking a benchmark just fetches
+ * its own real price series. Once a comparison is active the chart switches
+ * to a log-scaled "growth since range start" % axis, exactly like
+ * HoldingPriceChart's own pctMode (see that component's docstring for why
+ * log-scaling, not a plain linear %, is what keeps two very different-sized
+ * curves both visibly dynamic) — the chart-type toggle hides in this mode
+ * for the same reason it does there. Picking a benchmark specifically also
+ * renders PieBenchmarkRating below the chart — a real 0-100 rating of the
+ * portfolio's own current-value-weighted metrics against the benchmark's,
+ * independent of this chart's own range picker, same as HoldingPriceChart's
+ * own HoldingBenchmarkRating.
+ *
+ * `investedTotal`/`currentValueTotal` (PieDetailPage's `totals.invested`/
+ * `totals.currentValue`, both in `currency`) draw as reference lines (grey
+ * dashed / accent info dashed respectively) the same way HoldingPriceChart
+ * treats avg buy price/current price — including in pctMode, log-scaled via
+ * their own ratio to the first bar's close, so they stay meaningful and
+ * on-screen even while comparing.
+ *
+ * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, accountId: string, pieId: string, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
+ */
+function PiePriceChart({
+  holdings,
+  currency,
+  accountId,
+  pieId,
+  investedTotal = null,
+  currentValueTotal = null,
+  holdingValuations = null,
+}) {
+  const api = useApi();
+  const [chartType, setChartType] = useState("line");
+  const [rangeId, setRangeId] = useState("max");
+  const [hoverIndex, setHoverIndex] = useState(null);
+  const svgRef = useRef(null);
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const boxWidth = entries[0]?.contentRect.width;
+      if (boxWidth) setWidth(boxWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
+  const [bars, setBars] = useState([]);
+  const [status, setStatus] = useState("loading");
+
+  useEffect(() => {
+    let cancelled = false;
+    setStatus("loading");
+    setHoverIndex(null);
+    fetchAggregateBars(api, holdings, rangeId, currency).then((aggregated) => {
+      if (cancelled) return;
+      setBars(aggregated);
+      setStatus(aggregated.length > 0 ? "ok" : "empty");
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, holdings, rangeId, currency]);
+
+  // The "Compare against" picker's own options — this account's other
+  // pies. Non-critical for the chart to function, so a failure here just
+  // leaves the picker offering benchmarks only rather than surfacing an
+  // error state.
+  const [siblingPies, setSiblingPies] = useState([]);
+  useEffect(() => {
+    listPies(api, { accountId })
+      .then((pies) => setSiblingPies(pies.filter((p) => p.id !== pieId)))
+      .catch(() => {});
+  }, [api, accountId, pieId]);
+
+  const [compare, setCompare] = useState({ id: "", type: null, refId: null, label: null });
+  const [compareBars, setCompareBars] = useState(null);
+  const [compareStatus, setCompareStatus] = useState("idle");
+
+  useEffect(() => {
+    if (!compare.id) {
+      setCompareBars(null);
+      setCompareStatus("idle");
+      return undefined;
+    }
+
+    let cancelled = false;
+    setCompareStatus("loading");
+
+    const load =
+      compare.type === "pie"
+        ? getPie(api, compare.refId).then((pie) => fetchAggregateBars(api, pie.holdings ?? [], rangeId, currency))
+        : getPrices(api, "benchmark", compare.refId, { range: rangeId }).then((series) => series.prices);
+
+    load
+      .then((result) => {
+        if (cancelled) return;
+        setCompareBars(result);
+        setCompareStatus(result.length > 0 ? "ok" : "empty");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setCompareStatus("error");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [api, compare.id, compare.type, compare.refId, rangeId, currency]);
+
+  const handleCompareClear = () => setCompare({ id: "", type: null, refId: null, label: null });
+
+  // A comparison is always shown as % change from its own first bar, on the
+  // same 0%-baseline scale as the main series — each series just needs to
+  // be internally consistent, no rebasing to the main series' own value
+  // level is needed. The two series are still date-aligned (not just zipped
+  // by index) since a compare pie/benchmark doesn't necessarily share this
+  // pie's exact bar dates — a missing date forward-fills from the last
+  // known compare close, same idea as a real trading desk holding a stale
+  // price over a market holiday.
+  const compareAlignedCloses = useMemo(() => {
+    if (!compare.id || bars.length === 0) return null;
+    if (compareStatus !== "ok" || !compareBars || compareBars.length === 0) return null;
+
+    const closeByDate = new Map(compareBars.map((b) => [b.date, b.close]));
+    let lastKnown = compareBars[0].close;
+    return bars.map((b) => {
+      if (closeByDate.has(b.date)) lastKnown = closeByDate.get(b.date);
+      return lastKnown;
+    });
+  }, [compare.id, compareStatus, compareBars, bars]);
+
+  const pctMode = Boolean(compare.id);
+
+  // Growth ratio (close / first close), then log-scaled — see
+  // HoldingPriceChart.jsx's own mainRatio/mainLog for the full reasoning
+  // (equal vertical distance = equal *rate* of growth regardless of
+  // starting multiple, so both series stay visibly dynamic together).
+  const mainRatio = useMemo(() => {
+    if (bars.length === 0) return null;
+    const firstClose = bars[0].close;
+    return bars.map((b) => b.close / firstClose);
+  }, [bars]);
+
+  const compareRatio = useMemo(() => {
+    if (!compareAlignedCloses) return null;
+    const first = compareAlignedCloses[0];
+    return compareAlignedCloses.map((c) => c / first);
+  }, [compareAlignedCloses]);
+
+  const investedRatio = useMemo(() => {
+    if (investedTotal == null || bars.length === 0) return null;
+    return investedTotal / bars[0].close;
+  }, [investedTotal, bars]);
+
+  const currentValueRatio = useMemo(() => {
+    if (currentValueTotal == null || bars.length === 0) return null;
+    return currentValueTotal / bars[0].close;
+  }, [currentValueTotal, bars]);
+
+  const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
+  const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
+  const investedLog = investedRatio != null ? Math.log(investedRatio) : null;
+  const currentValueLog = currentValueRatio != null ? Math.log(currentValueRatio) : null;
+
+  // The legend's total-change badge stays in plain (linear) %, since "up
+  // 27,918%" reads naturally there — only the chart's own y-positions use
+  // the log-scaled values above.
+  const compareChangePct = compareRatio ? (compareRatio[compareRatio.length - 1] - 1) * 100 : null;
+
+  const { min, max } = useMemo(() => {
+    if (bars.length === 0) return { min: 0, max: 1 };
+    if (pctMode) {
+      const values = [...(mainLog ?? []), 0];
+      if (compareLog) values.push(...compareLog);
+      if (investedLog != null) values.push(investedLog);
+      if (currentValueLog != null) values.push(currentValueLog);
+      return { min: Math.min(...values), max: Math.max(...values) };
+    }
+    const values = bars.flatMap((b) => [b.high, b.low]);
+    if (investedTotal != null) values.push(investedTotal);
+    if (currentValueTotal != null) values.push(currentValueTotal);
+    return { min: Math.min(...values), max: Math.max(...values) };
+  }, [bars, pctMode, mainLog, compareLog, investedLog, investedTotal, currentValueLog, currentValueTotal]);
+
+  const rangeSpan = max - min || 1;
+  const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
+  const plotHeight = HEIGHT - PADDING_TOP - PADDING_BOTTOM;
+  const step = bars.length > 0 ? plotWidth / bars.length : plotWidth;
+
+  const xFor = (i) => PADDING_LEFT + step * (i + 0.5);
+  const yFor = (value) => PADDING_TOP + plotHeight * (1 - (value - min) / rangeSpan);
+  const bottomY = PADDING_TOP + plotHeight;
+
+  const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.close)}`).join(" ");
+  const areaPath =
+    bars.length > 0 ? `${linePath} L${xFor(bars.length - 1)},${bottomY} L${xFor(0)},${bottomY} Z` : "";
+  const pctLinePath = mainLog
+    ? mainLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+    : "";
+  const comparePctPath = compareLog
+    ? compareLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
+    : null;
+
+  const first = bars[0];
+  const last = bars[bars.length - 1];
+  const changePct = first && last ? ((last.close - first.open) / first.open) * 100 : null;
+  const isUp = (changePct ?? 0) >= 0;
+
+  const handleMove = (event) => {
+    if (!svgRef.current || bars.length === 0) return;
+    const svg = svgRef.current;
+    const point = svg.createSVGPoint();
+    point.x = event.clientX;
+    point.y = event.clientY;
+    const { x } = point.matrixTransform(svg.getScreenCTM().inverse());
+    const index = Math.min(bars.length - 1, Math.max(0, Math.floor((x - PADDING_LEFT) / step)));
+    setHoverIndex(index);
+  };
+
+  const hovered = hoverIndex !== null ? bars[hoverIndex] : last;
+  const hoveredLabel = hovered ? formatAxisDate(hovered.date, rangeId) : null;
+
+  const yTicks = Array.from({ length: Y_AXIS_TICKS + 1 }, (_, i) => {
+    const value = max - (rangeSpan * i) / Y_AXIS_TICKS;
+    return { key: i, value, y: yFor(value) };
+  });
+  const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
+
+  return (
+    <Card className="ec-pchart">
+      <div className="ec-pchart-toolbar">
+        {!pctMode && (
+          <div className="ec-chart-toggle" role="group" aria-label="Chart type">
+            {["line", "area"].map((type) => (
+              <button
+                key={type}
+                type="button"
+                className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
+                onClick={() => setChartType(type)}
+              >
+                {type === "line" ? "Line" : "Area"}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <PieComparePicker
+          pies={siblingPies}
+          compareId={compare.id}
+          compareLabel={compare.label}
+          onSelect={setCompare}
+          onClear={handleCompareClear}
+        />
+      </div>
+
+      <div className="ec-pchart-ranges" role="group" aria-label="Date range">
+        {RANGES.map((r) => (
+          <button
+            key={r.id}
+            type="button"
+            className={`ec-pchart-range-btn${r.id === rangeId ? " is-active" : ""}`}
+            onClick={() => setRangeId(r.id)}
+          >
+            {r.label}
+          </button>
+        ))}
+      </div>
+
+      {status === "loading" && <p className="ec-loading">Loading price history…</p>}
+      {status === "empty" && (
+        <p className="ec-chart-caption">
+          No price history to chart yet — this needs at least one holding with shares and published
+          price/FX data.
+        </p>
+      )}
+
+      {status === "ok" && (
+        <>
+          <div className="ec-pchart-legend">
+            <span className="ec-pchart-legend-item">
+              <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
+              This portfolio
+              {changePct !== null && (
+                <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
+                  {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
+                </span>
+              )}
+            </span>
+            {compare.label && compareChangePct !== null && (
+              <span className="ec-pchart-legend-item">
+                <span className="ec-pchart-dot ec-pchart-dot--compare" aria-hidden="true" />
+                {compare.label}
+                <span className={`ec-chart-change${compareChangePct >= 0 ? " is-up" : " is-down"}`}>
+                  {compareChangePct >= 0 ? "▲" : "▼"} {Math.abs(compareChangePct).toFixed(1)}%
+                </span>
+              </span>
+            )}
+            {investedTotal != null && (
+              <span className="ec-pchart-legend-item">
+                <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
+                Total invested: {formatPrice(investedTotal, currency)}
+              </span>
+            )}
+            {currentValueTotal != null && (
+              <span className="ec-pchart-legend-item">
+                <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
+                Current value: {formatPrice(currentValueTotal, currency)}
+              </span>
+            )}
+          </div>
+
+          <svg
+            ref={svgRef}
+            className="ec-chart-svg"
+            viewBox={`0 0 ${width} ${HEIGHT}`}
+            onMouseMove={handleMove}
+            onMouseLeave={() => setHoverIndex(null)}
+            role="img"
+            aria-label={
+              pctMode
+                ? `Line chart of this portfolio's % change vs ${compare.label} for the ${rangeId} range`
+                : `${chartType} chart of this portfolio's aggregate value for the ${rangeId} range`
+            }
+          >
+            {yTicks.map(({ key, value, y }) => (
+              <g key={key}>
+                <line
+                  x1={PADDING_LEFT}
+                  x2={width - PADDING_RIGHT}
+                  y1={y}
+                  y2={y}
+                  className="ec-chart-gridline"
+                />
+                <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
+                  {pctMode
+                    ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, currency)
+                    : formatYAxisLabel(value, false, currency)}
+                </text>
+              </g>
+            ))}
+
+            {xTickIndices.map((i) => (
+              <text
+                key={i}
+                x={xFor(i)}
+                y={HEIGHT - PADDING_BOTTOM + 18}
+                className="ec-chart-axis-label ec-chart-xaxis-label"
+              >
+                {formatAxisDate(bars[i].date, rangeId)}
+              </text>
+            ))}
+
+            {pctMode ? (
+              <>
+                <line
+                  x1={PADDING_LEFT}
+                  x2={width - PADDING_RIGHT}
+                  y1={yFor(0)}
+                  y2={yFor(0)}
+                  className="ec-chart-zero-line"
+                />
+                <path d={pctLinePath} className="ec-chart-line" fill="none" />
+                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                {investedLog != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(investedLog)}
+                    y2={yFor(investedLog)}
+                    className="ec-chart-avg-line"
+                  />
+                )}
+                {currentValueLog != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(currentValueLog)}
+                    y2={yFor(currentValueLog)}
+                    className="ec-chart-current-line"
+                  />
+                )}
+              </>
+            ) : (
+              <>
+                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
+                <path d={linePath} className="ec-chart-line" fill="none" />
+                {investedTotal != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(investedTotal)}
+                    y2={yFor(investedTotal)}
+                    className="ec-chart-avg-line"
+                  />
+                )}
+                {currentValueTotal != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(currentValueTotal)}
+                    y2={yFor(currentValueTotal)}
+                    className="ec-chart-current-line"
+                  />
+                )}
+              </>
+            )}
+
+            {hoverIndex !== null && (
+              <line
+                x1={xFor(hoverIndex)}
+                x2={xFor(hoverIndex)}
+                y1={PADDING_TOP}
+                y2={bottomY}
+                className="ec-chart-crosshair"
+              />
+            )}
+          </svg>
+
+          {hovered && (
+            <div className="ec-chart-tooltip">
+              <span className="ec-chart-tooltip-date">{hoveredLabel}</span>
+              <span>O {formatPrice(hovered.open, currency)}</span>
+              <span>H {formatPrice(hovered.high, currency)}</span>
+              <span>L {formatPrice(hovered.low, currency)}</span>
+              <span>C {formatPrice(hovered.close, currency)}</span>
+            </div>
+          )}
+
+          {compare.id && compareStatus === "loading" && (
+            <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
+          )}
+          {compare.id && (compareStatus === "error" || compareStatus === "empty") && (
+            <p className="ec-chart-caption">No price history published for {compare.label} for this range yet.</p>
+          )}
+
+          {compare.type === "benchmark" && holdingValuations && (
+            <PieBenchmarkRating
+              holdings={holdings}
+              valuations={holdingValuations}
+              benchmarkKey={compare.refId}
+              benchmarkLabel={compare.label}
+            />
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+export default PiePriceChart;

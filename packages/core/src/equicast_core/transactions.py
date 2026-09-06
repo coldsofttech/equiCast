@@ -170,20 +170,55 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     return transaction
 
 
+def _sum_dividends(transactions: list[dict[str, Any]]) -> tuple[float, float | None]:
+    """Total dividend cash received as `(dividends_native, dividends)` —
+    present in both `AVERAGE` and `TRANSACTION` mode alike (a dividend
+    never affects shares/cost, see module docstring), so this is computed
+    once and folded into both of `compute_holding_rollup`'s branches. Same
+    legacy fallback as `average_price_native`/`average_price`: a record
+    predating the native/converted split has `amount_native` backfilled to
+    `None`, with the original value still sitting under the bare
+    (now-"converted") `amount` key — treated as the native figure for such
+    a record, but never as the converted one. `dividends` (the converted
+    total) is `None` whenever any contributing record's own converted
+    amount couldn't be resolved (see `resolve_converted_amounts` — same
+    "None when unresolvable" contract `invested` uses) — a partial
+    converted total would be misleading, not just incomplete."""
+    total_native = Decimal(0)
+    total_converted = Decimal(0)
+    converted_known = True
+    for record in transactions:
+        if record["type"] != "DIVIDEND":
+            continue
+        is_legacy = record.get("amount_native") is None
+        native_raw = record.get("amount") if is_legacy else record.get("amount_native")
+        if native_raw is not None:
+            total_native += Decimal(str(native_raw))
+        converted_raw = None if is_legacy else record.get("amount")
+        if converted_known and converted_raw is not None:
+            total_converted += Decimal(str(converted_raw))
+        else:
+            converted_known = False
+    return float(total_native), (float(total_converted) if converted_known else None)
+
+
 def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dict[str, Any]:
     """Return `{no_of_shares, average_price_native, average_price,
-    invested_native, invested}` for one holding's full transaction history —
-    the position summary persisted onto the holding record itself (see
+    invested_native, invested, dividends_native, dividends}` for one
+    holding's full transaction history — the position summary persisted
+    onto the holding record itself (see
     `HoldingsClient.update_holding_financials`) so pages that just need
     "what does this holding look like right now" (the account/pie holdings
     list, HoldingTickerPage's stats) never have to re-fetch and re-derive it
     from every transaction on every read. Only `no_of_shares`/
-    `average_price_native`/`average_price`/`invested_native`/`invested` are
-    rolled up here — profit/loss depends on the *current* market price too,
-    which moves daily independent of any transaction, so it's deliberately
-    left for the caller to compute at read time from these figures plus a
-    live price rather than persisted (it would otherwise go stale between
-    trades).
+    `average_price_native`/`average_price`/`invested_native`/`invested`/
+    `dividends_native`/`dividends` are rolled up here — profit/loss depends
+    on the *current* market price too, which moves daily independent of any
+    transaction, so it's deliberately left for the caller to compute at
+    read time from these figures plus a live price rather than persisted
+    (it would otherwise go stale between trades). `dividends` (like
+    `invested`) is `None` whenever any contributing dividend's own
+    converted amount couldn't be resolved — see `_sum_dividends`.
 
     `AVERAGE` mode mirrors `TransactionsClient`'s own "at most one BUY
     position entry" invariant — that record's fields are the rollup
@@ -210,6 +245,7 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
     falls back to `None`/unresolvable for a holding with any such record,
     same as an unresolved FX rate would."""
     if mode == "AVERAGE":
+        dividends_native, dividends = _sum_dividends(transactions)
         record = next((t for t in transactions if t["type"] in ("BUY", None)), None)
         if record is None:
             return {
@@ -218,6 +254,8 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
                 "average_price": None,
                 "invested_native": 0,
                 "invested": 0,
+                "dividends_native": dividends_native,
+                "dividends": dividends,
             }
         shares = Decimal(str(record["no_of_shares"]))
         is_legacy = record.get("average_price_native") is None
@@ -237,6 +275,8 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
                 if avg_converted_raw is not None
                 else None
             ),
+            "dividends_native": dividends_native,
+            "dividends": dividends,
         }
 
     sorted_records = sorted(
@@ -267,6 +307,7 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
                 cost_converted -= sold * (cost_converted / shares)
             shares -= sold
 
+    dividends_native, dividends = _sum_dividends(transactions)
     return {
         "no_of_shares": float(shares),
         "average_price_native": float(cost_native / shares) if shares > 0 else None,
@@ -277,6 +318,8 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
             if shares > 0 and converted_known
             else (0 if shares == 0 else None)
         ),
+        "dividends_native": dividends_native,
+        "dividends": dividends,
     }
 
 

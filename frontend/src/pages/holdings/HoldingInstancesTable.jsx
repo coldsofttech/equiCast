@@ -11,7 +11,7 @@ import { formatPrice } from "./holdingFinancials.js";
  * AccountsListPage.jsx).
  *
  * @param {{
- *   instances: { holding: object, location: string, destination: string, shares: number, avgPriceNative: number|null, transactionsError: boolean }[],
+ *   instances: { holding: object, location: string, destination: string, isPieHolding: boolean, shares: number, avgPriceNative: number|null, transactionsError: boolean }[],
  *   nativeCurrency: string|null,
  *   defaultCurrency: string|null,
  *   fxRate: number|null,

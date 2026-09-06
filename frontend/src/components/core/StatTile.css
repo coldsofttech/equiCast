@@ -46,3 +46,11 @@
   font-size: var(--ec-fs-12);
   color: var(--ec-text-subtle);
 }
+
+.ec-stat-hint.is-up {
+  color: var(--ec-success);
+}
+
+.ec-stat-hint.is-down {
+  color: var(--ec-danger);
+}

@@ -13,8 +13,10 @@ import "./HoldingComparePicker.css";
  * design), so this quick-pick always resolves in both environments rather
  * than 404ing locally for a prod-only benchmark. Anything not listed here
  * is still reachable through the search box above (assetClass:
- * "benchmark"). */
-const BENCHMARKS = [
+ * "benchmark"). Exported so PiePriceChart's own (simpler, no free-text
+ * search) "Compare against" select can offer the same real benchmark set
+ * without duplicating it. */
+export const BENCHMARKS = [
   { key: "SP500", name: "S&P 500" },
   { key: "FTSE100", name: "FTSE 100" },
   { key: "MSCI_WORLD", name: "MSCI World" },

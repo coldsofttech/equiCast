@@ -1,3 +1,6 @@
+from datetime import UTC, datetime
+from typing import Any
+
 from django.conf import settings
 from equicast_core import (
     AccountsClient,
@@ -11,6 +14,7 @@ from equicast_core import (
     PieNotFoundError,
     PiesClient,
     TransactionsClient,
+    UserProfileClient,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -60,6 +64,74 @@ _transactions_client = TransactionsClient(
     region_name=settings.AWS_REGION,
     max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
 )
+#: Needed only to read the user's default_currency, so a pie holding's
+#: current_price can be converted the same way transactions/views.py
+#: converts average_price/invested/dividends (see resolve_converted_amounts
+#: there) — identity/views.py holds the client actually used for profile CRUD.
+_profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
+
+
+def _enrich_holdings(user_id: str, holdings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return `holdings` with market-derived display/valuation fields merged
+    in: `name`/`sector`/`industry`/`website` (from
+    `MarketDataClient.get_profile` — `website` backs the frontend's
+    favicon-based AssetIcon) and `current_price_native`/`current_price`
+    (today's price, FX-converted to the user's `default_currency` — the
+    same convention `average_price`/`invested`/`dividends` already use, see
+    `transactions.views.resolve_converted_amounts`), so the frontend can
+    derive current value/profit-loss without a market-data round trip per
+    ticker.
+
+    Batches lookups so a pie (or a whole account's worth of pies) with many
+    holdings costs one profile fetch per distinct ticker and one FX lookup
+    per distinct native currency, not one per holding. A field is `None`
+    whenever it can't be resolved (unpublished ticker, no FX rate) rather
+    than raising — same degrade-gracefully behavior as
+    `resolve_converted_amounts`.
+    """
+    if not holdings:
+        return holdings
+
+    default_currency = _profile_client.get_or_create_profile(user_id)["default_currency"]
+    today = datetime.now(UTC).date().isoformat()
+
+    profiles: dict[tuple[str, str], dict[str, Any] | None] = {}
+    for holding in holdings:
+        key = (holding["asset_class"], holding["ticker"])
+        if key not in profiles:
+            profiles[key] = _market_data_client.get_profile(*key)
+
+    fx_rates: dict[str, float | None] = {}
+    for profile in profiles.values():
+        native_currency = profile.get("currency") if profile else None
+        if native_currency and native_currency not in fx_rates:
+            fx_rates[native_currency] = _market_data_client.get_fx_rate_on_date(
+                native_currency, default_currency, today
+            )
+
+    enriched = []
+    for holding in holdings:
+        profile = profiles[(holding["asset_class"], holding["ticker"])]
+        native_currency = profile.get("currency") if profile else None
+        current_price_native = profile.get("day_close") if profile else None
+        rate = fx_rates.get(native_currency) if native_currency else None
+        current_price = (
+            current_price_native * rate
+            if current_price_native is not None and rate is not None
+            else None
+        )
+        enriched.append(
+            {
+                **holding,
+                "name": profile.get("name") if profile else None,
+                "sector": profile.get("sector") if profile else None,
+                "industry": profile.get("industry") if profile else None,
+                "website": profile.get("website") if profile else None,
+                "current_price_native": current_price_native,
+                "current_price": current_price,
+            }
+        )
+    return enriched
 
 
 class PieListView(APIView):
@@ -68,7 +140,21 @@ class PieListView(APIView):
 
     def get(self, request: Request) -> Response:
         account_id = request.query_params.get("account_id")
-        return Response(_client.list_pies(request.user.user_id, account_id=account_id))
+        pies = _client.list_pies(request.user.user_id, account_id=account_id)
+
+        pie_ids = {pie["id"] for pie in pies}
+        holdings = [
+            h
+            for h in _holdings_client.list_holdings(request.user.user_id)
+            if h["pie_id"] in pie_ids
+        ]
+        holdings_by_pie: dict[str, list[dict[str, Any]]] = {}
+        for holding in _enrich_holdings(request.user.user_id, holdings):
+            holdings_by_pie.setdefault(holding["pie_id"], []).append(holding)
+
+        return Response(
+            [{**pie, "holdings": holdings_by_pie.get(pie["id"], [])} for pie in pies]
+        )
 
     def post(self, request: Request) -> Response:
         missing = REQUIRED_CREATE_FIELDS - request.data.keys()
@@ -107,7 +193,7 @@ class PieDetailView(APIView):
         except PieNotFoundError:
             return Response(status=404)
         holdings = _holdings_client.list_holdings(request.user.user_id, pie_id=pie_id)
-        return Response({**pie, "holdings": holdings})
+        return Response({**pie, "holdings": _enrich_holdings(request.user.user_id, holdings)})
 
     def patch(self, request: Request, pie_id: str) -> Response:
         fields = {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
@@ -188,4 +274,10 @@ class PieHoldingsView(APIView):
         except AllocationError:
             return Response({"detail": "Pie holdings must sum to exactly 100%."}, status=400)
 
+        # Not enriched (see _enrich_holdings) — remove/reallocate-only calls
+        # must not touch market data (see
+        # test_put_removes_and_reallocates_without_touching_market_data), and
+        # the caller re-fetches the pie (GET /pies/<id>, which does enrich)
+        # right after a successful sync anyway (see PieDetailPage's
+        # handleSaveAllocation).
         return Response({**pie, "holdings": holdings})

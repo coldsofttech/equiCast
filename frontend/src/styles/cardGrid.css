@@ -148,6 +148,17 @@
   box-shadow: var(--ec-shadow-sm);
 }
 
+/** Groups a holding row's AssetIcon with its name/meta so `.ec-card.ec-detail-row`'s
+ * own `space-between` (icon+name on the left, value on the right) doesn't
+ * also open a gap between the icon and the text next to it — see
+ * PieDetailPage's Holdings cards. */
+.ec-detail-row-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+  min-width: 0;
+}
+
 .ec-detail-row-main {
   display: flex;
   flex-direction: column;

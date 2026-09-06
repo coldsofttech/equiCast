@@ -73,6 +73,11 @@ export function deletePie(api, pieId, { force = false } = {}) {
  * backend's `Decimal(str(value))` parse does — see
  * equicast_core.holdings._validate_allocation.
  *
+ * Unlike `getPie`, the returned holdings are NOT enriched with
+ * name/sector/industry/current_price (see PieHoldingsView.put's docstring
+ * note) — callers should follow a successful sync with `getPie` to get the
+ * enriched view back.
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} pieId
  * @param {{

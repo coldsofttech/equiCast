@@ -20,8 +20,9 @@ export function createHolding(api, data) {
 /**
  * GET /api/holdings/<id>/ — see backend/holdings/views.py's
  * HoldingDetailView.get. Used to re-fetch a holding's rollup fields
- * (no_of_shares/average_price_native/average_price/invested_native/invested
- * — see equicast_core.transactions.compute_holding_rollup) right after a
+ * (no_of_shares/average_price_native/average_price/invested_native/invested/
+ * dividends_native — see equicast_core.transactions.compute_holding_rollup)
+ * right after a
  * transaction create/update/delete against it, so HoldingTickerPage's stats
  * reflect the mutation without a full accounts refetch.
  *

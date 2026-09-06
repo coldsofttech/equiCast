@@ -3,6 +3,7 @@ import { useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
@@ -11,36 +12,99 @@ import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
-import PriceChart from "../accounts/PriceChart.jsx";
+import PiePriceChart from "./PiePriceChart.jsx";
+import PieCagrSection from "./PieCagrSection.jsx";
 import DiversificationChart from "../accounts/DiversificationChart.jsx";
 import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
-import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
+import { useCurrentUser } from "../../api/useCurrentUser.js";
+import { deletePie, getPie, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
-import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
-import {
-  formatCurrency,
-  TICKER_NAMES,
-  buildPieSample,
-  buildHoldingSample,
-  plTone,
-  aggregateSamples,
-} from "../sampleFinancials.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
 
-/** GET /pies/<id> doesn't carry the parent account's currency (see
- * backend/pies/views.py), so it's read off the session-cached accounts
- * list (see useAccounts.js) this page already pulls from for cache
- * patching — falling back to this only in the unlikely case that list
- * hasn't loaded yet by the time these StatTiles first render. */
+/** A pie holding's `invested`/`dividends`/`current_price` (see
+ * backend/pies/views.py's `_enrich_holdings`) are all converted to the
+ * user's default_currency, not the parent account's own currency — so
+ * totals here are labeled/formatted in that currency, read off the cached
+ * profile (see useCurrentUser.js), falling back only in the unlikely case
+ * it hasn't loaded yet by the time these StatTiles first render. */
 const FALLBACK_CURRENCY = "USD";
 
 /**
- * One portfolio's own overview page — same shape as AccountDetailPage
- * (placeholder stats, a consolidated price chart, a holdings section,
- * bottom-of-page diversification/heatmap), scoped to this pie's own
- * holdings instead of the whole account's. Holdings here are read-only
- * (name, allocation %, sample value/P&L) — adding/removing/reallocating
+ * Derives one holding's current value/profit-loss from its already
+ * rolled-up fields (`no_of_shares`/`invested`) and its enriched
+ * `current_price` (see backend/pies/views.py's `_enrich_holdings`).
+ * `current_price` is `null` when the ticker isn't published or no FX rate
+ * exists for it — in that case this falls back to valuing the position at
+ * its own cost basis (flat P&L) rather than showing a hole in the total,
+ * same "degrade gracefully" reasoning as the fields it reads.
+ */
+function computeHoldingValuation(holding) {
+  const invested = Number(holding.invested) || 0;
+  const shares = Number(holding.no_of_shares) || 0;
+  const livePrice = holding.current_price;
+  const currentValue = livePrice != null ? shares * livePrice : invested;
+  const plValue = currentValue - invested;
+  const plPct = invested !== 0 ? (plValue / invested) * 100 : 0;
+  return { invested, currentValue, plValue, plPct, hasLivePrice: livePrice != null };
+}
+
+/**
+ * Groups a pie's holdings by sector/industry, weighted by each holding's
+ * current value (see `computeHoldingValuation`) rather than a plain
+ * holding count or `allocation_pct` — a small fx position and a large
+ * stock position in the same sector should count as two %-of-value rows,
+ * not one-holding-each. A holding with no sector/industry (every etf/fx,
+ * or an unpublished ticker — see backend/pies/views.py's
+ * `_enrich_holdings`) falls into "Other". `sectorScore` is a simple
+ * concentration heuristic (100 minus the largest sector's share of
+ * value), not a rigorous diversification metric.
+ */
+function buildDiversification(holdings, valuations) {
+  const totalValue = valuations.reduce((sum, v) => sum + v.currentValue, 0);
+
+  const sectorTotals = new Map();
+  const industryTotals = new Map();
+  holdings.forEach((holding, index) => {
+    const value = valuations[index].currentValue;
+    sectorTotals.set(holding.sector ?? "Other", (sectorTotals.get(holding.sector ?? "Other") ?? 0) + value);
+    const industryKey = holding.industry ?? "Other";
+    const existing = industryTotals.get(industryKey);
+    if (existing) {
+      existing.value += value;
+    } else {
+      industryTotals.set(industryKey, { value, sector: holding.sector ?? "Other" });
+    }
+  });
+
+  // Rounded to 1 decimal — DiversificationChart renders `pct` verbatim
+  // (`{entry.pct}%`), and an unrounded float would show a long, ugly
+  // fractional percentage next to each bar.
+  const toPct = (value) => (totalValue > 0 ? Math.round((value / totalValue) * 1000) / 10 : 0);
+  const sectorData = [...sectorTotals.entries()]
+    .map(([label, value]) => ({ label, pct: toPct(value) }))
+    .sort((a, b) => b.pct - a.pct);
+  const industryData = [...industryTotals.entries()]
+    .map(([label, { value, sector }]) => ({ label, sector, pct: toPct(value) }))
+    .sort((a, b) => b.pct - a.pct);
+  const sectorScore = sectorData.length > 0 ? Math.round(100 - sectorData[0].pct) : null;
+
+  return { sectorData, industryData, sectorScore };
+}
+
+/**
+ * One portfolio's own overview page — same shape as AccountDetailPage (a
+ * price chart, a holdings section, bottom-of-page diversification/heatmap),
+ * scoped to this pie's own holdings instead of the whole account's. Unlike
+ * AccountDetailPage's own price chart/diversification/heatmap sections
+ * (still sample data), every one of these is real here: the price chart
+ * (PiePriceChart) aggregates every holding's own real price history, sector/
+ * industry diversification (buildDiversification) and the holdings heatmap
+ * (`weights` prop, see HoldingsHeatmap) are both real, value-weighted
+ * breakdowns of this pie's own holdings. Holdings here are read-only (name,
+ * allocation %, live value/P&L off the enriched fields GET /pies/<id>
+ * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
  * separate from the "Edit pie" Drawer (name/description only), so editing
  * one never shows form fields for the other.
@@ -49,11 +113,11 @@ function PieDetailPage() {
   const { accountId, pieId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { accounts, setAccounts: setCachedAccounts } = useAccounts();
-  const currency = accounts.find((a) => a.id === accountId)?.currency ?? FALLBACK_CURRENCY;
+  const { setAccounts: setCachedAccounts } = useAccounts();
+  const { profile: userProfile } = useCurrentUser();
+  const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
 
   const [pie, setPie] = useState(null);
-  const [siblingPies, setSiblingPies] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
 
@@ -79,15 +143,6 @@ function PieDetailPage() {
       .catch((err) => setLoadError(err.message ?? "Couldn't load this pie."))
       .finally(() => setIsLoading(false));
   }, [api, pieId]);
-
-  useEffect(() => {
-    // Non-critical for the page to function — if this fails, the price
-    // chart's compare picker just offers benchmarks only, so no error
-    // state is surfaced for it.
-    listPies(api, { accountId })
-      .then((pies) => setSiblingPies(pies.filter((p) => p.id !== pieId)))
-      .catch(() => {});
-  }, [api, accountId, pieId]);
 
   /**
    * Mirrors a pie-level change into the session-cached accounts list (see
@@ -137,7 +192,11 @@ function PieDetailPage() {
   const handleSaveAllocation = (batch) => {
     setIsAllocationSaving(true);
     setAllocationError(null);
+    // syncPieHoldings' own response isn't enriched with name/sector/
+    // industry/current_price (see pies.js's docstring) — getPie is, so the
+    // Holdings cards have real data to render as soon as the drawer closes.
     syncPieHoldings(api, pieId, batch)
+      .then(() => getPie(api, pieId))
       .then((updated) => {
         setPie(updated);
         patchCachedPie(() => updated);
@@ -163,13 +222,26 @@ function PieDetailPage() {
     );
   }
 
-  const tickers = (pie.holdings ?? []).map((h) => h.ticker);
-  // Seeded by the pie's own id (same as the sample AccountDetailPage shows
-  // for this pie in its Portfolios list), not derived from pie.holdings —
-  // a pie with zero holdings would otherwise sample to a flat $0 here,
-  // and this keeps the two pages' numbers for the same pie consistent.
-  const totals = aggregateSamples([buildPieSample(pieId)]);
-  const totalsTone = plTone(totals.plPct);
+  const holdingValuations = (pie.holdings ?? []).map((h) => computeHoldingValuation(h));
+  const heatmapWeights = (pie.holdings ?? []).map((h, index) => ({
+    ticker: h.ticker,
+    value: holdingValuations[index].currentValue,
+  }));
+  const totals = (pie.holdings ?? []).reduce(
+    (sum, h, index) => ({
+      invested: sum.invested + holdingValuations[index].invested,
+      currentValue: sum.currentValue + holdingValuations[index].currentValue,
+      dividends: sum.dividends + (Number(h.dividends) || 0),
+    }),
+    { invested: 0, currentValue: 0, dividends: 0 }
+  );
+  const totalsPlValue = totals.currentValue - totals.invested;
+  const totalsPlPct = totals.invested !== 0 ? (totalsPlValue / totals.invested) * 100 : 0;
+  const totalsTone = plTone(totalsPlPct);
+  const { sectorData, industryData, sectorScore } = buildDiversification(
+    pie.holdings ?? [],
+    holdingValuations
+  );
 
   return (
     <AppShell
@@ -196,25 +268,29 @@ function PieDetailPage() {
     >
       <div className="ec-stat-grid">
         <StatTile
-          label="Total invested"
-          value={formatCurrency(totals.invested, currency)}
-          hint="Sample data"
+          label="Value"
+          value={formatCurrency(totals.currentValue, currency)}
+          hint={`Invested ${formatCurrency(totals.invested, currency)}`}
         />
         <StatTile
           label="Profit / loss"
-          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
+          value={`${totalsPlValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totalsPlValue), currency)}`}
           tone={totalsTone}
-          hint="Sample data"
+          hint={`${totalsPlPct >= 0 ? "+" : "-"}${Math.abs(totalsPlPct).toFixed(1)}%`}
+          hintTone={totalsTone}
         />
-        <StatTile
-          label="Profit / loss %"
-          value={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
-          tone={totalsTone}
-          hint="Sample data"
-        />
+        <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
       </div>
 
-      <PriceChart pies={siblingPies} seedKey={`pie:${pieId}`} subjectLabel="This portfolio" />
+      <PiePriceChart
+        holdings={pie.holdings ?? []}
+        currency={currency}
+        accountId={accountId}
+        pieId={pieId}
+        investedTotal={totals.invested}
+        currentValueTotal={totals.currentValue}
+        holdingValuations={holdingValuations}
+      />
 
       <div className="ec-section-head">
         <h2 className="ec-section-title">Holdings</h2>
@@ -236,83 +312,76 @@ function PieDetailPage() {
         />
       ) : (
         <div className="ec-detail-row-list">
-          {(() => {
-            const holdingSamples = pie.holdings.map((holding) => ({
-              holding,
-              sample: buildHoldingSample(holding.id),
-            }));
-            const totalCurrentValue = holdingSamples.reduce(
-              (sum, { sample }) => sum + sample.currentValue,
-              0
-            );
-
-            return holdingSamples.map(({ holding, sample }) => {
-              const tone = plTone(sample.plPct);
-              const plSign = sample.plValue >= 0 ? "+" : "-";
-              const name = TICKER_NAMES[holding.ticker];
-              const targetPct = Number(holding.allocation_pct);
-              // "Actual" allocation is this holding's share of the pie's
-              // sample current value, not its stored target — the two
-              // drift apart as prices move, which is exactly what this
-              // comparison is meant to surface (sample data for now).
-              const actualPct =
-                totalCurrentValue > 0 ? (sample.currentValue / totalCurrentValue) * 100 : 0;
-              const allocTone =
-                actualPct > targetPct ? "is-up" : actualPct < targetPct ? "is-down" : "is-flat";
-              return (
-                <Card
-                  key={holding.id}
-                  className="ec-detail-row ec-detail-row--clickable"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() =>
+          {pie.holdings.map((holding, index) => {
+            const valuation = holdingValuations[index];
+            const tone = plTone(valuation.plPct);
+            const plSign = valuation.plValue >= 0 ? "+" : "-";
+            const targetPct = Number(holding.allocation_pct);
+            // "Actual" allocation is this holding's share of the pie's real
+            // current value, not its stored target — the two drift apart
+            // as prices move, which is exactly what this comparison is
+            // meant to surface.
+            const actualPct =
+              totals.currentValue > 0 ? (valuation.currentValue / totals.currentValue) * 100 : 0;
+            const allocTone =
+              actualPct > targetPct ? "is-up" : actualPct < targetPct ? "is-down" : "is-flat";
+            return (
+              <Card
+                key={holding.id}
+                className="ec-detail-row ec-detail-row--clickable"
+                role="button"
+                tabIndex={0}
+                onClick={() =>
+                  navigate(`/holdings/${holding.ticker}`, {
+                    state: { from: { type: "pie", accountId, pieId } },
+                  })
+                }
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
                     navigate(`/holdings/${holding.ticker}`, {
                       state: { from: { type: "pie", accountId, pieId } },
-                    })
+                    });
                   }
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      navigate(`/holdings/${holding.ticker}`, {
-                        state: { from: { type: "pie", accountId, pieId } },
-                      });
-                    }
-                  }}
-                >
+                }}
+              >
+                <div className="ec-detail-row-heading">
+                  <AssetIcon website={holding.website} size={32} />
                   <div className="ec-detail-row-main">
                     <h3 className="ec-detail-row-name">
-                      {name ? `${name} (${holding.ticker})` : holding.ticker}
+                      {holding.name ? `${holding.name} (${holding.ticker})` : holding.ticker}
                     </h3>
                     <span className="ec-detail-row-meta">
-                      {sample.shares} shares · {targetPct}% target /{" "}
+                      {holding.no_of_shares} shares · {targetPct}% target /{" "}
                       <span className={`ec-detail-row-alloc-actual ${allocTone}`}>
                         {actualPct.toFixed(1)}% actual
                       </span>
                     </span>
                   </div>
-                  <div className="ec-detail-row-value">
-                    <span className="ec-detail-row-current">
-                      {formatCurrency(sample.currentValue, currency)}
-                    </span>
-                    <span className={`ec-detail-row-pl ${tone}`}>
-                      {plSign}
-                      {formatCurrency(Math.abs(sample.plValue), currency)} ({plSign}
-                      {Math.abs(sample.plPct).toFixed(1)}%)
-                    </span>
-                  </div>
-                </Card>
-              );
-            });
-          })()}
+                </div>
+                <div className="ec-detail-row-value">
+                  <span className="ec-detail-row-current">
+                    {formatCurrency(valuation.currentValue, currency)}
+                    {!valuation.hasLivePrice && " (cost basis)"}
+                  </span>
+                  <span className={`ec-detail-row-pl ${tone}`}>
+                    {plSign}
+                    {formatCurrency(Math.abs(valuation.plValue), currency)} ({plSign}
+                    {Math.abs(valuation.plPct).toFixed(1)}%)
+                  </span>
+                </div>
+              </Card>
+            );
+          })}
         </div>
       )}
 
       <div className="ec-divchart-grid">
         <DiversificationChart
           title="Sector diversification"
-          score={SECTOR_SCORE}
-          data={SECTOR_DATA}
-          caption="Illustrative sample data — sector classification isn't wired up to real holdings yet. Click a sector to filter industries below; click it again to show all."
+          score={sectorScore ?? undefined}
+          data={sectorData}
+          caption="Click a sector to filter industries below; click it again to show all."
           activeLabel={selectedSector}
           onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
         />
@@ -320,13 +389,14 @@ function PieDetailPage() {
         <DiversificationChart
           title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
           data={
-            selectedSector ? INDUSTRY_DATA.filter((i) => i.sector === selectedSector) : INDUSTRY_DATA
+            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
           }
-          caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
         />
       </div>
 
-      <HoldingsHeatmap tickers={tickers} />
+      <PieCagrSection holdings={pie.holdings ?? []} valuations={holdingValuations} />
+
+      <HoldingsHeatmap weights={heatmapWeights} />
 
       <Card className="ec-danger-zone">
         <div className="ec-danger-zone-text">

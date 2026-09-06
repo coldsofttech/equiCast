@@ -11,11 +11,13 @@ function scoreInfoFor(score) {
 }
 
 /**
- * A horizontal-bar breakdown chart, used by AccountDetailPage for both
- * Sector and Industry diversification. `data`/`score` are fully synthetic
- * (see SECTOR_DATA/INDUSTRY_DATA there) — equiCast has no real sector or
- * industry classification source yet; `caption` should say so. `score`
- * (0-100), when given, renders as a qualitative badge next to the title.
+ * A horizontal-bar breakdown chart, used by AccountDetailPage (still fully
+ * synthetic — see diversificationSampleData.js) and PieDetailPage (real,
+ * value-weighted sector/industry breakdowns of its own holdings — see
+ * PieDetailPage's `buildDiversification`) for both Sector and Industry
+ * diversification; `caption` should say what `data` actually reflects for
+ * that caller. `score` (0-100), when given, renders as a qualitative badge
+ * next to the title.
  *
  * Passing `onRowClick` makes rows clickable (used by the Sector chart to
  * drill into the Industry chart) — `activeLabel` then highlights whichever
@@ -35,7 +37,7 @@ function DiversificationChart({ title, caption, data, score, onRowClick, activeL
         )}
       </div>
       {data.length === 0 ? (
-        <p className="ec-divchart-empty">Nothing to show for this filter in the sample data.</p>
+        <p className="ec-divchart-empty">Nothing to show for this filter.</p>
       ) : (
         <div className="ec-divchart-bars">
           {data.map((entry, i) => {

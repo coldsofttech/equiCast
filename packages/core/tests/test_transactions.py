@@ -1049,9 +1049,15 @@ class TestComputeHoldingRollup:
             "average_price": 120.0,
             "invested_native": 1500.0,
             "invested": 1200.0,
+            "dividends_native": 0.0,
+            "dividends": 0.0,
         }
 
     def test_average_mode_returns_zeros_with_no_buy_record_yet(self) -> None:
+        """The DIVIDEND record here has no `amount` (converted) key at all —
+        same as a record written before the native/converted split, so its
+        converted total is unresolvable (`dividends` is None) even though
+        its native total is known."""
         rollup = compute_holding_rollup(
             [{"type": "DIVIDEND", "no_of_shares": None, "amount_native": 5}], "AVERAGE"
         )
@@ -1062,6 +1068,8 @@ class TestComputeHoldingRollup:
             "average_price": None,
             "invested_native": 0,
             "invested": 0,
+            "dividends_native": 5.0,
+            "dividends": None,
         }
 
     def test_average_mode_falls_back_to_the_legacy_bare_field_when_native_is_none(self) -> None:
@@ -1189,6 +1197,8 @@ class TestComputeHoldingRollup:
             "average_price": None,
             "invested_native": 0,
             "invested": 0,
+            "dividends_native": 0.0,
+            "dividends": 0.0,
         }
 
     def test_transaction_mode_falls_back_to_the_legacy_bare_field_when_native_is_none(self) -> None:
@@ -1231,3 +1241,64 @@ class TestComputeHoldingRollup:
         )
 
         assert rollup["no_of_shares"] == 10.0
+        assert rollup["dividends_native"] == pytest.approx(5.0)
+        assert rollup["dividends"] is None
+
+    def test_transaction_mode_sums_converted_dividends_when_resolved(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 5,
+                    "amount": 4,
+                    "date": "2026-02-01",
+                },
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 3,
+                    "amount": 2.4,
+                    "date": "2026-03-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["dividends_native"] == pytest.approx(8.0)
+        assert rollup["dividends"] == pytest.approx(6.4)
+
+    def test_transaction_mode_dividends_unresolved_when_any_conversion_is_unknown(self) -> None:
+        """One dividend's converted `amount` couldn't be resolved (e.g. no
+        FX pair published that day) — the converted total is None rather
+        than silently omitting that record's share, same "None when
+        unresolvable" contract `invested` uses."""
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 5,
+                    "amount": 4,
+                    "date": "2026-02-01",
+                },
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 3,
+                    "amount": None,
+                    "date": "2026-03-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["dividends_native"] == pytest.approx(8.0)
+        assert rollup["dividends"] is None

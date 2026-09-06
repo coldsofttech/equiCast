@@ -55,14 +55,15 @@ describe("formatRatio", () => {
 });
 
 describe("rollupInstances", () => {
-  it("sums shares/invested across mixed AVERAGE and TRANSACTION instances", () => {
+  it("sums shares/invested/dividends across mixed AVERAGE and TRANSACTION instances", () => {
     const instances = [
-      { shares: 10, avgPriceNative: 100, invested: 1000 },
-      { shares: 5, avgPriceNative: 200, invested: 1000 },
+      { shares: 10, avgPriceNative: 100, invested: 1000, dividendsNative: 20 },
+      { shares: 5, avgPriceNative: 200, invested: 1000, dividendsNative: 10 },
     ];
     const result = rollupInstances(instances, 150);
     expect(result.shares).toBe(15);
     expect(result.invested).toBe(2000);
+    expect(result.dividendsNative).toBe(30);
     expect(result.currentValue).toBe(2250);
     expect(result.plValue).toBe(250);
     expect(result.plPct).toBeCloseTo(12.5);

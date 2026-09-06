@@ -35,6 +35,23 @@
   color: var(--ec-text-subtle);
 }
 
+/** PieComparePicker's trigger is a <button> (it opens straight to a panel,
+ * there's no text to type), not the <input> HoldingComparePicker's search
+ * box uses — reset native button chrome so it still renders identically to
+ * `.ec-compare-search`'s div-wrapped-input look. */
+button.ec-compare-search {
+  appearance: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.ec-compare-search-placeholder {
+  flex: 1;
+  min-width: 0;
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-13);
+}
+
 .ec-compare-panel {
   position: absolute;
   z-index: 20;
@@ -96,6 +113,20 @@
   min-width: 0;
   color: var(--ec-text-muted);
   font-size: var(--ec-fs-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/** PieComparePicker's own result row has just a pie name, no ticker — its
+ * primary (not muted) text color, since it's the whole label here rather
+ * than a secondary name next to a bold ticker. */
+.ec-compare-result-label {
+  flex: 1;
+  min-width: 0;
+  color: var(--ec-text);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

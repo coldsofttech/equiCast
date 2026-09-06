@@ -480,8 +480,8 @@ class TestUpdateHoldingFinancials:
     """See backend/transactions/views.py's _refresh_holding_rollup — called
     after every transaction create/update/delete against a holding to keep
     its position rollup (no_of_shares/average_price_native/average_price/
-    invested_native/invested — see equicast_core.transactions.
-    compute_holding_rollup) current."""
+    invested_native/invested/dividends_native/dividends — see equicast_core.
+    transactions.compute_holding_rollup) current."""
 
     def test_updates_only_the_rollup_fields(self, s3_client) -> None:
         client = HoldingsClient(BUCKET, s3_client=s3_client)
@@ -497,6 +497,8 @@ class TestUpdateHoldingFinancials:
             average_price=120.0,
             invested_native=1500.0,
             invested=1200.0,
+            dividends_native=30.0,
+            dividends=24.0,
         )
 
         assert updated["no_of_shares"] == 10
@@ -504,6 +506,8 @@ class TestUpdateHoldingFinancials:
         assert updated["average_price"] == 120.0
         assert updated["invested_native"] == 1500.0
         assert updated["invested"] == 1200.0
+        assert updated["dividends_native"] == 30.0
+        assert updated["dividends"] == 24.0
         # Every other field is untouched.
         assert updated["ticker"] == "AAPL"
         assert updated["account_id"] == ACCOUNT_ID
@@ -522,6 +526,8 @@ class TestUpdateHoldingFinancials:
                 average_price=1,
                 invested_native=1,
                 invested=1,
+                dividends_native=1,
+                dividends=1,
             )
 
 
@@ -548,3 +554,5 @@ class TestHoldingRollupBackfill:
         assert holding["average_price"] is None
         assert holding["invested_native"] == 0
         assert holding["invested"] == 0
+        assert holding["dividends_native"] == 0
+        assert holding["dividends"] == 0
