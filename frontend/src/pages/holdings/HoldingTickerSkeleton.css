@@ -1,0 +1,21 @@
+.ec-skeleton-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+}
+
+.ec-skeleton-block {
+  margin-top: var(--ec-s-16);
+}
+
+.ec-skeleton-row {
+  margin-top: var(--ec-s-12);
+}
+
+.ec-skeleton-range-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-16);
+}

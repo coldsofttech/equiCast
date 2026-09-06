@@ -22,27 +22,44 @@ client = MarketDataClient(bucket="equicast-market-data-dev")
 client.get_profile("stock", "AAPL")
 # {"ticker": "AAPL", "name": "Apple Inc.", ...} or None if not configured
 
-client.get_prices("etf", "VOO")
-# [{"ticker": "VOO", "date": "2026-01-02", ...}, ...] for the current year,
-# or [] if there's no price/current.parquet yet
+client.get_prices("etf", "VOO", price_range="1y")
+# {"ticker": "VOO", "currency": "USD", "last_updated": "...", "source": "...",
+#  "prices": [{"date": "2026-01-02", "open": ..., "high": ..., "low": ..., "close": ...}, ...]}
 ```
 
 `get_profile()` returns `None` (not an exception) when the requested
 ticker/pair has no `profile.parquet` in the bucket — a real "this symbol
 isn't configured" signal, since the ingestion pipelines always produce a
 profile snapshot for every ticker they're configured with. `get_prices()`
-returns `[]` for the same "not configured" case, but also for a configured
-ticker with no trading days recorded yet this year — both look the same
-from this client's point of view. Any other S3 error (permissions, bucket
-missing, etc.) propagates as a `botocore.exceptions.ClientError` rather
-than being swallowed.
+returns an all-`None`/empty-`prices` dict for the same "not configured"
+case, but also for a configured ticker with no trading days recorded yet
+for the requested range — both look the same from this client's point of
+view. Any other S3 error (permissions, bucket missing, etc.) propagates as
+a `botocore.exceptions.ClientError` rather than being swallowed.
 
-Only reads `price/current.parquet` (the current calendar year) — it never
-reads `price/history.parquet` (every earlier year, written once by a
-`--full-load` ingestion run), since nothing currently needs prior-year rows.
+`price_range` is one of `PRICE_RANGES` (`"1d"`, `"5d"`, `"1m"`, `"6m"`,
+`"ytd"`, `"1y"`, `"2y"`, `"3y"`, `"5y"`, `"10y"`, `"max"`), defaulting to
+`DEFAULT_PRICE_RANGE` (`"max"` — this ticker's entire published history)
+when omitted. Always reads `price/current.parquet` (the current calendar
+year), and also reads `price/history.parquet` (every earlier year, written
+once by a `--full-load` ingestion run) whenever the range might need an
+earlier date — always for `"max"`/`"1d"`/`"5d"` (the trailing-day ranges
+read it in case the window crosses into last December before this year has
+that many trading days published yet), and for any other range whose
+month-based cutoff falls before this year; `"ytd"` never needs it, since
+its cutoff is always this year's Jan 1. Ranges past 6 months are aggregated
+to weekly (`"1y"`/`"2y"`, landing on each week's last trading day — Friday
+for a normal week) or monthly (`"3y"` and up, landing on each month's last
+trading day) OHLC bars rather than returned at daily resolution, so a
+long-history response stays a few hundred rows instead of several thousand
+— this client's typical caller (the Django backend) runs as a Lambda
+behind API Gateway, and a chart is unreadable at daily resolution over a
+decade anyway. `currency`/`last_updated`/`source` reflect the matched rows
+before aggregation (an aggregated bucket has no per-row metadata of its
+own).
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
-third, separate piece of the market-data layout: `catalog/<asset_class>.json`
+third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
 — a small, pre-built `{ticker, name, type, current_price}` row per
 configured ticker, published by each ingestion pipeline after a run (see
 `equicast_core.catalog` below), not derived from `profile.parquet` on the
@@ -70,7 +87,7 @@ ingestion run that built the catalog — same staleness model as
 
 ## `equicast_core.catalog` — building the search catalog (ingestion side)
 
-The write side of the `catalog/<asset_class>.json` contract
+The write side of the `catalog/<asset_class>.parquet` contract
 `MarketDataClient.get_catalog`/`.search` read. Deliberately generic across
 all three ingestion pipelines and asset-class-agnostic — every pipeline
 already writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
@@ -89,7 +106,10 @@ rows = build_catalog_rows(Path("output"), "stock")
 # instead — see equicast_fx.writer)
 
 upload_catalog(bucket="equicast-market-data-dev", asset_class="stock", rows=rows)
-# replaces catalog/stock.json outright (a full rebuild, not a merge)
+# replaces catalog/stock.parquet outright (a full rebuild, not a merge),
+# written against equicast_core.catalog.CATALOG_SCHEMA — same Parquet
+# format as profile.parquet/metrics.parquet, not JSON, so it stays
+# efficient once the ticker universe grows well past a handful per class
 ```
 
 Also installs as a CLI, `equicast-core-build-catalog --asset-class stock

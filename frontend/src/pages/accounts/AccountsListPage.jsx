@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
+import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -103,6 +104,7 @@ function AccountsListPage() {
       eyebrow="Portfolio"
       title="Accounts"
       subtitle="Every account you're tracking, with its pies and holdings nested underneath."
+      footer={<SiteFooter />}
       actions={
         (isLoading || accounts.length > 0) && (
           <Button variant="primary" onClick={() => setIsCreateOpen(true)}>

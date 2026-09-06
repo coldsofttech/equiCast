@@ -2,6 +2,7 @@ import boto3
 import pytest
 from equicast_core.accounts import (
     MAX_ACCOUNTS,
+    AccountAlreadyExistsError,
     AccountLimitExceededError,
     AccountNotFoundError,
     AccountsClient,
@@ -93,6 +94,23 @@ def test_create_account_does_not_affect_other_users(s3_client) -> None:
     assert client.list_accounts("auth0|user-b") == []
 
 
+def test_create_account_raises_for_duplicate_name_case_insensitive(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    _create(client, "auth0|abc123", name="Stocks & Shares ISA")
+
+    with pytest.raises(AccountAlreadyExistsError):
+        _create(client, "auth0|abc123", name="Stocks & shares ISA")
+
+
+def test_create_account_allows_duplicate_name_for_different_users(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    _create(client, "auth0|user-a", name="Stocks & Shares ISA")
+
+    account = _create(client, "auth0|user-b", name="Stocks & Shares ISA")
+
+    assert account["name"] == "Stocks & Shares ISA"
+
+
 def test_update_account_patches_fields_and_bumps_updated_at(s3_client) -> None:
     client = AccountsClient(BUCKET, s3_client=s3_client)
     account = _create(client, "auth0|abc123")
@@ -111,6 +129,26 @@ def test_update_account_raises_for_unknown_id(s3_client) -> None:
 
     with pytest.raises(AccountNotFoundError):
         client.update_account("auth0|abc123", "does-not-exist", name="x")
+
+
+def test_update_account_raises_for_duplicate_name_case_insensitive(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    _create(client, "auth0|abc123", name="Stocks & Shares ISA")
+    other = _create(client, "auth0|abc123", name="SIPP")
+
+    with pytest.raises(AccountAlreadyExistsError):
+        client.update_account("auth0|abc123", other["id"], name="stocks & shares isa")
+
+
+def test_update_account_allows_keeping_its_own_name(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    account = _create(client, "auth0|abc123", name="Stocks & Shares ISA")
+
+    updated = client.update_account(
+        "auth0|abc123", account["id"], name="STOCKS & SHARES ISA", description="Updated"
+    )
+
+    assert updated["name"] == "STOCKS & SHARES ISA"
 
 
 def test_delete_account_removes_it(s3_client) -> None:

@@ -250,6 +250,13 @@ module "backend_lambda" {
     USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
+    # Previously unset here, silently falling back to settings.py's
+    # CORS_ALLOWED_ORIGINS default of "http://localhost:5173" for every
+    # deployed environment — the deployed frontend's own CloudFront origin
+    # was never actually allowed, so every real cross-origin request from
+    # it got rejected by django-cors-headers once the frontend was pointed
+    # at this API Gateway URL instead of getting an HTML fallback page back.
+    DJANGO_CORS_ORIGINS = "https://${aws_cloudfront_distribution.frontend.domain_name}"
     # Lambda env vars are always strings; settings.py int()-parses these.
     MAX_ACCOUNTS                 = tostring(var.max_accounts)
     MAX_PIES                     = tostring(var.max_pies)

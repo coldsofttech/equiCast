@@ -1,7 +1,7 @@
 import math
 
 from django.conf import settings
-from equicast_core import ASSET_CLASSES, MarketDataClient
+from equicast_core import ASSET_CLASSES, DEFAULT_PRICE_RANGE, PRICE_RANGES, MarketDataClient
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -20,6 +20,15 @@ MAX_PAGE_SIZE = 200
 _client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
 
 
+def _parse_market_cap(raw: str | None) -> float | None:
+    """`None` when unset, else a float — raises `ValueError` (caught by the
+    caller) for anything else, same "let int()/float() do the validation"
+    approach `SearchView.get` already takes for `page`/`page_size`."""
+    if raw is None:
+        return None
+    return float(raw)
+
+
 class ProfileView(APIView):
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -34,7 +43,7 @@ class ProfileView(APIView):
         return Response(profile)
 
 
-class PricesView(APIView):
+class MetricsView(APIView):
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
@@ -42,8 +51,35 @@ class PricesView(APIView):
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
 
-        records = _client.get_prices(asset_class, symbol)
-        return Response({"ticker": symbol.upper(), "results": records})
+        metrics = _client.get_metrics(asset_class, symbol)
+        if metrics is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(metrics)
+
+
+class PricesView(APIView):
+    """`prices` is trimmed/aggregated to the requested `range` query param
+    (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see
+    equicast_core.client.MarketDataClient.get_prices) server-side, not
+    fetched-then-cut client-side — a long-history "max"/"10y" response
+    could otherwise be several thousand daily rows, well past what's worth
+    sending over this Lambda-behind-API-Gateway deployment (see
+    backend/README.md) or rendering in a chart."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        price_range = request.query_params.get("range", DEFAULT_PRICE_RANGE)
+        if price_range not in PRICE_RANGES:
+            detail = f"Unknown range '{price_range}'. Must be one of: {', '.join(PRICE_RANGES)}."
+            return Response({"detail": detail}, status=400)
+
+        prices = _client.get_prices(asset_class, symbol, price_range=price_range)
+        return Response(prices)
 
 
 class SearchView(APIView):
@@ -73,8 +109,38 @@ class SearchView(APIView):
             return Response({"detail": "page/page_size must be positive."}, status=400)
         page_size = min(page_size, MAX_PAGE_SIZE)
 
+        try:
+            min_market_cap = _parse_market_cap(request.query_params.get("min_market_cap"))
+            max_market_cap = _parse_market_cap(request.query_params.get("max_market_cap"))
+        except ValueError:
+            return Response(
+                {"detail": "min_market_cap/max_market_cap must be numbers."}, status=400
+            )
+        if (
+            min_market_cap is not None
+            and max_market_cap is not None
+            and min_market_cap > max_market_cap
+        ):
+            return Response(
+                {"detail": "min_market_cap must not exceed max_market_cap."}, status=400
+            )
+
+        exchange = request.query_params.get("exchange")
+        region = request.query_params.get("region")
+        sector = request.query_params.get("sector")
+        industry = request.query_params.get("industry")
+
         asset_classes = [asset_class] if asset_class is not None else None
-        matches = _client.search(query, asset_classes=asset_classes)
+        matches = _client.search(
+            query,
+            asset_classes=asset_classes,
+            min_market_cap=min_market_cap,
+            max_market_cap=max_market_cap,
+            exchange=exchange,
+            region=region,
+            sector=sector,
+            industry=industry,
+        )
 
         count = len(matches)
         start = (page - 1) * page_size

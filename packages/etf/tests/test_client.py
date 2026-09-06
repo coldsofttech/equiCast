@@ -20,6 +20,7 @@ _FULL_INFO = {
     "quoteType": "ETF",
     "exchange": "PCX",
     "currency": "USD",
+    "region": "US",
     "longBusinessSummary": "Tracks the performance of the S&P 500 Index.",
     "category": "Large Blend",
     "fundFamily": "Vanguard",
@@ -82,6 +83,7 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "quote_type": "ETF",
         "exchange": "PCX",
         "currency": "USD",
+        "region": "US",
         "description": "Tracks the performance of the S&P 500 Index.",
         "category": "Large Blend",
         "fund_family": "Vanguard",
@@ -97,14 +99,10 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "day_high": 712.6692,
         "day_low": 706.26,
         "day_close": 707.24,
-        "day_average": 709.4646,
         "year_open": 588.29,
         "year_high": 716.39,
         "year_low": 578.46,
         "year_close": 707.24,
-        "year_average": 647.425,
-        "moving_average_50_days": 693.1996,
-        "moving_average_200_days": 652.7322,
         "ytd_return": 10.11602,
         "three_year_average_return": 0.2217858,
         "five_year_average_return": 0.1294499,
@@ -169,15 +167,6 @@ def test_profile_year_open_is_none_when_history_is_empty() -> None:
     client = ETFClient("VOO", datafeed=_datafeed({}, pd.DataFrame()))
 
     assert client.profile()["year_open"] is None
-
-
-def test_profile_day_and_year_averages_are_none_when_high_or_low_missing() -> None:
-    client = ETFClient("VOO", datafeed=_datafeed({}, pd.DataFrame()))
-
-    profile = client.profile()
-
-    assert profile["day_average"] is None
-    assert profile["year_average"] is None
 
 
 @pytest.mark.parametrize(

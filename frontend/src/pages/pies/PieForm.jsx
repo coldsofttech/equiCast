@@ -32,7 +32,6 @@ function PieForm({ initialValues, onSubmit, onCancel, isSubmitting, error }) {
       <TextAreaField
         id="pie-description"
         label="Description"
-        required
         value={values.description}
         onChange={setField("description")}
       />

@@ -1,5 +1,6 @@
 from django.conf import settings
 from equicast_core import (
+    AccountAlreadyExistsError,
     AccountLimitExceededError,
     AccountNotFoundError,
     AccountsClient,
@@ -134,6 +135,11 @@ class AccountListView(APIView):
                 currency=request.data["currency"],
                 transaction_type=transaction_type,
             )
+        except AccountAlreadyExistsError:
+            return Response(
+                {"detail": f"An account named '{request.data['name']}' already exists."},
+                status=409,
+            )
         except AccountLimitExceededError:
             # A static, caller-agnostic message rather than str(exc) — the
             # exception text embeds the caller's own user_id, and echoing
@@ -186,6 +192,10 @@ class AccountDetailView(APIView):
 
         try:
             account = _client.update_account(user_id, account_id, **fields)
+        except AccountAlreadyExistsError:
+            return Response(
+                {"detail": f"An account named '{fields['name']}' already exists."}, status=409
+            )
         except AccountNotFoundError:
             return Response(status=404)
         return Response(account)

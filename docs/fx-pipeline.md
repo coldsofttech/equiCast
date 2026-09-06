@@ -240,7 +240,7 @@ The workflow has three jobs:
    **ingest** into one local directory (no single leg ever sees the full
    pair list, so the catalog can't be built inside one), then runs
    `equicast-core-build-catalog --asset-class fx` to rebuild
-   `catalog/fx.json` — the search catalog `MarketDataClient.search()`
+   `catalog/fx.parquet` — the search catalog `MarketDataClient.search()`
    reads (see [packages/core/README.md](../packages/core/README.md)).
    Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
    it reads the profiles from the downloaded artifacts, not back from S3.
@@ -256,7 +256,7 @@ always looks back as far as it needs, regardless of this flag).
 ```
 s3://equicast-market-data-<env>/
 ├── catalog/
-│   └── fx.json
+│   └── fx.parquet
 └── fx=GBPUSD/
     ├── profile.parquet
     ├── metrics.parquet

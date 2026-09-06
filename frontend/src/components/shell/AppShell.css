@@ -22,6 +22,16 @@
   margin-bottom: var(--ec-s-24);
 }
 
+.ec-page-head-main {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-16);
+}
+
+.ec-page-title-icon:empty {
+  display: none;
+}
+
 .ec-eyebrow {
   font-size: var(--ec-fs-12);
   font-weight: 700;
@@ -44,9 +54,42 @@
   margin: var(--ec-s-4) 0 0;
 }
 
+.ec-page-title-badges {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-8);
+}
+
 .ec-page-actions {
   display: flex;
   align-items: center;
   gap: var(--ec-s-8);
   flex-shrink: 0;
+}
+
+.ec-page-with-sidebar {
+  display: flex;
+  gap: var(--ec-s-24);
+  align-items: flex-start;
+}
+
+.ec-page-sidebar {
+  width: 240px;
+  flex-shrink: 0;
+}
+
+.ec-page-content {
+  flex: 1;
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .ec-page-with-sidebar {
+    flex-direction: column;
+  }
+
+  .ec-page-sidebar {
+    width: 100%;
+  }
 }

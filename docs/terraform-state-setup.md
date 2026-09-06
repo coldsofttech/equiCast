@@ -150,14 +150,17 @@ can't invalidate the CloudFront cache after a sync, so CloudFront would
 keep serving stale cached responses (including an `index.html` referencing
 since-deleted hashed asset filenames) for up to the cache policy's TTL.
 
-**`API_URL`** — the backend API Gateway's invoke URL, baked into the
-frontend build as `VITE_API_BASE_URL` (see `frontend/src/api/client.js`)
-since Vite inlines `import.meta.env.VITE_*` at build time, not something
-the built SPA can read at runtime. Unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE`
-(one shared Auth0 tenant/API — the *same* value works for both
-Environments), dev and prod have genuinely different backend deployments,
-so this one has to be set separately per Environment and kept in sync
-after each apply that changes it.
+**`API_URL`** — the backend API Gateway's invoke URL with `/api` already
+appended (see `infra/outputs.tf`'s `backend_api_invoke_url` output — the
+*bare* invoke URL 404s on every real endpoint, since Django's `urls.py`
+roots them all under `api/`), baked into the frontend build as
+`VITE_API_BASE_URL` (see `frontend/src/api/client.js`) since Vite inlines
+`import.meta.env.VITE_*` at build time, not something the built SPA can
+read at runtime. Unlike `AUTH0_DOMAIN`/`AUTH0_AUDIENCE` (one shared Auth0
+tenant/API — the *same* value works for both Environments), dev and prod
+have genuinely different backend deployments, so this one has to be set
+separately per Environment and kept in sync after each apply that changes
+it.
 
 After `apply-dev`/`apply-prod` has run at least once:
 

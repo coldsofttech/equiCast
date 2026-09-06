@@ -104,14 +104,10 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "day_high": 229.1,
         "day_low": 226.8,
         "day_close": 228.5,
-        "day_average": 227.95,
         "year_open": 180.0,
         "year_high": 260.1,
         "year_low": 164.08,
         "year_close": 228.5,
-        "year_average": 212.09,
-        "moving_average_50_days": 220.45,
-        "moving_average_200_days": 200.12,
         "address": "One Apple Park Way, Cupertino, CA 95014",
         "country": "United States",
         "region": "North America",
@@ -169,15 +165,6 @@ def test_profile_year_open_is_none_when_history_is_empty() -> None:
     client = StockClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
 
     assert client.profile()["year_open"] is None
-
-
-def test_profile_day_and_year_averages_are_none_when_high_or_low_missing() -> None:
-    client = StockClient("AAPL", datafeed=_datafeed({}, pd.DataFrame()))
-
-    profile = client.profile()
-
-    assert profile["day_average"] is None
-    assert profile["year_average"] is None
 
 
 def test_profile_address_formats_all_parts() -> None:

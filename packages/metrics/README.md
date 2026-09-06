@@ -35,7 +35,7 @@ MetricsClient("AAPL").metrics()
 MetricsClient("GBPUSD=X").metrics()
 
 MetricsClient("AAPL").fundamentals()
-# {"trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
+# {"pe_ratio": 30.4, "trailing_pe": 30.1, "forward_pe": 27.4, "trailing_eps": 6.13,
 #  "forward_eps": 6.75, "peg": 2.05, "price_to_book": 45.2,
 #  "price_to_sales": 8.1, "ev_ebitda": 21.3, "gross_margin": 0.462,
 #  "operating_margin": 0.312, "profit_margin": 0.24,
@@ -75,6 +75,11 @@ line item pulled from the ticker's annual balance sheet / income statement
 (fetched lazily, at most once each per call, since most tickers resolve
 every field from `.info` alone):
 
+- **`pe_ratio`** — always the plain current price ÷ trailing EPS
+  calculation, never yfinance's own `trailingPE` — unlike every other field
+  here, this one deliberately skips the "prefer `.info` directly" tier, so
+  it can differ from `trailing_pe` whenever yfinance's reported figure uses
+  a different price/EPS basis.
 - **`trailing_pe`**/**`forward_pe`** — trailing/forward price-to-earnings.
   `.info`'s `trailingPE`/`forwardPE`, else current price ÷ EPS.
   `forward_pe` has no statement fallback — forward earnings estimates aren't

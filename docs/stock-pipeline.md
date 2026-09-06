@@ -72,9 +72,8 @@ For each ticker this writes:
   dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
   half_yearly/yearly/irregular/not_applicable, derived from dividend
   history — see [packages/dividends/README.md](../packages/dividends/README.md#dividend_frequency)),
-  market cap, volume, day open/high/low/close/average, year
-  open/high/low/close/average, 50-/200-day moving averages (same
-  fields/logic as `equicast-fx`'s profile), address, country, region,
+  market cap, volume, day open/high/low/close, year open/high/low/close
+  (same fields/logic as `equicast-fx`'s profile), address, country, region,
   full-time employees, CEO(s) (each with a name and role), IPO date, last
   updated, source
 - `stock=<TICKER>/price/current.parquet` — one row per trading day, for
@@ -258,7 +257,7 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
    **ingest** into one local directory (no single leg ever sees the full
    ticker list, so the catalog can't be built inside one), then runs
    `equicast-core-build-catalog --asset-class stock` to rebuild
-   `catalog/stock.json` — the search catalog `MarketDataClient.search()`
+   `catalog/stock.parquet` — the search catalog `MarketDataClient.search()`
    reads (see [packages/core/README.md](../packages/core/README.md)).
    Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
    it reads the profiles from the downloaded artifacts, not back from S3.
@@ -268,7 +267,7 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
 ```
 s3://equicast-market-data-<env>/
 ├── catalog/
-│   └── stock.json
+│   └── stock.parquet
 └── stock=AAPL/
     ├── profile.parquet
     ├── metrics.parquet

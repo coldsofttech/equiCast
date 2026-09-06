@@ -11,7 +11,7 @@ from equicast_datafeed import YFINANCE_DATA_DISCLAIMER, DatafeedClient, round_va
 logger = logging.getLogger(__name__)
 
 #: yfinance's own trailing 52-week window, reused as the "year" window for
-#: year_open/year_high/year_low/year_close/year_average — same as
+#: year_open/year_high/year_low/year_close — same as
 #: equicast-fx/equicast-stock.
 YEAR_HISTORY_PERIOD = "1y"
 
@@ -124,6 +124,7 @@ class ETFClient:
             "quote_type": info.get("quoteType"),
             "exchange": info.get("exchange"),
             "currency": info.get("currency"),
+            "region": info.get("region"),
             "description": info.get("longBusinessSummary"),
             "category": info.get("category"),
             "fund_family": info.get("fundFamily"),
@@ -139,14 +140,10 @@ class ETFClient:
             "day_high": round_value(day_high),
             "day_low": round_value(day_low),
             "day_close": round_value(day_close),
-            "day_average": round_value(_midpoint(day_low, day_high)),
             "year_open": round_value(year_open),
             "year_high": round_value(year_high),
             "year_low": round_value(year_low),
             "year_close": round_value(day_close),
-            "year_average": round_value(_midpoint(year_low, year_high)),
-            "moving_average_50_days": round_value(info.get("fiftyDayAverage")),
-            "moving_average_200_days": round_value(info.get("twoHundredDayAverage")),
             "ytd_return": round_value(info.get("ytdReturn")),
             "three_year_average_return": round_value(info.get("threeYearAverageReturn")),
             "five_year_average_return": round_value(info.get("fiveYearAverageReturn")),

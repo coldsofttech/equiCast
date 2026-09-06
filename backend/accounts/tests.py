@@ -2,7 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import TestCase
 from django.urls import reverse
-from equicast_core import AccountLimitExceededError, AccountNotFoundError
+from equicast_core import AccountAlreadyExistsError, AccountLimitExceededError, AccountNotFoundError
 
 AUTH_HEADER = {"HTTP_AUTHORIZATION": "Bearer validtoken"}
 ACCOUNT = {
@@ -157,6 +157,30 @@ class AccountListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
 
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_returns_409_when_account_name_already_exists(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.create_account.side_effect = AccountAlreadyExistsError("duplicate name")
+
+        response = self.client.post(
+            reverse("accounts-list"),
+            data={
+                "name": "Stocks & shares ISA",
+                "description": "",
+                "account_type": "ISA",
+                "currency": "GBP",
+                "transaction_type": "TRANSACTION",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 409)
+
 
 class AccountDetailViewTests(TestCase):
     def test_get_returns_401_when_unauthenticated(self) -> None:
@@ -245,6 +269,24 @@ class AccountDetailViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_409_when_account_name_already_exists(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.update_account.side_effect = AccountAlreadyExistsError("duplicate name")
+
+        response = self.client.patch(
+            reverse("accounts-detail", args=["acc-1"]),
+            data={"name": "Stocks & shares ISA"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 409)
 
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")

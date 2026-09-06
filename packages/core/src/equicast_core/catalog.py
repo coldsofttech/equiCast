@@ -1,7 +1,13 @@
 """Builds and publishes the searchable ticker catalog each ingestion
 pipeline (`equicast-fx`/`equicast-stock`/`equicast-etf`) uploads after a
-run — the write side of the `catalog/<asset_class>.json` contract
-`MarketDataClient.get_catalog`/`.search` (client.py) read from.
+run — the write side of the `catalog/<asset_class>.parquet` contract
+`MarketDataClient.get_catalog`/`.search` (client.py) read from. Parquet
+rather than JSON, same format/tooling (`pyarrow`) as every other file this
+project publishes (`profile.parquet`/`metrics.parquet`/...) — chosen over
+JSON's per-row repeated field names for when the ticker universe grows
+well past today's handful per asset class, even though `search()` still
+reads a catalog in full on every call rather than doing a column-pruned
+read.
 
 Deliberately asset-class-agnostic and package-agnostic: every one of the
 three pipelines writes its profile.parquet files to the exact same
@@ -25,19 +31,41 @@ to run last.
 from __future__ import annotations
 
 import argparse
-import json
 import logging
 from pathlib import Path
 from typing import Any
 
 import boto3
+import pyarrow as pa
 import pyarrow.parquet as pq
 
 logger = logging.getLogger(__name__)
 
+#: Explicit schema for the catalog table — fixed rather than inferred from
+#: `rows` so an empty ticker list (nothing published yet, or a config with
+#: no tickers) still produces a valid, readable Parquet file instead of
+#: pyarrow guessing column types from zero rows, and so every row (stock/
+#: etf/fx alike) round-trips through the same columns regardless of which
+#: fields that asset class's profile actually populates.
+CATALOG_SCHEMA = pa.schema(
+    [
+        pa.field("ticker", pa.string()),
+        pa.field("name", pa.string()),
+        pa.field("type", pa.string()),
+        pa.field("current_price", pa.float64()),
+        pa.field("currency", pa.string()),
+        pa.field("website", pa.string()),
+        pa.field("market_cap", pa.float64()),
+        pa.field("exchange", pa.string()),
+        pa.field("region", pa.string()),
+        pa.field("sector", pa.string()),
+        pa.field("industry", pa.string()),
+    ]
+)
+
 
 def catalog_key(asset_class: str) -> str:
-    return f"catalog/{asset_class.lower()}.json"
+    return f"catalog/{asset_class.lower()}.parquet"
 
 
 def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any]]:
@@ -47,8 +75,24 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     uniformly across stock/etf profiles carrying a `ticker` field and fx
     profiles which don't — see equicast_fx.writer), `name` (`name` for
     stock/etf, `description` for fx — same "no literal name field" reason),
-    `type` (`asset_class`), and `current_price` (`day_close`, the same
-    field all three pipelines' profile() methods already compute).
+    `type` (`asset_class`), `current_price` (`day_close`, the same field
+    all three pipelines' profile() methods already compute), `currency`
+    (`currency` for stock/etf; an fx pair has no such field — its own
+    `current_price` is the exchange rate quoted *in* `to_currency`, so
+    that's what a display of it should be formatted as), `website` (`None`
+    for fx profiles, which carry no such field — a currency pair has no
+    issuer site to link/show a favicon for), `market_cap` — a stock's real
+    `market_cap`, an etf's `total_assets` (fund AUM, the closest comparable
+    "size" figure a fund has — etf profiles carry no market cap of their
+    own), or `None` for fx, which has neither and isn't size-filterable at
+    all — `exchange` (stock/etf's own `exchange`, yfinance's raw code, e.g.
+    "NMS"/"PCX", not a bare "NASDAQ"/"NYSE" string; `None` for fx, which
+    isn't traded on one), `region` (stock/etf's own `region`,
+    yfinance's short country code, e.g. "us"/"gb"; `None` for fx, which
+    isn't domiciled anywhere), and `sector`/`industry` (a stock's own
+    `sector`/`industry` fields; always `None` for etf, which yfinance
+    never populates these for — `category` is its closest equivalent but
+    isn't surfaced here — and for fx, which has no such concept at all).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -63,6 +107,13 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "name": profile.get("name") or profile.get("description"),
                 "type": asset_class.lower(),
                 "current_price": profile.get("day_close"),
+                "currency": profile.get("currency") or profile.get("to_currency"),
+                "website": profile.get("website"),
+                "market_cap": profile.get("market_cap") or profile.get("total_assets"),
+                "exchange": profile.get("exchange"),
+                "region": profile.get("region"),
+                "sector": profile.get("sector"),
+                "industry": profile.get("industry"),
             }
         )
     return rows
@@ -75,22 +126,27 @@ def upload_catalog(
     s3_client: Any = None,
     region_name: str | None = None,
 ) -> None:
-    """Upload `rows` as `catalog/<asset_class>.json`, replacing whatever
+    """Upload `rows` as `catalog/<asset_class>.parquet`, replacing whatever
     catalog this asset class previously had — a full rebuild each run
     (not a merge), since `rows` already reflects that pipeline's complete,
-    just-refreshed ticker list rather than a partial update."""
+    just-refreshed ticker list rather than a partial update. Written
+    against `CATALOG_SCHEMA` rather than a schema inferred from `rows`, so
+    an empty ticker list still produces a valid, readable file."""
     s3 = s3_client or boto3.client("s3", region_name=region_name)
+    table = pa.Table.from_pylist(rows, schema=CATALOG_SCHEMA)
+    buffer = pa.BufferOutputStream()
+    pq.write_table(table, buffer)
     s3.put_object(
         Bucket=bucket,
         Key=catalog_key(asset_class),
-        Body=json.dumps({"tickers": rows}).encode("utf-8"),
-        ContentType="application/json",
+        Body=buffer.getvalue().to_pybytes(),
+        ContentType="application/octet-stream",
     )
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Build and upload the catalog/<asset_class>.json search catalog from a "
+        description="Build and upload the catalog/<asset_class>.parquet search catalog from a "
         "local directory of already-fetched <asset_class>=<TICKER>/profile.parquet files."
     )
     parser.add_argument(

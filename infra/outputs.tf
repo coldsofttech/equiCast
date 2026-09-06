@@ -6,8 +6,16 @@ output "backend_lambda_function_name" {
   value = module.backend_lambda.function_name
 }
 
+# The bare API Gateway invoke URL has no /api of its own — Django's
+# urls.py roots every real endpoint under api/ (see backend/equicast_api/
+# urls.py), the same way frontend/vite.config.js's dev proxy only forwards
+# the /api prefix. This output is only ever pasted into the API_URL
+# GitHub Environment variable (see docs/terraform-state-setup.md's Step
+# 4), so the /api suffix is baked on here rather than left as a manual
+# step to remember — the bare invoke URL by itself 404s on every real
+# endpoint if used as-is.
 output "backend_api_invoke_url" {
-  value = module.backend_api_gateway.invoke_url
+  value = "${module.backend_api_gateway.invoke_url}/api"
 }
 
 output "user_profiles_table_name" {

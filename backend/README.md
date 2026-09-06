@@ -43,7 +43,12 @@ transactions-per-holding cap — see `infra/variables.tf`'s
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
-- `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/market/<asset_class>/<symbol>/prices/` — `{ticker, currency,
+  last_updated, source, prices: [{date, open, high, low, close}, ...]}`.
+  Optional `?range=` (one of `1d`/`5d`/`1m`/`6m`/`ytd`/`1y`/`2y`/`3y`/`5y`/
+  `10y`/`max`, default `max` — see `equicast_core.client.PRICE_RANGES`);
+  `1y`/`2y` aggregate to weekly bars and `3y`/`5y`/`10y`/`max` to monthly
+  bars rather than daily, keeping a long-history response small
 - `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1
   character), case-insensitive substring match against every published
   catalog's `ticker`/`name` (see `equicast_core.catalog`), so results are
