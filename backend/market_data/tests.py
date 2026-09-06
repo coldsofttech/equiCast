@@ -55,6 +55,50 @@ class ProfileViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class MetricsViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.get(reverse("metrics", args=["stock", "aapl"]))
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_metrics_for_known_symbol(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_metrics.return_value = {"volatility": 0.23, "trailing_pe": 28.5}
+
+        response = self.client.get(reverse("metrics", args=["stock", "aapl"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"volatility": 0.23, "trailing_pe": 28.5})
+        mock_client.get_metrics.assert_called_once_with("stock", "aapl")
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_404_when_symbol_not_found(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_metrics.return_value = None
+
+        response = self.client.get(reverse("metrics", args=["stock", "unknown"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_for_unknown_asset_class(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(reverse("metrics", args=["crypto", "btc"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 400)
+
+
 class PricesViewTests(TestCase):
     def test_returns_401_when_unauthenticated(self) -> None:
         response = self.client.get(reverse("prices", args=["etf", "voo"]))
@@ -212,6 +256,8 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -232,6 +278,8 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -256,6 +304,8 @@ class SearchViewTests(TestCase):
             max_market_cap=2_000_000_000.5,
             exchange=None,
             region=None,
+            sector=None,
+            industry=None,
         )
 
     @patch("market_data.views._client")
@@ -280,6 +330,34 @@ class SearchViewTests(TestCase):
             max_market_cap=None,
             exchange="NMS",
             region="us",
+            sector=None,
+            industry=None,
+        )
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_sector_and_industry_are_passed_through(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
+
+        self.client.get(
+            reverse("search"),
+            {"q": "v", "sector": "Technology", "industry": "Semiconductors"},
+            **AUTH_HEADER,
+        )
+
+        mock_client.search.assert_called_once_with(
+            "v",
+            asset_classes=None,
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange=None,
+            region=None,
+            sector="Technology",
+            industry="Semiconductors",
         )
 
     @patch("identity.authentication.jwt.decode")

@@ -14,10 +14,11 @@ import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
+import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getProfile, getPrices, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import { getMetrics, getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -79,7 +80,7 @@ function HoldingTickerPage() {
 
   const [marketProfile, setMarketProfile] = useState(null);
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
-  const [priceResults, setPriceResults] = useState(null);
+  const [marketMetrics, setMarketMetrics] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -195,12 +196,7 @@ function HoldingTickerPage() {
       .then((profile) => ({ status: "ok", profile }))
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
-    // Fixed at "1y" regardless of the price chart's own range picker below
-    // — this is the Stats panel's 52-week high/low window, a distinct
-    // concept from whatever range the user has the chart set to.
-    const pricesPromise = getPrices(api, assetClass, ticker, { range: "1y" })
-      .then((res) => res.prices)
-      .catch(() => null);
+    const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
 
     const transactionsPromise = isOwned
       ? Promise.all(
@@ -212,12 +208,12 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, pricesPromise, transactionsPromise]).then(
-      ([profileResult, prices, transactionsResults]) => {
+    Promise.all([profilePromise, metricsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, transactionsResults]) => {
         if (cancelled) return;
         setMarketProfileStatus(profileResult.status);
         setMarketProfile(profileResult.profile);
-        setPriceResults(prices);
+        setMarketMetrics(metrics);
         const map = {};
         for (const result of transactionsResults) map[result.holdingId] = result;
         setTransactionsByHolding(map);
@@ -320,7 +316,7 @@ function HoldingTickerPage() {
       }
       footer={<SiteFooter />}
     >
-      {isLoading && <p className="ec-loading">Loading…</p>}
+      {isLoading && <HoldingTickerSkeleton isOwned={false} />}
       {error && <Alert tone="danger">{error}</Alert>}
 
       {!isLoading && !error && notFound && (
@@ -331,7 +327,7 @@ function HoldingTickerPage() {
       )}
 
       {!isLoading && !error && !notFound && (isResolvingAssetClass || isDataLoading) && (
-        <p className="ec-loading">Loading…</p>
+        <HoldingTickerSkeleton isOwned={isOwned} />
       )}
 
       {!isLoading && !error && !notFound && !isResolvingAssetClass && !isDataLoading && (
@@ -354,7 +350,7 @@ function HoldingTickerPage() {
           {(() => {
             const nativeCurrency = marketProfile?.currency ?? null;
             const defaultCurrency = userProfile?.default_currency ?? null;
-            const currentPriceNative = marketProfile?.day_close ?? marketProfile?.day_average ?? null;
+            const currentPriceNative = marketProfile?.day_close ?? null;
 
             let avgPriceNative = null;
             let statGrid = null;
@@ -466,7 +462,7 @@ function HoldingTickerPage() {
           })()}
 
           <div className="ec-account-columns">
-            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} priceResults={priceResults} />
+            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 

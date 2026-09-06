@@ -97,7 +97,12 @@ def compute_fundamentals(
     get_financials: Callable[[], pd.DataFrame | None],
     get_balance_sheet: Callable[[], pd.DataFrame | None],
 ) -> tuple[dict[str, float | None], bool]:
-    """Compute the 15 valuation/fundamental fields for one stock ticker.
+    """Compute the 16 valuation/fundamental fields for one stock ticker.
+
+    `pe_ratio` is the plain price/EPS calculation, always — unlike
+    `trailing_pe`, it never prefers yfinance's own `trailingPE` figure, so
+    the two can differ whenever yfinance's reported P/E uses a different
+    price/EPS basis than `info`'s own `currentPrice`/`trailingEps`.
 
     Returns `(values, used_fallback)` with unrounded raw numbers — the
     caller (`MetricsClient.fundamentals`) applies `round_value()` and adds
@@ -129,6 +134,12 @@ def compute_fundamentals(
 
     trailing_pe = r.resolve(info.get("trailingPE"), lambda: ratio(current_price, trailing_eps))
     forward_pe = r.resolve(info.get("forwardPE"), lambda: ratio(current_price, forward_eps))
+
+    # Unlike trailing_pe, always the plain price/EPS calculation - never
+    # yfinance's own trailingPE - so it can differ from trailing_pe whenever
+    # yfinance's reported figure uses a different price/EPS basis than the
+    # info dict's own currentPrice/trailingEps.
+    pe_ratio = ratio(current_price, trailing_eps)
 
     peg = info.get("trailingPegRatio") or info.get("pegRatio")
     if peg is None:
@@ -187,6 +198,7 @@ def compute_fundamentals(
         r.used_fallback = True
 
     values = {
+        "pe_ratio": pe_ratio,
         "trailing_pe": trailing_pe,
         "forward_pe": forward_pe,
         "trailing_eps": trailing_eps,

@@ -1,4 +1,6 @@
+import { metricsCacheKey, readCachedMetrics, writeCachedMetrics } from "../utils/metricsCache.js";
 import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
+import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils/profileCache.js";
 
 /**
  * @typedef {Object} SearchResult
@@ -15,6 +17,11 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  *   "NMS"/"PCX"), `null` for fx, which isn't traded on one.
  * @property {string|null} region - stock/etf's short country code (e.g.
  *   "us"/"gb"), `null` for fx, which isn't domiciled anywhere.
+ * @property {string|null} sector - a stock's own sector (e.g.
+ *   "Technology"), `null` for etf (yfinance never populates this for a
+ *   fund) and fx (no such concept for a currency pair).
+ * @property {string|null} industry - a stock's own industry (e.g.
+ *   "Semiconductors"), `null` for etf and fx for the same reason as `sector`.
  */
 
 /**
@@ -36,22 +43,33 @@ import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/pri
  * resolving a currency-pair ticker for FX conversion (`assetClass: "fx"`
  * — see holdings/holdingFinancials.js's resolveFxRate). `assetClass`
  * omitted searches every asset class. `minMarketCap`/`maxMarketCap`
- * (SearchFilters' Market cap range slider), `exchange`, and `region`
- * (SearchFilters' Exchange/Region dropdowns — see
- * pages/search/searchFilterOptions.js for the static UK/US option lists)
- * filter stock/etf rows by `market_cap`/`exchange`/`region` respectively;
- * fx rows always match every one of these regardless (see
- * `MarketDataClient.search`'s docstring for why).
+ * (SearchFilters' Market cap range slider), `exchange`, `region`,
+ * `sector`, and `industry` (SearchFilters' Exchange/Region/Sector/Industry
+ * dropdowns — see pages/search/searchFilterOptions.js for the static
+ * option lists) filter stock/etf rows by `market_cap`/`exchange`/`region`
+ * and stock rows by `sector`/`industry` respectively; fx rows always
+ * match every one of these regardless (see `MarketDataClient.search`'s
+ * docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
  * @returns {Promise<SearchResponse>}
  */
 export function searchTickers(
   api,
   query,
-  { assetClass, page = 1, pageSize = 10, minMarketCap, maxMarketCap, exchange, region } = {}
+  {
+    assetClass,
+    page = 1,
+    pageSize = 10,
+    minMarketCap,
+    maxMarketCap,
+    exchange,
+    region,
+    sector,
+    industry,
+  } = {}
 ) {
   const params = new URLSearchParams({ q: query, page: String(page), page_size: String(pageSize) });
   if (assetClass) params.set("asset_class", assetClass);
@@ -59,6 +77,8 @@ export function searchTickers(
   if (maxMarketCap != null) params.set("max_market_cap", String(maxMarketCap));
   if (exchange) params.set("exchange", exchange);
   if (region) params.set("region", region);
+  if (sector) params.set("sector", sector);
+  if (industry) params.set("industry", industry);
   return /** @type {Promise<SearchResponse>} */ (api(`/market/search/?${params.toString()}`));
 }
 
@@ -83,14 +103,10 @@ export function searchTickers(
  * @property {number|null} day_high
  * @property {number|null} day_low
  * @property {number|null} day_close
- * @property {number|null} day_average
  * @property {number|null} year_open
  * @property {number|null} year_high
  * @property {number|null} year_low
  * @property {number|null} year_close
- * @property {number|null} year_average
- * @property {number|null} moving_average_50_days
- * @property {number|null} moving_average_200_days
  * @property {string|null} address
  * @property {string|null} country
  * @property {string|null} region
@@ -108,13 +124,95 @@ export function searchTickers(
  * symbol — callers should catch that and degrade gracefully rather than
  * treating it as a hard failure (see HoldingTickerPage.jsx).
  *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/profileCache.js) — same
+ * rationale as getPrices below. A cache miss/failure (including no
+ * IndexedDB support at all) just falls through to the network call; a 404
+ * is never cached, so a symbol that hasn't published yet is re-checked on
+ * every call.
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} assetClass
  * @param {string} symbol
  * @returns {Promise<MarketProfile>}
  */
-export function getProfile(api, assetClass, symbol) {
-  return /** @type {Promise<MarketProfile>} */ (api(`/market/${assetClass}/${symbol}/profile/`));
+export async function getProfile(api, assetClass, symbol) {
+  const cacheKey = profileCacheKey(assetClass, symbol);
+
+  const cached = await readCachedProfile(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {MarketProfile} */ (await api(`/market/${assetClass}/${symbol}/profile/`));
+  writeCachedProfile(cacheKey, result);
+  return result;
+}
+
+/**
+ * @typedef {Object} MarketMetrics
+ * @property {number|null} volatility - annualized std deviation of daily
+ *   returns, as a fraction (e.g. 0.23 for 23%).
+ * @property {number|null} sharpe_ratio
+ * @property {number|null} max_drawdown - largest peak-to-trough decline, as
+ *   a negative fraction (e.g. -0.25).
+ * @property {number|null} cagr_1y
+ * @property {number|null} cagr_2y
+ * @property {number|null} cagr_3y
+ * @property {number|null} cagr_5y
+ * @property {number|null} cagr_10y
+ * @property {number|null} [pe_ratio] - stock-only; absent for etf/fx (see
+ *   equicast_metrics.MetricsClient.fundamentals). Always the plain current
+ *   price ÷ trailing EPS calculation — unlike `trailing_pe`, never
+ *   yfinance's own reported P/E, so the two can differ.
+ * @property {number|null} [trailing_pe]
+ * @property {number|null} [forward_pe]
+ * @property {number|null} [trailing_eps]
+ * @property {number|null} [forward_eps]
+ * @property {number|null} [peg]
+ * @property {number|null} [price_to_book]
+ * @property {number|null} [price_to_sales]
+ * @property {number|null} [ev_ebitda]
+ * @property {number|null} [gross_margin] - fraction (e.g. 0.42 for 42%).
+ * @property {number|null} [operating_margin] - fraction.
+ * @property {number|null} [profit_margin] - fraction.
+ * @property {number|null} [return_on_equity] - fraction.
+ * @property {number|null} [return_on_assets] - fraction.
+ * @property {number|null} [debt_to_equity] - already a percentage (e.g.
+ *   150.0 for 150%), not a fraction.
+ * @property {number|null} [free_cash_flow_per_share]
+ * @property {string} last_updated
+ * @property {string} source
+ */
+
+/**
+ * GET /api/market/<asset_class>/<symbol>/metrics/ — see
+ * backend/market_data/views.py's MetricsView. Throws an ApiError with
+ * status 404 when no `metrics.parquet` is published yet for this symbol —
+ * callers should catch that and degrade gracefully, same as getProfile.
+ * etf/fx records only ever carry the generic risk/performance fields
+ * (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_*`); a stock's record
+ * additionally carries the valuation/fundamental fields (`trailing_pe`,
+ * etc.) — see MarketMetrics.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/metricsCache.js), same rationale
+ * as getProfile/getPrices. A cache miss/failure (including no IndexedDB
+ * support at all) just falls through to the network call; a 404 is never
+ * cached, so a symbol that hasn't published yet is re-checked on every call.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} assetClass
+ * @param {string} symbol
+ * @returns {Promise<MarketMetrics>}
+ */
+export async function getMetrics(api, assetClass, symbol) {
+  const cacheKey = metricsCacheKey(assetClass, symbol);
+
+  const cached = await readCachedMetrics(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {MarketMetrics} */ (await api(`/market/${assetClass}/${symbol}/metrics/`));
+  writeCachedMetrics(cacheKey, result);
+  return result;
 }
 
 /** Badge `tone` (see components/core/Badge.jsx) for each MarketProfile field

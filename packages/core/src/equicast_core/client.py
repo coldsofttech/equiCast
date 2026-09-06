@@ -5,7 +5,7 @@ classes (`fx`/`stock`/`etf`) — it only knows the S3 key layout the ingestion
 pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
 `<asset_class>=<symbol>/price/current.parquet` and
 `<asset_class>=<symbol>/price/history.parquet`,
-`catalog/<asset_class>.json` — see `equicast_core.catalog` for how the
+`catalog/<asset_class>.parquet` — see `equicast_core.catalog` for how the
 latter is built/uploaded by each ingestion pipeline), nothing about Django
 or any particular caller.
 """
@@ -151,6 +151,25 @@ class MarketDataClient:
             profile = {**profile, "ceos": json.loads(profile["ceos"])}
         return profile
 
+    def get_metrics(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return the single metrics record for `symbol`, or `None` if this
+        ticker/pair has no `metrics.parquet` in the bucket.
+
+        Always carries the generic risk/performance fields
+        (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
+        see `equicast_metrics.MetricsClient.metrics()`); a stock's record
+        additionally carries the valuation/fundamental fields
+        (`trailing_pe`, etc. — see `.fundamentals()`), merged in by each
+        ingestion pipeline's own CLI before writing (etf/fx have no
+        fundamentals, so their `metrics.parquet` only ever has the generic
+        fields).
+        """
+        key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
+        rows = self._read_parquet(key)
+        if not rows:
+            return None
+        return rows[0]
+
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE
     ) -> dict[str, Any]:
@@ -261,15 +280,12 @@ class MarketDataClient:
 
     def get_catalog(self, asset_class: str) -> list[dict[str, Any]]:
         """Return every `{ticker, name, type, current_price, currency,
-        website, market_cap, exchange, region}` row this asset class's
-        ingestion pipeline last published (see `equicast_core.catalog`),
-        or `[]` if no catalog has been uploaded yet for it."""
-        try:
-            response = self._s3.get_object(Bucket=self._bucket, Key=catalog_key(asset_class))
-        except self._s3.exceptions.NoSuchKey:
-            return []
-        body = json.loads(response["Body"].read())
-        return body.get("tickers", [])
+        website, market_cap, exchange, region, sector, industry}` row this
+        asset class's ingestion pipeline last published (see
+        `equicast_core.catalog`), or `[]` if no catalog has been uploaded
+        yet for it."""
+        rows = self._read_parquet(catalog_key(asset_class))
+        return rows if rows is not None else []
 
     def search(
         self,
@@ -279,6 +295,8 @@ class MarketDataClient:
         max_market_cap: float | None = None,
         exchange: str | None = None,
         region: str | None = None,
+        sector: str | None = None,
+        industry: str | None = None,
     ) -> list[dict[str, Any]]:
         """Case-insensitive substring match of `query` against every
         catalog row's `ticker` and `name`, across `asset_classes` (default:
@@ -287,19 +305,23 @@ class MarketDataClient:
         bucket itself — no per-ticker S3 reads here, unlike
         `get_profile`/`get_prices`.
 
-        `min_market_cap`/`max_market_cap`, `exchange`, and `region`, when
-        given, additionally filter stock/etf rows by their `market_cap`
-        (a stock's real market cap, an etf's total assets as the closest
-        comparable "size" figure a fund has), `exchange`, and `region`
-        respectively (see `equicast_core.catalog.build_catalog_rows`) — fx
-        rows always match every one of these three regardless, having
-        none of those concepts for a currency pair. `exchange`/`region`
-        match case-insensitively against the row's exact value (not a
-        substring, unlike `query`), since both are short codes (e.g.
-        "NMS"/"us"), not free text. A stock/etf row missing the field
-        being filtered on is excluded whenever that filter is given,
-        rather than guessed to match — there's nothing to compare it
-        against.
+        `min_market_cap`/`max_market_cap`, `exchange`, `region`, `sector`,
+        and `industry`, when given, additionally filter stock/etf rows by
+        their `market_cap` (a stock's real market cap, an etf's total
+        assets as the closest comparable "size" figure a fund has),
+        `exchange`, `region`, `sector`, and `industry` respectively (see
+        `equicast_core.catalog.build_catalog_rows`) — fx rows always match
+        every one of these regardless, having none of those concepts for a
+        currency pair; etf rows have no `sector`/`industry` of their own
+        either (always `None`), so an etf row is excluded whenever either
+        of those two filters is given, the same as a stock row missing the
+        field. `exchange`/`region`/`sector`/`industry` match
+        case-insensitively against the row's exact value (not a substring,
+        unlike `query`), since all four are short codes/labels (e.g.
+        "NMS"/"us"/"Technology"), not free text. A stock/etf row missing
+        the field being filtered on is excluded whenever that filter is
+        given, rather than guessed to match — there's nothing to compare
+        it against.
 
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""
@@ -308,6 +330,8 @@ class MarketDataClient:
         filter_by_market_cap = min_market_cap is not None or max_market_cap is not None
         exchange_lower = exchange.lower() if exchange is not None else None
         region_lower = region.lower() if region is not None else None
+        sector_lower = sector.lower() if sector is not None else None
+        industry_lower = industry.lower() if industry is not None else None
 
         matches = []
         for asset_class in classes:
@@ -332,6 +356,14 @@ class MarketDataClient:
                     if region_lower is not None:
                         row_region = row.get("region")
                         if row_region is None or row_region.lower() != region_lower:
+                            continue
+                    if sector_lower is not None:
+                        row_sector = row.get("sector")
+                        if row_sector is None or row_sector.lower() != sector_lower:
+                            continue
+                    if industry_lower is not None:
+                        row_industry = row.get("industry")
+                        if row_industry is None or row_industry.lower() != industry_lower:
                             continue
                 matches.append(row)
         matches.sort(key=lambda row: row["ticker"])

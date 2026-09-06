@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `sector`/`industry` added to the search catalog (`equicast_core.catalog.build_catalog_rows`,
+  `catalog/<asset_class>.parquet`) and as new `SearchView`/`MarketDataClient.search`
+  filter params (`sector`/`industry`, matched case-insensitively against a
+  stock row's exact value, same as `exchange`/`region`) — sourced from a
+  stock profile's own `sector`/`industry` fields, always `None` for etf
+  (yfinance never populates these for a fund) and fx. `/search`'s filter
+  panel (`SearchFilters.jsx`) gained matching Sector/Industry dropdowns
+  (static option lists in `searchFilterOptions.js`, same reasoning as
+  Region/Exchange), wired through `SearchPage.jsx`'s URL params the same
+  way as every other filter.
 - Frontend holding detail page: `frontend/src/pages/holdings/HoldingTickerPage.jsx`
   (`/holdings/:ticker`) is rewritten from a shallow "held in N places" list
   into a full detail page, mostly backed by real data rather than the
@@ -35,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller's `default_currency` for one table column via the real `fx` asset
   class's own profile endpoint (trying the direct pair ticker then the
   inverted one), resolving to `null` rather than throwing/blocking the page
-  when no rate is published; `extractPriceWindow` and
-  `buildPlaceholderMetrics` back the Stats panel (see below).
+  when no rate is published; `buildPlaceholderMetrics` backs the Stats
+  panel (see below).
 
   Page sections: real Total Invested/Profit-Loss StatTiles, shown in the
   user's own `default_currency` rather than the holding's native currency
@@ -75,9 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window's trading was net positive (`close >= open`) or negative and a
   pointer marking the current price; 1 Day comes straight off the
   profile's real `day_high`/`day_low` (there's no "1 week" figure anywhere
-  in the data); 52 Weeks uses the current calendar year's published price
-  history, falling back to the profile's year-to-date high/low early in
-  the year. Below the bars, one stacked metrics list grouped by subject —
+  in the data); 52 Weeks comes straight off the profile's own
+  `year_high`/`year_low`. Below the bars, one stacked metrics list grouped by subject —
   market cap, P/E ratio, beta, volatility, average volume, then every
   dividend-related field together (dividend yield, dividend rate, dividend
   frequency, payout ratio) — rather than scattering real and placeholder
@@ -234,8 +243,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the filter panel's own submitted keyword rather than always reusing the
   URL's existing `q`).
 
+- Same-day IndexedDB caching for `GET .../prices/`, `GET .../profile/`, and
+  `GET .../metrics/` (`frontend/src/utils/priceCache.js`/`profileCache.js`/
+  `metricsCache.js`, each a thin wrapper around the shared IndexedDB
+  plumbing in the new `marketDataCache.js`, wrapped in turn by `market.js`'s
+  `getPrices`/`getProfile`/`getMetrics`): the backend's published market
+  data only changes once a day, so a repeat request for the same
+  `assetClass`/`symbol`(/`range`) later the same local day is served from
+  the browser instead of hitting the API again — a cache miss/failure (no
+  IndexedDB support, private mode, etc.) just falls through to the network
+  call, and a profile/metrics 404 is never cached, so an unpublished symbol
+  keeps getting re-checked on every visit. Cache keys are `<assetClass>:
+  <TICKER>:prices:<range>`, `<assetClass>:<TICKER>:profile`, and
+  `<assetClass>:<TICKER>:metrics` (all three share one IndexedDB object
+  store, namespaced by these keys). `HoldingStatsPanel`'s 52 Weeks high/low
+  now reads the profile's own `year_high`/`year_low` directly instead of a
+  second, separately-fetched-and-cached `range: "1y"` price series — the
+  two figures are equivalent (aggregating into weekly/monthly bars
+  preserves the true max/min), so this drops a redundant API hit and
+  IndexedDB entry per ticker page; `holdingFinancials.js`'s now-unused
+  `extractPriceWindow` is removed. `resolveFxRate`'s own `getProfile` calls
+  (for fx pair lookups) get the same caching for free.
+
+- New `GET /api/market/<asset_class>/<symbol>/metrics/` (`MetricsView`,
+  `equicast_core.MarketDataClient.get_metrics`, reading
+  `<asset_class>=<symbol>/metrics.parquet` — same shape/404 handling as
+  `ProfileView`/`get_profile`) surfaces `equicast-metrics`' previously
+  API-unreachable risk/performance (`volatility`, `sharpe_ratio`,
+  `max_drawdown`, `cagr_*`) and, for stocks, valuation/fundamental
+  (`pe_ratio`, `trailing_pe`, `forward_pe`, EPS, PEG, price-to-book/sales,
+  EV/EBITDA, margins, returns, debt-to-equity, free cash flow per share)
+  fields, wrapped by `market.js`'s new `getMetrics` (see caching above).
+  `equicast_metrics.fundamentals.compute_fundamentals` also gained a new
+  16th field, `pe_ratio`: the plain current price ÷ trailing EPS
+  calculation, always — unlike `trailing_pe`, it never prefers yfinance's
+  own reported `trailingPE`, so the two can disagree whenever yfinance's
+  figure uses a different price/EPS basis.
+
+  `HoldingStatsPanel`'s Volatility and P/E ratio rows are now real
+  (`marketMetrics.volatility`/`pe_ratio`) rather than seeded placeholders;
+  Average volume is dropped entirely (no equivalent field exists anywhere
+  yet); the caption below the metrics list now only calls out Dividend
+  frequency as sample data. `buildPlaceholderMetrics` (`holdingFinancials.js`)
+  shrinks to that one field accordingly. A new "See all" link on the Stats
+  card opens a Drawer (`FieldList` per group) with every other metrics
+  field grouped by subject — Valuation (Trailing/Forward P/E, PEG,
+  Price/Book, Price/Sales, EV/EBITDA), Per share (Trailing/Forward EPS,
+  free cash flow/share), Profitability (margins, return on equity/assets),
+  Leverage (debt/equity), and Risk (Sharpe ratio, max drawdown); `cagr_*`
+  is deliberately left out of this drawer, its placement still to be
+  decided. A group with nothing resolved (e.g. every fundamentals group for
+  an etf/fx ticker, which has no fundamentals at all) is hidden rather than
+  shown empty, and the "See all" link itself only appears when there's at
+  least one such field to show.
+
+- `HoldingTickerPage` (`/holdings/:ticker`) now shows a skeleton layout
+  (new `HoldingTickerSkeleton.jsx`, built on a new shared
+  `components/core/Skeleton.jsx` shimmer placeholder) mirroring the real
+  page's cards (StatTiles row, price chart card, Owned shares table,
+  Stats/About columns) while the accounts list and/or the
+  profile/metrics/transactions fetch are still loading, replacing the
+  previous plain "Loading…" text.
+
 ### Changed
 
+- The search catalog (`catalog/<asset_class>.json`) is now written/read as
+  Parquet (`catalog/<asset_class>.parquet`) instead of JSON —
+  `equicast_core.catalog.upload_catalog` writes against a new explicit
+  `CATALOG_SCHEMA` (so an empty ticker list still produces a valid file
+  rather than one with an unguessable/empty schema), and
+  `MarketDataClient.get_catalog` reads it via the same `_read_parquet`
+  helper `get_profile`/`get_prices` already use. Same format/tooling
+  (`pyarrow`) as every other published file now, and avoids JSON's
+  per-row repeated field names once the ticker universe grows well past
+  today's handful per asset class — `search()` still reads a catalog in
+  full on every call either way, so this doesn't change that access
+  pattern, just the bytes on disk.
 - `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
   the pointer cursor/hover cue for a table with no row actions) removed
   now that `SearchPage`'s rows — its only user — are clickable.
@@ -515,6 +598,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only *identifies* a caller, it doesn't by itself require authentication.
   `backend/market_data/tests.py` updated to mock the Auth0 JWT flow and
   assert 401 when no token is supplied.
+
+### Removed
+
+- `day_average`, `year_average`, `moving_average_50_days`, and
+  `moving_average_200_days` dropped from `equicast-stock`/`equicast-etf`/
+  `equicast-fx`'s `profile()` (and therefore `profile.parquet`) —
+  `StockClient`/`ETFClient`/`FXClient` (`packages/*/src/equicast_*/client.py`)
+  no longer compute or fetch these fields. Frontend fallbacks that read
+  `day_average` (`HoldingTickerPage.jsx`, `HoldingStatsPanel.jsx`,
+  `holdingFinancials.js`'s `resolveFxRate`) now use `day_close` alone.
 
 ### Added
 

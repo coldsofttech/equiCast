@@ -19,12 +19,13 @@ const PAGE_SIZE = 25;
  * Results table + left filter pane for ticker search. `q` comes from the
  * URL (TopbarSearch sets it on Enter, or SearchFilters' own Keyword field
  * — pre-populated from `q` — on Search/Enter); `type`/`minCap`/`maxCap`/
- * `region`/`exchange` mirror SearchFilters' applied Type/Market cap/Region/
- * Exchange selections — every filter SearchFilters offers is real now. All
- * six live in the URL (not just component state) so a search is
- * shareable/bookmarkable and survives a refresh. Clicking a result row
- * goes to its holding detail page (HoldingTickerPage handles a ticker the
- * user doesn't actually hold with its own empty state).
+ * `region`/`exchange`/`sector`/`industry` mirror SearchFilters' applied
+ * Type/Market cap/Region/Exchange/Sector/Industry selections — every
+ * filter SearchFilters offers is real now. All eight live in the URL (not
+ * just component state) so a search is shareable/bookmarkable and survives
+ * a refresh. Clicking a result row goes to its holding detail page
+ * (HoldingTickerPage handles a ticker the user doesn't actually hold with
+ * its own empty state).
  */
 function SearchPage() {
   const navigate = useNavigate();
@@ -37,6 +38,8 @@ function SearchPage() {
   const maxMarketCap = maxCapParam != null ? Number(maxCapParam) : undefined;
   const region = searchParams.get("region") ?? "";
   const exchange = searchParams.get("exchange") ?? "";
+  const sector = searchParams.get("sector") ?? "";
+  const industry = searchParams.get("industry") ?? "";
   const api = useApi();
 
   const [results, setResults] = useState([]);
@@ -64,6 +67,8 @@ function SearchPage() {
       maxMarketCap,
       region: region || undefined,
       exchange: exchange || undefined,
+      sector: sector || undefined,
+      industry: industry || undefined,
       page: 1,
       pageSize: PAGE_SIZE,
     })
@@ -83,7 +88,7 @@ function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, query, type, minMarketCap, maxMarketCap, region, exchange]);
+  }, [api, query, type, minMarketCap, maxMarketCap, region, exchange, sector, industry]);
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
@@ -94,6 +99,8 @@ function SearchPage() {
       maxMarketCap,
       region: region || undefined,
       exchange: exchange || undefined,
+      sector: sector || undefined,
+      industry: industry || undefined,
       page: page + 1,
       pageSize: PAGE_SIZE,
     })
@@ -112,6 +119,8 @@ function SearchPage() {
     maxMarketCap: nextMax,
     region: nextRegion,
     exchange: nextExchange,
+    sector: nextSector,
+    industry: nextIndustry,
   }) => {
     const next = {};
     if (nextQuery) next.q = nextQuery;
@@ -120,6 +129,8 @@ function SearchPage() {
     if (nextMax != null) next.maxCap = String(nextMax);
     if (nextRegion) next.region = nextRegion;
     if (nextExchange) next.exchange = nextExchange;
+    if (nextSector) next.sector = nextSector;
+    if (nextIndustry) next.industry = nextIndustry;
     setSearchParams(next);
   };
 
@@ -137,6 +148,8 @@ function SearchPage() {
           maxMarketCap={maxMarketCap}
           region={region}
           exchange={exchange}
+          sector={sector}
+          industry={industry}
           onApply={handleApplyFilters}
         />
       }

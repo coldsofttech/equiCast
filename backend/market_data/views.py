@@ -43,6 +43,20 @@ class ProfileView(APIView):
         return Response(profile)
 
 
+class MetricsView(APIView):
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        metrics = _client.get_metrics(asset_class, symbol)
+        if metrics is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(metrics)
+
+
 class PricesView(APIView):
     """`prices` is trimmed/aggregated to the requested `range` query param
     (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see
@@ -113,6 +127,8 @@ class SearchView(APIView):
 
         exchange = request.query_params.get("exchange")
         region = request.query_params.get("region")
+        sector = request.query_params.get("sector")
+        industry = request.query_params.get("industry")
 
         asset_classes = [asset_class] if asset_class is not None else None
         matches = _client.search(
@@ -122,6 +138,8 @@ class SearchView(APIView):
             max_market_cap=max_market_cap,
             exchange=exchange,
             region=region,
+            sector=sector,
+            industry=industry,
         )
 
         count = len(matches)

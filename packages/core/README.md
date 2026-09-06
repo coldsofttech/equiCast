@@ -59,7 +59,7 @@ before aggregation (an aggregated bucket has no per-row metadata of its
 own).
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
-third, separate piece of the market-data layout: `catalog/<asset_class>.json`
+third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
 — a small, pre-built `{ticker, name, type, current_price}` row per
 configured ticker, published by each ingestion pipeline after a run (see
 `equicast_core.catalog` below), not derived from `profile.parquet` on the
@@ -87,7 +87,7 @@ ingestion run that built the catalog — same staleness model as
 
 ## `equicast_core.catalog` — building the search catalog (ingestion side)
 
-The write side of the `catalog/<asset_class>.json` contract
+The write side of the `catalog/<asset_class>.parquet` contract
 `MarketDataClient.get_catalog`/`.search` read. Deliberately generic across
 all three ingestion pipelines and asset-class-agnostic — every pipeline
 already writes its profiles to the same `<asset_class>=<TICKER>/profile.parquet`
@@ -106,7 +106,10 @@ rows = build_catalog_rows(Path("output"), "stock")
 # instead — see equicast_fx.writer)
 
 upload_catalog(bucket="equicast-market-data-dev", asset_class="stock", rows=rows)
-# replaces catalog/stock.json outright (a full rebuild, not a merge)
+# replaces catalog/stock.parquet outright (a full rebuild, not a merge),
+# written against equicast_core.catalog.CATALOG_SCHEMA — same Parquet
+# format as profile.parquet/metrics.parquet, not JSON, so it stays
+# efficient once the ticker universe grows well past a handful per class
 ```
 
 Also installs as a CLI, `equicast-core-build-catalog --asset-class stock

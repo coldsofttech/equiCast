@@ -7,6 +7,8 @@ const DEFAULT_APPLY = {
   type: "",
   region: "",
   exchange: "",
+  sector: "",
+  industry: "",
   minMarketCap: undefined,
   maxMarketCap: undefined,
 };
@@ -89,6 +91,42 @@ describe("SearchFilters", () => {
     expect(screen.getByLabelText("Region")).toHaveValue("us");
   });
 
+  it("calls onApply with the selected sector and industry after clicking Search", () => {
+    const onApply = vi.fn();
+    render(<SearchFilters type="" onApply={onApply} />);
+
+    fireEvent.change(screen.getByLabelText("Sector"), { target: { value: "Technology" } });
+    fireEvent.change(screen.getByLabelText("Industry"), { target: { value: "Semiconductors" } });
+    expect(onApply).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    expect(onApply).toHaveBeenCalledWith({
+      ...DEFAULT_APPLY,
+      sector: "Technology",
+      industry: "Semiconductors",
+    });
+  });
+
+  it("starts with the currently-applied sector/industry selected", () => {
+    render(
+      <SearchFilters type="" sector="Technology" industry="Semiconductors" onApply={vi.fn()} />
+    );
+
+    expect(screen.getByLabelText("Sector")).toHaveValue("Technology");
+    expect(screen.getByLabelText("Industry")).toHaveValue("Semiconductors");
+  });
+
+  it("resets the draft sector/industry when the applied props change", () => {
+    const { rerender } = render(<SearchFilters type="" onApply={vi.fn()} />);
+
+    fireEvent.change(screen.getByLabelText("Sector"), { target: { value: "Technology" } });
+    expect(screen.getByLabelText("Sector")).toHaveValue("Technology");
+
+    rerender(<SearchFilters type="" sector="Consumer Cyclical" onApply={vi.fn()} />);
+
+    expect(screen.getByLabelText("Sector")).toHaveValue("Consumer Cyclical");
+  });
+
   it("resets the draft selection when the applied type prop changes", () => {
     const { rerender } = render(<SearchFilters type="" onApply={vi.fn()} />);
 
@@ -123,6 +161,8 @@ describe("SearchFilters", () => {
     fireEvent.click(screen.getByLabelText("Stocks"));
     fireEvent.change(screen.getByLabelText("Region"), { target: { value: "gb" } });
     fireEvent.change(screen.getByLabelText("Exchange"), { target: { value: "LSE" } });
+    fireEvent.change(screen.getByLabelText("Sector"), { target: { value: "Technology" } });
+    fireEvent.change(screen.getByLabelText("Industry"), { target: { value: "Semiconductors" } });
     fireEvent.change(screen.getByLabelText("Minimum"), { target: { value: "4" } });
 
     fireEvent.click(screen.getByRole("button", { name: "Clear filters" }));
@@ -132,6 +172,8 @@ describe("SearchFilters", () => {
     expect(screen.getByLabelText("All types")).toBeChecked();
     expect(screen.getByLabelText("Region")).toHaveValue("");
     expect(screen.getByLabelText("Exchange")).toHaveValue("");
+    expect(screen.getByLabelText("Sector")).toHaveValue("");
+    expect(screen.getByLabelText("Industry")).toHaveValue("");
     expect(screen.getByLabelText("Minimum")).toHaveValue("0");
     expect(screen.getByRole("button", { name: "Clear filters" })).toBeDisabled();
   });

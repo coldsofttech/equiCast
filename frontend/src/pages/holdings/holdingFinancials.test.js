@@ -4,8 +4,9 @@ import {
   deriveAverageModeFinancials,
   deriveInstanceFinancials,
   deriveTransactionModeFinancials,
-  extractPriceWindow,
+  formatPercent,
   formatPrice,
+  formatRatio,
   resolveFxRate,
   rollupInstances,
 } from "./holdingFinancials.js";
@@ -24,6 +25,32 @@ describe("formatPrice", () => {
 
   it("falls back to a plain number when currency is unknown", () => {
     expect(formatPrice(34.5, null)).toBe("34.50");
+  });
+});
+
+describe("formatPercent", () => {
+  it("scales a fraction to a percentage string", () => {
+    expect(formatPercent(0.234)).toBe("23.4%");
+  });
+
+  it("keeps a negative fraction's sign", () => {
+    expect(formatPercent(-0.08)).toBe("-8.0%");
+  });
+
+  it("returns null when unset", () => {
+    expect(formatPercent(null)).toBeNull();
+    expect(formatPercent(undefined)).toBeNull();
+  });
+});
+
+describe("formatRatio", () => {
+  it("formats a plain decimal ratio to 2 places by default", () => {
+    expect(formatRatio(28.456)).toBe("28.46");
+  });
+
+  it("returns null when unset", () => {
+    expect(formatRatio(null)).toBeNull();
+    expect(formatRatio(undefined)).toBeNull();
   });
 });
 
@@ -162,34 +189,6 @@ describe("resolveFxRate", () => {
     const api = vi.fn().mockRejectedValue(new Error("404"));
 
     await expect(resolveFxRate(api, "USD", "GBP")).resolves.toBeNull();
-  });
-});
-
-describe("extractPriceWindow", () => {
-  const results = [
-    { high: 10, low: 8, close: 9 },
-    { high: 12, low: 9, close: 11 },
-    { high: 11, low: 10, close: 10.5 },
-    { high: 14, low: 10, close: 13 },
-  ];
-
-  it("takes the trailing N records and finds their high/low", () => {
-    const window = extractPriceWindow(results, 2);
-    expect(window).toEqual({ high: 14, low: 10, closes: [10.5, 13], sufficient: true });
-  });
-
-  it("flags insufficient data when fewer than 3 days are available for a >=3-day window", () => {
-    const window = extractPriceWindow(results.slice(0, 2), 7);
-    expect(window.sufficient).toBe(false);
-  });
-
-  it("handles no published prices at all", () => {
-    expect(extractPriceWindow(null, 7)).toEqual({
-      high: null,
-      low: null,
-      closes: [],
-      sufficient: false,
-    });
   });
 });
 

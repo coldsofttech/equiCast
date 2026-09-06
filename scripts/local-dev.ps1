@@ -517,7 +517,7 @@ try {
                 # Each pipeline package shares the same CLI shape (--config/--out
                 # [--full-load]) and writes <asset_class>=<TICKER>/... under its own
                 # ./output, which equicast-core-build-catalog then reads to build
-                # that asset class's catalog.json. The three run as parallel
+                # that asset class's catalog.parquet. The three run as parallel
                 # background jobs (each its own process, so no Push-Location/
                 # $env: interference between them) rather than one after another -
                 # they're independent, network-bound CLI calls, so there's nothing

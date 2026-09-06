@@ -134,3 +134,16 @@
   color: var(--ec-text-subtle);
   margin: var(--ec-s-8) 0 0;
 }
+
+.ec-metrics-group + .ec-metrics-group {
+  margin-top: var(--ec-s-24);
+}
+
+.ec-metrics-group-title {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  margin: 0 0 var(--ec-s-4);
+}
