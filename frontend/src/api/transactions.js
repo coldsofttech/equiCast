@@ -1,35 +1,68 @@
 /**
+ * Every monetary field comes in a native/converted pair: `*_native` is
+ * exactly what the caller submitted (the holding's own native currency);
+ * the bare name is that figure converted to the user's own
+ * `default_currency` (see identity.js's UserProfile) as of the
+ * transaction's `date`, resolved server-side via the historical FX rate
+ * for that date — `null` when no rate could be resolved (e.g. no FX pair
+ * published for that currency combination on or before that date). Never
+ * submit the bare (converted) field yourself — the backend always
+ * rejects it as a request field; only `*_native` is ever writable.
+ *
  * @typedef {Object} Transaction
  * @property {string} id
  * @property {string} holding_id
- * @property {number} no_of_shares
- * @property {number|null} average_price - set only for an AVERAGE-mode account's record.
- * @property {number|null} price - set only for a TRANSACTION-mode account's record.
- * @property {string|null} date - "YYYY-MM-DD", set only for a TRANSACTION-mode record.
- * @property {"BUY"|"SELL"|null} type - set only for a TRANSACTION-mode record.
+ * @property {number|null} no_of_shares - set only for a BUY/SELL record.
+ * @property {number|null} average_price_native - set only for an AVERAGE-mode BUY record.
+ * @property {number|null} average_price - converted counterpart of average_price_native.
+ * @property {number|null} price_native - set only for a TRANSACTION-mode BUY/SELL record.
+ * @property {number|null} price - converted counterpart of price_native.
+ * @property {number|null} amount_native - total cash received, set only for a DIVIDEND record.
+ * @property {number|null} amount - converted counterpart of amount_native.
+ * @property {string|null} date - "YYYY-MM-DD". Mandatory on every record created since the
+ *   DIVIDEND type shipped; `null` only on a legacy AVERAGE-mode record predating it.
+ * @property {"BUY"|"SELL"|"DIVIDEND"|null} type - "SELL" only under a TRANSACTION-mode
+ *   account; `null` only on a legacy AVERAGE-mode record predating the BUY/DIVIDEND shape.
  * @property {string} created_at
  * @property {string} updated_at
  */
 
 /**
- * GET /api/transactions/?holding_id=... — see backend/transactions/views.py's
- * TransactionListView.get. Omitting `holdingId` returns every transaction
- * across all of the caller's holdings (an uncommon, slower path server-side
- * — see TransactionsClient._load_all) rather than the one this holding
- * detail page actually needs.
+ * One page of `GET /api/transactions/` — DRF's standard page-number
+ * pagination envelope (see backend/transactions/views.py's
+ * TransactionPagination). `results` is sorted most-recent-`date`-first by
+ * the backend, so page 1 is always what a "recent transactions" pane wants.
+ *
+ * @typedef {Object} TransactionPage
+ * @property {number} count - total transactions matching the filter, across every page.
+ * @property {string|null} next - the next page's URL, `null` on the last page.
+ * @property {string|null} previous - the previous page's URL, `null` on the first page.
+ * @property {Transaction[]} results - this page's transactions (`pageSize` items, default 50).
+ */
+
+/**
+ * GET /api/transactions/?holding_id=...&page=...&page_size=... — see
+ * backend/transactions/views.py's TransactionListView.get. Defaults to page
+ * 1 at 50 per page (TransactionPagination.page_size) when `page`/`pageSize`
+ * are omitted. Omitting `holdingId` returns every transaction across all of
+ * the caller's holdings (an uncommon, slower path server-side — see
+ * TransactionsClient._load_all) rather than the one this holding detail
+ * page actually needs.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ holdingId?: string, year?: number|string, dateFrom?: string, dateTo?: string }} [options]
- * @returns {Promise<Transaction[]>}
+ * @param {{ holdingId?: string, year?: number|string, dateFrom?: string, dateTo?: string, page?: number, pageSize?: number }} [options]
+ * @returns {Promise<TransactionPage>}
  */
-export function listTransactions(api, { holdingId, year, dateFrom, dateTo } = {}) {
+export function listTransactions(api, { holdingId, year, dateFrom, dateTo, page, pageSize } = {}) {
   const params = new URLSearchParams();
   if (holdingId) params.set("holding_id", holdingId);
   if (year) params.set("year", String(year));
   if (dateFrom) params.set("date_from", dateFrom);
   if (dateTo) params.set("date_to", dateTo);
+  if (page) params.set("page", String(page));
+  if (pageSize) params.set("page_size", String(pageSize));
   const query = params.toString();
-  return /** @type {Promise<Transaction[]>} */ (api(`/transactions/${query ? `?${query}` : ""}`));
+  return /** @type {Promise<TransactionPage>} */ (api(`/transactions/${query ? `?${query}` : ""}`));
 }
 
 /**
@@ -47,14 +80,18 @@ export function getTransaction(api, holdingId, transactionId) {
 }
 
 /**
- * POST /api/transactions/ — `data`'s shape depends on the owning account's
- * transaction_type: AVERAGE mode needs `{holding_id, no_of_shares,
- * average_price}`; TRANSACTION mode needs `{holding_id, no_of_shares,
- * price, date, type}` (see backend/transactions/views.py's
- * build_transaction_fields).
+ * POST /api/transactions/ — `data`'s shape depends on the user's global
+ * transaction_type and `data.type`: an AVERAGE-mode BUY needs
+ * `{holding_id, type: "BUY", no_of_shares, average_price_native, date}`; a
+ * TRANSACTION-mode BUY/SELL needs `{holding_id, type, no_of_shares,
+ * price_native, date}`; a DIVIDEND (either mode) needs `{holding_id,
+ * type: "DIVIDEND", amount_native, date}` (see
+ * backend/transactions/views.py's build_transaction_fields). The
+ * converted (non-`_native`) counterpart is always backend-resolved — never
+ * submit it, see the Transaction typedef above.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ holding_id: string, no_of_shares: number, average_price?: number, price?: number, date?: string, type?: "BUY"|"SELL" }} data
+ * @param {{ holding_id: string, type: "BUY"|"SELL"|"DIVIDEND", date: string, no_of_shares?: number, average_price_native?: number, price_native?: number, amount_native?: number }} data
  * @returns {Promise<Transaction>}
  */
 export function createTransaction(api, data) {
@@ -65,13 +102,16 @@ export function createTransaction(api, data) {
 
 /**
  * PATCH /api/transactions/<holding_id>/<transaction_id>/ — only valid for
- * an AVERAGE-mode record (`no_of_shares`/`average_price`); a
- * TRANSACTION-mode record is immutable server-side.
+ * an AVERAGE-mode BUY record (`no_of_shares`/`average_price_native`/`date`)
+ * or any DIVIDEND record in either mode (`date`/`amount_native`); a
+ * TRANSACTION-mode BUY/SELL record is immutable server-side. The converted
+ * counterpart is recomputed server-side whenever a native value or `date`
+ * changes — never submit it yourself.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} holdingId
  * @param {string} transactionId
- * @param {{ no_of_shares?: number, average_price?: number }} fields
+ * @param {{ no_of_shares?: number, average_price_native?: number, date?: string, amount_native?: number }} fields
  * @returns {Promise<Transaction>}
  */
 export function updateTransaction(api, holdingId, transactionId, fields) {

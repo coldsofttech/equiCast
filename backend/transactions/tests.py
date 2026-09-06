@@ -3,10 +3,8 @@ from unittest.mock import MagicMock, patch
 from django.test import TestCase
 from django.urls import reverse
 from equicast_core import (
-    AccountNotFoundError,
     HoldingNotFoundError,
     InsufficientSharesError,
-    PieNotFoundError,
     TransactionAlreadyExistsError,
     TransactionAmountError,
     TransactionLimitExceededError,
@@ -33,9 +31,10 @@ WATCHLIST_HOLDING = {
 }
 FX_HOLDING = {**ACCOUNT_HOLDING, "id": "h-4", "asset_class": "fx"}
 
-AVERAGE_ACCOUNT = {"id": "acc-1", "transaction_type": "AVERAGE"}
-TRANSACTION_ACCOUNT = {"id": "acc-1", "transaction_type": "TRANSACTION"}
-PIE = {"id": "pie-1", "account_id": "acc-1"}
+#: transaction_type is a single per-user profile setting now, not an
+#: account field — see UserProfileClient/resolve_transaction_mode.
+AVERAGE_PROFILE = {"transaction_type": "AVERAGE"}
+TRANSACTION_PROFILE = {"transaction_type": "TRANSACTION"}
 
 AVERAGE_TRANSACTION = {
     "id": "t-1",
@@ -43,10 +42,11 @@ AVERAGE_TRANSACTION = {
     "no_of_shares": 10,
     "average_price": 152.5,
     "price": None,
-    "date": None,
-    "type": None,
-    "created_at": "2026-01-01T00:00:00+00:00",
-    "updated_at": "2026-01-01T00:00:00+00:00",
+    "amount": None,
+    "date": "2026-01-15",
+    "type": "BUY",
+    "created_at": "2026-01-15T00:00:00+00:00",
+    "updated_at": "2026-01-15T00:00:00+00:00",
 }
 BUY_TRANSACTION = {
     "id": "t-2",
@@ -54,10 +54,23 @@ BUY_TRANSACTION = {
     "no_of_shares": 10,
     "average_price": None,
     "price": 152.5,
+    "amount": None,
     "date": "2026-01-15",
     "type": "BUY",
     "created_at": "2026-01-15T00:00:00+00:00",
     "updated_at": "2026-01-15T00:00:00+00:00",
+}
+DIVIDEND_TRANSACTION = {
+    "id": "t-3",
+    "holding_id": "h-1",
+    "no_of_shares": None,
+    "average_price": None,
+    "price": None,
+    "amount": 42.10,
+    "date": "2026-03-01",
+    "type": "DIVIDEND",
+    "created_at": "2026-03-01T00:00:00+00:00",
+    "updated_at": "2026-03-01T00:00:00+00:00",
 }
 
 
@@ -92,10 +105,53 @@ class TransactionListViewTests(TestCase):
         response = self.client.get(reverse("transactions-list"), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [AVERAGE_TRANSACTION])
+        body = response.json()
+        self.assertEqual(body["count"], 1)
+        self.assertIsNone(body["next"])
+        self.assertIsNone(body["previous"])
+        self.assertEqual(body["results"], [AVERAGE_TRANSACTION])
         mock_client.list_transactions.assert_called_once_with(
             "auth0|abc123", holding_id=None, year=None, date_from=None, date_to=None
         )
+
+    @patch("transactions.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_get_sorts_most_recent_date_first(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        older = {**AVERAGE_TRANSACTION, "id": "t-old", "date": "2025-01-01"}
+        newer = {**AVERAGE_TRANSACTION, "id": "t-new", "date": "2026-06-01"}
+        mock_client.list_transactions.return_value = [older, newer]
+
+        response = self.client.get(reverse("transactions-list"), **AUTH_HEADER)
+
+        body = response.json()
+        self.assertEqual([t["id"] for t in body["results"]], ["t-new", "t-old"])
+        self.assertEqual(body["count"], 2)
+
+    @patch("transactions.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_get_paginates_at_50_per_page(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        records = [{**AVERAGE_TRANSACTION, "id": f"t-{i}", "date": "2026-01-01"} for i in range(60)]
+        mock_client.list_transactions.return_value = records
+
+        first_page = self.client.get(reverse("transactions-list"), **AUTH_HEADER)
+        second_page = self.client.get(
+            reverse("transactions-list"), {"page": "2"}, **AUTH_HEADER
+        )
+
+        first_body = first_page.json()
+        second_body = second_page.json()
+        self.assertEqual(len(first_body["results"]), 50)
+        self.assertIsNotNone(first_body["next"])
+        self.assertEqual(len(second_body["results"]), 10)
+        self.assertIsNone(second_body["next"])
 
     @patch("transactions.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -210,84 +266,41 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    @patch("transactions.views._accounts_client")
-    @patch("transactions.views._holdings_client")
-    @patch("identity.authentication.jwt.decode")
-    @patch("identity.authentication._jwks_client")
-    def test_post_returns_400_when_account_no_longer_exists(
-        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_accounts_client
-    ) -> None:
-        _authenticate(mock_jwks_client, mock_decode)
-        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.side_effect = AccountNotFoundError("gone")
-
-        response = self.client.post(
-            reverse("transactions-list"),
-            data={"holding_id": "h-1", "no_of_shares": 1, "average_price": 1},
-            content_type="application/json",
-            **AUTH_HEADER,
-        )
-
-        self.assertEqual(response.status_code, 400)
-
-    @patch("transactions.views._accounts_client")
-    @patch("transactions.views._pies_client")
-    @patch("transactions.views._holdings_client")
-    @patch("identity.authentication.jwt.decode")
-    @patch("identity.authentication._jwks_client")
-    def test_post_returns_400_when_pie_no_longer_exists(
-        self,
-        mock_jwks_client,
-        mock_decode,
-        mock_holdings_client,
-        mock_pies_client,
-        mock_accounts_client,
-    ) -> None:
-        _authenticate(mock_jwks_client, mock_decode)
-        mock_holdings_client.get_holding.return_value = PIE_HOLDING
-        mock_pies_client.get_pie.side_effect = PieNotFoundError("gone")
-
-        response = self.client.post(
-            reverse("transactions-list"),
-            data={"holding_id": "h-2", "no_of_shares": 1, "average_price": 1},
-            content_type="application/json",
-            **AUTH_HEADER,
-        )
-
-        self.assertEqual(response.status_code, 400)
-        mock_accounts_client.get_account.assert_not_called()
-
-    @patch("transactions.views._accounts_client")
-    @patch("transactions.views._pies_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_post_resolves_mode_via_pie_account(
+    def test_post_creates_a_transaction_for_a_pie_scoped_holding(
         self,
         mock_jwks_client,
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_pies_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
+        """transaction_type is a single per-user setting now (see
+        UserProfileClient) — resolving it no longer depends on whether the
+        holding is pie-scoped or account-direct, unlike before."""
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = PIE_HOLDING
-        mock_pies_client.get_pie.return_value = PIE
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.create_transaction.return_value = {**AVERAGE_TRANSACTION, "holding_id": "h-2"}
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-2", "no_of_shares": 10, "average_price": 152.5},
+            data={
+                "holding_id": "h-2",
+                "no_of_shares": 10,
+                "average_price": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
 
         self.assertEqual(response.status_code, 201)
-        mock_pies_client.get_pie.assert_called_once_with("auth0|abc123", "pie-1")
-        mock_accounts_client.get_account.assert_called_once_with("auth0|abc123", "acc-1")
         mock_client.create_transaction.assert_called_once_with(
             "auth0|abc123",
             "h-2",
@@ -295,40 +308,42 @@ class TransactionListViewTests(TestCase):
             no_of_shares=10,
             average_price=152.5,
             price=None,
-            date=None,
-            type=None,
+            amount=None,
+            date="2026-01-15",
+            type="BUY",
         )
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_when_average_fields_missing(
-        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_accounts_client
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_profile_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "no_of_shares": 10},
+            # average_price missing.
+            data={"holding_id": "h-1", "no_of_shares": 10, "type": "BUY", "date": "2026-01-15"},
             content_type="application/json",
             **AUTH_HEADER,
         )
 
         self.assertEqual(response.status_code, 400)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_post_returns_400_when_average_payload_has_transaction_fields(
-        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_accounts_client
+    def test_post_returns_400_when_average_payload_has_a_field_not_applicable(
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_profile_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
 
         response = self.client.post(
             reverse("transactions-list"),
@@ -337,6 +352,9 @@ class TransactionListViewTests(TestCase):
                 "no_of_shares": 10,
                 "average_price": 100,
                 "date": "2026-01-01",
+                "type": "BUY",
+                # price isn't applicable to an AVERAGE-mode BUY.
+                "price": 100,
             },
             content_type="application/json",
             **AUTH_HEADER,
@@ -344,7 +362,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -355,16 +373,22 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.create_transaction.return_value = AVERAGE_TRANSACTION
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "no_of_shares": 10, "average_price": 152.5},
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "average_price": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -378,11 +402,12 @@ class TransactionListViewTests(TestCase):
             no_of_shares=10,
             average_price=152.5,
             price=None,
-            date=None,
-            type=None,
+            amount=None,
+            date="2026-01-15",
+            type="BUY",
         )
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -393,32 +418,38 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.create_transaction.side_effect = TransactionAlreadyExistsError("dup")
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "no_of_shares": 10, "average_price": 152.5},
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "average_price": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
 
         self.assertEqual(response.status_code, 409)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_when_transaction_fields_missing(
-        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_accounts_client
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_profile_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = TRANSACTION_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
 
         response = self.client.post(
             reverse("transactions-list"),
@@ -429,16 +460,16 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_for_invalid_type(
-        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_accounts_client
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_profile_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = TRANSACTION_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
 
         response = self.client.post(
             reverse("transactions-list"),
@@ -455,7 +486,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -466,11 +497,11 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = TRANSACTION_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
         mock_client.create_transaction.return_value = BUY_TRANSACTION
 
         response = self.client.post(
@@ -495,11 +526,12 @@ class TransactionListViewTests(TestCase):
             no_of_shares=10,
             average_price=None,
             price=152.5,
+            amount=None,
             date="2026-01-15",
             type="BUY",
         )
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -510,11 +542,11 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = TRANSACTION_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
         mock_client.create_transaction.side_effect = InsufficientSharesError("nope")
 
         response = self.client.post(
@@ -532,7 +564,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -543,11 +575,11 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = TRANSACTION_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
         mock_client.create_transaction.side_effect = TransactionLimitExceededError("limit")
         mock_client.max_transactions_for_holding = 500
 
@@ -566,7 +598,7 @@ class TransactionListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 409)
 
-    @patch("transactions.views._accounts_client")
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
@@ -577,21 +609,105 @@ class TransactionListViewTests(TestCase):
         mock_decode,
         mock_holdings_client,
         mock_client,
-        mock_accounts_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
-        mock_accounts_client.get_account.return_value = AVERAGE_ACCOUNT
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.create_transaction.side_effect = TransactionAmountError("bad")
 
         response = self.client.post(
             reverse("transactions-list"),
-            data={"holding_id": "h-1", "no_of_shares": 0, "average_price": 152.5},
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 0,
+                "average_price": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
             content_type="application/json",
             **AUTH_HEADER,
         )
 
         self.assertEqual(response.status_code, 400)
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_creates_a_dividend_transaction_in_average_mode(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_client.create_transaction.return_value = DIVIDEND_TRANSACTION
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={"holding_id": "h-1", "type": "DIVIDEND", "amount": 42.10, "date": "2026-03-01"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), DIVIDEND_TRANSACTION)
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "AVERAGE",
+            no_of_shares=None,
+            average_price=None,
+            price=None,
+            amount=42.10,
+            date="2026-03-01",
+            type="DIVIDEND",
+        )
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_creates_a_dividend_transaction_in_transaction_mode(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_client.create_transaction.return_value = DIVIDEND_TRANSACTION
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={"holding_id": "h-1", "type": "DIVIDEND", "amount": 42.10, "date": "2026-03-01"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json(), DIVIDEND_TRANSACTION)
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "TRANSACTION",
+            no_of_shares=None,
+            average_price=None,
+            price=None,
+            amount=42.10,
+            date="2026-03-01",
+            type="DIVIDEND",
+        )
 
 
 class TransactionDetailViewTests(TestCase):
@@ -633,13 +749,51 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_404_for_unknown_holding_id(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+    ) -> None:
+        """PATCH now resolves the holding (and, via it, the caller's
+        transaction_type) before touching the transaction itself — an
+        unknown holding_id is a new failure mode this adds."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.side_effect = HoldingNotFoundError("no such holding")
+
+        response = self.client.patch(
+            reverse("transactions-detail", args=["missing", "t-1"]),
+            data={"no_of_shares": 15},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 404)
+        mock_client.update_transaction.assert_not_called()
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_patch_updates_an_average_transaction(
-        self, mock_jwks_client, mock_decode, mock_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         updated = {**AVERAGE_TRANSACTION, "no_of_shares": 15}
         mock_client.update_transaction.return_value = updated
 
@@ -653,16 +807,25 @@ class TransactionDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_transaction.assert_called_once_with(
-            "auth0|abc123", "h-1", "t-1", no_of_shares=15
+            "auth0|abc123", "h-1", "t-1", "AVERAGE", no_of_shares=15
         )
 
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_patch_returns_404_for_unknown_transaction(
-        self, mock_jwks_client, mock_decode, mock_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.update_transaction.side_effect = TransactionNotFoundError("no such transaction")
 
         response = self.client.patch(
@@ -674,13 +837,22 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_patch_returns_400_for_transaction_mode_record(
-        self, mock_jwks_client, mock_decode, mock_client
+    def test_patch_returns_400_for_transaction_mode_buy_sell_record(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
         mock_client.update_transaction.side_effect = ValueError("immutable")
 
         response = self.client.patch(
@@ -692,13 +864,22 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_patch_returns_400_for_non_positive_amount(
-        self, mock_jwks_client, mock_decode, mock_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
         mock_client.update_transaction.side_effect = TransactionAmountError("bad")
 
         response = self.client.patch(
@@ -710,13 +891,52 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
 
+    @patch("transactions.views._profile_client")
     @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_a_dividend_record_in_transaction_mode(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+    ) -> None:
+        """A DIVIDEND record is mutable even under TRANSACTION mode, unlike
+        a BUY/SELL record — see equicast_core.transactions."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        updated = {**DIVIDEND_TRANSACTION, "amount": 50}
+        mock_client.update_transaction.return_value = updated
+
+        response = self.client.patch(
+            reverse("transactions-detail", args=["h-1", "t-3"]),
+            data={"amount": 50},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), updated)
+        mock_client.update_transaction.assert_called_once_with(
+            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount=50
+        )
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_removes_the_transaction(
-        self, mock_jwks_client, mock_decode, mock_client
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_client, mock_profile_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_client.list_transactions.return_value = []
 
         response = self.client.delete(
             reverse("transactions-detail", args=["h-1", "t-1"]), **AUTH_HEADER
@@ -724,6 +944,15 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 204)
         mock_client.delete_transaction.assert_called_once_with("auth0|abc123", "h-1", "t-1")
+        mock_holdings_client.update_holding_financials.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            no_of_shares=0,
+            average_price_native=None,
+            average_price=None,
+            invested_native=0,
+            invested=0,
+        )
 
     @patch("transactions.views._client")
     @patch("identity.authentication.jwt.decode")

@@ -12,14 +12,16 @@ from equicast_core import (
     TransactionAmountError,
     TransactionLimitExceededError,
     TransactionsClient,
+    UserProfileClient,
     WatchlistsClient,
+    compute_holding_rollup,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from transactions.views import build_transaction_fields
+from transactions.views import build_transaction_fields, resolve_converted_amounts
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
@@ -63,6 +65,10 @@ _transactions_client = TransactionsClient(
     region_name=settings.AWS_REGION,
     max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
 )
+#: Needed only to read the user's global transaction_type for the nested
+#: "transaction" path below — identity/views.py holds the client actually
+#: used for profile CRUD.
+_profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
 
 
 class HoldingListView(APIView):
@@ -121,9 +127,9 @@ class HoldingListView(APIView):
         # equicast_core.transactions module docstring. Eligibility is
         # checked here, before the ownership/market-data lookups below,
         # since it depends only on values already in hand; full shape
-        # validation (which needs the account's transaction_type) happens
-        # once `account` is loaded, still before the holding is created —
-        # a bad transaction payload should never leave an orphaned holding.
+        # validation (which needs the user's transaction_type) happens
+        # below, still before the holding is created — a bad transaction
+        # payload should never leave an orphaned holding.
         transaction_data = request.data.get("transaction")
         if transaction_data is not None:
             if watchlist_id is not None:
@@ -136,10 +142,9 @@ class HoldingListView(APIView):
                     {"detail": "Transactions aren't supported for fx holdings."}, status=400
                 )
 
-        account = None
         if account_id is not None:
             try:
-                account = _accounts_client.get_account(request.user.user_id, account_id)
+                _accounts_client.get_account(request.user.user_id, account_id)
             except AccountNotFoundError:
                 return Response({"detail": "Unknown account_id."}, status=400)
         else:
@@ -155,15 +160,9 @@ class HoldingListView(APIView):
 
         transaction_fields = None
         if transaction_data is not None:
-            # account is never None here: transaction_data implies
-            # watchlist_id is None (checked above), and account_id/
-            # watchlist_id are mutually exclusive, so account_id was set
-            # and the account lookup above either populated `account` or
-            # already returned a 400.
-            assert account is not None
-            transaction_fields, detail = build_transaction_fields(
-                transaction_data, account["transaction_type"]
-            )
+            profile = _profile_client.get_or_create_profile(request.user.user_id)
+            transaction_type = profile["transaction_type"]
+            transaction_fields, detail = build_transaction_fields(transaction_data, transaction_type)
             if detail is not None:
                 return Response({"detail": detail}, status=400)
 
@@ -190,12 +189,14 @@ class HoldingListView(APIView):
         if transaction_fields is None:
             return Response(holding, status=201)
 
-        assert account is not None
+        transaction_fields = resolve_converted_amounts(
+            holding, profile["default_currency"], transaction_fields
+        )
         try:
             transaction = _transactions_client.create_transaction(
                 request.user.user_id,
                 holding["id"],
-                account["transaction_type"],
+                transaction_type,
                 **transaction_fields,
             )
         except (
@@ -212,6 +213,13 @@ class HoldingListView(APIView):
                 {"detail": "Could not record the transaction; holding was not created."},
                 status=409,
             )
+
+        # Same rollup this holding would get from POST /api/transactions/
+        # (see transactions/views.py's _refresh_holding_rollup) — a fresh
+        # holding's only transaction is the one just created, so there's no
+        # need to re-list it from S3 first.
+        rollup = compute_holding_rollup([transaction], transaction_type)
+        holding = _client.update_holding_financials(request.user.user_id, holding["id"], **rollup)
         return Response({**holding, "transaction": transaction}, status=201)
 
 

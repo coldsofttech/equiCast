@@ -474,3 +474,77 @@ def test_create_holding_retries_on_conditional_write_conflict(s3_client) -> None
 
     ids = {h["id"] for h in client.list_holdings("auth0|abc123")}
     assert ids == {"concurrent", holding["id"]}
+
+
+class TestUpdateHoldingFinancials:
+    """See backend/transactions/views.py's _refresh_holding_rollup — called
+    after every transaction create/update/delete against a holding to keep
+    its position rollup (no_of_shares/average_price_native/average_price/
+    invested_native/invested — see equicast_core.transactions.
+    compute_holding_rollup) current."""
+
+    def test_updates_only_the_rollup_fields(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+        holding = client.create_holding(
+            "auth0|abc123", ticker="AAPL", asset_class="stock", account_id=ACCOUNT_ID
+        )
+
+        updated = client.update_holding_financials(
+            "auth0|abc123",
+            holding["id"],
+            no_of_shares=10,
+            average_price_native=150.0,
+            average_price=120.0,
+            invested_native=1500.0,
+            invested=1200.0,
+        )
+
+        assert updated["no_of_shares"] == 10
+        assert updated["average_price_native"] == 150.0
+        assert updated["average_price"] == 120.0
+        assert updated["invested_native"] == 1500.0
+        assert updated["invested"] == 1200.0
+        # Every other field is untouched.
+        assert updated["ticker"] == "AAPL"
+        assert updated["account_id"] == ACCOUNT_ID
+        assert updated["id"] == holding["id"]
+        assert client.get_holding("auth0|abc123", holding["id"]) == updated
+
+    def test_raises_for_unknown_holding(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+
+        with pytest.raises(HoldingNotFoundError):
+            client.update_holding_financials(
+                "auth0|abc123",
+                "nope",
+                no_of_shares=1,
+                average_price_native=1,
+                average_price=1,
+                invested_native=1,
+                invested=1,
+            )
+
+
+class TestHoldingRollupBackfill:
+    """A holding written before the position-rollup fields shipped has none
+    of them in S3 — `_load`/`_normalize` backfills them at read time (same
+    "stable shape, backfilled on read" pattern as
+    equicast_core.transactions._normalize)."""
+
+    def test_legacy_holding_backfills_zeroed_rollup_fields(self, s3_client) -> None:
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="holdings/auth0|abc123.json",
+            Body=b'{"holdings": [{"id": "h-1", "ticker": "AAPL", "asset_class": "stock", '
+            b'"account_id": "acc-1", "pie_id": null, "watchlist_id": null, "timestamp": "t"}]}',
+            ContentType="application/json",
+        )
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+
+        holding = client.get_holding("auth0|abc123", "h-1")
+
+        assert holding["no_of_shares"] == 0
+        assert holding["average_price_native"] is None
+        assert holding["average_price"] is None
+        assert holding["invested_native"] == 0
+        assert holding["invested"] == 0

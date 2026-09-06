@@ -8,8 +8,8 @@ import {
 } from "./transactions.js";
 
 describe("transactions api", () => {
-  it("lists every transaction for one holding", async () => {
-    const api = vi.fn().mockResolvedValue([]);
+  it("lists page 1 of transactions for one holding", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
 
     await listTransactions(api, { holdingId: "h-1" });
 
@@ -17,11 +17,19 @@ describe("transactions api", () => {
   });
 
   it("lists every transaction for the caller when no holding is given", async () => {
-    const api = vi.fn().mockResolvedValue([]);
+    const api = vi.fn().mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
 
     await listTransactions(api);
 
     expect(api).toHaveBeenCalledWith("/transactions/");
+  });
+
+  it("requests a later page at a given page size", async () => {
+    const api = vi.fn().mockResolvedValue({ count: 0, next: null, previous: null, results: [] });
+
+    await listTransactions(api, { holdingId: "h-1", page: 2, pageSize: 50 });
+
+    expect(api).toHaveBeenCalledWith("/transactions/?holding_id=h-1&page=2&page_size=50");
   });
 
   it("gets one transaction by holding and transaction id", async () => {

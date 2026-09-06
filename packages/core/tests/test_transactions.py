@@ -2,12 +2,14 @@ import boto3
 import pytest
 from equicast_core.transactions import (
     MAX_TRANSACTIONS_FOR_HOLDING,
+    TRANSACTION_ACTIONS,
     InsufficientSharesError,
     TransactionAlreadyExistsError,
     TransactionAmountError,
     TransactionLimitExceededError,
     TransactionNotFoundError,
     TransactionsClient,
+    compute_holding_rollup,
 )
 from moto import mock_aws
 
@@ -26,6 +28,10 @@ def s3_client():
         yield client
 
 
+def test_transaction_actions_includes_dividend() -> None:
+    assert TRANSACTION_ACTIONS == {"BUY", "SELL", "DIVIDEND"}
+
+
 def test_list_transactions_returns_empty_list_when_object_missing(s3_client) -> None:
     client = TransactionsClient(BUCKET, s3_client=s3_client)
 
@@ -41,16 +47,23 @@ class TestCreateAverageTransaction:
             "auth0|abc123",
             HOLDING_ID,
             "AVERAGE",
+            type="BUY",
             no_of_shares=10,
-            average_price=152.5,
+            average_price_native=152.5,
+            average_price=120.4,
+            date="2026-01-15",
         )
 
         assert transaction["holding_id"] == HOLDING_ID
         assert transaction["no_of_shares"] == 10
-        assert transaction["average_price"] == 152.5
+        assert transaction["average_price_native"] == 152.5
+        assert transaction["average_price"] == 120.4
+        assert transaction["price_native"] is None
         assert transaction["price"] is None
-        assert transaction["date"] is None
-        assert transaction["type"] is None
+        assert transaction["amount_native"] is None
+        assert transaction["amount"] is None
+        assert transaction["date"] == "2026-01-15"
+        assert transaction["type"] == "BUY"
         assert transaction["created_at"] == transaction["updated_at"]
         assert client.list_transactions("auth0|abc123", holding_id=HOLDING_ID) == [transaction]
         assert client.list_transactions("auth0|abc123") == [transaction]
@@ -60,7 +73,13 @@ class TestCreateAverageTransaction:
 
         with pytest.raises(TransactionAmountError):
             client.create_transaction(
-                "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=0, average_price=100
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="BUY",
+                no_of_shares=0,
+                average_price_native=100,
+                date="2026-01-15",
             )
 
     def test_create_raises_for_non_positive_average_price(self, s3_client) -> None:
@@ -68,28 +87,97 @@ class TestCreateAverageTransaction:
 
         with pytest.raises(TransactionAmountError):
             client.create_transaction(
-                "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=-1
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="BUY",
+                no_of_shares=10,
+                average_price_native=-1,
+                date="2026-01-15",
+            )
+
+    def test_create_raises_for_sell_type(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        with pytest.raises(TransactionAmountError):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="SELL",
+                no_of_shares=1,
+                average_price_native=1,
+                date="2026-01-15",
             )
 
     def test_second_create_against_same_holding_raises(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         with pytest.raises(TransactionAlreadyExistsError):
             client.create_transaction(
-                "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=5, average_price=110
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="BUY",
+                no_of_shares=5,
+                average_price_native=110,
+                date="2026-02-01",
+            )
+
+    def test_second_create_raises_even_against_a_legacy_type_none_record(self, s3_client) -> None:
+        """A record predating the mandatory BUY/DIVIDEND shape still has
+        type: None — TransactionAlreadyExistsError must still trip against
+        it the same as a real BUY record."""
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key=f"transactions/auth0|abc123/{HOLDING_ID}.json",
+            Body=b'{"transactions": [{"id": "legacy", "holding_id": "holding-1", '
+            b'"no_of_shares": 10, "average_price": 100, "price": null, "date": null, '
+            b'"type": null, "created_at": "t", "updated_at": "t"}]}',
+            ContentType="application/json",
+        )
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        with pytest.raises(TransactionAlreadyExistsError):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="BUY",
+                no_of_shares=5,
+                average_price_native=110,
+                date="2026-02-01",
             )
 
     def test_create_allows_different_holdings(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         client.create_transaction(
-            "auth0|abc123", "holding-a", "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            "holding-a",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         client.create_transaction(
-            "auth0|abc123", "holding-b", "AVERAGE", no_of_shares=5, average_price=50
+            "auth0|abc123",
+            "holding-b",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=5,
+            average_price_native=50,
+            date="2026-01-15",
         )
 
         assert len(client.list_transactions("auth0|abc123")) == 2
@@ -98,11 +186,130 @@ class TestCreateAverageTransaction:
     def test_create_does_not_affect_other_users(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         client.create_transaction(
-            "auth0|user-a", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|user-a",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         assert client.list_transactions("auth0|user-b") == []
         assert client.list_transactions("auth0|user-b", holding_id=HOLDING_ID) == []
+
+
+class TestCreateDividendTransaction:
+    def test_create_in_average_mode_persists_and_returns_stable_shape(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            amount=33.68,
+            date="2026-03-01",
+        )
+
+        assert transaction["type"] == "DIVIDEND"
+        assert transaction["amount_native"] == 42.10
+        assert transaction["amount"] == 33.68
+        assert transaction["date"] == "2026-03-01"
+        assert transaction["no_of_shares"] is None
+        assert transaction["average_price_native"] is None
+        assert transaction["average_price"] is None
+        assert transaction["price_native"] is None
+        assert transaction["price"] is None
+
+    def test_create_in_transaction_mode_persists_and_returns_stable_shape(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=15.75,
+            date="2026-03-01",
+        )
+
+        assert transaction["type"] == "DIVIDEND"
+        assert transaction["amount_native"] == 15.75
+        assert transaction["amount"] is None
+        assert transaction["no_of_shares"] is None
+        assert transaction["price_native"] is None
+        assert transaction["price"] is None
+
+    def test_create_raises_for_non_positive_amount(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        with pytest.raises(TransactionAmountError):
+            client.create_transaction(
+                "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=0, date="2026-03-01"
+            )
+
+    def test_does_not_trip_already_exists_after_a_buy_in_average_mode(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+
+        dividend = client.create_transaction(
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+        )
+
+        assert dividend["type"] == "DIVIDEND"
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
+    def test_allows_any_number_of_dividends_per_holding(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        for i in range(3):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="DIVIDEND",
+                amount_native=10 + i,
+                date=f"2026-0{i + 1}-01",
+            )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 3
+
+    def test_does_not_count_toward_a_sells_net_shares_check(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="BUY",
+            no_of_shares=10,
+            price_native=100,
+            date="2026-01-01",
+        )
+        client.create_transaction(
+            "auth0|abc123", HOLDING_ID, "TRANSACTION", type="DIVIDEND", amount_native=42.10, date="2026-02-01"
+        )
+
+        sell = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="SELL",
+            no_of_shares=10,
+            price_native=110,
+            date="2026-03-01",
+        )
+
+        assert sell["type"] == "SELL"
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 3
 
 
 class TestCreateTransactionModeTransaction:
@@ -114,16 +321,40 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=152.5,
+            price_native=152.5,
+            price=121.85,
             date="2026-01-15",
             type="BUY",
         )
 
         assert transaction["no_of_shares"] == 10
-        assert transaction["price"] == 152.5
+        assert transaction["price_native"] == 152.5
+        assert transaction["price"] == 121.85
         assert transaction["date"] == "2026-01-15"
         assert transaction["type"] == "BUY"
+        assert transaction["average_price_native"] is None
         assert transaction["average_price"] is None
+
+    def test_converted_value_is_none_when_fx_rate_is_unresolved(self, s3_client) -> None:
+        """The caller (backend/transactions/views.py's resolve_converted_
+        amounts) passes `None` for the converted field when it couldn't
+        resolve an FX rate — this client just stores that as given, the
+        transaction is still recorded rather than rejected."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            no_of_shares=10,
+            price_native=152.5,
+            price=None,
+            date="2026-01-15",
+            type="BUY",
+        )
+
+        assert transaction["price_native"] == 152.5
+        assert transaction["price"] is None
 
     def test_create_raises_for_invalid_type(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
@@ -134,7 +365,7 @@ class TestCreateTransactionModeTransaction:
                 HOLDING_ID,
                 "TRANSACTION",
                 no_of_shares=10,
-                price=100,
+                price_native=100,
                 date="2026-01-15",
                 type="HOLD",
             )
@@ -146,7 +377,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2026-01-01",
             type="BUY",
         )
@@ -156,7 +387,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=4,
-            price=110,
+            price_native=110,
             date="2026-02-01",
             type="SELL",
         )
@@ -171,7 +402,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2026-01-01",
             type="BUY",
         )
@@ -182,7 +413,7 @@ class TestCreateTransactionModeTransaction:
                 HOLDING_ID,
                 "TRANSACTION",
                 no_of_shares=11,
-                price=110,
+                price_native=110,
                 date="2026-02-01",
                 type="SELL",
             )
@@ -198,7 +429,7 @@ class TestCreateTransactionModeTransaction:
                 HOLDING_ID,
                 "TRANSACTION",
                 no_of_shares=1,
-                price=110,
+                price_native=110,
                 date="2026-02-01",
                 type="SELL",
             )
@@ -210,7 +441,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2026-01-01",
             type="BUY",
         )
@@ -219,7 +450,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=5,
-            price=110,
+            price_native=110,
             date="2026-02-01",
             type="SELL",
         )
@@ -231,7 +462,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=3,
-            price=90,
+            price_native=90,
             date="2026-03-01",
             type="BUY",
         )
@@ -240,7 +471,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=8,
-            price=120,
+            price_native=120,
             date="2026-04-01",
             type="SELL",
         )
@@ -255,7 +486,7 @@ class TestCreateTransactionModeTransaction:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2026-01-01",
             type="BUY",
         )
@@ -266,7 +497,7 @@ class TestCreateTransactionModeTransaction:
                 HOLDING_ID,
                 "TRANSACTION",
                 no_of_shares=1,
-                price=100,
+                price_native=100,
                 date="2026-01-02",
                 type="BUY",
             )
@@ -279,7 +510,7 @@ class TestCreateTransactionModeTransaction:
                 HOLDING_ID,
                 "TRANSACTION",
                 no_of_shares=1,
-                price=100,
+                price_native=100,
                 date=f"2026-01-0{i + 1}",
                 type="BUY",
             )
@@ -299,7 +530,7 @@ class TestListTransactionsFilters:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2025-06-01",
             type="BUY",
         )
@@ -308,7 +539,7 @@ class TestListTransactionsFilters:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=5,
-            price=110,
+            price_native=110,
             date="2026-01-15",
             type="BUY",
         )
@@ -317,7 +548,7 @@ class TestListTransactionsFilters:
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=3,
-            price=120,
+            price_native=120,
             date="2026-06-01",
             type="SELL",
         )
@@ -359,21 +590,82 @@ class TestListTransactionsFilters:
 
         assert {t["date"] for t in result} == {"2026-01-15", "2026-06-01"}
 
-    def test_average_mode_record_never_matches_a_date_filter(self, s3_client) -> None:
-        client = TransactionsClient(BUCKET, s3_client=s3_client)
-        client.create_transaction(
-            "auth0|abc123", "holding-avg", "AVERAGE", no_of_shares=10, average_price=100
+    def test_average_mode_legacy_record_with_no_date_never_matches_a_date_filter(
+        self, s3_client
+    ) -> None:
+        """A record predating the mandatory date field still has date:
+        None — the current create_transaction path can't produce one
+        (date is now a required kwarg), so this seeds one directly."""
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="transactions/auth0|abc123/holding-avg.json",
+            Body=b'{"transactions": [{"id": "legacy", "holding_id": "holding-avg", '
+            b'"no_of_shares": 10, "average_price": 100, "price": null, "date": null, '
+            b'"type": null, "created_at": "t", "updated_at": "t"}]}',
+            ContentType="application/json",
         )
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
 
         assert client.list_transactions("auth0|abc123", year=2026) == []
         assert client.list_transactions("auth0|abc123", date_from="2000-01-01") == []
+
+
+class TestLegacyRecordNormalization:
+    def test_legacy_record_missing_amount_is_backfilled_to_none_on_read(self, s3_client) -> None:
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key=f"transactions/auth0|abc123/{HOLDING_ID}.json",
+            Body=b'{"transactions": [{"id": "legacy", "holding_id": "holding-1", '
+            b'"no_of_shares": 10, "average_price": 100, "price": null, "date": null, '
+            b'"type": null, "created_at": "t", "updated_at": "t"}]}',
+            ContentType="application/json",
+        )
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.get_transaction("auth0|abc123", HOLDING_ID, "legacy")
+
+        assert transaction["amount"] is None
+        listed = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert listed[0]["amount"] is None
+        assert client.list_transactions("auth0|abc123")[0]["amount"] is None
+
+    def test_legacy_record_missing_native_counterparts_is_backfilled_to_none_on_read(
+        self, s3_client
+    ) -> None:
+        """A record from before the native/converted split has no
+        average_price_native/price_native/amount_native at all — its bare
+        `average_price` stays exactly where it is (see module docstring:
+        there's no way to know which currency it was actually in), only
+        the new native counterpart backfills to None."""
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key=f"transactions/auth0|abc123/{HOLDING_ID}.json",
+            Body=b'{"transactions": [{"id": "legacy", "holding_id": "holding-1", '
+            b'"no_of_shares": 10, "average_price": 100, "price": null, "date": null, '
+            b'"type": null, "created_at": "t", "updated_at": "t"}]}',
+            ContentType="application/json",
+        )
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.get_transaction("auth0|abc123", HOLDING_ID, "legacy")
+
+        assert transaction["average_price"] == 100
+        assert transaction["average_price_native"] is None
+        assert transaction["price_native"] is None
+        assert transaction["amount_native"] is None
 
 
 class TestGetTransaction:
     def test_get_returns_the_matching_transaction(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         assert client.get_transaction("auth0|abc123", HOLDING_ID, transaction["id"]) == transaction
@@ -387,7 +679,13 @@ class TestGetTransaction:
     def test_get_raises_when_transaction_belongs_to_a_different_holding(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", "holding-a", "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            "holding-a",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         with pytest.raises(TransactionNotFoundError):
@@ -400,53 +698,171 @@ class TestUpdateTransaction:
     ) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         updated = client.update_transaction(
-            "auth0|abc123", HOLDING_ID, transaction["id"], no_of_shares=15, average_price=105
+            "auth0|abc123",
+            HOLDING_ID,
+            transaction["id"],
+            "AVERAGE",
+            no_of_shares=15,
+            average_price_native=105,
+            average_price=84.3,
+            date="2026-01-20",
         )
 
         assert updated["no_of_shares"] == 15
-        assert updated["average_price"] == 105
+        assert updated["average_price_native"] == 105
+        assert updated["average_price"] == 84.3
+        assert updated["date"] == "2026-01-20"
         assert updated["updated_at"] >= transaction["updated_at"]
 
     def test_update_raises_for_non_positive_amount(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         with pytest.raises(TransactionAmountError):
-            client.update_transaction("auth0|abc123", HOLDING_ID, transaction["id"], no_of_shares=0)
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", no_of_shares=0
+            )
 
     def test_update_raises_for_unknown_id(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
 
         with pytest.raises(TransactionNotFoundError):
-            client.update_transaction("auth0|abc123", HOLDING_ID, "does-not-exist", no_of_shares=1)
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, "does-not-exist", "AVERAGE", no_of_shares=1
+            )
 
-    def test_update_rejects_transaction_mode_record(self, s3_client) -> None:
+    def test_update_rejects_transaction_mode_buy_sell_record(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
             "auth0|abc123",
             HOLDING_ID,
             "TRANSACTION",
             no_of_shares=10,
-            price=100,
+            price_native=100,
             date="2026-01-01",
             type="BUY",
         )
 
         with pytest.raises(ValueError):
-            client.update_transaction("auth0|abc123", HOLDING_ID, transaction["id"], no_of_shares=5)
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "TRANSACTION", no_of_shares=5
+            )
+
+    def test_update_rejects_field_not_applicable_to_a_buy_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", amount_native=10
+            )
+
+    def test_update_rejects_converted_dividend_field_on_a_buy_record(self, s3_client) -> None:
+        """`amount` (the DIVIDEND-only converted field) is rejected on a
+        BUY record the same as `amount_native` is."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", amount=8
+            )
+
+    def test_update_rejects_field_not_applicable_to_a_dividend_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", no_of_shares=5
+            )
+
+    def test_update_rejects_converted_buy_field_on_a_dividend_record(self, s3_client) -> None:
+        """`average_price` (the BUY-only converted field) is rejected on a
+        DIVIDEND record the same as `average_price_native` is."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", average_price=90
+            )
+
+    def test_update_allows_a_dividend_record_in_transaction_mode(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=15.75,
+            date="2026-03-01",
+        )
+
+        updated = client.update_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            transaction["id"],
+            "TRANSACTION",
+            amount_native=20,
+            amount=16,
+            date="2026-03-02",
+        )
+
+        assert updated["amount_native"] == 20
+        assert updated["amount"] == 16
+        assert updated["date"] == "2026-03-02"
 
 
 class TestDeleteTransaction:
     def test_delete_removes_it(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
 
         client.delete_transaction("auth0|abc123", HOLDING_ID, transaction["id"])
@@ -468,7 +884,15 @@ class TestHasTransactionsForHoldings:
 
     def test_returns_true_when_one_has_a_transaction(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
-        client.create_transaction("auth0|abc123", "h-b", "AVERAGE", no_of_shares=1, average_price=1)
+        client.create_transaction(
+            "auth0|abc123",
+            "h-b",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=1,
+            average_price_native=1,
+            date="2026-01-15",
+        )
 
         assert client.has_transactions_for_holdings("auth0|abc123", ["h-a", "h-b"]) is True
 
@@ -477,13 +901,31 @@ class TestDeleteTransactionsForHoldings:
     def test_deletes_only_the_matching_holdings_files(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         client.create_transaction(
-            "auth0|abc123", "holding-a", "AVERAGE", no_of_shares=10, average_price=100
+            "auth0|abc123",
+            "holding-a",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
         )
         client.create_transaction(
-            "auth0|abc123", "holding-b", "AVERAGE", no_of_shares=5, average_price=50
+            "auth0|abc123",
+            "holding-b",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=5,
+            average_price_native=50,
+            date="2026-01-15",
         )
         client.create_transaction(
-            "auth0|abc123", "holding-c", "AVERAGE", no_of_shares=1, average_price=1
+            "auth0|abc123",
+            "holding-c",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=1,
+            average_price_native=1,
+            date="2026-01-15",
         )
 
         removed = client.delete_transactions_for_holdings("auth0|abc123", ["holding-b"])
@@ -500,7 +942,7 @@ class TestDeleteTransactionsForHoldings:
             "holding-a",
             "TRANSACTION",
             no_of_shares=1,
-            price=1,
+            price_native=1,
             date="2026-01-01",
             type="BUY",
         )
@@ -509,12 +951,18 @@ class TestDeleteTransactionsForHoldings:
             "holding-a",
             "TRANSACTION",
             no_of_shares=1,
-            price=1,
+            price_native=1,
             date="2026-01-02",
             type="BUY",
         )
         client.create_transaction(
-            "auth0|abc123", "holding-b", "AVERAGE", no_of_shares=1, average_price=1
+            "auth0|abc123",
+            "holding-b",
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=1,
+            average_price_native=1,
+            date="2026-01-15",
         )
 
         removed = client.delete_transactions_for_holdings(
@@ -562,10 +1010,207 @@ def test_create_transaction_retries_on_conditional_write_conflict(s3_client) -> 
         HOLDING_ID,
         "TRANSACTION",
         no_of_shares=10,
-        price=100,
+        price_native=100,
         date="2026-01-02",
         type="BUY",
     )
 
     ids = {t["id"] for t in client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)}
     assert ids == {"concurrent", transaction["id"]}
+
+
+class TestComputeHoldingRollup:
+    """See backend/transactions/views.py's _refresh_holding_rollup — this is
+    the pure computation it (and holdings/views.py's nested-transaction
+    create path) calls after every transaction create/update/delete to
+    persist a holding's current position via HoldingsClient.update_holding_financials."""
+
+    def test_average_mode_reads_the_single_buy_record(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "average_price_native": 150,
+                    "average_price": 120,
+                }
+            ],
+            "AVERAGE",
+        )
+
+        assert rollup == {
+            "no_of_shares": 10.0,
+            "average_price_native": 150.0,
+            "average_price": 120.0,
+            "invested_native": 1500.0,
+            "invested": 1200.0,
+        }
+
+    def test_average_mode_returns_zeros_with_no_buy_record_yet(self) -> None:
+        rollup = compute_holding_rollup(
+            [{"type": "DIVIDEND", "no_of_shares": None, "amount_native": 5}], "AVERAGE"
+        )
+
+        assert rollup == {
+            "no_of_shares": 0,
+            "average_price_native": None,
+            "average_price": None,
+            "invested_native": 0,
+            "invested": 0,
+        }
+
+    def test_average_mode_falls_back_to_the_legacy_bare_field_when_native_is_none(self) -> None:
+        """A record from before the native/converted split has
+        average_price_native backfilled to None (see
+        equicast_core.transactions._normalize) — its bare average_price is
+        treated as the native figure, but never as the converted one."""
+        rollup = compute_holding_rollup(
+            [{"type": "BUY", "no_of_shares": 10, "average_price_native": None, "average_price": 150}],
+            "AVERAGE",
+        )
+
+        assert rollup["average_price_native"] == 150.0
+        assert rollup["average_price"] is None
+        assert rollup["invested_native"] == 1500.0
+        assert rollup["invested"] is None
+
+    def test_transaction_mode_computes_weighted_average_cost_across_multiple_buys(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 200,
+                    "price": 160,
+                    "date": "2026-02-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["no_of_shares"] == 20.0
+        assert rollup["average_price_native"] == pytest.approx(150.0)
+        assert rollup["average_price"] == pytest.approx(120.0)
+        assert rollup["invested_native"] == pytest.approx(3000.0)
+        assert rollup["invested"] == pytest.approx(2400.0)
+
+    def test_transaction_mode_keeps_average_cost_unchanged_after_a_partial_sell(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+                {
+                    "type": "SELL",
+                    "no_of_shares": 4,
+                    "price_native": 999,
+                    "price": 999,
+                    "date": "2026-03-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["no_of_shares"] == 6.0
+        assert rollup["average_price_native"] == pytest.approx(100.0)
+        assert rollup["invested_native"] == pytest.approx(600.0)
+
+    def test_transaction_mode_sorts_out_of_order_records_by_date(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "SELL",
+                    "no_of_shares": 4,
+                    "price_native": 999,
+                    "price": 999,
+                    "date": "2026-03-01",
+                },
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["no_of_shares"] == 6.0
+        assert rollup["average_price_native"] == pytest.approx(100.0)
+
+    def test_transaction_mode_returns_none_avg_price_once_every_share_sold(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+                {
+                    "type": "SELL",
+                    "no_of_shares": 10,
+                    "price_native": 200,
+                    "price": 160,
+                    "date": "2026-02-01",
+                },
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup == {
+            "no_of_shares": 0.0,
+            "average_price_native": None,
+            "average_price": None,
+            "invested_native": 0,
+            "invested": 0,
+        }
+
+    def test_transaction_mode_falls_back_to_the_legacy_bare_field_when_native_is_none(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": None,
+                    "price": 100,
+                    "date": "2026-01-01",
+                }
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["no_of_shares"] == 10.0
+        assert rollup["average_price_native"] == pytest.approx(100.0)
+        assert rollup["average_price"] is None
+        assert rollup["invested"] is None
+
+    def test_transaction_mode_ignores_dividend_records(self) -> None:
+        rollup = compute_holding_rollup(
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "price_native": 100,
+                    "price": 80,
+                    "date": "2026-01-01",
+                },
+                {"type": "DIVIDEND", "no_of_shares": None, "amount_native": 5, "date": "2026-02-01"},
+            ],
+            "TRANSACTION",
+        )
+
+        assert rollup["no_of_shares"] == 10.0

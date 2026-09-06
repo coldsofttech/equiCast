@@ -21,19 +21,21 @@ holdings aren't — see `backend/transactions/views.py`), isn't validated
 here — `TransactionsClient` only knows about transactions, the same way
 `PiesClient` leaves account_id ownership to the caller.
 
-Every account has a `transaction_type` of `AVERAGE` or `TRANSACTION` (see
-`AccountsClient`), and every holding under that account (directly, or via
-one of its pies) records transactions in the matching shape — passed in
-here as `mode` since resolving it requires reading the holding's account,
-which is the caller's job, not this client's:
+The user has a single global `transaction_type` of `AVERAGE` or
+`TRANSACTION` (see `UserProfileClient`) governing every holding across
+every one of their accounts/pies — passed in here as `mode` since resolving
+it is the caller's job, not this client's:
 
-- `AVERAGE`: a single running snapshot per holding — `no_of_shares` and
-  `average_price`, no `date`/`type`. Mutable via `update_transaction`,
-  since it's a snapshot the user corrects over time rather than a log.
-  `create_transaction` raises `TransactionAlreadyExistsError` for a second
-  attempt against the same holding — use `update_transaction` instead.
+- `AVERAGE`: exactly one `BUY`-type position entry per holding —
+  `no_of_shares`, `average_price_native`, `date` — mutable via
+  `update_transaction` since it's a running snapshot the user corrects over
+  time rather than a log entry. `create_transaction` raises
+  `TransactionAlreadyExistsError` for a second `BUY` attempt against the
+  same holding — use `update_transaction` instead. A legacy record
+  predating this shape may still have `type` stored as `None`; treated
+  identically to `"BUY"` everywhere in this client.
 - `TRANSACTION`: a log of discrete `BUY`/`SELL` events — `no_of_shares`,
-  `price`, `date`, `type`, any number per holding (up to
+  `price_native`, `date`, `type` — any number per holding (up to
   `max_transactions_for_holding`, `-1` for no cap — see the module-level
   default below). Immutable once created (no `update_transaction` —
   mirrors `HoldingsClient` treating a holding's identity fields as
@@ -42,17 +44,39 @@ which is the caller's job, not this client's:
   `BUY`s minus prior `SELL`s, in whatever order they happen to have been
   recorded — not date-ordered) below zero.
 
-Every record has the same stable shape regardless of mode (all six of
-`no_of_shares`/`average_price`/`price`/`date`/`type` are always present,
-`None` where not applicable) — the same "stable shape rather than
-sometimes-absent keys" reasoning `HoldingsClient` uses for its three
-parent-id fields. `list_transactions`'s `year`/`date_from`/`date_to`
-filters only ever match `TRANSACTION`-mode records — an `AVERAGE` record's
-`date` is always `None`, so it's excluded from any date-scoped query,
-which is the correct behavior for a dateless snapshot rather than a bug.
+Regardless of mode, a holding may also carry any number of `DIVIDEND`-type
+entries — `amount_native`/`amount` (total cash received, not per-share) and
+`date`, no `no_of_shares`/`average_price_native`/`average_price`/
+`price_native`/`price`. These don't affect a `SELL`'s net-shares check and
+aren't capped by the one-`BUY`-per-holding rule that applies to `AVERAGE`
+mode. Mutable via `update_transaction` the same as an `AVERAGE`-mode `BUY`
+entry — a dividend is a user-recorded fact the user may need to correct,
+not an executed trade.
 
-For now this only stores what the caller gives it — no computed average
-price, dividends, or returns.
+Every monetary field comes in a native/converted pair: `average_price_native`/
+`price_native`/`amount_native` are exactly what the caller passed in (the
+holding's own native currency — an instrument's trading currency, or a
+DIVIDEND's payout currency, same thing); `average_price`/`price`/`amount`
+are that same figure converted to the user's `default_currency` (see
+`UserProfileClient`) as of the transaction's `date`, using the historical
+FX rate for that date. Resolving *that* conversion — the user's
+`default_currency`, the holding's native currency, and the FX lookup
+itself (`MarketDataClient.get_fx_rate_on_date`) — is entirely the caller's
+job (`backend/transactions/views.py`), the same way `mode` resolution is;
+`TransactionsClient` only ever stores whatever converted value it's given,
+`None` when the caller couldn't resolve one (e.g. no FX pair published for
+that currency combination on that date) — a transaction is still recorded
+in that case, just without a converted figure.
+
+Every record has the same stable shape regardless of mode/type (all ten of
+`no_of_shares`/`average_price_native`/`average_price`/`price_native`/
+`price`/`amount_native`/`amount`/`date`/`type` are always present, `None`
+where not applicable) — the same "stable shape rather than sometimes-
+absent keys" reasoning `HoldingsClient` uses for its three parent-id
+fields. `date` is mandatory on every record now — a legacy `AVERAGE`-mode
+record predating this may still have `date: None`; treated as "no date on
+record" rather than backfilled. `list_transactions`'s `year`/`date_from`/
+`date_to` filters skip any record whose `date` is `None`.
 """
 
 from __future__ import annotations
@@ -76,8 +100,9 @@ import boto3
 #: the cap entirely for a deployment that wants no limit.
 MAX_TRANSACTIONS_FOR_HOLDING = 500
 
-#: Valid values for a TRANSACTION-mode record's `type`.
-TRANSACTION_ACTIONS = {"BUY", "SELL"}
+#: Valid values for a TRANSACTION-mode record's `type`. AVERAGE mode only
+#: ever uses "BUY" (its one position entry) and "DIVIDEND".
+TRANSACTION_ACTIONS = {"BUY", "SELL", "DIVIDEND"}
 
 #: Bounds retries on a write losing the conditional-put race to a concurrent
 #: writer (e.g. two browser tabs). Each retry re-reads the current state, so
@@ -97,13 +122,13 @@ class TransactionNotFoundError(Exception):
 
 
 class TransactionAlreadyExistsError(Exception):
-    """Raised by `create_transaction` for a second AVERAGE-mode record
-    against the same holding — use `update_transaction` instead."""
+    """Raised by `create_transaction` for a second `BUY`-type record
+    against an AVERAGE-mode holding — use `update_transaction` instead."""
 
 
 class TransactionAmountError(Exception):
-    """Raised when `no_of_shares`/`average_price`/`price` isn't a positive
-    number, or `type` isn't one of `TRANSACTION_ACTIONS`."""
+    """Raised when `no_of_shares`/`average_price`/`price`/`amount` isn't a
+    positive number, or `type` isn't valid for the given mode."""
 
 
 class InsufficientSharesError(Exception):
@@ -123,6 +148,131 @@ def _validate_positive_amount(value: Any, field_name: str) -> Decimal:
     if amount <= 0:
         raise TransactionAmountError(f"{field_name} must be positive, got {value!r}.")
     return amount
+
+
+def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
+    """Backfill keys introduced after a record may have already been
+    written — `amount` (the `DIVIDEND` type), then the native/converted
+    split (`average_price_native`/`price_native`/`amount_native`, plus
+    `average_price`/`price`/`amount` becoming the converted figure instead
+    of the native one) — onto a record loaded from S3 that predates them,
+    so reads of old data don't `KeyError` on a new key. Same "stable shape"
+    reasoning as the rest of this client, just applied retroactively at
+    read time instead of a migration; a record from before the native/
+    converted split has no way to know which currency its bare
+    `average_price`/`price`/`amount` was actually in, so it's left exactly
+    where it is (still under the now-"converted" key) rather than guessed
+    at — only the newly-introduced native counterpart backfills to `None`."""
+    transaction.setdefault("amount", None)
+    transaction.setdefault("average_price_native", None)
+    transaction.setdefault("price_native", None)
+    transaction.setdefault("amount_native", None)
+    return transaction
+
+
+def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dict[str, Any]:
+    """Return `{no_of_shares, average_price_native, average_price,
+    invested_native, invested}` for one holding's full transaction history —
+    the position summary persisted onto the holding record itself (see
+    `HoldingsClient.update_holding_financials`) so pages that just need
+    "what does this holding look like right now" (the account/pie holdings
+    list, HoldingTickerPage's stats) never have to re-fetch and re-derive it
+    from every transaction on every read. Only `no_of_shares`/
+    `average_price_native`/`average_price`/`invested_native`/`invested` are
+    rolled up here — profit/loss depends on the *current* market price too,
+    which moves daily independent of any transaction, so it's deliberately
+    left for the caller to compute at read time from these figures plus a
+    live price rather than persisted (it would otherwise go stale between
+    trades).
+
+    `AVERAGE` mode mirrors `TransactionsClient`'s own "at most one BUY
+    position entry" invariant — that record's fields are the rollup
+    outright. `TRANSACTION` mode derives a weighted-average cost basis
+    across every BUY/SELL (same method a brokerage "average cost" statement
+    uses): each BUY adds to the running cost at its own price, each SELL
+    removes shares at the *current* running average cost (not FIFO lot
+    tracking), tracked in parallel for both the native cost and its
+    converted counterpart. `average_price`/`invested` (the converted
+    figures) are `None` whenever any contributing BUY's own converted price
+    couldn't be resolved (see `resolve_converted_amounts` — same "None when
+    unresolvable" contract as everywhere else in this module) — a partial
+    converted total would be misleading, not just incomplete.
+
+    A record from before the native/converted split (see
+    `equicast_core.transactions._normalize`) has its `_native` field
+    backfilled to `None`, with the original value still sitting under the
+    bare (now-"converted") key — before the split, that bare field *was*
+    the native-currency price, there being no FX conversion feature yet.
+    This treats that bare value as the native figure for such a record (the
+    same reading `_normalize`'s own docstring gives it) rather than
+    crashing on a `None`, but never as the *converted* figure — there's no
+    way to know what currency it's actually in, so the converted rollup
+    falls back to `None`/unresolvable for a holding with any such record,
+    same as an unresolved FX rate would."""
+    if mode == "AVERAGE":
+        record = next((t for t in transactions if t["type"] in ("BUY", None)), None)
+        if record is None:
+            return {
+                "no_of_shares": 0,
+                "average_price_native": None,
+                "average_price": None,
+                "invested_native": 0,
+                "invested": 0,
+            }
+        shares = Decimal(str(record["no_of_shares"]))
+        is_legacy = record.get("average_price_native") is None
+        native_raw = record.get("average_price") if is_legacy else record.get("average_price_native")
+        avg_native = Decimal(str(native_raw)) if native_raw is not None else None
+        avg_converted_raw = None if is_legacy else record.get("average_price")
+        return {
+            "no_of_shares": float(shares),
+            "average_price_native": float(avg_native) if avg_native is not None else None,
+            "average_price": float(avg_converted_raw) if avg_converted_raw is not None else None,
+            "invested_native": float(shares * avg_native) if avg_native is not None else 0,
+            "invested": (
+                float(shares * Decimal(str(avg_converted_raw)))
+                if avg_converted_raw is not None
+                else None
+            ),
+        }
+
+    sorted_records = sorted(
+        (t for t in transactions if t["type"] in ("BUY", "SELL")), key=lambda t: t["date"] or ""
+    )
+    shares = Decimal(0)
+    cost_native = Decimal(0)
+    cost_converted = Decimal(0)
+    converted_known = True
+    for record in sorted_records:
+        qty = Decimal(str(record["no_of_shares"]))
+        if record["type"] == "BUY":
+            is_legacy = record.get("price_native") is None
+            native_raw = record.get("price") if is_legacy else record.get("price_native")
+            price_native = Decimal(str(native_raw)) if native_raw is not None else Decimal(0)
+            shares += qty
+            cost_native += qty * price_native
+            price_converted = None if is_legacy else record.get("price")
+            if converted_known and price_converted is not None:
+                cost_converted += qty * Decimal(str(price_converted))
+            else:
+                converted_known = False
+        elif shares > 0:
+            cost_per_share_native = cost_native / shares
+            sold = min(qty, shares)
+            cost_native -= sold * cost_per_share_native
+            if converted_known:
+                cost_converted -= sold * (cost_converted / shares)
+            shares -= sold
+
+    return {
+        "no_of_shares": float(shares),
+        "average_price_native": float(cost_native / shares) if shares > 0 else None,
+        "average_price": float(cost_converted / shares) if shares > 0 and converted_known else None,
+        "invested_native": float(cost_native) if shares > 0 else 0,
+        "invested": (
+            float(cost_converted) if shares > 0 and converted_known else (0 if shares == 0 else None)
+        ),
+    }
 
 
 class TransactionsClient:
@@ -161,7 +311,7 @@ class TransactionsClient:
         except self._s3.exceptions.NoSuchKey:
             return [], None
         body = json.loads(response["Body"].read())
-        return body.get("transactions", []), response["ETag"]
+        return [_normalize(t) for t in body.get("transactions", [])], response["ETag"]
 
     def _load_all(self, user_id: str) -> list[dict[str, Any]]:
         """Every transaction across all of the user's holdings — used only
@@ -175,7 +325,7 @@ class TransactionsClient:
             for obj in page.get("Contents", []):
                 response = self._s3.get_object(Bucket=self._bucket, Key=obj["Key"])
                 body = json.loads(response["Body"].read())
-                transactions.extend(body.get("transactions", []))
+                transactions.extend(_normalize(t) for t in body.get("transactions", []))
         return transactions
 
     def _save(
@@ -212,9 +362,9 @@ class TransactionsClient:
         `holding_id` (a single-file read; omitting it reads every holding's
         file — see `_load_all`) and/or by `year` and/or an inclusive
         `date_from`/`date_to` range, matched against `date`
-        ("YYYY-MM-DD", ISO strings sort/compare lexicographically). Since
-        `AVERAGE`-mode records have no `date`, they never match a
-        `year`/`date_from`/`date_to` filter."""
+        ("YYYY-MM-DD", ISO strings sort/compare lexicographically). A
+        legacy record predating the mandatory `date` field never matches
+        a `year`/`date_from`/`date_to` filter."""
         if holding_id is not None:
             transactions, _ = self._load(user_id, holding_id)
         else:
@@ -253,56 +403,79 @@ class TransactionsClient:
         holding_id: str,
         mode: str,
         *,
-        no_of_shares: Any,
+        date: str,
+        type: str,
+        no_of_shares: Any = None,
+        average_price_native: Any = None,
         average_price: Any = None,
+        price_native: Any = None,
         price: Any = None,
-        date: str | None = None,
-        type: str | None = None,
+        amount_native: Any = None,
+        amount: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
-        holding's account, see module docstring).
+        user's profile, see module docstring) and `type` (`"BUY"` in either
+        mode, `"SELL"` in `TRANSACTION` mode only, or `"DIVIDEND"` in
+        either mode).
 
-        Raises `TransactionAmountError` for a non-positive
-        `no_of_shares`/`average_price`/`price`, or a `type` outside
-        `TRANSACTION_ACTIONS`; `TransactionAlreadyExistsError` for a second
-        `AVERAGE`-mode record against the same holding;
-        `TransactionLimitExceededError` past `max_transactions_for_holding`;
-        and `InsufficientSharesError` for a `SELL` that would take the
-        holding's net recorded shares below zero.
+        `average_price`/`price`/`amount` are the *converted* (user's
+        default-currency) counterpart of `average_price_native`/
+        `price_native`/`amount_native` — already resolved by the caller
+        (see module docstring); passed straight through as given, `None`
+        included, with no validation here beyond what the `_native` value
+        already got.
+
+        Raises `TransactionAmountError` for a missing `date`, a `type` not
+        valid for `mode`, or a non-positive `no_of_shares`/
+        `average_price_native`/`price_native`/`amount_native` (whichever
+        `type` requires); `TransactionAlreadyExistsError` for a second
+        `BUY` against an `AVERAGE`-mode holding — use `update_transaction`
+        instead; `TransactionLimitExceededError` past
+        `max_transactions_for_holding`; and `InsufficientSharesError` for a
+        `SELL` that would take the holding's net recorded shares below
+        zero.
         """
         if mode not in {"AVERAGE", "TRANSACTION"}:
             raise ValueError(f"Unknown mode: {mode!r}.")
+        allowed_types = {"BUY", "DIVIDEND"} if mode == "AVERAGE" else TRANSACTION_ACTIONS
+        if type not in allowed_types:
+            raise TransactionAmountError(f"Invalid type '{type}' for {mode} mode.")
+        if not date:
+            raise TransactionAmountError("date is required.")
 
         for _ in range(_MAX_CONFLICT_RETRIES):
             existing, etag = self._load(user_id, holding_id)
 
-            shares = _validate_positive_amount(no_of_shares, "no_of_shares")
-            if mode == "AVERAGE":
-                if existing:
-                    raise TransactionAlreadyExistsError(
-                        f"Holding '{holding_id}' already has an AVERAGE record — "
-                        "use update_transaction instead."
-                    )
-                _validate_positive_amount(average_price, "average_price")
+            shares = None
+            if type == "DIVIDEND":
+                _validate_positive_amount(amount_native, "amount_native")
             else:
-                if type not in TRANSACTION_ACTIONS:
-                    raise TransactionAmountError(f"Invalid type: {type!r}.")
-                _validate_positive_amount(price, "price")
-                if type == "SELL":
-                    net = sum(
-                        (
-                            Decimal(str(t["no_of_shares"]))
-                            if t["type"] == "BUY"
-                            else -Decimal(str(t["no_of_shares"]))
+                shares = _validate_positive_amount(no_of_shares, "no_of_shares")
+                if mode == "AVERAGE":
+                    if any(t["type"] in ("BUY", None) for t in existing):
+                        raise TransactionAlreadyExistsError(
+                            f"Holding '{holding_id}' already has a BUY record — "
+                            "use update_transaction instead."
                         )
-                        for t in existing
-                    )
-                    if shares > net:
-                        raise InsufficientSharesError(
-                            f"Holding '{holding_id}' has {net} net shares recorded; "
-                            f"cannot sell {shares}."
+                    _validate_positive_amount(average_price_native, "average_price_native")
+                else:
+                    _validate_positive_amount(price_native, "price_native")
+                    if type == "SELL":
+                        net = sum(
+                            (
+                                Decimal(str(t["no_of_shares"]))
+                                if t["type"] == "BUY"
+                                else -Decimal(str(t["no_of_shares"]))
+                            )
+                            for t in existing
+                            if t["type"] in ("BUY", "SELL")
                         )
+                        if shares > net:
+                            raise InsufficientSharesError(
+                                f"Holding '{holding_id}' has {net} net shares recorded; "
+                                f"cannot sell {shares}."
+                            )
 
             if (
                 self._max_transactions_for_holding != -1
@@ -314,14 +487,20 @@ class TransactionsClient:
                 )
 
             now = datetime.now(UTC).isoformat()
+            is_average_buy = mode == "AVERAGE" and type == "BUY"
+            is_transaction_trade = mode == "TRANSACTION" and type in ("BUY", "SELL")
             transaction = {
                 "id": str(uuid.uuid4()),
                 "holding_id": holding_id,
-                "no_of_shares": no_of_shares,
-                "average_price": average_price if mode == "AVERAGE" else None,
-                "price": price if mode == "TRANSACTION" else None,
-                "date": date if mode == "TRANSACTION" else None,
-                "type": type if mode == "TRANSACTION" else None,
+                "no_of_shares": no_of_shares if type != "DIVIDEND" else None,
+                "average_price_native": average_price_native if is_average_buy else None,
+                "average_price": average_price if is_average_buy else None,
+                "price_native": price_native if is_transaction_trade else None,
+                "price": price if is_transaction_trade else None,
+                "amount_native": amount_native if type == "DIVIDEND" else None,
+                "amount": amount if type == "DIVIDEND" else None,
+                "date": date,
+                "type": type,
                 "created_at": now,
                 "updated_at": now,
             }
@@ -337,20 +516,24 @@ class TransactionsClient:
         )
 
     def update_transaction(
-        self, user_id: str, holding_id: str, transaction_id: str, **fields: Any
+        self, user_id: str, holding_id: str, transaction_id: str, mode: str, **fields: Any
     ) -> dict[str, Any]:
-        """Patch the AVERAGE-mode transaction matching `transaction_id`
-        within `holding_id`'s file with `fields`
-        (`no_of_shares`/`average_price`), raising `TransactionNotFoundError`
-        if no such transaction exists, or `ValueError` if it's a
-        TRANSACTION-mode record (immutable — mirrors
+        """Patch the transaction matching `transaction_id` within
+        `holding_id`'s file with `fields`, raising `TransactionNotFoundError`
+        if no such transaction exists, or `ValueError` if it's an immutable
+        TRANSACTION-mode `BUY`/`SELL` record (mirrors
         `HoldingsClient.delete_holding` raising `ValueError` for a
-        pie-scoped holding)."""
-        if "no_of_shares" in fields:
-            _validate_positive_amount(fields["no_of_shares"], "no_of_shares")
-        if "average_price" in fields:
-            _validate_positive_amount(fields["average_price"], "average_price")
+        pie-scoped holding), or if `fields` carries a key that doesn't
+        apply to the record's type.
 
+        Mutable records are an AVERAGE-mode `BUY` (position entry —
+        `no_of_shares`/`average_price_native`/`average_price`/`date`) or
+        any `DIVIDEND` entry in either mode (`amount_native`/`amount`/
+        `date`) — see module docstring for why a dividend is mutable
+        regardless of mode, and for the native/converted split (`average_price`/
+        `amount` here are the already-resolved converted figures — the
+        caller recomputes them from the patched native value/date and
+        passes both in together, the same as `create_transaction`)."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             transactions, etag = self._load(user_id, holding_id)
             index = next((i for i, t in enumerate(transactions) if t["id"] == transaction_id), None)
@@ -358,10 +541,28 @@ class TransactionsClient:
                 raise TransactionNotFoundError(
                     f"No transaction '{transaction_id}' for holding '{holding_id}'."
                 )
-            if transactions[index]["type"] is not None:
+            record_type = transactions[index]["type"]
+            if record_type == "DIVIDEND":
+                allowed = {"date", "amount_native", "amount"}
+            elif mode == "AVERAGE" and record_type in ("BUY", None):
+                allowed = {"date", "no_of_shares", "average_price_native", "average_price"}
+            else:
                 raise ValueError(
-                    f"Transaction '{transaction_id}' is a TRANSACTION-mode record — immutable."
+                    f"Transaction '{transaction_id}' is a TRANSACTION-mode BUY/SELL record — "
+                    "immutable."
                 )
+            disallowed = fields.keys() - allowed
+            if disallowed:
+                raise ValueError(
+                    f"Field(s) not applicable to this record: {', '.join(sorted(disallowed))}."
+                )
+            if "no_of_shares" in fields:
+                _validate_positive_amount(fields["no_of_shares"], "no_of_shares")
+            if "average_price_native" in fields:
+                _validate_positive_amount(fields["average_price_native"], "average_price_native")
+            if "amount_native" in fields:
+                _validate_positive_amount(fields["amount_native"], "amount_native")
+
             updated = {
                 **transactions[index],
                 **fields,
@@ -406,7 +607,7 @@ class TransactionsClient:
         recorded — a targeted existence check across just these holdings'
         files (short-circuiting on the first hit) rather than the full
         per-user scan `list_transactions()` with no filter would do. Backs
-        accounts/views.py's transaction_type PATCH guard."""
+        identity/views.py's transaction_type PATCH guard."""
         return any(self._load(user_id, holding_id)[0] for holding_id in holding_ids)
 
     def delete_transactions_for_holdings(self, user_id: str, holding_ids: list[str]) -> int:

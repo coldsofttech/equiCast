@@ -39,6 +39,7 @@ from equicast_core.transactions import (
     TransactionLimitExceededError,
     TransactionNotFoundError,
     TransactionsClient,
+    compute_holding_rollup,
 )
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
@@ -80,6 +81,7 @@ __all__ = [
     "TransactionLimitExceededError",
     "TransactionNotFoundError",
     "TransactionsClient",
+    "compute_holding_rollup",
     "ASSET_CLASSES",
     "DEFAULT_PRICE_RANGE",
     "PRICE_RANGES",

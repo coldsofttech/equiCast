@@ -75,6 +75,25 @@ class AllocationError(Exception):
     exactly 100%."""
 
 
+def _normalize(holding: dict[str, Any]) -> dict[str, Any]:
+    """Backfill the position-rollup fields (`no_of_shares`/
+    `average_price_native`/`average_price`/`invested_native`/`invested` —
+    see `update_holding_financials`) onto a holding loaded from S3 that
+    predates them, so reads of old data don't `KeyError` on a new key. Same
+    "stable shape, backfilled at read time" reasoning as
+    `equicast_core.transactions._normalize`. A holding predating this
+    feature has no recorded position yet from this client's point of view —
+    it's brought current the next time one of its transactions is created/
+    updated/deleted (see `_refresh_holding_rollup` in
+    backend/transactions/views.py), not backfilled by computation here."""
+    holding.setdefault("no_of_shares", 0)
+    holding.setdefault("average_price_native", None)
+    holding.setdefault("average_price", None)
+    holding.setdefault("invested_native", 0)
+    holding.setdefault("invested", 0)
+    return holding
+
+
 def _validate_allocation(value: Any) -> Decimal:
     """Parse `value` (whatever JSON type the caller sent) via its string
     form rather than straight to `Decimal` — going through `float` first
@@ -131,7 +150,7 @@ class HoldingsClient:
         except self._s3.exceptions.NoSuchKey:
             return [], None
         body = json.loads(response["Body"].read())
-        return body.get("holdings", []), response["ETag"]
+        return [_normalize(h) for h in body.get("holdings", [])], response["ETag"]
 
     def _save(self, user_id: str, holdings: list[dict[str, Any]], etag: str | None) -> None:
         kwargs: dict[str, Any] = {
@@ -177,6 +196,48 @@ class HoldingsClient:
             raise HoldingNotFoundError(f"No holding '{holding_id}' for user '{user_id}'.")
         return holding
 
+    def update_holding_financials(
+        self,
+        user_id: str,
+        holding_id: str,
+        *,
+        no_of_shares: float,
+        average_price_native: float | None,
+        average_price: float | None,
+        invested_native: float,
+        invested: float | None,
+    ) -> dict[str, Any]:
+        """Overwrite `holding_id`'s position-rollup fields — everything
+        `equicast_core.transactions.compute_holding_rollup` returns — leaving
+        every other field (ticker, parent ids, allocation_pct, timestamp)
+        untouched. Called by backend/transactions/views.py after every
+        transaction create/update/delete against this holding, so the
+        holding record itself always reflects its current position without
+        any reader having to re-fetch and re-derive it from the full
+        transaction history. Raises `HoldingNotFoundError` if no such
+        holding exists."""
+        fields = {
+            "no_of_shares": no_of_shares,
+            "average_price_native": average_price_native,
+            "average_price": average_price,
+            "invested_native": invested_native,
+            "invested": invested,
+        }
+        for _ in range(_MAX_CONFLICT_RETRIES):
+            holdings, etag = self._load(user_id)
+            index = next((i for i, h in enumerate(holdings) if h["id"] == holding_id), None)
+            if index is None:
+                raise HoldingNotFoundError(f"No holding '{holding_id}' for user '{user_id}'.")
+            holdings[index] = {**holdings[index], **fields}
+            try:
+                self._save(user_id, holdings, etag)
+            except self._s3.exceptions.ClientError as exc:
+                if self._is_conflict(exc):
+                    continue
+                raise
+            return holdings[index]
+        raise RuntimeError(f"Too many conflicting writes to holdings for user '{user_id}'.")
+
     def create_holding(
         self,
         user_id: str,
@@ -219,6 +280,11 @@ class HoldingsClient:
                 "pie_id": None,
                 "watchlist_id": watchlist_id,
                 "timestamp": datetime.now(UTC).isoformat(),
+                "no_of_shares": 0,
+                "average_price_native": None,
+                "average_price": None,
+                "invested_native": 0,
+                "invested": 0,
             }
             try:
                 self._save(user_id, [*holdings, holding], etag)
@@ -387,6 +453,11 @@ class HoldingsClient:
                         "watchlist_id": None,
                         "allocation_pct": entry["allocation_pct"],
                         "timestamp": datetime.now(UTC).isoformat(),
+                        "no_of_shares": 0,
+                        "average_price_native": None,
+                        "average_price": None,
+                        "invested_native": 0,
+                        "invested": 0,
                     }
                 )
 

@@ -16,6 +16,7 @@ import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
+import HoldingTransactionsSection from "./HoldingTransactionsSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
@@ -27,12 +28,45 @@ import {
   searchTickers,
   MARKET_PROFILE_BADGE_TONES,
 } from "../../api/market.js";
-import { listTransactions } from "../../api/transactions.js";
-import { deleteHolding } from "../../api/holdings.js";
+import {
+  createTransaction,
+  deleteTransaction,
+  listTransactions,
+  updateTransaction,
+} from "../../api/transactions.js";
+import { deleteHolding, getHolding } from "../../api/holdings.js";
+import {
+  clearCachedTransactionsForHolding,
+  readCachedTransactionsPage,
+  writeCachedTransactionsPage,
+} from "../../utils/transactionsCache.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { TICKER_NAMES, formatCurrency, plTone } from "../sampleFinancials.js";
-import { deriveInstanceFinancials, resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
+
+/** Page size for every listTransactions call this page makes — matches
+ * backend/transactions/views.py's TransactionPagination default, kept
+ * explicit here rather than relying on the server default so a page/cache
+ * key always means the same 50-item window on both sides. */
+const TRANSACTIONS_PAGE_SIZE = 50;
+
+/** Merge a freshly-fetched `holding` (see api/holdings.js's getHolding) back
+ * into the cached accounts tree at whichever account/pie it lives under —
+ * called after a transaction create/update/delete so the holding's rollup
+ * fields (no_of_shares/average_price_native/invested_native/... — see
+ * equicast_core.transactions.compute_holding_rollup) reflect the mutation
+ * immediately, without a full accounts refetch. */
+function replaceHoldingInAccounts(accounts, holding) {
+  return accounts.map((account) => ({
+    ...account,
+    holdings: (account.holdings ?? []).map((h) => (h.id === holding.id ? holding : h)),
+    pies: (account.pies ?? []).map((pie) => ({
+      ...pie,
+      holdings: (pie.holdings ?? []).map((h) => (h.id === holding.id ? holding : h)),
+    })),
+  }));
+}
 
 /** formatCurrency requires a currency code — this page's totals are real,
  * computed from transactions, and available even before/without a market
@@ -95,7 +129,6 @@ function HoldingTickerPage() {
   const [fxState, setFxState] = useState("loading");
 
   const [isFinancialsOpen, setIsFinancialsOpen] = useState(false);
-  const [isTransactionsOpen, setIsTransactionsOpen] = useState(false);
 
   const [deletingInstance, setDeletingInstance] = useState(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -110,7 +143,6 @@ function HoldingTickerPage() {
           holding,
           location: account.name,
           destination: `/accounts/${account.id}`,
-          transactionType: account.transaction_type,
         });
       }
       for (const pie of account.pies ?? []) {
@@ -120,7 +152,6 @@ function HoldingTickerPage() {
             holding,
             location: `${account.name} / ${pie.name}`,
             destination: `/accounts/${account.id}/pies/${pie.id}`,
-            transactionType: account.transaction_type,
           });
         }
       }
@@ -187,13 +218,27 @@ function HoldingTickerPage() {
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
     const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
 
+    // Page 1 (50 items, most-recent-date-first — see backend/transactions/
+    // views.py's TransactionListView.get) per instance, IndexedDB-cached so
+    // navigating back to a holding already visited this session doesn't
+    // re-hit the API for it — see utils/transactionsCache.js. Financial
+    // totals (shares/avg price/invested) come from the holding record
+    // itself now (see instanceFinancials below), not from this page, so a
+    // fetch failure here only affects the recent-activity pane/drawer.
     const transactionsPromise = isOwned
       ? Promise.all(
-          instances.map((instance) =>
-            listTransactions(api, { holdingId: instance.holding.id })
-              .then((transactions) => ({ holdingId: instance.holding.id, transactions, error: false }))
-              .catch(() => ({ holdingId: instance.holding.id, transactions: [], error: true }))
-          )
+          instances.map((instance) => {
+            const holdingId = instance.holding.id;
+            return readCachedTransactionsPage(holdingId, 1).then((cached) => {
+              if (cached) return { holdingId, page: cached, error: false };
+              return listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE })
+                .then((page) => {
+                  writeCachedTransactionsPage(holdingId, 1, page);
+                  return { holdingId, page, error: false };
+                })
+                .catch(() => ({ holdingId, page: null, error: true }));
+            });
+          })
         )
       : Promise.resolve([]);
 
@@ -205,7 +250,18 @@ function HoldingTickerPage() {
         setMarketMetrics(metrics);
         setMarketDividends(dividends);
         const map = {};
-        for (const result of transactionsResults) map[result.holdingId] = result;
+        for (const result of transactionsResults) {
+          map[result.holdingId] = result.error
+            ? { holdingId: result.holdingId, transactions: [], count: 0, next: null, page: 1, error: true }
+            : {
+                holdingId: result.holdingId,
+                transactions: result.page.results,
+                count: result.page.count,
+                next: result.page.next,
+                page: 1,
+                error: false,
+              };
+        }
         setTransactionsByHolding(map);
         setIsDataLoading(false);
       }
@@ -253,6 +309,73 @@ function HoldingTickerPage() {
       })
       .catch((err) => setDeleteError(err.message ?? "Couldn't delete this holding."))
       .finally(() => setIsDeleting(false));
+  };
+
+  // A create/update/delete changes both this holding's transaction list
+  // *and* its rollup fields (no_of_shares/average_price_native/invested_...
+  // — recomputed server-side, see backend/transactions/views.py's
+  // _refresh_holding_rollup), so rather than patching the cached list
+  // in place this drops every cached page for the holding and re-fetches
+  // page 1 plus the holding itself fresh — the same "write straight back to
+  // the source of truth" approach useAccounts.js's setAccounts uses.
+  const refreshHoldingAfterMutation = (holdingId) => {
+    clearCachedTransactionsForHolding(holdingId);
+    return Promise.all([
+      listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE }),
+      getHolding(api, holdingId),
+    ]).then(([page, holding]) => {
+      writeCachedTransactionsPage(holdingId, 1, page);
+      setTransactionsByHolding((prev) => ({
+        ...prev,
+        [holdingId]: {
+          holdingId,
+          transactions: page.results,
+          count: page.count,
+          next: page.next,
+          page: 1,
+          error: false,
+        },
+      }));
+      setCachedAccounts((current) => replaceHoldingInAccounts(current, holding));
+    });
+  };
+
+  const handleCreateTransaction = (holdingId, fields) =>
+    createTransaction(api, { holding_id: holdingId, ...fields }).then((transaction) =>
+      refreshHoldingAfterMutation(holdingId).then(() => transaction)
+    );
+
+  const handleUpdateTransaction = (holdingId, transactionId, fields) =>
+    updateTransaction(api, holdingId, transactionId, fields).then((transaction) =>
+      refreshHoldingAfterMutation(holdingId).then(() => transaction)
+    );
+
+  const handleDeleteTransaction = (holdingId, transactionId) =>
+    deleteTransaction(api, holdingId, transactionId).then(() => refreshHoldingAfterMutation(holdingId));
+
+  // "See all" drawer pagination — fetches the next page for one holding
+  // (IndexedDB-cached the same as the initial page-1 load), appending to
+  // whatever's already loaded rather than replacing it, so scrolling
+  // further in the drawer never re-fetches an earlier page.
+  const handleLoadMoreTransactions = (holdingId) => {
+    const current = transactionsByHolding[holdingId];
+    const nextPage = (current?.page ?? 1) + 1;
+    return readCachedTransactionsPage(holdingId, nextPage)
+      .then((cached) => cached ?? listTransactions(api, { holdingId, page: nextPage, pageSize: TRANSACTIONS_PAGE_SIZE }))
+      .then((page) => {
+        writeCachedTransactionsPage(holdingId, nextPage, page);
+        setTransactionsByHolding((prev) => ({
+          ...prev,
+          [holdingId]: {
+            holdingId,
+            transactions: [...(prev[holdingId]?.transactions ?? []), ...page.results],
+            count: page.count,
+            next: page.next,
+            page: nextPage,
+            error: false,
+          },
+        }));
+      });
   };
 
   const name = TICKER_NAMES[ticker];
@@ -347,13 +470,22 @@ function HoldingTickerPage() {
             let ownedSharesSection = null;
 
             if (isOwned) {
+              // Shares/avg price/invested come straight off the holding
+              // record now (no_of_shares/average_price_native/invested_native
+              // — see equicast_core.transactions.compute_holding_rollup),
+              // not derived from a transaction fetch here — correct even
+              // when a holding has more transactions than one page covers,
+              // and unaffected by transactionsByHolding's own fetch state.
               const instanceFinancials = instances.map((instance) => {
-                const entry = transactionsByHolding[instance.holding.id];
-                if (!entry || entry.error) {
-                  return { ...instance, shares: 0, avgPriceNative: null, invested: 0, transactionsError: Boolean(entry?.error) };
-                }
-                const financials = deriveInstanceFinancials(entry.transactions, instance.transactionType);
-                return { ...instance, ...financials, transactionsError: false };
+                const holding = instance.holding;
+                return {
+                  ...instance,
+                  shares: Number(holding.no_of_shares ?? 0),
+                  avgPriceNative:
+                    holding.average_price_native != null ? Number(holding.average_price_native) : null,
+                  invested: Number(holding.invested_native ?? 0),
+                  transactionsError: false,
+                };
               });
 
               const totals = rollupInstances(instanceFinancials, currentPriceNative);
@@ -395,7 +527,6 @@ function HoldingTickerPage() {
                           ? formatMoney(investedDefault, totalsCurrency)
                           : "—"
                     }
-                    hint="Real data"
                   />
                   <StatTile
                     label="Profit / loss"
@@ -407,13 +538,11 @@ function HoldingTickerPage() {
                           : "—"
                     }
                     tone={totalsTone}
-                    hint="Real data"
                   />
                   <StatTile
                     label="Profit / loss %"
                     value={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
                     tone={totalsTone}
-                    hint="Real data"
                   />
                 </div>
               );
@@ -459,12 +588,22 @@ function HoldingTickerPage() {
 
           <HoldingDividendsSection dividends={marketDividends} />
 
+          {isOwned && (
+            <HoldingTransactionsSection
+              instances={instances}
+              transactionsByHolding={transactionsByHolding}
+              transactionType={userProfile?.transaction_type ?? "AVERAGE"}
+              nativeCurrency={marketProfile?.currency ?? null}
+              onCreateTransaction={handleCreateTransaction}
+              onUpdateTransaction={handleUpdateTransaction}
+              onDeleteTransaction={handleDeleteTransaction}
+              onLoadMoreTransactions={handleLoadMoreTransactions}
+            />
+          )}
+
           <div className="ec-holding-actions-row">
             <Button variant="secondary" onClick={() => setIsFinancialsOpen(true)}>
               Financials
-            </Button>
-            <Button variant="secondary" onClick={() => setIsTransactionsOpen(true)}>
-              Transactions
             </Button>
           </div>
         </>
@@ -474,13 +613,6 @@ function HoldingTickerPage() {
         <EmptyState
           title="Financials coming soon"
           description="Income statements, balance sheets and cash-flow data aren't wired up yet."
-        />
-      </Drawer>
-
-      <Drawer open={isTransactionsOpen} onClose={() => setIsTransactionsOpen(false)} title="Transactions">
-        <EmptyState
-          title="Transactions coming soon"
-          description="Viewing and managing this holding's recorded transactions isn't wired up yet."
         />
       </Drawer>
 

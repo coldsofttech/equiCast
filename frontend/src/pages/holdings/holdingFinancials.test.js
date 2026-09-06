@@ -1,8 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  deriveAverageModeFinancials,
-  deriveInstanceFinancials,
-  deriveTransactionModeFinancials,
   formatDividendFrequency,
   formatPercent,
   formatPrice,
@@ -54,80 +51,6 @@ describe("formatRatio", () => {
   it("returns null when unset", () => {
     expect(formatRatio(null)).toBeNull();
     expect(formatRatio(undefined)).toBeNull();
-  });
-});
-
-describe("deriveAverageModeFinancials", () => {
-  it("reads shares/avg price straight off the single AVERAGE record", () => {
-    const result = deriveAverageModeFinancials([
-      { no_of_shares: 10, average_price: 150 },
-    ]);
-    expect(result).toEqual({ shares: 10, avgPriceNative: 150, invested: 1500 });
-  });
-
-  it("returns zeros/null with no record yet", () => {
-    expect(deriveAverageModeFinancials([])).toEqual({
-      shares: 0,
-      avgPriceNative: null,
-      invested: 0,
-    });
-  });
-});
-
-describe("deriveTransactionModeFinancials", () => {
-  it("computes weighted-average cost across multiple buys", () => {
-    const result = deriveTransactionModeFinancials([
-      { type: "BUY", no_of_shares: 10, price: 100, date: "2026-01-01" },
-      { type: "BUY", no_of_shares: 10, price: 200, date: "2026-02-01" },
-    ]);
-    expect(result.shares).toBe(20);
-    expect(result.avgPriceNative).toBeCloseTo(150);
-    expect(result.invested).toBeCloseTo(3000);
-  });
-
-  it("keeps the average cost of remaining shares unchanged after a partial sell", () => {
-    const result = deriveTransactionModeFinancials([
-      { type: "BUY", no_of_shares: 10, price: 100, date: "2026-01-01" },
-      { type: "SELL", no_of_shares: 4, price: 999, date: "2026-03-01" },
-    ]);
-    expect(result.shares).toBe(6);
-    expect(result.avgPriceNative).toBeCloseTo(100);
-    expect(result.invested).toBeCloseTo(600);
-  });
-
-  it("sorts out-of-order records by date before processing", () => {
-    const result = deriveTransactionModeFinancials([
-      { type: "SELL", no_of_shares: 4, price: 999, date: "2026-03-01" },
-      { type: "BUY", no_of_shares: 10, price: 100, date: "2026-01-01" },
-    ]);
-    expect(result.shares).toBe(6);
-    expect(result.avgPriceNative).toBeCloseTo(100);
-  });
-
-  it("returns a null avg price once every share has been sold", () => {
-    const result = deriveTransactionModeFinancials([
-      { type: "BUY", no_of_shares: 10, price: 100, date: "2026-01-01" },
-      { type: "SELL", no_of_shares: 10, price: 200, date: "2026-02-01" },
-    ]);
-    expect(result).toEqual({ shares: 0, avgPriceNative: null, invested: 0 });
-  });
-});
-
-describe("deriveInstanceFinancials", () => {
-  it("dispatches to the AVERAGE derivation", () => {
-    const result = deriveInstanceFinancials(
-      [{ no_of_shares: 5, average_price: 20 }],
-      "AVERAGE"
-    );
-    expect(result.invested).toBe(100);
-  });
-
-  it("dispatches to the TRANSACTION derivation", () => {
-    const result = deriveInstanceFinancials(
-      [{ type: "BUY", no_of_shares: 5, price: 20, date: "2026-01-01" }],
-      "TRANSACTION"
-    );
-    expect(result.invested).toBe(100);
   });
 });
 

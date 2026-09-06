@@ -151,14 +151,28 @@ from equicast_core import UserProfileClient
 client = UserProfileClient(table_name="equicast-user-profiles-dev")
 
 client.get_or_create_profile("auth0|65f2c1...")
-# {"user_id": "auth0|65f2c1...", "default_currency": "GBP"}
+# {"user_id": "auth0|65f2c1...", "default_currency": "GBP", "transaction_type": "AVERAGE"}
+
+client.update_transaction_type("auth0|65f2c1...", "TRANSACTION")
 ```
 
-On first login, creates the item with `default_currency="GBP"` (equiCast's
-app-level default) via a conditional put
-(`attribute_not_exists(user_id)`) — a concurrent first login can't clobber
-a profile the user has already started customizing; on that race, the
-loser re-fetches and returns the winning write instead.
+On first login, creates the item with `default_currency="GBP"`,
+`transaction_type="AVERAGE"` (equiCast's app-level defaults) via a
+conditional put (`attribute_not_exists(user_id)`) — a concurrent first
+login can't clobber a profile the user has already started customizing;
+on that race, the loser re-fetches and returns the winning write instead.
+An existing profile predating `transaction_type` gets it backfilled onto
+the item the next time `get_or_create_profile` reads it.
+
+`transaction_type` (`"AVERAGE"` or `"TRANSACTION"`) governs how every
+holding across every one of the user's accounts/pies records
+transactions — see `TransactionsClient` below. A single per-user setting,
+not per-account, so a user can't end up with holdings in different modes
+depending which account they're under. Whether changing it is even
+allowed (the Django backend's `identity/views.py` rejects it with `409`
+once the user has any transaction recorded, across any holding) isn't
+validated by `UserProfileClient` itself — the same way account_id
+ownership isn't validated by `PiesClient`.
 
 ## `AccountsClient` — S3 JSON user-owned data (accounts)
 
@@ -179,10 +193,9 @@ client.create_account(
     description="Stocks & shares ISA",
     account_type="ISA",
     currency="GBP",
-    transaction_type="TRANSACTION",
 )
 # {"id": "...", "name": "ISA", "description": "Stocks & shares ISA",
-#  "account_type": "ISA", "currency": "GBP", "transaction_type": "TRANSACTION",
+#  "account_type": "ISA", "currency": "GBP",
 #  "created_at": "...", "updated_at": "..."}
 
 client.list_accounts("auth0|65f2c1...")
@@ -204,13 +217,10 @@ update, only whole-object conditional puts, so a write that loses the race
 is retried against the now-current state rather than clobbering a
 concurrent change.
 
-`transaction_type` (`"AVERAGE"` or `"TRANSACTION"`) governs how every
-holding under this account — directly, or via one of its pies — records
-transactions; see `TransactionsClient` below. Membership isn't validated
-by `AccountsClient` itself — the Django backend's `accounts/views.py` does
-that, the same way it validates `account_type`/`currency`, and also
-rejects a `PATCH` of `transaction_type` once the account has any
-transactions recorded under it.
+Membership isn't validated by `AccountsClient` itself — the Django
+backend's `accounts/views.py` does that, the same way it validates
+`account_type`/`currency`. `transaction_type` isn't an account field —
+see `UserProfileClient` below for that single, per-user setting.
 
 ## `PiesClient` — S3 JSON user-owned data (pies)
 
@@ -406,22 +416,31 @@ from equicast_core import TransactionsClient
 
 client = TransactionsClient(bucket="equicast-user-data-dev")
 
-# AVERAGE mode (the holding's account has transaction_type="AVERAGE"):
-# a single mutable snapshot per holding.
+# AVERAGE mode (the caller's profile has transaction_type="AVERAGE"): one
+# BUY-type position entry per holding — a mutable snapshot, not a log.
 client.create_transaction(
-    "auth0|65f2c1...", holding_id, "AVERAGE", no_of_shares=10, average_price=152.5,
+    "auth0|65f2c1...", holding_id, "AVERAGE",
+    type="BUY", no_of_shares=10, average_price=152.5, date="2026-01-15",
 )
 # {"id": "...", "holding_id": "...", "no_of_shares": 10, "average_price": 152.5,
-#  "price": None, "date": None, "type": None, "created_at": "...", "updated_at": "..."}
+#  "price": None, "amount": None, "date": "2026-01-15", "type": "BUY",
+#  "created_at": "...", "updated_at": "..."}
 client.update_transaction(
-    "auth0|65f2c1...", holding_id, transaction_id, no_of_shares=15, average_price=148
+    "auth0|65f2c1...", holding_id, transaction_id, "AVERAGE", no_of_shares=15, average_price=148
 )
 
 # TRANSACTION mode (transaction_type="TRANSACTION"): an immutable BUY/SELL
 # log, any number of records per holding.
 client.create_transaction(
     "auth0|65f2c1...", holding_id, "TRANSACTION",
-    no_of_shares=10, price=152.5, date="2026-01-15", type="BUY",
+    type="BUY", no_of_shares=10, price=152.5, date="2026-01-15",
+)
+
+# DIVIDEND: either mode, uncapped, doesn't affect shares/cost — total cash
+# received (not per-share). Mutable via update_transaction in either mode.
+client.create_transaction(
+    "auth0|65f2c1...", holding_id, "AVERAGE",
+    type="DIVIDEND", amount=42.10, date="2026-03-01",
 )
 
 client.list_transactions("auth0|65f2c1...")  # every holding — reads every file
@@ -436,31 +455,36 @@ client.delete_transactions_for_holdings("auth0|65f2c1...", [holding_id, ...])  #
 
 `create_transaction` takes the resolved `mode` (`"AVERAGE"` or
 `"TRANSACTION"`) as an explicit argument rather than looking it up itself
-— resolving it means reading the holding's account, which is the caller's
-job, the same way `PiesClient` leaves account ownership to the Django
-backend. Every record has the same stable six-key shape regardless of
-mode (`no_of_shares`/`average_price`/`price`/`date`/`type` always present,
-`None` where not applicable) — the same reasoning `HoldingsClient` uses
-for its three parent-id fields. Since an `AVERAGE` record's `date` is
-always `None`, it never matches `list_transactions`'s `year`/`date_from`/
-`date_to` filters — the correct behavior for a dateless snapshot, not a bug.
+— resolving it is the caller's job, the same way `PiesClient` leaves
+account ownership to the Django backend. Every record has the same stable
+seven-key shape regardless of mode/type
+(`no_of_shares`/`average_price`/`price`/`amount`/`date`/`type` always
+present, `None` where not applicable) — the same reasoning `HoldingsClient`
+uses for its three parent-id fields. `date` is mandatory on every record
+now; a legacy `AVERAGE`-mode record predating this may still have
+`date: None`, which never matches `list_transactions`'s
+`year`/`date_from`/`date_to` filters.
 
-Raises `TransactionAmountError` for a non-positive
-`no_of_shares`/`average_price`/`price`, or a `type` outside `{"BUY",
-"SELL"}`; `TransactionAlreadyExistsError` for a second `AVERAGE`-mode
-record against the same holding (`update_transaction` it instead — and
-`update_transaction` itself raises `ValueError` for a `TRANSACTION`-mode
-record, which is immutable); `TransactionLimitExceededError` past
+Raises `TransactionAmountError` for a missing `date`, a `type` not valid
+for the given `mode` (`"BUY"` in either mode, `"SELL"` in `TRANSACTION`
+mode only, `"DIVIDEND"` in either mode), or a non-positive
+`no_of_shares`/`average_price`/`price`/`amount` (whichever `type`
+requires); `TransactionAlreadyExistsError` for a second `BUY` against an
+`AVERAGE`-mode holding (`update_transaction` it instead —
+`update_transaction` itself raises `ValueError` for an immutable
+`TRANSACTION`-mode `BUY`/`SELL` record, or for a field that doesn't apply
+to the record's type); `TransactionLimitExceededError` past
 `max_transactions_for_holding` — `MAX_TRANSACTIONS_FOR_HOLDING` (500) by
 default, `-1` to disable the cap entirely, overridable the same way
 `HoldingsClient`'s caps are; and `InsufficientSharesError` for a `SELL`
-whose quantity would take the holding's net recorded shares (summed in
-whatever order the records happen to have been created, not date order)
-below zero. `get_transaction`/`update_transaction`/`delete_transaction`
-raise `TransactionNotFoundError` for an unknown `transaction_id`.
-`has_transactions_for_holdings` backs `accounts/views.py`'s guard against
-changing `transaction_type` once an account has recorded transactions —
-a targeted per-holding existence check rather than a full per-user scan.
+whose quantity would take the holding's net recorded shares (summed from
+prior `BUY`/`SELL` records only — `DIVIDEND` records don't count — in
+whatever order they were created, not date order) below zero.
+`get_transaction`/`update_transaction`/`delete_transaction` raise
+`TransactionNotFoundError` for an unknown `transaction_id`.
+`has_transactions_for_holdings` backs `identity/views.py`'s guard against
+changing `transaction_type` once the user has recorded transactions — a
+targeted per-holding existence check rather than a full per-user scan.
 `delete_transactions_for_holdings` is a bulk-cleanup helper the Django
 backend uses when a holding (or a pie/account's holdings, force-deleted)
 is removed — it deletes each matching holding's S3 object outright rather
