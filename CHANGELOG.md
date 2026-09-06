@@ -45,8 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller's `default_currency` for one table column via the real `fx` asset
   class's own profile endpoint (trying the direct pair ticker then the
   inverted one), resolving to `null` rather than throwing/blocking the page
-  when no rate is published; `extractPriceWindow` and
-  `buildPlaceholderMetrics` back the Stats panel (see below).
+  when no rate is published; `buildPlaceholderMetrics` backs the Stats
+  panel (see below).
 
   Page sections: real Total Invested/Profit-Loss StatTiles, shown in the
   user's own `default_currency` rather than the holding's native currency
@@ -85,9 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   window's trading was net positive (`close >= open`) or negative and a
   pointer marking the current price; 1 Day comes straight off the
   profile's real `day_high`/`day_low` (there's no "1 week" figure anywhere
-  in the data); 52 Weeks uses the current calendar year's published price
-  history, falling back to the profile's year-to-date high/low early in
-  the year. Below the bars, one stacked metrics list grouped by subject —
+  in the data); 52 Weeks comes straight off the profile's own
+  `year_high`/`year_low`. Below the bars, one stacked metrics list grouped by subject —
   market cap, P/E ratio, beta, volatility, average volume, then every
   dividend-related field together (dividend yield, dividend rate, dividend
   frequency, payout ratio) — rather than scattering real and placeholder
@@ -243,6 +242,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`SearchPage.jsx`'s `handleApplyFilters` now takes its `q` value from
   the filter panel's own submitted keyword rather than always reusing the
   URL's existing `q`).
+
+- Same-day IndexedDB caching for `GET .../prices/` and `GET .../profile/`
+  (`frontend/src/utils/priceCache.js`, wrapped by `market.js`'s
+  `getPrices`/`getProfile`): the backend's published market data only
+  changes once a day, so a repeat request for the same `assetClass`/
+  `symbol`(/`range`) later the same local day is served from the browser
+  instead of hitting the API again — a cache miss/failure (no IndexedDB
+  support, private mode, etc.) just falls through to the network call, and
+  a profile 404 is never cached, so an unpublished symbol keeps getting
+  re-checked on every visit. Cache keys are `<assetClass>:<TICKER>:
+  prices:<range>` and `<assetClass>:<TICKER>:profile` (the price key
+  gained the `prices:` segment to share one object store cleanly with the
+  new profile entries). `HoldingStatsPanel`'s 52 Weeks high/low now reads
+  the profile's own `year_high`/`year_low` directly instead of a second,
+  separately-fetched-and-cached `range: "1y"` price series — the two
+  figures are equivalent (aggregating into weekly/monthly bars preserves
+  the true max/min), so this drops a redundant API hit and IndexedDB entry
+  per ticker page; `holdingFinancials.js`'s now-unused `extractPriceWindow`
+  is removed. `resolveFxRate`'s own `getProfile` calls (for fx pair
+  lookups) get the same caching for free.
 
 ### Changed
 

@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { priceCacheKey, readCachedPrices, writeCachedPrices } from "./priceCache.js";
+import {
+  priceCacheKey,
+  profileCacheKey,
+  readCachedPrices,
+  writeCachedPrices,
+} from "./priceCache.js";
 
 describe("priceCache", () => {
-  it("builds a key from asset class, symbol, and range", () => {
-    expect(priceCacheKey("stock", "aapl", "1y")).toBe("stock:AAPL:1y");
+  it("builds a price key from asset class, symbol, and range", () => {
+    expect(priceCacheKey("stock", "aapl", "1y")).toBe("stock:AAPL:prices:1y");
+  });
+
+  it("builds a profile key from asset class and symbol", () => {
+    expect(profileCacheKey("stock", "aapl")).toBe("stock:AAPL:profile");
   });
 
   // This test environment has no IndexedDB (see the module docstring) —

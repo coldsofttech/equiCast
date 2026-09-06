@@ -209,42 +209,6 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
 }
 
 /**
- * @typedef {Object} PriceWindow
- * @property {number|null} high
- * @property {number|null} low
- * @property {number[]} closes
- * @property {boolean} sufficient - false when there's too little published
- *   price history for a meaningful high/low or sparkline (e.g. a ticker
- *   published only a handful of trading days ago).
- */
-
-/**
- * The last `tradingDays` entries of `priceResults` (ascending/oldest-first
- * — see market.js's getPrices), for the Stats panel's 1 Week / 1 Year
- * high-low. `sufficient` requires at least 3 days (or fewer if
- * `tradingDays` itself is smaller) so a 1-2-point "chart" is never rendered.
- *
- * @param {import("../../api/market.js").PriceBar[]|null|undefined} priceResults
- * @param {number} tradingDays
- * @returns {PriceWindow}
- */
-export function extractPriceWindow(priceResults, tradingDays) {
-  if (!priceResults || priceResults.length === 0) {
-    return { high: null, low: null, closes: [], sufficient: false };
-  }
-  const slice = priceResults.slice(-tradingDays);
-  const highs = slice.map((r) => r.high);
-  const lows = slice.map((r) => r.low);
-  const closes = slice.map((r) => r.close);
-  return {
-    high: Math.max(...highs),
-    low: Math.min(...lows),
-    closes,
-    sufficient: slice.length >= Math.min(3, tradingDays),
-  };
-}
-
-/**
  * Dividend payout schedules this seeds between, for `buildPlaceholderMetrics`.
  */
 const DIVIDEND_FREQUENCIES = ["Quarterly", "Semi-annual", "Annual", "Monthly"];

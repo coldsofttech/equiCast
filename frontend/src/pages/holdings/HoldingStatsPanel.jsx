@@ -2,7 +2,6 @@ import Card from "../../components/core/Card.jsx";
 import FieldList from "../../components/core/FieldList.jsx";
 import {
   buildPlaceholderMetrics,
-  extractPriceWindow,
   formatCompactCurrency,
   formatCurrency,
   formatPrice,
@@ -92,23 +91,21 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
  * straight off the profile's real day_high/day_low — there's no "1 week"
  * figure anywhere in the data (the profile only has day- and year-prefixed
  * fields), so this uses the day range instead rather than falling back to a full
- * year's range and mislabeling it. 52 Weeks uses the current calendar
- * year's published price history when there's enough of it, falling back
- * to the profile's year-to-date high/low early in the year before much of
- * it is published yet. Below that, a stacked metrics list mixing real
- * profile fields (market cap, dividend yield, beta, payout ratio, dividend
- * rate) with the four seeded placeholders the backend doesn't expose yet
- * (volatility, average volume, P/E ratio, dividend frequency — see
- * holdingFinancials.js's buildPlaceholderMetrics), called out as sample
- * data in the caption below rather than per-row, to match the mockup's
- * clean row style.
+ * year's range and mislabeling it. 52 Weeks comes straight off the
+ * profile's own year_high/year_low (see profile.parquet) — no separate
+ * price-history fetch needed for this. Below that, a stacked metrics list
+ * mixing real profile fields (market cap, dividend yield, beta, payout
+ * ratio, dividend rate) with the four seeded placeholders the backend
+ * doesn't expose yet (volatility, average volume, P/E ratio, dividend
+ * frequency — see holdingFinancials.js's buildPlaceholderMetrics), called
+ * out as sample data in the caption below rather than per-row, to match
+ * the mockup's clean row style.
  *
- * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null, priceResults: import("../../api/market.js").PriceBar[]|null }} props
+ * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null }} props
  */
-function HoldingStatsPanel({ ticker, marketProfile, priceResults }) {
-  const fiftyTwoWeeks = extractPriceWindow(priceResults, priceResults?.length ?? 0);
-  const fiftyTwoWeeksHigh = fiftyTwoWeeks.sufficient ? fiftyTwoWeeks.high : marketProfile?.year_high;
-  const fiftyTwoWeeksLow = fiftyTwoWeeks.sufficient ? fiftyTwoWeeks.low : marketProfile?.year_low;
+function HoldingStatsPanel({ ticker, marketProfile }) {
+  const fiftyTwoWeeksHigh = marketProfile?.year_high ?? null;
+  const fiftyTwoWeeksLow = marketProfile?.year_low ?? null;
   const placeholders = buildPlaceholderMetrics(ticker);
   const currency = marketProfile?.currency;
   const currentPrice = marketProfile?.day_close ?? null;

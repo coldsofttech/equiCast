@@ -17,7 +17,7 @@ import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getProfile, getPrices, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import { getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -79,7 +79,6 @@ function HoldingTickerPage() {
 
   const [marketProfile, setMarketProfile] = useState(null);
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
-  const [priceResults, setPriceResults] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -195,13 +194,6 @@ function HoldingTickerPage() {
       .then((profile) => ({ status: "ok", profile }))
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
-    // Fixed at "1y" regardless of the price chart's own range picker below
-    // — this is the Stats panel's 52-week high/low window, a distinct
-    // concept from whatever range the user has the chart set to.
-    const pricesPromise = getPrices(api, assetClass, ticker, { range: "1y" })
-      .then((res) => res.prices)
-      .catch(() => null);
-
     const transactionsPromise = isOwned
       ? Promise.all(
           instances.map((instance) =>
@@ -212,18 +204,15 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, pricesPromise, transactionsPromise]).then(
-      ([profileResult, prices, transactionsResults]) => {
-        if (cancelled) return;
-        setMarketProfileStatus(profileResult.status);
-        setMarketProfile(profileResult.profile);
-        setPriceResults(prices);
-        const map = {};
-        for (const result of transactionsResults) map[result.holdingId] = result;
-        setTransactionsByHolding(map);
-        setIsDataLoading(false);
-      }
-    );
+    Promise.all([profilePromise, transactionsPromise]).then(([profileResult, transactionsResults]) => {
+      if (cancelled) return;
+      setMarketProfileStatus(profileResult.status);
+      setMarketProfile(profileResult.profile);
+      const map = {};
+      for (const result of transactionsResults) map[result.holdingId] = result;
+      setTransactionsByHolding(map);
+      setIsDataLoading(false);
+    });
 
     return () => {
       cancelled = true;
@@ -466,7 +455,7 @@ function HoldingTickerPage() {
           })()}
 
           <div className="ec-account-columns">
-            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} priceResults={priceResults} />
+            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 

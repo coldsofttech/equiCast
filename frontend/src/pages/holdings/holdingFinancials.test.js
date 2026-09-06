@@ -4,7 +4,6 @@ import {
   deriveAverageModeFinancials,
   deriveInstanceFinancials,
   deriveTransactionModeFinancials,
-  extractPriceWindow,
   formatPrice,
   resolveFxRate,
   rollupInstances,
@@ -162,34 +161,6 @@ describe("resolveFxRate", () => {
     const api = vi.fn().mockRejectedValue(new Error("404"));
 
     await expect(resolveFxRate(api, "USD", "GBP")).resolves.toBeNull();
-  });
-});
-
-describe("extractPriceWindow", () => {
-  const results = [
-    { high: 10, low: 8, close: 9 },
-    { high: 12, low: 9, close: 11 },
-    { high: 11, low: 10, close: 10.5 },
-    { high: 14, low: 10, close: 13 },
-  ];
-
-  it("takes the trailing N records and finds their high/low", () => {
-    const window = extractPriceWindow(results, 2);
-    expect(window).toEqual({ high: 14, low: 10, closes: [10.5, 13], sufficient: true });
-  });
-
-  it("flags insufficient data when fewer than 3 days are available for a >=3-day window", () => {
-    const window = extractPriceWindow(results.slice(0, 2), 7);
-    expect(window.sufficient).toBe(false);
-  });
-
-  it("handles no published prices at all", () => {
-    expect(extractPriceWindow(null, 7)).toEqual({
-      high: null,
-      low: null,
-      closes: [],
-      sufficient: false,
-    });
   });
 });
 

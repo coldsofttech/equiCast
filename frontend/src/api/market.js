@@ -1,4 +1,11 @@
-import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
+import {
+  priceCacheKey,
+  profileCacheKey,
+  readCachedPrices,
+  readCachedProfile,
+  writeCachedPrices,
+  writeCachedProfile,
+} from "../utils/priceCache.js";
 
 /**
  * @typedef {Object} SearchResult
@@ -122,13 +129,26 @@ export function searchTickers(
  * symbol — callers should catch that and degrade gracefully rather than
  * treating it as a hard failure (see HoldingTickerPage.jsx).
  *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/priceCache.js) — same rationale
+ * as getPrices below. A cache miss/failure (including no IndexedDB support
+ * at all) just falls through to the network call; a 404 is never cached,
+ * so a symbol that hasn't published yet is re-checked on every call.
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} assetClass
  * @param {string} symbol
  * @returns {Promise<MarketProfile>}
  */
-export function getProfile(api, assetClass, symbol) {
-  return /** @type {Promise<MarketProfile>} */ (api(`/market/${assetClass}/${symbol}/profile/`));
+export async function getProfile(api, assetClass, symbol) {
+  const cacheKey = profileCacheKey(assetClass, symbol);
+
+  const cached = await readCachedProfile(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {MarketProfile} */ (await api(`/market/${assetClass}/${symbol}/profile/`));
+  writeCachedProfile(cacheKey, result);
+  return result;
 }
 
 /** Badge `tone` (see components/core/Badge.jsx) for each MarketProfile field
