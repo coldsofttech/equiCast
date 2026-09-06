@@ -221,7 +221,10 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
             }
         shares = Decimal(str(record["no_of_shares"]))
         is_legacy = record.get("average_price_native") is None
-        native_raw = record.get("average_price") if is_legacy else record.get("average_price_native")
+        native_raw = (
+            record.get("average_price")
+            if is_legacy else record.get("average_price_native")
+        )
         avg_native = Decimal(str(native_raw)) if native_raw is not None else None
         avg_converted_raw = None if is_legacy else record.get("average_price")
         return {
@@ -270,7 +273,9 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
         "average_price": float(cost_converted / shares) if shares > 0 and converted_known else None,
         "invested_native": float(cost_native) if shares > 0 else 0,
         "invested": (
-            float(cost_converted) if shares > 0 and converted_known else (0 if shares == 0 else None)
+            float(cost_converted)
+            if shares > 0 and converted_known
+            else (0 if shares == 0 else None)
         ),
     }
 

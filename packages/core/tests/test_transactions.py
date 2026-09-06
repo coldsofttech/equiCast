@@ -247,7 +247,8 @@ class TestCreateDividendTransaction:
 
         with pytest.raises(TransactionAmountError):
             client.create_transaction(
-                "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=0, date="2026-03-01"
+                "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
+                amount_native=0, date="2026-03-01"
             )
 
     def test_does_not_trip_already_exists_after_a_buy_in_average_mode(self, s3_client) -> None:
@@ -263,7 +264,8 @@ class TestCreateDividendTransaction:
         )
 
         dividend = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
+            amount_native=42.10, date="2026-03-01"
         )
 
         assert dividend["type"] == "DIVIDEND"
@@ -295,7 +297,8 @@ class TestCreateDividendTransaction:
             date="2026-01-01",
         )
         client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "TRANSACTION", type="DIVIDEND", amount_native=42.10, date="2026-02-01"
+            "auth0|abc123", HOLDING_ID, "TRANSACTION", type="DIVIDEND",
+            amount_native=42.10, date="2026-02-01"
         )
 
         sell = client.create_transaction(
@@ -805,7 +808,8 @@ class TestUpdateTransaction:
     def test_update_rejects_field_not_applicable_to_a_dividend_record(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
+            amount_native=42.10, date="2026-03-01"
         )
 
         with pytest.raises(ValueError):
@@ -818,7 +822,8 @@ class TestUpdateTransaction:
         DIVIDEND record the same as `average_price_native` is."""
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND", amount_native=42.10, date="2026-03-01"
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
+            amount_native=42.10, date="2026-03-01"
         )
 
         with pytest.raises(ValueError):
@@ -1065,7 +1070,14 @@ class TestComputeHoldingRollup:
         equicast_core.transactions._normalize) — its bare average_price is
         treated as the native figure, but never as the converted one."""
         rollup = compute_holding_rollup(
-            [{"type": "BUY", "no_of_shares": 10, "average_price_native": None, "average_price": 150}],
+            [
+                {
+                    "type": "BUY",
+                    "no_of_shares": 10,
+                    "average_price_native": None,
+                    "average_price": 150
+                }
+            ],
             "AVERAGE",
         )
 
@@ -1208,7 +1220,12 @@ class TestComputeHoldingRollup:
                     "price": 80,
                     "date": "2026-01-01",
                 },
-                {"type": "DIVIDEND", "no_of_shares": None, "amount_native": 5, "date": "2026-02-01"},
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 5,
+                    "date": "2026-02-01"
+                },
             ],
             "TRANSACTION",
         )

@@ -386,7 +386,9 @@ class MarketDataClient:
             "prices": prices,
         }
 
-    def get_price_on_date(self, asset_class: str, symbol: str, on_date: str) -> dict[str, Any] | None:
+    def get_price_on_date(
+            self, asset_class: str, symbol: str, on_date: str
+    ) -> dict[str, Any] | None:
         """Return `{date, close, currency}` for the nearest published
         trading day on or before `on_date` ("YYYY-MM-DD") — weekends/
         holidays have no row, so e.g. a Saturday `on_date` resolves to that
@@ -415,7 +417,9 @@ class MarketDataClient:
         if not eligible:
             return None
         latest = max(eligible, key=lambda r: r["date"])
-        return {"date": latest["date"], "close": latest["close"], "currency": latest.get("currency")}
+        return {
+            "date": latest["date"], "close": latest["close"], "currency": latest.get("currency")
+        }
 
     def get_fx_rate_on_date(
         self, from_currency: str, to_currency: str, on_date: str

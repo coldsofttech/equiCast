@@ -377,7 +377,11 @@ class TransactionDetailView(APIView):
                 existing = _client.get_transaction(user_id, holding_id, transaction_id)
             except TransactionNotFoundError:
                 return Response(status=404)
-            native_key = "amount_native" if existing["type"] == "DIVIDEND" else "average_price_native"
+            native_key = (
+                "amount_native"
+                if existing["type"] == "DIVIDEND"
+                else "average_price_native"
+            )
             converted_key = "amount" if existing["type"] == "DIVIDEND" else "average_price"
             merged = {
                 "date": fields.get("date", existing["date"]),
@@ -418,7 +422,7 @@ class TransactionDetailView(APIView):
             return Response(status=404)
 
         try:
-            holding = _holdings_client.get_holding(user_id, holding_id)
+            _holdings_client.get_holding(user_id, holding_id)
         except HoldingNotFoundError:
             return Response(status=204)
         profile = _profile_client.get_or_create_profile(user_id)

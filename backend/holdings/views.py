@@ -162,7 +162,9 @@ class HoldingListView(APIView):
         if transaction_data is not None:
             profile = _profile_client.get_or_create_profile(request.user.user_id)
             transaction_type = profile["transaction_type"]
-            transaction_fields, detail = build_transaction_fields(transaction_data, transaction_type)
+            transaction_fields, detail = build_transaction_fields(
+                transaction_data, transaction_type
+            )
             if detail is not None:
                 return Response({"detail": detail}, status=400)
 

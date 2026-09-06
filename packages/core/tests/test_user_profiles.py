@@ -37,7 +37,11 @@ def test_get_or_create_profile_creates_with_default_currency_on_first_login(
 
 def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resource) -> None:
     dynamodb_resource.Table(TABLE).put_item(
-        Item={"user_id": "auth0|existing", "default_currency": "EUR", "transaction_type": "TRANSACTION"}
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION"
+        }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
 
