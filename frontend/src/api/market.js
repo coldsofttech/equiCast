@@ -1,3 +1,4 @@
+import { dividendsCacheKey, readCachedDividends, writeCachedDividends } from "../utils/dividendsCache.js";
 import { metricsCacheKey, readCachedMetrics, writeCachedMetrics } from "../utils/metricsCache.js";
 import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
 import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils/profileCache.js";
@@ -213,6 +214,63 @@ export async function getMetrics(api, assetClass, symbol) {
 
   const result = /** @type {MarketMetrics} */ (await api(`/market/${assetClass}/${symbol}/metrics/`));
   writeCachedMetrics(cacheKey, result);
+  return result;
+}
+
+/**
+ * @typedef {Object} DividendRecord
+ * @property {string} ticker
+ * @property {string} currency
+ * @property {string} ex_dividend_date
+ * @property {string|null} payment_date - only ever set for a `"declared"`
+ *   record, and even then only when yfinance has reported one yet.
+ * @property {number} price - per-share cash amount, in `currency`.
+ * @property {"paid"|"declared"|"estimated"} status - `"paid"`: an
+ *   already-happened payout. `"declared"`: a real, yfinance-confirmed
+ *   upcoming payout (0 or 1 of these ever exist for a ticker at a time).
+ *   `"estimated"`: a computed projection from historical cadence/growth,
+ *   `source: "equicast"` rather than `"yfinance"`.
+ * @property {string} last_updated
+ * @property {string} source
+ */
+
+/**
+ * @typedef {Object} DividendsResponse
+ * @property {string} ticker
+ * @property {string} currency
+ * @property {string} last_updated
+ * @property {DividendRecord[]} dividends - chronological (ascending
+ *   `ex_dividend_date`), unfiltered by date and not deduplicated where a
+ *   `"declared"` and an `"estimated"` record estimate the same real-world
+ *   payout — see backend/market_data/views.py's DividendsView docstring.
+ */
+
+/**
+ * GET /api/market/<asset_class>/<symbol>/dividends/ — see
+ * backend/market_data/views.py's DividendsView. Throws an ApiError with
+ * status 404 when no dividend data (paid, declared, or estimated) is
+ * published yet for this symbol — callers should catch that and degrade
+ * gracefully, same as getProfile/getMetrics.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/dividendsCache.js), same
+ * rationale as getProfile/getMetrics/getPrices.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} assetClass
+ * @param {string} symbol
+ * @returns {Promise<DividendsResponse>}
+ */
+export async function getDividends(api, assetClass, symbol) {
+  const cacheKey = dividendsCacheKey(assetClass, symbol);
+
+  const cached = await readCachedDividends(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {DividendsResponse} */ (
+    await api(`/market/${assetClass}/${symbol}/dividends/`)
+  );
+  writeCachedDividends(cacheKey, result);
   return result;
 }
 

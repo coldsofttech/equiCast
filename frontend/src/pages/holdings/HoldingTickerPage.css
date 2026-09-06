@@ -89,6 +89,89 @@
   transform: translateY(-50%);
 }
 
+.ec-dividend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--ec-s-16);
+  margin-top: var(--ec-s-8);
+}
+
+.ec-dividend-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-16);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+}
+
+.ec-dividend-amount {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-24);
+  font-weight: 800;
+  color: var(--ec-text);
+}
+
+.ec-dividend-fields-row {
+  display: flex;
+  gap: var(--ec-s-24);
+}
+
+.ec-dividend-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+}
+
+.ec-dividend-field-label {
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
+.ec-dividend-field-value {
+  font-size: var(--ec-fs-14);
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.ec-dividend-bar {
+  fill: var(--ec-accent);
+}
+
+.ec-dividend-bar.is-declared {
+  fill: var(--ec-success);
+}
+
+.ec-dividend-bar.is-estimated {
+  fill: var(--ec-info);
+}
+
+.ec-dividend-bar.is-hovered {
+  opacity: 0.8;
+}
+
+.ec-dividend-view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  height: 32px;
+  padding: 0 var(--ec-s-12);
+  margin-bottom: var(--ec-s-16);
+  border: 1px solid var(--ec-border-strong);
+  border-radius: var(--ec-r-pill);
+  background: var(--ec-surface);
+  color: var(--ec-text);
+  font-weight: 700;
+  font-size: var(--ec-fs-13);
+  cursor: pointer;
+}
+
+.ec-dividend-view-toggle:hover {
+  background: var(--ec-surface-hover);
+}
+
 .ec-cagr-list {
   display: flex;
   flex-direction: column;

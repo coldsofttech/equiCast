@@ -264,3 +264,141 @@ const DIVIDEND_FREQUENCY_LABELS = {
 export function formatDividendFrequency(frequency) {
   return frequency != null ? (DIVIDEND_FREQUENCY_LABELS[frequency] ?? null) : null;
 }
+
+/** Max upcoming dividend cards `selectUpcomingDividends` returns — nearest first. */
+export const MAX_UPCOMING_DIVIDENDS = 3;
+
+/** Today's date as "YYYY-MM-DD" in the viewer's own local calendar day —
+ * same convention as utils/marketDataCache.js's todayKey(), and safe to
+ * compare directly against `ex_dividend_date`/`payment_date` since both are
+ * already plain ISO date strings, which sort lexicographically the same as
+ * chronologically. */
+function todayIsoDate() {
+  const now = new Date();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${now.getFullYear()}-${month}-${day}`;
+}
+
+/**
+ * Picks the `limit` nearest upcoming dividends from `dividends` (as
+ * returned by `GET .../dividends/` — see market.js's DividendsResponse),
+ * combining `"declared"` (real, yfinance-confirmed) and `"estimated"`
+ * (computed projection) records, nearest-dated first. `"paid"` (already-
+ * happened) records are always excluded - this is an upcoming-only view.
+ * `limit` defaults to `MAX_UPCOMING_DIVIDENDS` (the card section's own
+ * cap); pass `Infinity` for the "See all" drawer's uncapped list.
+ *
+ * `future.parquet` and `forecasting/dividends.parquet` are computed
+ * independently (see their own docstrings — `equicast_dividends.
+ * DividendsClient.future_dividends`/`equicast_forecasting.dividends`), so
+ * an estimated record can land on/before a real declared one for what's
+ * really the same payout - whenever a declared record exists, any
+ * estimated record on or before its ex-dividend date is dropped so the
+ * declared one "wins" for that payout rather than showing both, in both
+ * the capped and uncapped list.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @param {number} [limit]
+ * @returns {import("../../api/market.js").DividendRecord[]}
+ */
+export function selectUpcomingDividends(dividends, limit = MAX_UPCOMING_DIVIDENDS) {
+  const today = todayIsoDate();
+  const upcoming = dividends.filter(
+    (record) => record.status !== "paid" && record.ex_dividend_date > today
+  );
+
+  const declared = upcoming.filter((record) => record.status === "declared");
+  const declaredCutoff = declared.reduce(
+    (latest, record) =>
+      latest == null || record.ex_dividend_date > latest ? record.ex_dividend_date : latest,
+    null
+  );
+  const estimated = upcoming.filter(
+    (record) =>
+      record.status === "estimated" &&
+      (declaredCutoff == null || record.ex_dividend_date > declaredCutoff)
+  );
+
+  return [...declared, ...estimated]
+    .sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date))
+    .slice(0, limit);
+}
+
+/**
+ * Every range the "See all" drawer's past-dividends chart offers - the
+ * same long-horizon tail of market.js's PRICE_RANGES the price chart uses
+ * (1y/2y/3y/5y/10y/max), minus the short ranges (5d/1m/6m/ytd) that don't
+ * apply here: dividend payouts are sparse discrete events, not a daily
+ * series, so a short window would show at most one or two bars.
+ */
+export const DIVIDEND_HISTORY_RANGES = [
+  { id: "1y", label: "1Y" },
+  { id: "2y", label: "2Y" },
+  { id: "3y", label: "3Y" },
+  { id: "5y", label: "5Y" },
+  { id: "10y", label: "10Y" },
+  { id: "max", label: "MAX" },
+];
+
+/**
+ * `dividends`' `"paid"` (already-happened) records only, ascending by
+ * ex-dividend date, trimmed to `rangeId` (one of `DIVIDEND_HISTORY_RANGES`'
+ * ids) - `"max"` returns every paid record, unfiltered. Unlike
+ * `getPrices`' server-side range trimming, this filters client-side: the
+ * whole dividend history is already in one small `GET .../dividends/`
+ * response (see market.js's DividendsResponse), not worth a second
+ * round trip just to change the chart's window.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @param {string} rangeId
+ * @returns {import("../../api/market.js").DividendRecord[]}
+ */
+export function selectDividendHistory(dividends, rangeId) {
+  const paid = dividends
+    .filter((record) => record.status === "paid")
+    .sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date));
+  if (rangeId === "max") return paid;
+
+  const years = Number.parseInt(rangeId, 10);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - years);
+  const cutoffIsoDate = cutoff.toISOString().slice(0, 10);
+  return paid.filter((record) => record.ex_dividend_date >= cutoffIsoDate);
+}
+
+/**
+ * Every range the "See all" drawer's Upcoming tab offers - same
+ * 1Y/2Y/3Y/5Y/10Y tail as `DIVIDEND_HISTORY_RANGES`, minus "MAX": a
+ * forecast never projects past `equicast_forecasting.dividends`' own
+ * 10-year horizon, so "no cap" would be identical to "10Y" here.
+ */
+export const UPCOMING_DIVIDEND_RANGES = [
+  { id: "1y", label: "1Y" },
+  { id: "2y", label: "2Y" },
+  { id: "3y", label: "3Y" },
+  { id: "5y", label: "5Y" },
+  { id: "10y", label: "10Y" },
+];
+
+/**
+ * Every upcoming (declared/estimated) record from `dividends` due on or
+ * before `rangeId` years from today (one of `UPCOMING_DIVIDEND_RANGES`'
+ * ids) - same dedup rule as `selectUpcomingDividends` (a declared record
+ * wins over an overlapping estimated one), just windowed by date instead
+ * of capped by count.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @param {string} rangeId
+ * @returns {import("../../api/market.js").DividendRecord[]}
+ */
+export function selectUpcomingDividendsInRange(dividends, rangeId) {
+  const years = Number.parseInt(rangeId, 10);
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() + years);
+  const cutoffIsoDate = cutoff.toISOString().slice(0, 10);
+
+  return selectUpcomingDividends(dividends, Infinity).filter(
+    (record) => record.ex_dividend_date <= cutoffIsoDate
+  );
+}

@@ -4,11 +4,15 @@ import "./HoldingTickerSkeleton.css";
 
 /**
  * Placeholder "cards" shown in place of the real page content while the
- * market profile/transactions/price chart are still loading — mirrors the
- * real layout below (StatTiles row, price chart card, Owned shares table,
- * Stats/About columns) so the page doesn't jump around once the real
- * content swaps in. `isOwned` hides the StatTiles/Owned shares rows for a
- * ticker the user doesn't hold, same as the real content does.
+ * market profile/transactions/price chart/dividends are still loading —
+ * mirrors the real layout below (StatTiles row, price chart card, Owned
+ * shares table, Stats/About columns, Dividends cards) so the page doesn't
+ * jump around once the real content swaps in. `isOwned` hides the
+ * StatTiles/Owned shares rows for a ticker the user doesn't hold, same as
+ * the real content does. The Dividends placeholder always renders three
+ * cards regardless of how many (if any) the real section ends up showing —
+ * HoldingDividendsSection.jsx's own upcoming-dividends count isn't known
+ * until the real fetch resolves, so this can't match it exactly.
  *
  * @param {{ isOwned: boolean }} props
  */
@@ -72,6 +76,22 @@ function HoldingTickerSkeleton({ isOwned }) {
           <Skeleton width="60%" height="1rem" className="ec-skeleton-row" />
         </Card>
       </div>
+
+      <Card className="ec-detail-section">
+        <Skeleton width="90px" height="1.25rem" />
+        <div className="ec-dividend-grid">
+          {[0, 1, 2].map((i) => (
+            <div className="ec-dividend-card" key={i}>
+              <Skeleton width="70px" height="1.25rem" />
+              <Skeleton width="60px" height="1.5rem" />
+              <div className="ec-dividend-fields-row">
+                <Skeleton width="80px" height="2rem" />
+                <Skeleton width="80px" height="2rem" />
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
     </>
   );
 }

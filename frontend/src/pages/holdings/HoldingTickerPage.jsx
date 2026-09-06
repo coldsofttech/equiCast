@@ -15,11 +15,18 @@ import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
+import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getMetrics, getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import {
+  getDividends,
+  getMetrics,
+  getProfile,
+  searchTickers,
+  MARKET_PROFILE_BADGE_TONES,
+} from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -80,6 +87,7 @@ function HoldingTickerPage() {
   const [marketProfile, setMarketProfile] = useState(null);
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
   const [marketMetrics, setMarketMetrics] = useState(null);
+  const [marketDividends, setMarketDividends] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -196,6 +204,7 @@ function HoldingTickerPage() {
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
+    const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
 
     const transactionsPromise = isOwned
       ? Promise.all(
@@ -207,12 +216,13 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, metricsPromise, transactionsPromise]).then(
-      ([profileResult, metrics, transactionsResults]) => {
+    Promise.all([profilePromise, metricsPromise, dividendsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, dividends, transactionsResults]) => {
         if (cancelled) return;
         setMarketProfileStatus(profileResult.status);
         setMarketProfile(profileResult.profile);
         setMarketMetrics(metrics);
+        setMarketDividends(dividends);
         const map = {};
         for (const result of transactionsResults) map[result.holdingId] = result;
         setTransactionsByHolding(map);
@@ -466,6 +476,8 @@ function HoldingTickerPage() {
             <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
+
+          <HoldingDividendsSection dividends={marketDividends} />
 
           <div className="ec-holding-actions-row">
             <Button variant="secondary" onClick={() => setIsFinancialsOpen(true)}>
