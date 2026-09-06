@@ -13,7 +13,7 @@ import "./HoldingPriceChart.css";
  * daily bars are ever stored, so a "1 day" range would just be the single
  * latest row, not a meaningful chart. */
 const RANGES = [
-  { id: "5d", label: "5D" },
+  { id: "5d", label: "1W" },
   { id: "1m", label: "1M" },
   { id: "6m", label: "6M" },
   { id: "ytd", label: "YTD" },

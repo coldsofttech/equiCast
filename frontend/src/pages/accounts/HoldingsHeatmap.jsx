@@ -5,9 +5,10 @@ import { squarify } from "../../utils/treemap.js";
 import "./HoldingsHeatmap.css";
 
 /**
- * Stand-in for a real 50-holding portfolio, used only when `tickers` is
- * empty so the heatmap has something to illustrate rather than sitting on
- * an empty state — see the `caption` note below.
+ * Stand-in for a real 50-holding portfolio, used only when there's nothing
+ * real to show (`weights` not given and `tickers` empty, or `weights` given
+ * but empty) so the heatmap has something to illustrate rather than sitting
+ * on an empty state — see the `caption` note below.
  */
 const SAMPLE_TICKERS = [
   "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "JPM", "V",
@@ -24,79 +25,89 @@ const SAMPLE_TICKERS = [
 const LAYOUT_W = 1200;
 const LAYOUT_H = 480;
 
-/** The change% a tile has to reach for full color saturation — matches a
- * standard market-heatmap legend (see .ec-heatmap-legend) rather than
- * scaling relative to this sample's own min/max move. */
-const MAX_ABS_CHANGE_PCT = 30;
+/**
+ * A tile's fill is purely categorical (by weight rank), not a scale of
+ * anything — there's no "good"/"bad" tone once the heatmap only shows
+ * weight, so this deliberately reuses DiversificationChart's own
+ * accent/purple/info/success/warning/danger/neutral badge-soft pairs
+ * (background + a text color already designed to read on it) rather than
+ * a red/green intensity gradient.
+ */
+const TILE_TONES = [
+  { background: "var(--ec-accent-soft)", color: "var(--ec-accent-soft-text)" },
+  { background: "var(--ec-purple-soft)", color: "var(--ec-purple-soft-text)" },
+  { background: "var(--ec-info-soft)", color: "var(--ec-info-soft-text)" },
+  { background: "var(--ec-success-soft)", color: "var(--ec-success-soft-text)" },
+  { background: "var(--ec-warning-soft)", color: "var(--ec-warning-soft-text)" },
+  { background: "var(--ec-danger-soft)", color: "var(--ec-danger-soft-text)" },
+  { background: "var(--ec-surface-2)", color: "var(--ec-text-muted)" },
+];
 
-function buildWeights(tickers) {
+function buildSampleWeights(tickers) {
   return tickers.map((ticker) => ({ ticker, raw: 1 + seededRandom(`weight:${ticker}`)() * 4 }));
 }
 
-/** Synthetic "today" move per ticker, roughly ±8% — see caption. */
-function buildChange(ticker) {
-  return (seededRandom(`change:${ticker}`)() - 0.5) * 16;
-}
-
-function toneFor(changePct) {
-  const isUp = changePct >= 0;
-  const intensity = Math.round(15 + Math.min(Math.abs(changePct), MAX_ABS_CHANGE_PCT) * (70 / MAX_ABS_CHANGE_PCT));
-  const tone = isUp ? "var(--ec-success)" : "var(--ec-danger)";
-  return {
-    isUp,
-    intensity,
-    background: `color-mix(in srgb, ${tone} ${intensity}%, var(--ec-surface))`,
-    color: intensity > 55 ? "var(--ec-text-on-accent)" : "var(--ec-text)",
-  };
+/** Turns a list of `{ raw }` weights into `{ pct, area }` tiles, evenly
+ * splitting when every raw weight is 0 (e.g. every holding valued at cost
+ * basis of 0) rather than dividing by zero. */
+function toWeightedCells(weighted) {
+  const total = weighted.reduce((sum, w) => sum + w.raw, 0);
+  const evenPct = 100 / weighted.length;
+  return weighted
+    .map((w) => {
+      const pct = total > 0 ? (w.raw / total) * 100 : evenPct;
+      return { ticker: w.ticker, pct, area: (pct / 100) * (LAYOUT_W * LAYOUT_H) };
+    })
+    .sort((a, b) => b.pct - a.pct);
 }
 
 /**
- * A weight-and-performance heatmap of every distinct ticker held under this
- * account (pies + direct holdings — see AccountDetailPage's `tickers`
- * prop). Tickers are real; weight % and day change are both synthetic (see
- * caption) since equiCast doesn't compute real portfolio valuation or pull
- * live prices yet. Tile *area* is proportional to weight via a squarified
- * treemap layout (see utils/treemap.js); tile *color* is a red-to-green
- * scale on day change, via `color-mix()` against the success/danger tokens
- * so it stays correct in both themes — modeled on a standard market
- * heatmap (Finviz-style: size = weight, color = change).
+ * A weight-only treemap of a portfolio's holdings — tile *area* is
+ * proportional to weight via a squarified layout (see utils/treemap.js);
+ * tile *color* is purely categorical (see TILE_TONES), not a performance
+ * scale, since this only ever shows weight now.
  *
- * With no real holdings yet, falls back to SAMPLE_TICKERS (50 well-known
- * symbols) so there's something illustrative to look at instead of an
- * empty state — the caption below makes clear when that's happening.
+ * `weights` (`{ ticker, value }[]`), when given, drives real value-based
+ * weight — `value` is each holding's current value (see PieDetailPage's
+ * `computeHoldingValuation`), so tile size reflects real portfolio weight.
+ * `tickers` (plain ticker strings) is the legacy path still used by
+ * AccountDetailPage, which has no real per-holding valuation wired up yet —
+ * it falls back to a synthetic, deterministic-per-ticker weight instead
+ * (see caption). Whichever is empty (`weights` given but `[]`, or `tickers`
+ * with `weights` omitted) falls back to SAMPLE_TICKERS with synthetic
+ * weight so there's something illustrative to look at instead of an empty
+ * state.
  */
-function HoldingsHeatmap({ tickers }) {
-  const isSample = tickers.length === 0;
+function HoldingsHeatmap({ tickers = [], weights }) {
+  const hasRealWeights = Array.isArray(weights);
+  const isEmpty = hasRealWeights ? weights.length === 0 : tickers.length === 0;
 
   const cells = useMemo(() => {
-    const unique = isSample ? SAMPLE_TICKERS : [...new Set(tickers)];
-    const weighted = buildWeights(unique);
-    const total = weighted.reduce((sum, w) => sum + w.raw, 0);
-    const weightedCells = weighted
-      .map((w) => ({
-        ticker: w.ticker,
-        pct: (w.raw / total) * 100,
-        changePct: buildChange(w.ticker),
-        area: (w.raw / total) * (LAYOUT_W * LAYOUT_H),
-      }))
-      .sort((a, b) => b.pct - a.pct);
-    return squarify(weightedCells, 0, 0, LAYOUT_W, LAYOUT_H);
-  }, [tickers, isSample]);
+    if (hasRealWeights && weights.length > 0) {
+      return toWeightedCells(weights.map((w) => ({ ticker: w.ticker, raw: Math.max(w.value, 0) })));
+    }
+    const weighted = buildSampleWeights(isEmpty ? SAMPLE_TICKERS : [...new Set(tickers)]);
+    return toWeightedCells(weighted);
+  }, [tickers, weights, hasRealWeights, isEmpty]);
+
+  const layout = useMemo(
+    () => squarify(cells, 0, 0, LAYOUT_W, LAYOUT_H),
+    [cells]
+  );
 
   return (
     <Card className="ec-detail-section">
       <h3 className="ec-divchart-title">Holdings heatmap</h3>
       <div className="ec-heatmap">
-        {cells.map((cell) => {
-          const tone = toneFor(cell.changePct);
+        {layout.map((cell, i) => {
+          const tone = TILE_TONES[i % TILE_TONES.length];
           const area = cell.w * cell.h;
           const showDetail = area > 3200;
-          const showChange = area > 900;
           return (
             <div
               key={cell.ticker}
               className="ec-heatmap-cell"
-              title={`${cell.ticker} — ${cell.pct.toFixed(1)}%, ${tone.isUp ? "+" : "-"}${Math.abs(cell.changePct).toFixed(1)}% today (sample)`}
+              title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${hasRealWeights ? "portfolio" : "account"}${isEmpty ? " (sample)" : ""}`}
               style={{
                 left: `${(cell.x / LAYOUT_W) * 100}%`,
                 top: `${(cell.y / LAYOUT_H) * 100}%`,
@@ -107,36 +118,20 @@ function HoldingsHeatmap({ tickers }) {
               }}
             >
               <span className="ec-heatmap-ticker">{cell.ticker}</span>
-              {showChange && (
-                <span className="ec-heatmap-change">
-                  {tone.isUp ? "▲" : "▼"} {Math.abs(cell.changePct).toFixed(1)}%
-                </span>
-              )}
               {showDetail && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
             </div>
           );
         })}
       </div>
 
-      <div className="ec-heatmap-legend">
-        {[-30, -20, -10, 0, 10, 20, 30].map((pct) => {
-          const tone = toneFor(pct);
-          return (
-            <span className="ec-heatmap-legend-item" key={pct}>
-              <span className="ec-heatmap-legend-swatch" style={{ background: tone.background }} />
-              {pct > 0 ? `+${pct}` : pct}%
-            </span>
-          );
-        })}
-      </div>
-
-      <p className="ec-chart-caption">
-        {isSample
-          ? "Sample data — showing 50 illustrative holdings until this account has real ones. "
-          : "Illustrative weights and day change — "}
-        Tile size is weight in the account, tile color is today&rsquo;s (synthetic) move; real
-        pricing/weighting is coming.
-      </p>
+      {(isEmpty || !hasRealWeights) && (
+        <p className="ec-chart-caption">
+          {isEmpty
+            ? `Sample data — showing 50 illustrative holdings until ${hasRealWeights ? "this portfolio" : "this account"} has real ones. `
+            : "Illustrative weights — "}
+          Tile size is weight in {hasRealWeights ? "the portfolio" : "the account"}.
+        </p>
+      )}
     </Card>
   );
 }

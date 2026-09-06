@@ -15,8 +15,9 @@ import "./HoldingBenchmarkRating.css";
  * stock-only fundamentals (a benchmark's MetricsClient.metrics() never
  * has them — see equicast_metrics.MetricsClient.fundamentals's
  * docstring), so this rating works the same for any holding, not just
- * stocks. */
-const RATED_METRICS = [
+ * stocks. Exported so PieBenchmarkRating rates the exact same fields for a
+ * whole portfolio. */
+export const RATED_METRICS = [
   { key: "cagr_1y", label: "1Y CAGR", format: (value) => formatPercent(value) },
   { key: "cagr_3y", label: "3Y CAGR", format: (value) => formatPercent(value) },
   { key: "cagr_5y", label: "5Y CAGR", format: (value) => formatPercent(value) },
@@ -25,8 +26,10 @@ const RATED_METRICS = [
 
 /** Same 3-band shape as DiversificationChart's own scoreInfoFor (≥70/≥40/
  * else), so a score badge reads consistently wherever equiCast shows one —
- * just performance-framed labels instead of diversification ones. */
-function scoreInfoFor(score) {
+ * just performance-framed labels instead of diversification ones. Exported
+ * so PieBenchmarkRating's own portfolio-level score badge reads the same
+ * way. */
+export function scoreInfoFor(score) {
   if (score >= 70) return { label: "Outperforming", tone: "success" };
   if (score >= 40) return { label: "Tracking the benchmark", tone: "warning" };
   return { label: "Underperforming", tone: "danger" };
@@ -37,8 +40,10 @@ function scoreInfoFor(score) {
  * HoldingCagrSection's docstring for the same "just skip it" reasoning.
  * Otherwise "beats" only on a strict `>` — a tie (possible for sharpe_ratio
  * landing on the exact same rounded value) doesn't count as a win, but
- * still counts toward the denominator, same as a real loss would. */
-function compareMetric(holdingValue, benchmarkValue) {
+ * still counts toward the denominator, same as a real loss would. Exported
+ * so PieBenchmarkRating can rate a portfolio's value-weighted metrics
+ * against a benchmark the same way. */
+export function compareMetric(holdingValue, benchmarkValue) {
   if (holdingValue == null || benchmarkValue == null) return null;
   return holdingValue > benchmarkValue ? "beats" : "trails";
 }

@@ -7,6 +7,26 @@
  * @property {string|null} pie_id
  * @property {string|null} watchlist_id
  * @property {string} [allocation_pct]
+ * @property {number} no_of_shares
+ * @property {number|null} average_price_native
+ * @property {number|null} average_price - converted to the user's default_currency.
+ * @property {number} invested_native
+ * @property {number} invested - converted to the user's default_currency.
+ * @property {number} dividends_native
+ * @property {number} dividends - converted to the user's default_currency.
+ * @property {string|null} [name] - only present on a pie's nested holdings
+ *   (see backend/pies/views.py's `_enrich_holdings`); `null` if the ticker
+ *   has no published market profile yet.
+ * @property {string|null} [sector] - pie-nested only; `null` for etf/fx or
+ *   an unpublished ticker.
+ * @property {string|null} [industry] - pie-nested only; `null` for etf/fx or
+ *   an unpublished ticker.
+ * @property {string|null} [website] - pie-nested only; feeds AssetIcon's
+ *   favicon lookup, `null` for an unpublished ticker.
+ * @property {number|null} [current_price_native] - pie-nested only; today's
+ *   price in the ticker's own currency, `null` for an unpublished ticker.
+ * @property {number|null} [current_price] - pie-nested only; `current_price_native`
+ *   converted to the user's default_currency, `null` if no FX rate is published.
  */
 
 /**

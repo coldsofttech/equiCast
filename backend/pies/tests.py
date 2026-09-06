@@ -41,27 +41,90 @@ class PieListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("pies.views._holdings_client")
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_the_users_pies(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_get_returns_the_users_pies(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_pies.return_value = [PIE]
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.get(reverse("pies-list"), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), [PIE])
+        self.assertEqual(response.json(), [{**PIE, "holdings": []}])
         mock_client.list_pies.assert_called_once_with("auth0|abc123", account_id=None)
+        mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
 
+    @patch("pies.views._market_data_client")
+    @patch("pies.views._profile_client")
+    @patch("pies.views._holdings_client")
+    @patch("pies.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_get_nests_and_enriches_each_pies_holdings(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_holdings_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        other_pie = {**PIE, "id": "pie-2"}
+        mock_client.list_pies.return_value = [PIE, other_pie]
+        holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
+        other_holding = {"id": "h-2", "ticker": "VXUS", "asset_class": "etf", "pie_id": "not-this-user-list"}
+        mock_holdings_client.list_holdings.return_value = [holding, other_holding]
+        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
+        mock_market_data_client.get_profile.return_value = {
+            "name": "Vanguard S&P 500 ETF",
+            "sector": None,
+            "industry": None,
+            "website": "https://investor.vanguard.com",
+            "currency": "USD",
+            "day_close": 450.0,
+        }
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.0
+
+        response = self.client.get(reverse("pies-list"), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            [
+                {
+                    **PIE,
+                    "holdings": [
+                        {
+                            **holding,
+                            "name": "Vanguard S&P 500 ETF",
+                            "sector": None,
+                            "industry": None,
+                            "website": "https://investor.vanguard.com",
+                            "current_price_native": 450.0,
+                            "current_price": 450.0,
+                        }
+                    ],
+                },
+                {**other_pie, "holdings": []},
+            ],
+        )
+
+    @patch("pies.views._holdings_client")
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_filters_by_account_id_query_param(
-        self, mock_jwks_client, mock_decode, mock_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_pies.return_value = [PIE]
+        mock_holdings_client.list_holdings.return_value = []
 
         response = self.client.get(reverse("pies-list"), {"account_id": "acc-1"}, **AUTH_HEADER)
 
@@ -158,24 +221,59 @@ class PieDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("pies.views._market_data_client")
+    @patch("pies.views._profile_client")
     @patch("pies.views._holdings_client")
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_the_pie_with_its_holdings(
-        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_holdings_client,
+        mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_pie.return_value = PIE
-        holding = {"id": "h-1", "ticker": "VOO", "pie_id": "pie-1"}
+        holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
         mock_holdings_client.list_holdings.return_value = [holding]
+        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
+        mock_market_data_client.get_profile.return_value = {
+            "name": "Vanguard S&P 500 ETF",
+            "sector": None,
+            "industry": None,
+            "website": "https://investor.vanguard.com",
+            "currency": "USD",
+            "day_close": 450.0,
+        }
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.0
 
         response = self.client.get(reverse("pies-detail", args=["pie-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {**PIE, "holdings": [holding]})
+        self.assertEqual(
+            response.json(),
+            {
+                **PIE,
+                "holdings": [
+                    {
+                        **holding,
+                        "name": "Vanguard S&P 500 ETF",
+                        "sector": None,
+                        "industry": None,
+                        "website": "https://investor.vanguard.com",
+                        "current_price_native": 450.0,
+                        "current_price": 450.0,
+                    }
+                ],
+            },
+        )
         mock_client.get_pie.assert_called_once_with("auth0|abc123", "pie-1")
         mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123", pie_id="pie-1")
+        mock_market_data_client.get_profile.assert_called_once_with("etf", "VOO")
 
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
