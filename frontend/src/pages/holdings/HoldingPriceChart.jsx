@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
 import { formatPrice } from "./holdingFinancials.js";
+import HoldingBenchmarkRating from "./HoldingBenchmarkRating.jsx";
 import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
 import "./HoldingPriceChart.css";
@@ -56,8 +57,18 @@ function axisTickIndices(count, maxTicks) {
   return [...indices].sort((a, b) => a - b);
 }
 
-const WIDTH = 720;
-const HEIGHT = 260;
+// The SVG's viewBox width is tracked live (see the ResizeObserver effect
+// below) so it always matches the element's real rendered pixel width —
+// DEFAULT_WIDTH is only the value used for that one first render, before
+// the observer has measured anything. HEIGHT matches ec-chart-svg's fixed
+// CSS height exactly (see styles/chart.css) for the same reason: with
+// both dimensions equal to the real box, preserveAspectRatio's default
+// ("meet") scale factor is exactly 1 on both axes — no letterboxing (gaps
+// down the sides) and no distortion (mismatched x/y scale stretching
+// text/strokes), unlike either a mismatched fixed viewBox or a forced
+// preserveAspectRatio="none" would produce.
+const DEFAULT_WIDTH = 720;
+const HEIGHT = 220;
 const PADDING_TOP = 16;
 const PADDING_RIGHT = 12;
 const PADDING_BOTTOM = 28;
@@ -106,6 +117,11 @@ const X_AXIS_MAX_TICKS = 6;
  * short "5d" window whose price band sits well above/below where the
  * ticker was originally bought).
  *
+ * Picking a benchmark (not a holding/ticker) as the comparison also renders
+ * HoldingBenchmarkRating below the chart — a real 0-100 rating derived
+ * from both sides' `GET .../metrics/`, independent of this chart's own
+ * range picker (see that component's docstring for the exact formula).
+ *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null }} props
  */
 function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
@@ -115,6 +131,24 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   const [compare, setCompare] = useState({ id: "", label: null, ticker: null, assetClass: null });
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+
+  // Keeps the viewBox's width equal to the SVG's own real rendered width
+  // (see DEFAULT_WIDTH's comment above) — measured on layout (before
+  // paint, so there's no visible flash of the fallback width) and again on
+  // every resize (a window resize, or the sidebar/page layout otherwise
+  // changing this element's box).
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const boxWidth = entries[0]?.contentRect.width;
+      if (boxWidth) setWidth(boxWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const [series, setSeries] = useState(null);
   const [status, setStatus] = useState("loading");
@@ -250,7 +284,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
   }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice]);
 
   const rangeSpan = max - min || 1;
-  const plotWidth = WIDTH - PADDING_LEFT - PADDING_RIGHT;
+  const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
   const plotHeight = HEIGHT - PADDING_TOP - PADDING_BOTTOM;
   const step = bars.length > 0 ? plotWidth / bars.length : plotWidth;
 
@@ -276,12 +310,13 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
     if (!svgRef.current || bars.length === 0) return;
     const svg = svgRef.current;
     // Mapping clientX through getBoundingClientRect()'s width (a plain
-    // pixel-ratio scale) assumes the viewBox fills that box exactly — the
-    // rendered box's aspect ratio rarely matches WIDTH:HEIGHT exactly, so
-    // the default preserveAspectRatio ("xMidYMid meet") letterboxes it,
-    // which throws that mapping off from where the cursor actually is.
-    // getScreenCTM() is the real screen-pixel-to-viewBox transform, so
-    // it's correct regardless of any letterboxing.
+    // pixel-ratio scale) assumes the viewBox fills that box exactly — true
+    // here (viewBox width == the SVG's own live-measured width, see the
+    // ResizeObserver effect above), but getScreenCTM() is the real
+    // screen-pixel-to-viewBox transform regardless, so this stays correct
+    // even for a stale `width` in the render this event fires during (the
+    // observer callback and this handler aren't guaranteed to be in sync
+    // on the exact same frame).
     const point = svg.createSVGPoint();
     point.x = event.clientX;
     point.y = event.clientY;
@@ -379,7 +414,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
           <svg
             ref={svgRef}
             className="ec-chart-svg"
-            viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+            viewBox={`0 0 ${width} ${HEIGHT}`}
             onMouseMove={handleMove}
             onMouseLeave={() => setHoverIndex(null)}
             role="img"
@@ -393,7 +428,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
               <g key={key}>
                 <line
                   x1={PADDING_LEFT}
-                  x2={WIDTH - PADDING_RIGHT}
+                  x2={width - PADDING_RIGHT}
                   y1={y}
                   y2={y}
                   className="ec-chart-gridline"
@@ -421,7 +456,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
               <>
                 <line
                   x1={PADDING_LEFT}
-                  x2={WIDTH - PADDING_RIGHT}
+                  x2={width - PADDING_RIGHT}
                   y1={yFor(0)}
                   y2={yFor(0)}
                   className="ec-chart-zero-line"
@@ -431,7 +466,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
                 {avgLog != null && (
                   <line
                     x1={PADDING_LEFT}
-                    x2={WIDTH - PADDING_RIGHT}
+                    x2={width - PADDING_RIGHT}
                     y1={yFor(avgLog)}
                     y2={yFor(avgLog)}
                     className="ec-chart-avg-line"
@@ -467,7 +502,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
                 {avgPrice != null && (
                   <line
                     x1={PADDING_LEFT}
-                    x2={WIDTH - PADDING_RIGHT}
+                    x2={width - PADDING_RIGHT}
                     y1={yFor(avgPrice)}
                     y2={yFor(avgPrice)}
                     className="ec-chart-avg-line"
@@ -504,6 +539,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
             <p className="ec-chart-caption">
               No price history published for {compare.ticker} for this range yet.
             </p>
+          )}
+
+          {compare.assetClass === "benchmark" && (
+            <HoldingBenchmarkRating
+              assetClass={assetClass}
+              ticker={ticker}
+              benchmarkKey={compare.ticker}
+              benchmarkLabel={compare.label}
+            />
           )}
         </>
       )}

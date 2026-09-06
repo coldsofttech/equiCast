@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { seededRandom } from "../../utils/deterministicRandom.js";
 import "./PriceChart.css";
@@ -92,8 +92,17 @@ function trailingLabels(count, { stepDays, intraday }) {
   return labels;
 }
 
-const WIDTH = 720;
-const HEIGHT = 260;
+// The SVG's viewBox width is tracked live (see the ResizeObserver effect
+// in PriceChart below) so it always matches the element's real rendered
+// pixel width — DEFAULT_WIDTH is only the value used for that one first
+// render, before the observer has measured anything. HEIGHT matches
+// ec-chart-svg's fixed CSS height exactly (see styles/chart.css) for the
+// same reason: with both dimensions equal to the real box,
+// preserveAspectRatio's default ("meet") scale factor is exactly 1 on
+// both axes — no letterboxing (gaps down the sides) and no distortion
+// (mismatched x/y scale stretching text/strokes).
+const DEFAULT_WIDTH = 720;
+const HEIGHT = 220;
 const PADDING = 24;
 
 /**
@@ -120,6 +129,23 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
   const [compareId, setCompareId] = useState("");
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+
+  // Keeps the viewBox's width equal to the SVG's own real rendered width
+  // (see DEFAULT_WIDTH's comment above) — measured on layout (before
+  // paint, so there's no visible flash of the fallback width) and again on
+  // every resize.
+  const [width, setWidth] = useState(DEFAULT_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = svgRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const boxWidth = entries[0]?.contentRect.width;
+      if (boxWidth) setWidth(boxWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const range = RANGES.find((r) => r.id === rangeId) ?? RANGES[0];
   const count = rangeBarCount(range);
@@ -151,7 +177,7 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
   }, [bars, compareCloses]);
 
   const rangeSpan = max - min || 1;
-  const plotWidth = WIDTH - PADDING * 2;
+  const plotWidth = width - PADDING * 2;
   const plotHeight = HEIGHT - PADDING * 2;
   const step = plotWidth / bars.length;
 
@@ -178,12 +204,11 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
     if (!svgRef.current) return;
     const svg = svgRef.current;
     // getBoundingClientRect()'s width is a plain pixel-ratio scale, which
-    // assumes the viewBox fills that box exactly — the rendered box's
-    // aspect ratio rarely matches WIDTH:HEIGHT, so the default
-    // preserveAspectRatio ("xMidYMid meet") letterboxes it, throwing that
-    // mapping off from where the cursor actually is. getScreenCTM() is the
-    // real screen-pixel-to-viewBox transform, correct regardless of any
-    // letterboxing.
+    // assumes the viewBox fills that box exactly — true here (viewBox
+    // width == the SVG's own live-measured width, see the ResizeObserver
+    // effect above), but getScreenCTM() is the real screen-pixel-to-viewBox
+    // transform regardless, so this stays correct even for a stale `width`
+    // in the render this event fires during.
     const point = svg.createSVGPoint();
     point.x = event.clientX;
     point.y = event.clientY;
@@ -284,7 +309,7 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
       <svg
         ref={svgRef}
         className="ec-chart-svg"
-        viewBox={`0 0 ${WIDTH} ${HEIGHT}`}
+        viewBox={`0 0 ${width} ${HEIGHT}`}
         onMouseMove={handleMove}
         onMouseLeave={() => setHoverIndex(null)}
         role="img"
@@ -294,7 +319,7 @@ function PriceChart({ pies = [], holdings = [], seedKey, subjectLabel = "This ac
           <line
             key={frac}
             x1={PADDING}
-            x2={WIDTH - PADDING}
+            x2={width - PADDING}
             y1={PADDING + plotHeight * frac}
             y2={PADDING + plotHeight * frac}
             className="ec-chart-gridline"

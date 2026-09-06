@@ -1,11 +1,16 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
-import { getPrices, searchTickers } from "../../api/market.js";
+import { getMetrics, getPrices, searchTickers } from "../../api/market.js";
 import HoldingPriceChart from "./HoldingPriceChart.jsx";
 
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
-vi.mock("../../api/market.js", () => ({ getPrices: vi.fn(), searchTickers: vi.fn() }));
+vi.mock("../../api/market.js", () => ({
+  getMetrics: vi.fn(),
+  getPrices: vi.fn(),
+  searchTickers: vi.fn(),
+}));
+
 
 const MAIN_BARS = [
   { date: "2024-01-01", open: 100, high: 101, low: 99, close: 100 },
@@ -34,6 +39,14 @@ async function selectCompareTicker(result) {
   fireEvent.keyDown(screen.getByLabelText("Compare against a stock, ETF, or benchmark"), { key: "Enter" });
   fireEvent.click(await screen.findByText(result.ticker));
 }
+
+beforeEach(() => {
+  // Selecting a benchmark comparison also mounts HoldingBenchmarkRating
+  // (see HoldingPriceChart.jsx), which calls getMetrics — not under test in
+  // this file (see HoldingBenchmarkRating.test.jsx for that), so it's given
+  // an always-resolving default here purely to avoid an unhandled rejection.
+  vi.mocked(getMetrics).mockResolvedValue({});
+});
 
 afterEach(() => {
   vi.resetAllMocks();
@@ -102,5 +115,12 @@ describe("HoldingPriceChart", () => {
     expect(await screen.findByText("S&P 500")).toBeInTheDocument();
     const changes = screen.getAllByText("▲ 10.0%");
     expect(changes).toHaveLength(2);
+
+    // Picking a real benchmark also mounts HoldingBenchmarkRating (not a
+    // holding/ticker comparison — that never rates, see the "assetClass ===
+    // 'benchmark'" gate in this component); its own scoring logic is
+    // covered by HoldingBenchmarkRating.test.jsx, this just checks the wiring.
+    expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL");
+    expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500");
   });
 });

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The holding page's benchmark comparison now also shows a real 0-100
+  "Rating vs <benchmark>" score (`HoldingBenchmarkRating`, rendered by
+  `HoldingPriceChart` whenever `HoldingComparePicker`'s selection is a
+  benchmark, not another holding). Score = the percentage of `cagr_1y`/
+  `cagr_3y`/`cagr_5y`/`sharpe_ratio` the holding beats the benchmark on
+  (e.g. 3-of-4 → 75/100), each pulled via the existing `GET .../metrics/`
+  (and its IndexedDB cache) — real data, unlike the fully-synthetic
+  `SECTOR_SCORE` placeholder `DiversificationChart` still uses (equiCast
+  has no real sector-classification source yet, but does have real
+  risk/performance metrics for every asset class). Deliberately
+  independent of the price chart's own range picker, so it doesn't jump
+  around when switching ranges. A metric missing on either side is
+  excluded from the score rather than guessed; renders a plain caption
+  instead of a score when nothing overlaps yet.
+
 ### Fixed
 
 - `equicast_core.client.MarketDataClient.get_prices()` raised `KeyError:
