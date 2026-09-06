@@ -42,7 +42,7 @@ import {
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
 import { MENU_ITEMS } from "../menuItems.js";
-import { TICKER_NAMES, formatCurrency, plTone } from "../sampleFinancials.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
@@ -400,7 +400,7 @@ function HoldingTickerPage() {
       });
   };
 
-  const name = TICKER_NAMES[ticker];
+  const name = marketProfile?.name ?? null;
 
   // Only known when this page was reached via a row click from
   // AccountDetailPage/PieDetailPage (they pass it as router state) — a
