@@ -56,6 +56,53 @@ dividend table) only has two columns: ex-dividend date and cash amount per
 share — no payment date, for any ticker, at any point in history. `price` is
 the dividend amount per share (not a stock price) for that ex-dividend date.
 
+## `dividend_frequency`
+
+```python
+from equicast_dividends import DividendsClient, dividend_frequency
+
+dividend_frequency(DividendsClient("AAPL").dividends(full_load=True))
+# "quarterly"
+```
+
+Classifies a symbol's payout cadence from its ex-dividend-date history into
+`"weekly"`, `"monthly"`, `"quarterly"`, `"half_yearly"`, `"yearly"`,
+`"irregular"` (a real, still-active payer whose recent gaps don't fit any of
+the above — e.g. a one-off special dividend thrown into an otherwise-
+quarterly schedule, or a genuinely erratic payer), or `"not_applicable"`
+(fewer than 2 recorded payouts to measure a gap from at all — no dividend
+history, or a single just-started one).
+
+Takes `dividends()`'s own record list — not a symbol — so it works from
+whatever history a caller already fetched (`equicast-stock`/`equicast-etf`'s
+CLIs merge this into `profile.parquet`'s `dividend_frequency` field, reusing
+the same `dividends(full_load=True)` call they need for `dividend.parquet`
+anyway rather than fetching twice). Uses the most recent 10 payouts (or
+however many exist, down to 2), sorted internally regardless of the input
+list's own order, and classifies the *median* day-gap between consecutive
+payouts in that sample — median rather than mean so one unusually long/short
+gap doesn't shift the result on its own. See
+[`frequency.py`](src/equicast_dividends/frequency.py) for the exact day-gap
+bands each label matches.
+
+## `median_payout_gap_days`
+
+```python
+from equicast_dividends import DividendsClient, median_payout_gap_days
+
+median_payout_gap_days(DividendsClient("AAPL").dividends(full_load=True))
+# 91.0
+```
+
+The raw number `dividend_frequency()` classifies — the median day-gap itself
+(a `float`, or `None` below the 2-payout minimum), not rounded to a
+canonical per-label value. `dividend_frequency()` calls this internally;
+exposed separately for a caller (e.g.
+[`equicast-forecasting`](../forecasting/README.md)) that needs the ticker's
+*actual* empirical cadence to step forward by, not just which named band it
+falls into — a payer whose real median gap is 84 days keeps stepping by 84,
+not by "quarterly"'s canonical ~91.
+
 ## Development
 
 ```bash

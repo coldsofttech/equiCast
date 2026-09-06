@@ -11,12 +11,12 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 #: Explicit schema for events.parquet, rather than letting pyarrow infer one
-#: per year-file from whatever rows land in it: a ticker-year with only
-#: splits (the only event type ETFs actually have — earnings/ratings are
-#: always empty for them) leaves the earnings/rating-only columns
-#: (eps_estimate, firm, ...) entirely null in that slice, and pyarrow would
-#: otherwise infer a bare `null` type there. Pinning real types keeps every
-#: year's file schema-compatible with every other, same as
+#: per file from whatever rows land in it: a file with only splits (the
+#: only event type ETFs actually have — earnings/ratings are always empty
+#: for them) leaves the earnings/rating-only columns (eps_estimate, firm,
+#: ...) entirely null in that slice, and pyarrow would otherwise infer a
+#: bare `null` type there. Pinning real types keeps history.parquet and
+#: current.parquet schema-compatible with each other, same as
 #: `equicast-stock`'s `_EVENTS_SCHEMA` (kept identical here rather than
 #: importing it, since `equicast_stock` isn't a dependency of
 #: `equicast_etf`).
