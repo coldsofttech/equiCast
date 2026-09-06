@@ -249,6 +249,9 @@ packages/stock/smoke_output/
 packages/etf/output/
 packages/etf/chunks/
 packages/etf/smoke_output/
+packages/benchmark/output/
+packages/benchmark/chunks/
+packages/benchmark/smoke_output/
 
 # backend/scripts/build_lambda_package.sh output
 backend/build/

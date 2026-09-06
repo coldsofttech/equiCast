@@ -1,22 +1,22 @@
 """Builds and publishes the searchable ticker catalog each ingestion
-pipeline (`equicast-fx`/`equicast-stock`/`equicast-etf`) uploads after a
-run — the write side of the `catalog/<asset_class>.parquet` contract
-`MarketDataClient.get_catalog`/`.search` (client.py) read from. Parquet
-rather than JSON, same format/tooling (`pyarrow`) as every other file this
-project publishes (`profile.parquet`/`metrics.parquet`/...) — chosen over
-JSON's per-row repeated field names for when the ticker universe grows
-well past today's handful per asset class, even though `search()` still
-reads a catalog in full on every call rather than doing a column-pruned
-read.
+pipeline (`equicast-fx`/`equicast-stock`/`equicast-etf`/`equicast-benchmark`)
+uploads after a run — the write side of the `catalog/<asset_class>.parquet`
+contract `MarketDataClient.get_catalog`/`.search` (client.py) read from.
+Parquet rather than JSON, same format/tooling (`pyarrow`) as every other
+file this project publishes (`profile.parquet`/`metrics.parquet`/...) —
+chosen over JSON's per-row repeated field names for when the ticker
+universe grows well past today's handful per asset class, even though
+`search()` still reads a catalog in full on every call rather than doing a
+column-pruned read.
 
 Deliberately asset-class-agnostic and package-agnostic: every one of the
-three pipelines writes its profile.parquet files to the exact same
+four pipelines writes its profile.parquet files to the exact same
 `<asset_class>=<TICKER>/profile.parquet` local layout (see e.g.
 `equicast_stock.writer.write_profile_parquet`), so `build_catalog_rows`
 only needs a local directory and an `asset_class` string — no
 per-pipeline config parsing (`StockTicker`/`FxPair`/...) — which is what
-lets one shared CLI (`equicast-core-build-catalog`) serve all three
-ingestion workflows instead of three near-identical scripts.
+lets one shared CLI (`equicast-core-build-catalog`) serve every ingestion
+workflow instead of one near-identical script per pipeline.
 
 Each ingestion pipeline's own container only ever processes one matrix-
 chunked subset of its full ticker list (GitHub Actions caps a single
@@ -72,27 +72,29 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     """Return one row per `<asset_class>=<TICKER>/profile.parquet` found
     under `output_dir` — exactly what a search result needs: `ticker`
     (from the directory name, not the profile itself, so this works
-    uniformly across stock/etf profiles carrying a `ticker` field and fx
-    profiles which don't — see equicast_fx.writer), `name` (`name` for
-    stock/etf, `description` for fx — same "no literal name field" reason),
-    `type` (`asset_class`), `current_price` (`day_close`, the same field
-    all three pipelines' profile() methods already compute), `currency`
-    (`currency` for stock/etf; an fx pair has no such field — its own
+    uniformly across stock/etf/benchmark profiles carrying a `ticker`-like
+    field under different names and fx profiles which have none — see
+    equicast_fx.writer), `name` (`name` for stock/etf/benchmark,
+    `description` for fx — same "no literal name field" reason), `type`
+    (`asset_class`), `current_price` (`day_close`, the same field every
+    pipeline's profile() method already computes), `currency` (`currency`
+    for stock/etf/benchmark; an fx pair has no such field — its own
     `current_price` is the exchange rate quoted *in* `to_currency`, so
     that's what a display of it should be formatted as), `website` (`None`
-    for fx profiles, which carry no such field — a currency pair has no
-    issuer site to link/show a favicon for), `market_cap` — a stock's real
-    `market_cap`, an etf's `total_assets` (fund AUM, the closest comparable
-    "size" figure a fund has — etf profiles carry no market cap of their
-    own), or `None` for fx, which has neither and isn't size-filterable at
-    all — `exchange` (stock/etf's own `exchange`, yfinance's raw code, e.g.
-    "NMS"/"PCX", not a bare "NASDAQ"/"NYSE" string; `None` for fx, which
-    isn't traded on one), `region` (stock/etf's own `region`,
-    yfinance's short country code, e.g. "us"/"gb"; `None` for fx, which
-    isn't domiciled anywhere), and `sector`/`industry` (a stock's own
-    `sector`/`industry` fields; always `None` for etf, which yfinance
-    never populates these for — `category` is its closest equivalent but
-    isn't surfaced here — and for fx, which has no such concept at all).
+    for fx/benchmark profiles, which carry no such field — a currency pair
+    or an index has no issuer site to link/show a favicon for), `market_cap`
+    — a stock's real `market_cap`, an etf's `total_assets` (fund AUM, the
+    closest comparable "size" figure a fund has — etf profiles carry no
+    market cap of their own), or `None` for fx/benchmark, neither of which
+    has a size concept at all — `exchange` (stock/etf/benchmark's own
+    `exchange`, yfinance's raw code, e.g. "NMS"/"PCX"/"SNP", not a bare
+    "NASDAQ"/"NYSE" string; `None` for fx, which isn't traded on one),
+    `region` (stock/etf/benchmark's own `region`, yfinance's short country
+    code, e.g. "us"/"gb"; `None` for fx, which isn't domiciled anywhere),
+    and `sector`/`industry` (a stock's own `sector`/`industry` fields;
+    always `None` for etf/benchmark, which yfinance never populates these
+    for — `category` is etf's closest equivalent but isn't surfaced here —
+    and for fx, which has no such concept at all).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -150,7 +152,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "local directory of already-fetched <asset_class>=<TICKER>/profile.parquet files."
     )
     parser.add_argument(
-        "--asset-class", required=True, choices=["fx", "stock", "etf"], help="Asset class."
+        "--asset-class",
+        required=True,
+        choices=["fx", "stock", "etf", "benchmark"],
+        help="Asset class.",
     )
     parser.add_argument(
         "--output-dir",

@@ -89,8 +89,8 @@ resource_usage:
       monthly_tier_1_requests: 200 # PUT — 4 writes/user/month (session model above) * 50 users
       monthly_tier_2_requests: 14000 # GET — 280 reads/user/month (session model above) * 50 users
 
-  # FX + stock + ETF profile data (and the backend's on-demand search/
-  # profile/price cache reads) lands here. Three independent scheduled
+  # FX + stock + ETF + benchmark profile data (and the backend's on-demand
+  # search/profile/price cache reads) lands here. Four independent scheduled
   # pipelines write into this one bucket — broken out per pipeline below,
   # then summed into the storage_gb/monthly_tier_1_requests values actually
   # used. Recompute a pipeline's own lines if its ticker count or schedule
@@ -236,29 +236,49 @@ resource_usage:
   #   still writes at most 1 after (history.parquet, or none) — there's no
   #   per-year accumulation to consolidate away for ETF events specifically.
   #
+  # --- Benchmark (packages/benchmark/config/benchmarks.prod.yaml, currently
+  #     15 benchmarks) --- market indices aren't "holdings" any more than FX
+  #     pairs are, and weren't part of the 10,000-instrument scale-up
+  #     either; no dividends/fundamentals, same per-file size assumption as
+  #     the FX section above (a benchmark is a single yfinance symbol, not a
+  #     pair, but priced/sized the same way).
+  #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
+  #             price.parquet ~20KB (current year only — full_load isn't
+  #             passed on schedule) = ~45KB/benchmark
+  #   storage:  15 benchmarks * 45KB = 675KB
+  #   schedule: benchmark-ingestion.yml, cron "0 23 * * 1-5" -> ~22 runs/month
+  #             (1/weekday, offset 15 minutes from the stock schedule so
+  #             none of the four pipelines overlap — see
+  #             docs/benchmark-pipeline.md). No Saturday entry (unlike
+  #             stock/ETF) — there's no forecasting step for a Saturday run
+  #             to do here.
+  #   requests: 3 files/benchmark (profile + metrics + price), all PUT
+  #             22 runs * 15 benchmarks * 3 files = 990 PUTs
+  #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650,000KB + 539,000KB = 8,189,180KB (~7.81GB) ->
-  #             7.9GB (rounded up for headroom). Recompute the
-  #             accumulated-years assumption in the stock/ETF sections once
-  #             actual bucket age approaches (or exceeds) 20 years, once
-  #             --full-load has actually been run and real multi-year sizes
-  #             are known instead of the 20-year projection, or once the
-  #             real prod ticker count is known instead of this 10,000
-  #             planning scenario.
-  #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) =
-  #             1,100,300. Unaffected by the price/dividend/events
-  #             history.parquet+current.parquet split — that split's
-  #             ~522,000-PUT combined saving (486,000 stock + 36,000 ETF,
-  #             see the Stock/ETF sections) is on the one-time --full-load
-  #             backfill, a manual workflow_dispatch run outside this
-  #             scheduled-runs figure, so it never shows up here.
+  #   storage:  180KB + 7,650,000KB + 539,000KB + 675KB = 8,189,855KB
+  #             (~7.81GB) -> 7.9GB (rounded up for headroom, unaffected by
+  #             benchmark's tiny addition). Recompute the accumulated-years
+  #             assumption in the stock/ETF sections once actual bucket age
+  #             approaches (or exceeds) 20 years, once --full-load has
+  #             actually been run and real multi-year sizes are known
+  #             instead of the 20-year projection, or once the real prod
+  #             ticker count is known instead of this 10,000 planning
+  #             scenario.
+  #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) + 990
+  #             (benchmark) = 1,101,290. Unaffected by the
+  #             price/dividend/events history.parquet+current.parquet split
+  #             — that split's ~522,000-PUT combined saving (486,000 stock +
+  #             36,000 ETF, see the Stock/ETF sections) is on the one-time
+  #             --full-load backfill, a manual workflow_dispatch run outside
+  #             this scheduled-runs figure, so it never shows up here.
   #   requests (GET): 3,000 — backend on-demand reads, from the session
   #             model above (60/user/month * 50 users), not sized from the
   #             ticker count or ingestion schedule
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 7.9
-      monthly_tier_1_requests: 1100300 # PUT/COPY/POST/LIST — FX (300) + stock (990,000) + ETF (110,000)
+      monthly_tier_1_requests: 1101290 # PUT/COPY/POST/LIST — FX (300) + stock (990,000) + ETF (110,000) + benchmark (990)
       monthly_tier_2_requests: 3000 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/

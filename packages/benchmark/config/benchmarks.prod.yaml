@@ -1,0 +1,54 @@
+# Used for scheduled (cron) runs and manual "production" workflow_dispatch
+# runs.
+#
+# `key` is the S3 partition key this benchmark lands under
+# (benchmark=<KEY>/...), chosen independently of yfinance's own symbol so
+# it stays a stable, human-readable identifier even if a symbol's exact
+# yfinance ticker ever changes. `symbol` is the exact yfinance ticker to
+# fetch (indices use yfinance's own "^"-prefixed convention, e.g. "^GSPC"
+# for the S&P 500; MSCI's own indices additionally carry a
+# "-USD-STRD" suffix, yfinance's way of encoding "USD-denominated, gross
+# total return, standard" for that index family).
+#
+# Global/regional equity benchmarks — MSCI World (developed markets),
+# MSCI ACWI (developed + emerging, "all country world index"), and MSCI
+# Emerging Markets (emerging only) — plus the major US, UK, European, and
+# Japanese large/broad/small-cap indices a holdings comparison would want
+# to plot a stock/ETF/pie against.
+#
+# Changing this list changes the market_data_bucket cost estimate:
+# infra/infracost-usage.prod.yml's module.market_data_bucket.aws_s3_bucket.this
+# usage (storage_gb, monthly_tier_1_requests) is computed from this file's
+# benchmark count — update those numbers whenever benchmarks are added or
+# removed here.
+benchmarks:
+  - key: MSCI_WORLD
+    symbol: "^990100-USD-STRD"
+  - key: MSCI_ACWI
+    symbol: "^991000-USD-STRD"
+  - key: MSCI_EM
+    symbol: "^MSCIEF"
+  - key: SP500
+    symbol: "^GSPC"
+  - key: DOW_JONES
+    symbol: "^DJI"
+  - key: NASDAQ100
+    symbol: "^NDX"
+  - key: RUSSELL3000
+    symbol: "^RUA"
+  - key: RUSSELL2000
+    symbol: "^RUT"
+  - key: FTSE100
+    symbol: "^FTSE"
+  - key: FTSE250
+    symbol: "^FTMC"
+  - key: FTSE_ALL_SHARE
+    symbol: "^FTAS"
+  - key: STOXX_EUROPE_600
+    symbol: "^STOXX"
+  - key: EURO_STOXX_50
+    symbol: "^STOXX50E"
+  - key: DAX
+    symbol: "^GDAXI"
+  - key: NIKKEI225
+    symbol: "^N225"

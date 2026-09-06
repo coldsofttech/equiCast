@@ -35,14 +35,19 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   pipeline that extracts ETF ticker profiles, daily prices, dividends,
   events, and risk metrics from Yahoo Finance and lands them in the same
   S3 bucket as Parquet.
+- **Benchmark data pipeline (`equicast-datafeed`, `equicast-metrics`,
+  `equicast-benchmark`)** — a scheduled pipeline that extracts market index
+  (e.g. S&P 500, FTSE 100, MSCI World) profiles, daily prices, and risk
+  metrics from Yahoo Finance and lands them in the same S3 bucket as
+  Parquet, for comparing a holding/pie against a benchmark.
 
 ## Disclaimer
 
-FX, stock, and ETF profile/price data is sourced via
+FX, stock, ETF, and benchmark profile/price data is sourced via
 [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
 educational and informational purposes only — not financial advice, with no
-guarantee of accuracy, completeness, or timeliness. FX/stock/ETF risk
-metrics (volatility, Sharpe ratio, max drawdown, CAGR) and stock
+guarantee of accuracy, completeness, or timeliness. FX/stock/ETF/benchmark
+risk metrics (volatility, Sharpe ratio, max drawdown, CAGR) and stock
 fundamentals (PE, EPS, margins, returns, leverage) are calculated by
 equicast where yfinance doesn't provide them directly, not sourced from a
 licensed provider —
@@ -56,9 +61,11 @@ for details. See
 [equicast-metrics](packages/metrics/README.md#disclaimer),
 [equicast-dividends](packages/dividends/README.md#disclaimer),
 [equicast-events](packages/events/README.md#disclaimer),
-[equicast-stock](packages/stock/README.md#disclaimer), and
-[equicast-etf](packages/etf/README.md#disclaimer) for the full text;
-each is also logged as a console warning the first time its client is used.
+[equicast-stock](packages/stock/README.md#disclaimer),
+[equicast-etf](packages/etf/README.md#disclaimer), and
+[equicast-benchmark](packages/benchmark/README.md#disclaimer) for the full
+text; each is also logged as a console warning the first time its client is
+used.
 
 ## FX data products
 
@@ -399,6 +406,65 @@ s3://equicast-market-data-<env>/
 Refreshed once daily automatically on weekdays, offset 15 minutes from the
 FX schedule so the two pipelines never overlap.
 
+## Benchmark data products
+
+Each configured benchmark (market index — default: MSCI World, MSCI ACWI,
+MSCI Emerging Markets, S&P 500, Dow Jones, Nasdaq-100, Russell 3000, Russell
+2000, FTSE 100, FTSE 250, FTSE All-Share, STOXX Europe 600, Euro Stoxx 50,
+DAX, Nikkei 225) yields a profile, daily prices, and risk metrics — the same
+three data products as FX, since a benchmark is a single yfinance symbol
+(like a stock ticker), not a pair, and pays no dividends/has no
+fundamentals.
+
+```python
+from equicast_benchmark import BenchmarkClient
+
+BenchmarkClient("SP500", "^GSPC").profile()
+# {"key": "SP500", "symbol": "^GSPC", "name": "S&P 500", "exchange": "SNP",
+#  "currency": "USD", "region": "US",
+#  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance",
+#  "day_open": 6410.5, "day_high": 6455.2, "day_low": 6398.1,
+#  "day_close": 6440.3, "year_open": 6100.0, "year_high": 6500.8,
+#  "year_low": 5200.4, "year_close": 6440.3}
+```
+
+`key` is a stable, human-readable S3 partition identifier you choose (e.g.
+`"SP500"`); `symbol` is the exact yfinance ticker to fetch (e.g. `"^GSPC"`).
+`name` is derived from yfinance's own `longName`/`shortName`, same fallback
+`equicast-fx`'s `description` uses — see
+[equicast-benchmark's README](packages/benchmark/README.md) for the full
+field-by-field breakdown.
+
+```python
+BenchmarkClient("SP500", "^GSPC").prices()
+# [{"key": "SP500", "symbol": "^GSPC", "date": "2026-01-02",
+#   "open": 6400.0, "high": 6420.0, "low": 6390.0, "close": 6410.0,
+#   "average": 6405.0, "last_updated": "2026-08-29T11:10:39+00:00",
+#   "source": "yfinance"},
+#  ...]
+
+MetricsClient("^GSPC").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX/stock/ETF
+```
+
+One row per trading day, current-year-only by default with the same
+`--full-load` option as FX/stock/ETF — see
+[the benchmark pipeline docs](docs/benchmark-pipeline.md). The pipeline
+writes all three as Parquet, landing in the same bucket as FX/stock/ETF
+data:
+
+```
+s3://equicast-market-data-<env>/
+└── benchmark=SP500/
+    ├── profile.parquet
+    ├── metrics.parquet
+    └── price/
+        ├── history.parquet
+        └── current.parquet
+```
+
+Refreshed once daily automatically on weekdays, offset 15 minutes from the
+stock schedule so none of the four pipelines overlap.
+
 ## Documentation
 
 - [Local setup](docs/local-setup.md) — get every package running on your machine
@@ -408,9 +474,11 @@ FX schedule so the two pipelines never overlap.
   for the stock ticker pipeline
 - [ETF pipeline: deployment and execution](docs/etf-pipeline.md) — same,
   for the ETF ticker pipeline
+- [Benchmark pipeline: deployment and execution](docs/benchmark-pipeline.md) — same,
+  for the market index (benchmark) pipeline
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF ingestion), and
-  how to troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark
+  ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo
 - [Changelog](CHANGELOG.md)

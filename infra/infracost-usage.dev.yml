@@ -4,11 +4,13 @@
 # cost of running them.
 #
 # This is the **dev** scenario: development and validation only — ~2 users,
-# no scheduled ingestion (fx/stock/etf-ingestion.yml's cron trigger always
-# targets production; dev only ever gets manual workflow_dispatch runs, see
-# each workflow's "Resolve target environment..." step), and today's small
-# packages/{fx,stock,etf}/config/*.dev.yaml lists rather than the ~10,000-
-# instrument scale infra/infracost-usage.prod.yml plans production against.
+# no scheduled ingestion (fx/stock/etf/benchmark-ingestion.yml's cron
+# trigger always targets production; dev only ever gets manual
+# workflow_dispatch runs, see each workflow's "Resolve target
+# environment..." step), and today's small
+# packages/{fx,stock,etf,benchmark}/config/*.dev.yaml lists rather than the
+# ~10,000-instrument scale infra/infracost-usage.prod.yml plans production
+# against.
 # The session model and per-user rates below are identical to prod's — see
 # that file for the full derivation — just applied to 2 users instead of 50.
 #
@@ -45,13 +47,14 @@ resource_usage:
       monthly_tier_1_requests: 10 # PUT — 4 writes/user/month (session model) * 2 users = 8, rounded up
       monthly_tier_2_requests: 600 # GET — 280 reads/user/month (session model) * 2 users = 560, rounded up
 
-  # FX + stock + ETF profile data (and the backend's on-demand search/
-  # profile/price cache reads) lands here. No scheduled runs in dev — only
-  # manual `workflow_dispatch(environment=dev)` runs against today's small
-  # packages/{fx,stock,etf}/config/*.dev.yaml lists, for ad hoc validation.
-  # Modeled at ~12 manual runs/month total (within the ~10-15/month
-  # expected), split evenly across the three pipelines (~4 each) absent any
-  # reason to weight one pipeline's manual testing over another's.
+  # FX + stock + ETF + benchmark profile data (and the backend's on-demand
+  # search/profile/price cache reads) lands here. No scheduled runs in dev —
+  # only manual `workflow_dispatch(environment=dev)` runs against today's
+  # small packages/{fx,stock,etf,benchmark}/config/*.dev.yaml lists, for ad
+  # hoc validation. Modeled at ~16 manual runs/month total (within the
+  # ~10-15/month per-pipeline range this was originally sized against),
+  # split evenly across the four pipelines (~4 each) absent any reason to
+  # weight one pipeline's manual testing over another's.
   #
   # --- FX (packages/fx/config/fx_pairs.dev.yaml, currently 4 pairs) ---
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
@@ -95,16 +98,27 @@ resource_usage:
   #             exceed 2 PUTs/ticker each now, regardless of history length)
   #             4 runs * 5 tickers * 5 files = 100 PUTs
   #
+  # --- Benchmark (packages/benchmark/config/benchmarks.dev.yaml, currently
+  #     5 benchmarks) --- no dividends/fundamentals, same per-file size
+  #     assumption as the FX section above (a benchmark is a single
+  #     yfinance symbol, not a pair, but priced/sized the same way).
+  #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
+  #             price.parquet ~20KB (current year only) = ~45KB/benchmark
+  #   storage:  5 benchmarks * 45KB = 225KB
+  #   manual runs: ~4/month
+  #   requests: 3 files/benchmark (profile + metrics + price), all PUT
+  #             4 runs * 5 benchmarks * 3 files = 60 PUTs
+  #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650KB + 2,695KB = 10,525KB (~0.01GB, rounded up)
-  #   requests (PUT): 50 (FX) + 200 (stock) + 100 (ETF) = 350
+  #   storage:  180KB + 7,650KB + 2,695KB + 225KB = 10,750KB (~0.01GB, rounded up)
+  #   requests (PUT): 50 (FX) + 200 (stock) + 100 (ETF) + 60 (benchmark) = 410
   #   requests (GET): 120 — backend on-demand reads, from the session model
   #             above (60/user/month * 2 users), not sized from the ticker
   #             count
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 350 # PUT/COPY/POST/LIST — FX (50) + stock (200) + ETF (100), manual runs only
+      monthly_tier_1_requests: 410 # PUT/COPY/POST/LIST — FX (50) + stock (200) + ETF (100) + benchmark (60), manual runs only
       monthly_tier_2_requests: 120 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/

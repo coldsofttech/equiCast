@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New `equicast-benchmark` package: extracts market-index (benchmark)
+  profiles, daily prices, and risk metrics from yfinance — MSCI World, MSCI
+  ACWI, MSCI Emerging Markets, S&P 500, Dow Jones, Nasdaq-100, Russell
+  3000/2000, FTSE 100/250/All-Share, STOXX Europe 600, Euro Stoxx 50, DAX,
+  and Nikkei 225 by default (`packages/benchmark/config/benchmarks.prod.yaml`;
+  a 5-benchmark subset in `benchmarks.dev.yaml`). Built the same way as
+  `equicast-fx` — a benchmark is a single yfinance symbol (like a stock
+  ticker), not a pair, so it has no dividends and no fundamentals, the same
+  reasoning `equicast-fx` uses (an index pays none and has no
+  earnings/balance sheet) — just keyed by a stable, human-readable `key`
+  (e.g. `"SP500"`, chosen independently of yfinance's own cryptic index
+  symbol, e.g. `"^GSPC"`) instead of a `from_currency`/`to_currency` pair.
+  Writes to `benchmark=<KEY>/{profile,metrics,price/{history,current}}.parquet`
+  in the same S3 bucket as FX/stock/ETF data. Ships a CLI
+  (`equicast-benchmark`), a chunking planner (`equicast-benchmark-plan`,
+  same GitHub Actions matrix-cap handling as `equicast-fx-plan`), and a
+  Dockerfile, wired into a new `benchmark-ingestion.yml` scheduled workflow
+  (Monday-Friday, 23:00 UTC — 15 minutes after `stock-ingestion.yml`, no
+  Saturday run since there's no forecasting step to run). `equicast-core`'s
+  catalog builder now also accepts `--asset-class benchmark`, and
+  `scripts/local-dev.ps1 -SeedMarketData` seeds it alongside FX/stock/ETF.
 - New `equicast-forecasting` package: `dividends(records, years=10)` projects
   a symbol's future dividend payouts forward from its actual ex-dividend-date
   history. Returns `[]` for a ticker with no dependable cadence to extend —

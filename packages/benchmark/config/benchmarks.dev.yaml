@@ -1,0 +1,22 @@
+# Used for manual dev/workflow_dispatch runs (benchmark-ingestion.yml's
+# "dev" environment) — the production benchmark list lives in
+# benchmarks.prod.yaml and is what the scheduled (cron) trigger always
+# uses. A small subset (5) of benchmarks.prod.yaml's 15, one per major
+# region this pipeline covers (US large-cap, UK large-cap, global developed,
+# Germany, Europe ex-UK), rather than a full mirror — plenty to exercise the
+# pipeline locally without waiting on 15 yfinance fetches every run.
+#
+# `key` is the S3 partition key this benchmark lands under
+# (benchmark=<KEY>/...); `symbol` is the exact yfinance ticker to fetch —
+# see benchmarks.prod.yaml's header comment for where each one came from.
+benchmarks:
+  - key: SP500
+    symbol: "^GSPC"
+  - key: FTSE100
+    symbol: "^FTSE"
+  - key: MSCI_WORLD
+    symbol: "^990100-USD-STRD"
+  - key: DAX
+    symbol: "^GDAXI"
+  - key: STOXX_EUROPE_600
+    symbol: "^STOXX"
