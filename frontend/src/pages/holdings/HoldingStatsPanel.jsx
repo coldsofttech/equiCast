@@ -3,9 +3,9 @@ import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import FieldList from "../../components/core/FieldList.jsx";
 import {
-  buildPlaceholderMetrics,
   formatCompactCurrency,
   formatCurrency,
+  formatDividendFrequency,
   formatPercent,
   formatPrice,
   formatRatio,
@@ -171,26 +171,23 @@ function remainingMetricGroups(metrics, currency) {
  * year's range and mislabeling it. 52 Weeks comes straight off the
  * profile's own year_high/year_low. Below that, a stacked metrics list
  * mixing real profile fields (market cap, dividend yield, beta, payout
- * ratio, dividend rate) with real risk/valuation fields off `GET
+ * ratio, dividend rate, dividend frequency — see holdingFinancials.js's
+ * formatDividendFrequency) with real risk/valuation fields off `GET
  * .../metrics/` (Volatility, and P/E ratio — `pe_ratio`, the plain price ÷
  * trailing EPS calculation, not `trailing_pe`, which prefers yfinance's own
  * reported figure and can disagree with the plain calculation; that one's
- * in the "See all" Valuation group instead) and the one field no backend
- * endpoint exposes yet (dividend frequency — see holdingFinancials.js's
- * buildPlaceholderMetrics), called out as sample data in the caption below
- * rather than per-row, to match the mockup's clean row style. A "See all"
- * link opens a Drawer with every other metrics field, grouped by subject
- * (see remainingMetricGroups) — `cagr_*` is deliberately left out, its
- * placement is still to be decided.
+ * in the "See all" Valuation group instead). A "See all" link opens a
+ * Drawer with every other metrics field, grouped by subject (see
+ * remainingMetricGroups) — `cagr_*` is deliberately left out, its placement
+ * is still to be decided.
  *
- * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null, marketMetrics: import("../../api/market.js").MarketMetrics|null }} props
+ * @param {{ marketProfile: import("../../api/market.js").MarketProfile|null, marketMetrics: import("../../api/market.js").MarketMetrics|null }} props
  */
-function HoldingStatsPanel({ ticker, marketProfile, marketMetrics }) {
+function HoldingStatsPanel({ marketProfile, marketMetrics }) {
   const [isSeeAllOpen, setIsSeeAllOpen] = useState(false);
 
   const fiftyTwoWeeksHigh = marketProfile?.year_high ?? null;
   const fiftyTwoWeeksLow = marketProfile?.year_low ?? null;
-  const placeholders = buildPlaceholderMetrics(ticker);
   const currency = marketProfile?.currency;
   const currentPrice = marketProfile?.day_close ?? null;
 
@@ -277,16 +274,13 @@ function HoldingStatsPanel({ ticker, marketProfile, marketMetrics }) {
                 ? formatCurrency(marketProfile.dividend_rate, currency)
                 : null,
           },
-          { label: "Dividend frequency", value: placeholders.dividendFrequency },
+          { label: "Dividend frequency", value: formatDividendFrequency(marketProfile?.dividend_frequency) },
           {
             label: "Payout ratio",
             value: marketProfile?.payout_ratio != null ? `${(marketProfile.payout_ratio * 100).toFixed(2)}%` : null,
           },
         ]}
       />
-      <p className="ec-chart-caption">
-        Dividend frequency is sample data — every other figure is real.
-      </p>
 
       <Drawer open={isSeeAllOpen} onClose={() => setIsSeeAllOpen(false)} title="All metrics">
         {metricGroups

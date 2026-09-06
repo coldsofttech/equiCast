@@ -13,6 +13,7 @@ import AssetIcon from "../../components/core/AssetIcon.jsx";
 import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
+import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
@@ -54,9 +55,7 @@ function formatSyncedDate(isoDatetime) {
  * which stays illustrative since there's no real portfolio-valuation
  * series to plot yet), a per-instance shares/avg price table with delete,
  * a two-pane stats section, and an About section —
- * both real data from the market profile endpoint where it exists, with the
- * handful of fields the backend doesn't expose yet (P/E, volatility,
- * average volume, dividend frequency) shown as clearly-hinted placeholders.
+ * both real data from the market profile endpoint where it exists.
  *
  * Reached by ticker, not holding id — the same ticker can be a separate
  * holding record directly in an account and/or inside one or more pies
@@ -461,8 +460,10 @@ function HoldingTickerPage() {
             );
           })()}
 
+          <HoldingCagrSection marketMetrics={marketMetrics} />
+
           <div className="ec-account-columns">
-            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} marketMetrics={marketMetrics} />
+            <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 

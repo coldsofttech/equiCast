@@ -1,4 +1,3 @@
-import { seededRandom } from "../../utils/deterministicRandom.js";
 import { getProfile } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
 
@@ -6,11 +5,11 @@ import { formatCurrency } from "../sampleFinancials.js";
  * Real (not synthetic) financial calculations for the holding detail page —
  * mirrors sampleFinancials.js's separation of pure calculation logic from
  * JSX, but everything here is derived from actual transactions/prices
- * rather than a seeded random walk. The only synthetic value left on this
- * page is `buildPlaceholderMetrics`' dividend frequency — no backend
- * endpoint exposes a real payout schedule yet; every other figure here is
- * real, including P/E ratio/volatility/every other Stats metric, all
- * sourced from `GET .../metrics/` (see `market.js`'s `getMetrics`).
+ * rather than a seeded random walk. Every figure on the page is real,
+ * including dividend frequency (the profile's own `dividend_frequency`
+ * field — see `formatDividendFrequency` below), P/E ratio/volatility/every
+ * other Stats metric, all sourced from `GET .../metrics/` (see `market.js`'s
+ * `getMetrics`).
  */
 
 export { formatCurrency };
@@ -238,26 +237,30 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
 }
 
 /**
- * Dividend payout schedules this seeds between, for `buildPlaceholderMetrics`.
+ * Display labels for the profile's `dividend_frequency` field — the raw
+ * cadence label `equicast_dividends.dividend_frequency` classifies each
+ * ticker into (see packages/dividends/src/equicast_dividends/frequency.py).
+ * `not_applicable` (fewer than 2 recorded payouts to measure a cadence
+ * from) has no entry here on purpose — it maps to `null` below so the
+ * Stats panel skips the row entirely, same as any other unset field.
  */
-const DIVIDEND_FREQUENCIES = ["Quarterly", "Semi-annual", "Annual", "Monthly"];
+const DIVIDEND_FREQUENCY_LABELS = {
+  weekly: "Weekly",
+  monthly: "Monthly",
+  quarterly: "Quarterly",
+  half_yearly: "Semi-annual",
+  yearly: "Annual",
+  irregular: "Irregular",
+};
 
 /**
- * A seeded-random placeholder dividend payout schedule — no backend
- * endpoint exposes a real one yet (packages/dividends only has raw
- * historical payout events, not a computed frequency). Deterministic per
- * ticker via the same seeded-random approach every other illustrative
- * value in this app uses (see deterministicRandom.js) so a given ticker's
- * placeholder doesn't reshuffle on every render. MUST be rendered with an
- * explicit "Sample data" hint (see StatTile's `hint` prop) — this is the
- * only synthetic data left on the page.
+ * The profile's raw `dividend_frequency` value (e.g. `"quarterly"`) as a
+ * display label (e.g. `"Quarterly"`), `null` when unset or
+ * `"not_applicable"` (a non-payer, or too little history to classify).
  *
- * @param {string} ticker
- * @returns {{ dividendFrequency: string }}
+ * @param {string|null|undefined} frequency
+ * @returns {string|null}
  */
-export function buildPlaceholderMetrics(ticker) {
-  const rand = seededRandom(`holding-metrics:${ticker}`);
-  return {
-    dividendFrequency: DIVIDEND_FREQUENCIES[Math.floor(rand() * DIVIDEND_FREQUENCIES.length)],
-  };
+export function formatDividendFrequency(frequency) {
+  return frequency != null ? (DIVIDEND_FREQUENCY_LABELS[frequency] ?? null) : null;
 }

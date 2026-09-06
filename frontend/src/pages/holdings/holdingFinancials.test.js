@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  buildPlaceholderMetrics,
   deriveAverageModeFinancials,
   deriveInstanceFinancials,
   deriveTransactionModeFinancials,
+  formatDividendFrequency,
   formatPercent,
   formatPrice,
   formatRatio,
@@ -192,12 +192,19 @@ describe("resolveFxRate", () => {
   });
 });
 
-describe("buildPlaceholderMetrics", () => {
-  it("is deterministic per ticker", () => {
-    expect(buildPlaceholderMetrics("AAPL")).toEqual(buildPlaceholderMetrics("AAPL"));
+describe("formatDividendFrequency", () => {
+  it("maps each known backend cadence to a display label", () => {
+    expect(formatDividendFrequency("weekly")).toBe("Weekly");
+    expect(formatDividendFrequency("monthly")).toBe("Monthly");
+    expect(formatDividendFrequency("quarterly")).toBe("Quarterly");
+    expect(formatDividendFrequency("half_yearly")).toBe("Semi-annual");
+    expect(formatDividendFrequency("yearly")).toBe("Annual");
+    expect(formatDividendFrequency("irregular")).toBe("Irregular");
   });
 
-  it("differs between tickers", () => {
-    expect(buildPlaceholderMetrics("AAPL")).not.toEqual(buildPlaceholderMetrics("MSFT"));
+  it("returns null for not_applicable and unset values", () => {
+    expect(formatDividendFrequency("not_applicable")).toBeNull();
+    expect(formatDividendFrequency(null)).toBeNull();
+    expect(formatDividendFrequency(undefined)).toBeNull();
   });
 });

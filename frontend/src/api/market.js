@@ -97,6 +97,7 @@ export function searchTickers(
  * @property {number|null} payout_ratio
  * @property {number|null} dividend_rate
  * @property {number|null} dividend_yield
+ * @property {string|null} dividend_frequency
  * @property {number|null} market_cap
  * @property {number|null} volume
  * @property {number|null} day_open
