@@ -115,16 +115,20 @@ const X_AXIS_MAX_TICKS = 6;
  * the series' own high/low so it stays on-screen even when it falls
  * outside the visible price range for the selected date range (e.g. a
  * short "5d" window whose price band sits well above/below where the
- * ticker was originally bought).
+ * ticker was originally bought). `currentPrice` (the latest real market
+ * price — marketProfile's day_close — or null when no market data is
+ * published) draws the same way, in the accent info color instead of grey
+ * so it reads as a distinct marker from the avg-price line whenever the
+ * two are both on-screen and don't coincide with the series' own last bar.
  *
  * Picking a benchmark (not a holding/ticker) as the comparison also renders
  * HoldingBenchmarkRating below the chart — a real 0-100 rating derived
  * from both sides' `GET .../metrics/`, independent of this chart's own
  * range picker (see that component's docstring for the exact formula).
  *
- * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null }} props
+ * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
-function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
+function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, currentPrice = null }) {
   const api = useApi();
   const [chartType, setChartType] = useState("line");
   const [rangeId, setRangeId] = useState("max");
@@ -261,9 +265,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
     return avgPrice / bars[0].close;
   }, [avgPrice, bars]);
 
+  const currentRatio = useMemo(() => {
+    if (currentPrice == null || bars.length === 0) return null;
+    return currentPrice / bars[0].close;
+  }, [currentPrice, bars]);
+
   const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
   const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
   const avgLog = avgRatio != null ? Math.log(avgRatio) : null;
+  const currentLog = currentRatio != null ? Math.log(currentRatio) : null;
 
   // The legend's total-change badges stay in plain (linear) %, since "up
   // 27,918%" reads naturally there — only the chart's own y-positions use
@@ -276,12 +286,14 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
       const values = [...(mainLog ?? []), 0];
       if (compareLog) values.push(...compareLog);
       if (avgLog != null) values.push(avgLog);
+      if (currentLog != null) values.push(currentLog);
       return { min: Math.min(...values), max: Math.max(...values) };
     }
     const values = bars.flatMap((b) => [b.high, b.low]);
     if (avgPrice != null) values.push(avgPrice);
+    if (currentPrice != null) values.push(currentPrice);
     return { min: Math.min(...values), max: Math.max(...values) };
-  }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice]);
+  }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice, currentLog, currentPrice]);
 
   const rangeSpan = max - min || 1;
   const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
@@ -405,8 +417,14 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
             )}
             {avgPrice != null && (
               <span className="ec-pchart-legend-item">
-                <span className="ec-pchart-swatch" aria-hidden="true" />
+                <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
                 Avg buy price: {formatPrice(avgPrice, seriesCurrency)}
+              </span>
+            )}
+            {currentPrice != null && (
+              <span className="ec-pchart-legend-item">
+                <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
+                Current price: {formatPrice(currentPrice, seriesCurrency)}
               </span>
             )}
           </div>
@@ -472,6 +490,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
                     className="ec-chart-avg-line"
                   />
                 )}
+                {currentLog != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(currentLog)}
+                    y2={yFor(currentLog)}
+                    className="ec-chart-current-line"
+                  />
+                )}
               </>
             ) : (
               <>
@@ -506,6 +533,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null }) {
                     y1={yFor(avgPrice)}
                     y2={yFor(avgPrice)}
                     className="ec-chart-avg-line"
+                  />
+                )}
+                {currentPrice != null && (
+                  <line
+                    x1={PADDING_LEFT}
+                    x2={width - PADDING_RIGHT}
+                    y1={yFor(currentPrice)}
+                    y2={yFor(currentPrice)}
+                    className="ec-chart-current-line"
                   />
                 )}
               </>

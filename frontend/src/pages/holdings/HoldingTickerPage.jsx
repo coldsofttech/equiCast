@@ -573,6 +573,7 @@ function HoldingTickerPage() {
                   ticker={ticker}
                   currency={nativeCurrency}
                   avgPrice={avgPriceNative}
+                  currentPrice={currentPriceNative}
                 />
                 {ownedSharesSection}
               </>

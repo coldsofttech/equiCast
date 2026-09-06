@@ -28,6 +28,16 @@
   stroke-dasharray: 6 4;
 }
 
+/** The latest real market price (marketProfile's day_close) — same dashed
+ * treatment as ec-chart-avg-line, but in the accent info color so it reads
+ * as a distinct marker whenever both lines are on-screen and don't
+ * coincide with the series' own last bar. */
+.ec-chart-current-line {
+  stroke: var(--ec-info);
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+}
+
 /** The 0% baseline in comparison (pctMode) charts — a plain gridline
  * doesn't stand out enough to read as "this is where both series started",
  * so it gets its own slightly bolder, more opaque treatment. */
@@ -40,4 +50,8 @@
   width: 14px;
   height: 0;
   border-top: 1.5px dashed var(--ec-text-muted);
+}
+
+.ec-pchart-swatch--current {
+  border-top-color: var(--ec-info);
 }
