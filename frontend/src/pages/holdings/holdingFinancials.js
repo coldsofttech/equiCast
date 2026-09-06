@@ -6,10 +6,11 @@ import { formatCurrency } from "../sampleFinancials.js";
  * Real (not synthetic) financial calculations for the holding detail page —
  * mirrors sampleFinancials.js's separation of pure calculation logic from
  * JSX, but everything here is derived from actual transactions/prices
- * rather than a seeded random walk. The only synthetic values left on this
- * page are the four metrics `buildPlaceholderMetrics` produces, for the
- * fields no backend endpoint exposes yet (P/E ratio, volatility, average
- * volume, dividend frequency) — every other figure here is real.
+ * rather than a seeded random walk. The only synthetic value left on this
+ * page is `buildPlaceholderMetrics`' dividend frequency — no backend
+ * endpoint exposes a real payout schedule yet; every other figure here is
+ * real, including P/E ratio/volatility/every other Stats metric, all
+ * sourced from `GET .../metrics/` (see `market.js`'s `getMetrics`).
  */
 
 export { formatCurrency };
@@ -61,6 +62,34 @@ export function formatCompactCurrency(value, currency) {
     notation: "compact",
     maximumFractionDigits: 2,
   }).format(value);
+}
+
+/**
+ * A metrics fraction (e.g. 0.23, -0.08) as a percentage string, `null` when
+ * unset — same "skip, don't dash" contract FieldList expects. Most of
+ * equicast-metrics' fundamentals/risk fields are fractions (see
+ * `equicast_metrics.fundamentals`/`.calculations`); `debt_to_equity` is the
+ * one exception, already scaled to a percentage by the backend, so callers
+ * format that one as a plain number with a literal "%" instead.
+ *
+ * @param {number|null|undefined} fraction
+ * @param {number} [digits]
+ * @returns {string|null}
+ */
+export function formatPercent(fraction, digits = 1) {
+  return fraction != null ? `${(fraction * 100).toFixed(digits)}%` : null;
+}
+
+/**
+ * A plain decimal ratio (P/E, PEG, price-to-book, Sharpe ratio, ...),
+ * `null` when unset.
+ *
+ * @param {number|null|undefined} value
+ * @param {number} [digits]
+ * @returns {string|null}
+ */
+export function formatRatio(value, digits = 2) {
+  return value != null ? value.toFixed(digits) : null;
 }
 
 /**
@@ -214,25 +243,21 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
 const DIVIDEND_FREQUENCIES = ["Quarterly", "Semi-annual", "Annual", "Monthly"];
 
 /**
- * Seeded-random placeholder values for the four metrics no backend endpoint
- * exposes yet (see backend/market_data/views.py — no MetricsView, and
- * packages/metrics's computed fundamentals are never read back out at
- * request time). Deterministic per ticker via the same seeded-random
- * approach every other illustrative value in this app uses (see
- * deterministicRandom.js) so a given ticker's placeholder numbers don't
- * reshuffle on every render. Every field returned here MUST be rendered
- * with an explicit "Sample data" hint (see StatTile's `hint` prop) — this
- * is the only synthetic data on the whole page.
+ * A seeded-random placeholder dividend payout schedule — no backend
+ * endpoint exposes a real one yet (packages/dividends only has raw
+ * historical payout events, not a computed frequency). Deterministic per
+ * ticker via the same seeded-random approach every other illustrative
+ * value in this app uses (see deterministicRandom.js) so a given ticker's
+ * placeholder doesn't reshuffle on every render. MUST be rendered with an
+ * explicit "Sample data" hint (see StatTile's `hint` prop) — this is the
+ * only synthetic data left on the page.
  *
  * @param {string} ticker
- * @returns {{ peRatio: number, volatilityPct: number, avgVolume: number, dividendFrequency: string }}
+ * @returns {{ dividendFrequency: string }}
  */
 export function buildPlaceholderMetrics(ticker) {
   const rand = seededRandom(`holding-metrics:${ticker}`);
   return {
-    peRatio: 8 + rand() * 40,
-    volatilityPct: 10 + rand() * 50,
-    avgVolume: Math.round(100000 + rand() * 20000000),
     dividendFrequency: DIVIDEND_FREQUENCIES[Math.floor(rand() * DIVIDEND_FREQUENCIES.length)],
   };
 }

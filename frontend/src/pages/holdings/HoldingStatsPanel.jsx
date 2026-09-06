@@ -1,10 +1,14 @@
+import { useState } from "react";
 import Card from "../../components/core/Card.jsx";
+import Drawer from "../../components/core/Drawer.jsx";
 import FieldList from "../../components/core/FieldList.jsx";
 import {
   buildPlaceholderMetrics,
   formatCompactCurrency,
   formatCurrency,
+  formatPercent,
   formatPrice,
+  formatRatio,
 } from "./holdingFinancials.js";
 
 /**
@@ -85,6 +89,79 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
 }
 
 /**
+ * The "See all" Drawer's remaining metrics, grouped logically by subject —
+ * everything `GET .../metrics/` returns (see market.js's MarketMetrics)
+ * that isn't already in the main list (Volatility/P/E ratio are covered
+ * there — the plain price/EPS `pe_ratio`, not `trailing_pe`, see the
+ * component docstring below). `cagr_*` is deliberately excluded —
+ * where/how to surface it is still to be decided. Each group renders as
+ * its own FieldList so a group with nothing resolved (e.g. every
+ * Valuation/Per-share/Profitability/Leverage field for an etf/fx ticker,
+ * which has no fundamentals at all) can be hidden entirely rather than
+ * showing an empty heading.
+ *
+ * @param {import("../../api/market.js").MarketMetrics|null} metrics
+ * @param {string|null|undefined} currency
+ * @returns {{ title: string, items: { label: string, value: string|null }[] }[]}
+ */
+function remainingMetricGroups(metrics, currency) {
+  return [
+    {
+      title: "Valuation",
+      items: [
+        // pe_ratio (the plain price/EPS calculation) is the main list's
+        // "P/E ratio" row — trailing_pe (yfinance's own reported figure,
+        // which can disagree with the plain calculation) lives here instead.
+        { label: "Trailing P/E", value: formatRatio(metrics?.trailing_pe) },
+        { label: "Forward P/E", value: formatRatio(metrics?.forward_pe) },
+        { label: "PEG ratio", value: formatRatio(metrics?.peg) },
+        { label: "Price/Book", value: formatRatio(metrics?.price_to_book) },
+        { label: "Price/Sales", value: formatRatio(metrics?.price_to_sales) },
+        { label: "EV/EBITDA", value: formatRatio(metrics?.ev_ebitda) },
+      ],
+    },
+    {
+      title: "Per share",
+      items: [
+        { label: "Trailing EPS", value: metrics?.trailing_eps != null ? formatPrice(metrics.trailing_eps, currency) : null },
+        { label: "Forward EPS", value: metrics?.forward_eps != null ? formatPrice(metrics.forward_eps, currency) : null },
+        {
+          label: "Free cash flow/share",
+          value: metrics?.free_cash_flow_per_share != null
+            ? formatPrice(metrics.free_cash_flow_per_share, currency)
+            : null,
+        },
+      ],
+    },
+    {
+      title: "Profitability",
+      items: [
+        { label: "Gross margin", value: formatPercent(metrics?.gross_margin) },
+        { label: "Operating margin", value: formatPercent(metrics?.operating_margin) },
+        { label: "Profit margin", value: formatPercent(metrics?.profit_margin) },
+        { label: "Return on equity", value: formatPercent(metrics?.return_on_equity) },
+        { label: "Return on assets", value: formatPercent(metrics?.return_on_assets) },
+      ],
+    },
+    {
+      title: "Leverage",
+      items: [
+        // debt_to_equity is already a percentage (e.g. 150.0 == 150%), not
+        // a fraction — see equicast_metrics.fundamentals' own comment on it.
+        { label: "Debt/Equity", value: metrics?.debt_to_equity != null ? `${metrics.debt_to_equity.toFixed(1)}%` : null },
+      ],
+    },
+    {
+      title: "Risk",
+      items: [
+        { label: "Sharpe ratio", value: formatRatio(metrics?.sharpe_ratio) },
+        { label: "Max drawdown", value: formatPercent(metrics?.max_drawdown) },
+      ],
+    },
+  ];
+}
+
+/**
  * The Stats card — see .temp/52week_1week chart.png for the design this
  * follows: a 1 Day / 52 Weeks high-low range side by side (a vertical bar
  * with a pointer marking the current price's position). 1 Day comes
@@ -92,18 +169,25 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
  * figure anywhere in the data (the profile only has day- and year-prefixed
  * fields), so this uses the day range instead rather than falling back to a full
  * year's range and mislabeling it. 52 Weeks comes straight off the
- * profile's own year_high/year_low (see profile.parquet) — no separate
- * price-history fetch needed for this. Below that, a stacked metrics list
+ * profile's own year_high/year_low. Below that, a stacked metrics list
  * mixing real profile fields (market cap, dividend yield, beta, payout
- * ratio, dividend rate) with the four seeded placeholders the backend
- * doesn't expose yet (volatility, average volume, P/E ratio, dividend
- * frequency — see holdingFinancials.js's buildPlaceholderMetrics), called
- * out as sample data in the caption below rather than per-row, to match
- * the mockup's clean row style.
+ * ratio, dividend rate) with real risk/valuation fields off `GET
+ * .../metrics/` (Volatility, and P/E ratio — `pe_ratio`, the plain price ÷
+ * trailing EPS calculation, not `trailing_pe`, which prefers yfinance's own
+ * reported figure and can disagree with the plain calculation; that one's
+ * in the "See all" Valuation group instead) and the one field no backend
+ * endpoint exposes yet (dividend frequency — see holdingFinancials.js's
+ * buildPlaceholderMetrics), called out as sample data in the caption below
+ * rather than per-row, to match the mockup's clean row style. A "See all"
+ * link opens a Drawer with every other metrics field, grouped by subject
+ * (see remainingMetricGroups) — `cagr_*` is deliberately left out, its
+ * placement is still to be decided.
  *
- * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null }} props
+ * @param {{ ticker: string, marketProfile: import("../../api/market.js").MarketProfile|null, marketMetrics: import("../../api/market.js").MarketMetrics|null }} props
  */
-function HoldingStatsPanel({ ticker, marketProfile }) {
+function HoldingStatsPanel({ ticker, marketProfile, marketMetrics }) {
+  const [isSeeAllOpen, setIsSeeAllOpen] = useState(false);
+
   const fiftyTwoWeeksHigh = marketProfile?.year_high ?? null;
   const fiftyTwoWeeksLow = marketProfile?.year_low ?? null;
   const placeholders = buildPlaceholderMetrics(ticker);
@@ -130,10 +214,21 @@ function HoldingStatsPanel({ ticker, marketProfile }) {
         : "down"
       : null;
 
+  const metricGroups = remainingMetricGroups(marketMetrics, currency).map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.value != null),
+  }));
+  const hasMoreMetrics = metricGroups.some((group) => group.items.length > 0);
+
   return (
     <Card className="ec-detail-section">
       <div className="ec-section-head">
         <h3 className="ec-section-title">Stats</h3>
+        {hasMoreMetrics && (
+          <button type="button" className="ec-inline-link-btn" onClick={() => setIsSeeAllOpen(true)}>
+            See all
+          </button>
+        )}
       </div>
 
       <div className="ec-holding-highlow-grid">
@@ -168,10 +263,9 @@ function HoldingStatsPanel({ ticker, marketProfile }) {
                 ? formatCompactCurrency(marketProfile.market_cap, currency)
                 : null,
           },
-          { label: "P/E ratio", value: placeholders.peRatio.toFixed(1) },
+          { label: "P/E ratio", value: formatRatio(marketMetrics?.pe_ratio) },
           { label: "Beta", value: marketProfile?.beta != null ? marketProfile.beta.toFixed(2) : null },
-          { label: "Volatility", value: `${placeholders.volatilityPct.toFixed(1)}%` },
-          { label: "Average volume", value: placeholders.avgVolume.toLocaleString() },
+          { label: "Volatility", value: formatPercent(marketMetrics?.volatility) },
           {
             label: "Dividend yield",
             value: marketProfile?.dividend_yield != null ? `${(marketProfile.dividend_yield * 100).toFixed(2)}%` : null,
@@ -191,9 +285,19 @@ function HoldingStatsPanel({ ticker, marketProfile }) {
         ]}
       />
       <p className="ec-chart-caption">
-        Volatility, average volume, P/E ratio and dividend frequency are sample data — market cap,
-        dividend yield, beta, payout ratio and dividend rate are real.
+        Dividend frequency is sample data — every other figure is real.
       </p>
+
+      <Drawer open={isSeeAllOpen} onClose={() => setIsSeeAllOpen(false)} title="All metrics">
+        {metricGroups
+          .filter((group) => group.items.length > 0)
+          .map((group) => (
+            <div className="ec-metrics-group" key={group.title}>
+              <h4 className="ec-metrics-group-title">{group.title}</h4>
+              <FieldList items={group.items} />
+            </div>
+          ))}
+      </Drawer>
     </Card>
   );
 }

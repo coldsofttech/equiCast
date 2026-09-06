@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getPrices, getProfile, searchTickers } from "./market.js";
+import { getMetrics, getPrices, getProfile, searchTickers } from "./market.js";
 
 describe("market api", () => {
   it("searches tickers by query with default page/page size", async () => {
@@ -84,6 +84,14 @@ describe("market api", () => {
     await getProfile(api, "stock", "AAPL");
 
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/profile/");
+  });
+
+  it("fetches a symbol's metrics", async () => {
+    const api = vi.fn().mockResolvedValue({ volatility: 0.23, trailing_pe: 28.5 });
+
+    await getMetrics(api, "stock", "AAPL");
+
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/metrics/");
   });
 
   it("defaults to the max range when none is given", async () => {

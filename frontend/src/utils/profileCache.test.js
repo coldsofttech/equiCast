@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { priceCacheKey, readCachedPrices, writeCachedPrices } from "./priceCache.js";
+import { profileCacheKey, readCachedProfile, writeCachedProfile } from "./profileCache.js";
 
-describe("priceCache", () => {
-  it("builds a price key from asset class, symbol, and range", () => {
-    expect(priceCacheKey("stock", "aapl", "1y")).toBe("stock:AAPL:prices:1y");
+describe("profileCache", () => {
+  it("builds a profile key from asset class and symbol", () => {
+    expect(profileCacheKey("stock", "aapl")).toBe("stock:AAPL:profile");
   });
 
   // This test environment has no IndexedDB (see marketDataCache.js's
@@ -11,12 +11,12 @@ describe("priceCache", () => {
   // a real browser without IndexedDB support (or one that throws for some
   // other reason) would hit, proving it never throws through to the caller.
   it("degrades to a cache miss when IndexedDB is unavailable", async () => {
-    await expect(readCachedPrices("stock:AAPL:1y")).resolves.toBeNull();
+    await expect(readCachedProfile("stock:AAPL:profile")).resolves.toBeNull();
   });
 
   it("degrades to a no-op write when IndexedDB is unavailable", async () => {
     await expect(
-      writeCachedPrices("stock:AAPL:1y", { ticker: "AAPL", prices: [] })
+      writeCachedProfile("stock:AAPL:profile", { ticker: "AAPL" })
     ).resolves.toBeUndefined();
   });
 });

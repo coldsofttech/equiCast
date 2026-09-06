@@ -197,7 +197,7 @@ merged into a single row:
   same way as for an FX pair (see [equicast-metrics's
   README](../metrics/README.md)).
 - `MetricsClient.fundamentals()` — stock-only valuation/fundamental metrics
-  (trailing/forward PE, trailing/forward EPS, PEG, price-to-book,
+  (P/E ratio, trailing/forward PE, trailing/forward EPS, PEG, price-to-book,
   price-to-sales, EV/EBITDA, gross/operating/profit margin, return on
   equity/assets, debt-to-equity, free cash flow per share). See
   [equicast-metrics's README](../metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)

@@ -14,10 +14,11 @@ import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
+import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
+import { getMetrics, getProfile, searchTickers, MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
 import { deleteHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
@@ -79,6 +80,7 @@ function HoldingTickerPage() {
 
   const [marketProfile, setMarketProfile] = useState(null);
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
+  const [marketMetrics, setMarketMetrics] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -194,6 +196,8 @@ function HoldingTickerPage() {
       .then((profile) => ({ status: "ok", profile }))
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
+    const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
+
     const transactionsPromise = isOwned
       ? Promise.all(
           instances.map((instance) =>
@@ -204,15 +208,18 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, transactionsPromise]).then(([profileResult, transactionsResults]) => {
-      if (cancelled) return;
-      setMarketProfileStatus(profileResult.status);
-      setMarketProfile(profileResult.profile);
-      const map = {};
-      for (const result of transactionsResults) map[result.holdingId] = result;
-      setTransactionsByHolding(map);
-      setIsDataLoading(false);
-    });
+    Promise.all([profilePromise, metricsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, transactionsResults]) => {
+        if (cancelled) return;
+        setMarketProfileStatus(profileResult.status);
+        setMarketProfile(profileResult.profile);
+        setMarketMetrics(metrics);
+        const map = {};
+        for (const result of transactionsResults) map[result.holdingId] = result;
+        setTransactionsByHolding(map);
+        setIsDataLoading(false);
+      }
+    );
 
     return () => {
       cancelled = true;
@@ -309,7 +316,7 @@ function HoldingTickerPage() {
       }
       footer={<SiteFooter />}
     >
-      {isLoading && <p className="ec-loading">Loading…</p>}
+      {isLoading && <HoldingTickerSkeleton isOwned={false} />}
       {error && <Alert tone="danger">{error}</Alert>}
 
       {!isLoading && !error && notFound && (
@@ -320,7 +327,7 @@ function HoldingTickerPage() {
       )}
 
       {!isLoading && !error && !notFound && (isResolvingAssetClass || isDataLoading) && (
-        <p className="ec-loading">Loading…</p>
+        <HoldingTickerSkeleton isOwned={isOwned} />
       )}
 
       {!isLoading && !error && !notFound && !isResolvingAssetClass && !isDataLoading && (
@@ -455,7 +462,7 @@ function HoldingTickerPage() {
           })()}
 
           <div className="ec-account-columns">
-            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} />
+            <HoldingStatsPanel ticker={ticker} marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 

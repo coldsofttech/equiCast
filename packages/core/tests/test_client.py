@@ -100,6 +100,23 @@ def test_get_profile_returns_none_when_key_missing(s3_client) -> None:
     assert client.get_profile("stock", "MISSING") is None
 
 
+def test_get_metrics_returns_the_single_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/metrics.parquet",
+        Body=_parquet_bytes([{"volatility": 0.23, "trailing_pe": 28.5}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_metrics("stock", "aapl") == {"volatility": 0.23, "trailing_pe": 28.5}
+
+
+def test_get_metrics_returns_none_when_key_missing(s3_client) -> None:
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_metrics("stock", "MISSING") is None
+
+
 def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
     """A stock profile's `ceos` is written as a JSON string column (see
     equicast_stock.writer.write_profile_parquet's docstring) — get_profile

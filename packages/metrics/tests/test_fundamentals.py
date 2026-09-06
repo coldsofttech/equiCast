@@ -56,6 +56,10 @@ def test_compute_fundamentals_uses_direct_info_fields_when_present() -> None:
 
     values, used_fallback = compute_fundamentals(info, _no_financials, _no_balance_sheet)
 
+    # No currentPrice in this info dict, so the plain price/EPS calculation
+    # has nothing to divide with - pe_ratio stays None even though
+    # trailing_pe resolves straight from yfinance's own trailingPE.
+    assert values["pe_ratio"] is None
     assert values["trailing_pe"] == 30.0
     assert values["forward_pe"] == 25.0
     assert values["trailing_eps"] == 6.0
@@ -89,11 +93,28 @@ def test_compute_fundamentals_falls_back_to_derived_ratios() -> None:
 
     values, used_fallback = compute_fundamentals(info, _no_financials, _no_balance_sheet)
 
+    assert values["pe_ratio"] == pytest.approx(20.0)  # currentPrice / trailingEps
     assert values["trailing_pe"] == pytest.approx(20.0)  # currentPrice / trailingEps
     assert values["price_to_sales"] == pytest.approx(2.0)  # marketCap / totalRevenue
     assert values["ev_ebitda"] == pytest.approx(12.0)  # enterpriseValue / ebitda
     assert values["peg"] == pytest.approx(20.0 / 15.0)  # trailing_pe / (earningsGrowth * 100)
     assert used_fallback is True
+
+
+def test_pe_ratio_always_uses_the_plain_price_over_eps_calculation() -> None:
+    """Unlike trailing_pe, pe_ratio never defers to yfinance's own
+    trailingPE figure - it stays the direct price/EPS calculation even
+    when trailingPE disagrees with it."""
+    info = {
+        "trailingPE": 30.0,
+        "currentPrice": 100.0,
+        "trailingEps": 6.0,
+    }
+
+    values, _ = compute_fundamentals(info, _no_financials, _no_balance_sheet)
+
+    assert values["trailing_pe"] == 30.0
+    assert values["pe_ratio"] == pytest.approx(100.0 / 6.0)
 
 
 def test_compute_fundamentals_falls_back_to_balance_sheet_and_financials() -> None:

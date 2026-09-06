@@ -243,25 +243,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the filter panel's own submitted keyword rather than always reusing the
   URL's existing `q`).
 
-- Same-day IndexedDB caching for `GET .../prices/` and `GET .../profile/`
-  (`frontend/src/utils/priceCache.js`, wrapped by `market.js`'s
-  `getPrices`/`getProfile`): the backend's published market data only
-  changes once a day, so a repeat request for the same `assetClass`/
-  `symbol`(/`range`) later the same local day is served from the browser
-  instead of hitting the API again — a cache miss/failure (no IndexedDB
-  support, private mode, etc.) just falls through to the network call, and
-  a profile 404 is never cached, so an unpublished symbol keeps getting
-  re-checked on every visit. Cache keys are `<assetClass>:<TICKER>:
-  prices:<range>` and `<assetClass>:<TICKER>:profile` (the price key
-  gained the `prices:` segment to share one object store cleanly with the
-  new profile entries). `HoldingStatsPanel`'s 52 Weeks high/low now reads
-  the profile's own `year_high`/`year_low` directly instead of a second,
-  separately-fetched-and-cached `range: "1y"` price series — the two
-  figures are equivalent (aggregating into weekly/monthly bars preserves
-  the true max/min), so this drops a redundant API hit and IndexedDB entry
-  per ticker page; `holdingFinancials.js`'s now-unused `extractPriceWindow`
-  is removed. `resolveFxRate`'s own `getProfile` calls (for fx pair
-  lookups) get the same caching for free.
+- Same-day IndexedDB caching for `GET .../prices/`, `GET .../profile/`, and
+  `GET .../metrics/` (`frontend/src/utils/priceCache.js`/`profileCache.js`/
+  `metricsCache.js`, each a thin wrapper around the shared IndexedDB
+  plumbing in the new `marketDataCache.js`, wrapped in turn by `market.js`'s
+  `getPrices`/`getProfile`/`getMetrics`): the backend's published market
+  data only changes once a day, so a repeat request for the same
+  `assetClass`/`symbol`(/`range`) later the same local day is served from
+  the browser instead of hitting the API again — a cache miss/failure (no
+  IndexedDB support, private mode, etc.) just falls through to the network
+  call, and a profile/metrics 404 is never cached, so an unpublished symbol
+  keeps getting re-checked on every visit. Cache keys are `<assetClass>:
+  <TICKER>:prices:<range>`, `<assetClass>:<TICKER>:profile`, and
+  `<assetClass>:<TICKER>:metrics` (all three share one IndexedDB object
+  store, namespaced by these keys). `HoldingStatsPanel`'s 52 Weeks high/low
+  now reads the profile's own `year_high`/`year_low` directly instead of a
+  second, separately-fetched-and-cached `range: "1y"` price series — the
+  two figures are equivalent (aggregating into weekly/monthly bars
+  preserves the true max/min), so this drops a redundant API hit and
+  IndexedDB entry per ticker page; `holdingFinancials.js`'s now-unused
+  `extractPriceWindow` is removed. `resolveFxRate`'s own `getProfile` calls
+  (for fx pair lookups) get the same caching for free.
+
+- New `GET /api/market/<asset_class>/<symbol>/metrics/` (`MetricsView`,
+  `equicast_core.MarketDataClient.get_metrics`, reading
+  `<asset_class>=<symbol>/metrics.parquet` — same shape/404 handling as
+  `ProfileView`/`get_profile`) surfaces `equicast-metrics`' previously
+  API-unreachable risk/performance (`volatility`, `sharpe_ratio`,
+  `max_drawdown`, `cagr_*`) and, for stocks, valuation/fundamental
+  (`pe_ratio`, `trailing_pe`, `forward_pe`, EPS, PEG, price-to-book/sales,
+  EV/EBITDA, margins, returns, debt-to-equity, free cash flow per share)
+  fields, wrapped by `market.js`'s new `getMetrics` (see caching above).
+  `equicast_metrics.fundamentals.compute_fundamentals` also gained a new
+  16th field, `pe_ratio`: the plain current price ÷ trailing EPS
+  calculation, always — unlike `trailing_pe`, it never prefers yfinance's
+  own reported `trailingPE`, so the two can disagree whenever yfinance's
+  figure uses a different price/EPS basis.
+
+  `HoldingStatsPanel`'s Volatility and P/E ratio rows are now real
+  (`marketMetrics.volatility`/`pe_ratio`) rather than seeded placeholders;
+  Average volume is dropped entirely (no equivalent field exists anywhere
+  yet); the caption below the metrics list now only calls out Dividend
+  frequency as sample data. `buildPlaceholderMetrics` (`holdingFinancials.js`)
+  shrinks to that one field accordingly. A new "See all" link on the Stats
+  card opens a Drawer (`FieldList` per group) with every other metrics
+  field grouped by subject — Valuation (Trailing/Forward P/E, PEG,
+  Price/Book, Price/Sales, EV/EBITDA), Per share (Trailing/Forward EPS,
+  free cash flow/share), Profitability (margins, return on equity/assets),
+  Leverage (debt/equity), and Risk (Sharpe ratio, max drawdown); `cagr_*`
+  is deliberately left out of this drawer, its placement still to be
+  decided. A group with nothing resolved (e.g. every fundamentals group for
+  an etf/fx ticker, which has no fundamentals at all) is hidden rather than
+  shown empty, and the "See all" link itself only appears when there's at
+  least one such field to show.
+
+- `HoldingTickerPage` (`/holdings/:ticker`) now shows a skeleton layout
+  (new `HoldingTickerSkeleton.jsx`, built on a new shared
+  `components/core/Skeleton.jsx` shimmer placeholder) mirroring the real
+  page's cards (StatTiles row, price chart card, Owned shares table,
+  Stats/About columns) while the accounts list and/or the
+  profile/metrics/transactions fetch are still loading, replacing the
+  previous plain "Loading…" text.
 
 ### Changed
 

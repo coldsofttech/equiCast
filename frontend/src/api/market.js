@@ -1,11 +1,6 @@
-import {
-  priceCacheKey,
-  profileCacheKey,
-  readCachedPrices,
-  readCachedProfile,
-  writeCachedPrices,
-  writeCachedProfile,
-} from "../utils/priceCache.js";
+import { metricsCacheKey, readCachedMetrics, writeCachedMetrics } from "../utils/metricsCache.js";
+import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
+import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils/profileCache.js";
 
 /**
  * @typedef {Object} SearchResult
@@ -130,10 +125,11 @@ export function searchTickers(
  * treating it as a hard failure (see HoldingTickerPage.jsx).
  *
  * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
- * browser's local calendar day (see utils/priceCache.js) — same rationale
- * as getPrices below. A cache miss/failure (including no IndexedDB support
- * at all) just falls through to the network call; a 404 is never cached,
- * so a symbol that hasn't published yet is re-checked on every call.
+ * browser's local calendar day (see utils/profileCache.js) — same
+ * rationale as getPrices below. A cache miss/failure (including no
+ * IndexedDB support at all) just falls through to the network call; a 404
+ * is never cached, so a symbol that hasn't published yet is re-checked on
+ * every call.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} assetClass
@@ -148,6 +144,74 @@ export async function getProfile(api, assetClass, symbol) {
 
   const result = /** @type {MarketProfile} */ (await api(`/market/${assetClass}/${symbol}/profile/`));
   writeCachedProfile(cacheKey, result);
+  return result;
+}
+
+/**
+ * @typedef {Object} MarketMetrics
+ * @property {number|null} volatility - annualized std deviation of daily
+ *   returns, as a fraction (e.g. 0.23 for 23%).
+ * @property {number|null} sharpe_ratio
+ * @property {number|null} max_drawdown - largest peak-to-trough decline, as
+ *   a negative fraction (e.g. -0.25).
+ * @property {number|null} cagr_1y
+ * @property {number|null} cagr_2y
+ * @property {number|null} cagr_3y
+ * @property {number|null} cagr_5y
+ * @property {number|null} cagr_10y
+ * @property {number|null} [pe_ratio] - stock-only; absent for etf/fx (see
+ *   equicast_metrics.MetricsClient.fundamentals). Always the plain current
+ *   price ÷ trailing EPS calculation — unlike `trailing_pe`, never
+ *   yfinance's own reported P/E, so the two can differ.
+ * @property {number|null} [trailing_pe]
+ * @property {number|null} [forward_pe]
+ * @property {number|null} [trailing_eps]
+ * @property {number|null} [forward_eps]
+ * @property {number|null} [peg]
+ * @property {number|null} [price_to_book]
+ * @property {number|null} [price_to_sales]
+ * @property {number|null} [ev_ebitda]
+ * @property {number|null} [gross_margin] - fraction (e.g. 0.42 for 42%).
+ * @property {number|null} [operating_margin] - fraction.
+ * @property {number|null} [profit_margin] - fraction.
+ * @property {number|null} [return_on_equity] - fraction.
+ * @property {number|null} [return_on_assets] - fraction.
+ * @property {number|null} [debt_to_equity] - already a percentage (e.g.
+ *   150.0 for 150%), not a fraction.
+ * @property {number|null} [free_cash_flow_per_share]
+ * @property {string} last_updated
+ * @property {string} source
+ */
+
+/**
+ * GET /api/market/<asset_class>/<symbol>/metrics/ — see
+ * backend/market_data/views.py's MetricsView. Throws an ApiError with
+ * status 404 when no `metrics.parquet` is published yet for this symbol —
+ * callers should catch that and degrade gracefully, same as getProfile.
+ * etf/fx records only ever carry the generic risk/performance fields
+ * (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_*`); a stock's record
+ * additionally carries the valuation/fundamental fields (`trailing_pe`,
+ * etc.) — see MarketMetrics.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/metricsCache.js), same rationale
+ * as getProfile/getPrices. A cache miss/failure (including no IndexedDB
+ * support at all) just falls through to the network call; a 404 is never
+ * cached, so a symbol that hasn't published yet is re-checked on every call.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} assetClass
+ * @param {string} symbol
+ * @returns {Promise<MarketMetrics>}
+ */
+export async function getMetrics(api, assetClass, symbol) {
+  const cacheKey = metricsCacheKey(assetClass, symbol);
+
+  const cached = await readCachedMetrics(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {MarketMetrics} */ (await api(`/market/${assetClass}/${symbol}/metrics/`));
+  writeCachedMetrics(cacheKey, result);
   return result;
 }
 

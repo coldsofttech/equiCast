@@ -4,7 +4,9 @@ import {
   deriveAverageModeFinancials,
   deriveInstanceFinancials,
   deriveTransactionModeFinancials,
+  formatPercent,
   formatPrice,
+  formatRatio,
   resolveFxRate,
   rollupInstances,
 } from "./holdingFinancials.js";
@@ -23,6 +25,32 @@ describe("formatPrice", () => {
 
   it("falls back to a plain number when currency is unknown", () => {
     expect(formatPrice(34.5, null)).toBe("34.50");
+  });
+});
+
+describe("formatPercent", () => {
+  it("scales a fraction to a percentage string", () => {
+    expect(formatPercent(0.234)).toBe("23.4%");
+  });
+
+  it("keeps a negative fraction's sign", () => {
+    expect(formatPercent(-0.08)).toBe("-8.0%");
+  });
+
+  it("returns null when unset", () => {
+    expect(formatPercent(null)).toBeNull();
+    expect(formatPercent(undefined)).toBeNull();
+  });
+});
+
+describe("formatRatio", () => {
+  it("formats a plain decimal ratio to 2 places by default", () => {
+    expect(formatRatio(28.456)).toBe("28.46");
+  });
+
+  it("returns null when unset", () => {
+    expect(formatRatio(null)).toBeNull();
+    expect(formatRatio(undefined)).toBeNull();
   });
 });
 

@@ -151,6 +151,25 @@ class MarketDataClient:
             profile = {**profile, "ceos": json.loads(profile["ceos"])}
         return profile
 
+    def get_metrics(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return the single metrics record for `symbol`, or `None` if this
+        ticker/pair has no `metrics.parquet` in the bucket.
+
+        Always carries the generic risk/performance fields
+        (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
+        see `equicast_metrics.MetricsClient.metrics()`); a stock's record
+        additionally carries the valuation/fundamental fields
+        (`trailing_pe`, etc. — see `.fundamentals()`), merged in by each
+        ingestion pipeline's own CLI before writing (etf/fx have no
+        fundamentals, so their `metrics.parquet` only ever has the generic
+        fields).
+        """
+        key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
+        rows = self._read_parquet(key)
+        if not rows:
+            return None
+        return rows[0]
+
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE
     ) -> dict[str, Any]:
