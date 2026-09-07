@@ -1,28 +1,27 @@
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
-import {
-  formatCurrency,
-  buildPieSample,
-  buildHoldingSample,
-  aggregateSamples,
-  plTone,
-} from "../sampleFinancials.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
+import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
 
 /**
- * One account's summary card — shared by AccountsListPage's full list and
- * DashboardPage's landing overview so the two render the same markup
- * instead of two copies drifting apart. Current value/P&L are sample data
- * (see sampleFinancials.js) — equiCast doesn't compute real portfolio
- * valuation yet.
+ * One account's summary card — used by DashboardPage's landing overview
+ * (AccountsListPage renders its own table rows, not this card). Current
+ * value/P&L are real, from each holding's enriched `current_price` (see
+ * holdingValuation.js's `computeHoldingValuation`, same one AccountDetailPage
+ * uses) rather than sample data, summed across direct and pie-nested
+ * holdings alike — same "invested" fallback when a ticker has no live
+ * price. `defaultCurrency` is the user's profile currency, since that's
+ * what `current_price` is already converted to server-side — not
+ * necessarily this account's own `currency`.
  */
-function AccountCard({ account, onClick }) {
+function AccountCard({ account, onClick, defaultCurrency }) {
   const pies = account.pies ?? [];
   const directHoldings = account.holdings ?? [];
-  const holdingsCount = directHoldings.length + pies.reduce((sum, p) => sum + (p.holdings?.length ?? 0), 0);
-  const totals = aggregateSamples([
-    ...pies.map((p) => buildPieSample(p.id)),
-    ...directHoldings.map((h) => buildHoldingSample(h.id)),
-  ]);
+  const allHoldings = [...directHoldings, ...pies.flatMap((p) => p.holdings ?? [])];
+  const holdingsCount = allHoldings.length;
+  const valuations = allHoldings.map(computeHoldingValuation);
+  const totals = summarizeHoldingValuations(allHoldings, valuations);
+  const currency = defaultCurrency ?? account.currency;
   const tone = plTone(totals.plPct);
   const plSign = totals.plValue >= 0 ? "+" : "-";
 
@@ -46,16 +45,15 @@ function AccountCard({ account, onClick }) {
       <p className="ec-account-card-desc">{account.description}</p>
       <div className="ec-account-card-value">
         <span className="ec-account-card-current">
-          {formatCurrency(totals.currentValue, account.currency)}
+          {formatCurrency(totals.currentValue, currency)}
         </span>
         <span className={`ec-account-card-pl ${tone}`}>
           {plSign}
-          {formatCurrency(Math.abs(totals.plValue), account.currency)} ({plSign}
+          {formatCurrency(Math.abs(totals.plValue), currency)} ({plSign}
           {Math.abs(totals.plPct).toFixed(1)}%)
         </span>
       </div>
       <div className="ec-account-card-meta">
-        <Badge tone="neutral">{account.currency}</Badge>
         <span className="ec-account-card-counts">
           <span className="ec-account-card-count">{pies.length} pies</span>
           <span className="ec-account-card-count">{holdingsCount} holdings</span>

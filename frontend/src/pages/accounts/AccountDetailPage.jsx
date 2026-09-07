@@ -221,7 +221,6 @@ function AccountDetailPage() {
     >
       <div className="ec-account-detail-badges">
         <Badge tone="accent">{account.account_type}</Badge>
-        <Badge tone="neutral">{account.currency}</Badge>
       </div>
 
       <div className="ec-stat-grid">
