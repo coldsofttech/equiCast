@@ -41,7 +41,7 @@
 
 .ec-allocation-row {
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1fr auto;
+  grid-template-columns: 24px 0.8fr 1.4fr 1fr 1fr auto;
   gap: var(--ec-s-8);
   align-items: center;
 }
@@ -57,6 +57,14 @@
   font-weight: 700;
   font-size: var(--ec-fs-13);
   color: var(--ec-text);
+}
+
+.ec-allocation-name {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .ec-allocation-add {
