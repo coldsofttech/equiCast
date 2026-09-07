@@ -85,3 +85,29 @@ export function buildDiversification(holdings, valuations) {
 
   return { sectorData, industryData, sectorScore };
 }
+
+// Only `stock` and `etf` map to a named bucket today — `asset_class` has no
+// "mutual fund" or "cash" value yet (see backend holdings/views.py's
+// ASSET_CLASSES: fx/stock/etf), so `fx` and anything unmapped falls into
+// "Other" rather than guessing at a Cash/Mutual Funds split.
+const ASSET_CLASS_LABELS = { stock: "Equities", etf: "ETFs" };
+
+/**
+ * Groups `holdings` by asset class, weighted by current value the same way
+ * `buildDiversification` groups by sector/industry. Shared by
+ * AccountDetailPage and PieDetailPage for their "Asset allocation" chart.
+ */
+export function buildAssetAllocation(holdings, valuations) {
+  const totalValue = valuations.reduce((sum, v) => sum + v.currentValue, 0);
+
+  const totals = new Map();
+  holdings.forEach((holding, index) => {
+    const label = ASSET_CLASS_LABELS[holding.asset_class] ?? "Other";
+    totals.set(label, (totals.get(label) ?? 0) + valuations[index].currentValue);
+  });
+
+  const toPct = (value) => (totalValue > 0 ? Math.round((value / totalValue) * 1000) / 10 : 0);
+  return [...totals.entries()]
+    .map(([label, value]) => ({ label, pct: toPct(value) }))
+    .sort((a, b) => b.pct - a.pct);
+}

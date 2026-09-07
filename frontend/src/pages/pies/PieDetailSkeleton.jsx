@@ -58,7 +58,7 @@ function PieDetailSkeleton() {
       </div>
 
       <div className="ec-divchart-grid">
-        {[0, 1].map((i) => (
+        {[0, 1, 2].map((i) => (
           <Card className="ec-divchart ec-detail-section" key={i}>
             <div className="ec-divchart-head">
               <Skeleton width="160px" height="1.1rem" />

@@ -1,7 +1,19 @@
+/* Each card carries the shared .ec-detail-section top margin (see
+   cardGrid.css) meant to space it from whatever precedes it. That's fine
+   when exactly one row of cards is present, but once a 3rd card wraps to a
+   new row, the margin-top stacks on top of this grid's own `gap`, making
+   the row-to-row gap wider than the column-to-column gap. Applying the
+   margin once on the grid itself, and zeroing it per-card, keeps every gap
+   (within a row and between rows) equal to `gap`. */
 .ec-divchart-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--ec-s-16);
+  margin-top: var(--ec-s-24);
+}
+
+.ec-divchart-grid > .ec-detail-section {
+  margin-top: 0;
 }
 
 .ec-divchart-head {

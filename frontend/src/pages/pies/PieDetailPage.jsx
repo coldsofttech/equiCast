@@ -27,6 +27,7 @@ import {
   computeHoldingValuation,
   summarizeHoldingValuations,
   buildDiversification,
+  buildAssetAllocation,
 } from "../holdingValuation.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
@@ -45,9 +46,10 @@ const FALLBACK_CURRENCY = "USD";
  * versions: the price chart (PiePriceChart) aggregates every holding's own
  * real price history — AccountDetailPage passes it every direct + pie-nested
  * holding and compares against sibling accounts instead of sibling pies —
- * sector/industry diversification (buildDiversification) and the holdings
- * heatmap (`weights` prop, see HoldingsHeatmap) are both real, value-weighted
- * breakdowns of this pie's own holdings. Holdings here are read-only (name,
+ * sector/industry diversification (buildDiversification), asset allocation
+ * (buildAssetAllocation) and the holdings heatmap (`weights` prop, see
+ * HoldingsHeatmap) are all real, value-weighted breakdowns of this pie's own
+ * holdings. Holdings here are read-only (name,
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
@@ -207,6 +209,7 @@ function PieDetailPage() {
     pie.holdings ?? [],
     holdingValuations
   );
+  const assetData = buildAssetAllocation(pie.holdings ?? [], holdingValuations);
 
   return (
     <AppShell
@@ -358,6 +361,8 @@ function PieDetailPage() {
             selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
           }
         />
+
+        <DiversificationChart title="Asset allocation" data={assetData} />
       </div>
 
       <PieCagrSection holdings={pie.holdings ?? []} valuations={holdingValuations} />
