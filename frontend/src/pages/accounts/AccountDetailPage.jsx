@@ -18,25 +18,31 @@ import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
+import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
-import {
-  formatCurrency,
-  TICKER_NAMES,
-  buildPieSample,
-  buildHoldingSample,
-  plTone,
-  aggregateSamples,
-} from "../sampleFinancials.js";
+import { formatCurrency, TICKER_NAMES, buildPieSample, buildHoldingSample, plTone } from "../sampleFinancials.js";
+import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
 import "./AccountDetailPage.css";
+
+/** An account's real holdings (direct and pie-nested alike) carry
+ * `invested`/`dividends`/`current_price` already converted to the user's
+ * default_currency, not the account's own `currency` (see
+ * api/accounts.js's `Holding` typedef and equicast_core.client.
+ * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
+ * top stat row, so the real Value/Profit-loss/Dividends-so-far cards below
+ * are labeled in that currency, not `account.currency` (which the still-
+ * synthetic Portfolios/Holdings rows and chart further down keep using). */
+const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
   const { accountId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
   const { setAccounts: setCachedAccounts } = useAccounts();
+  const { profile: userProfile } = useCurrentUser();
 
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -143,14 +149,12 @@ function AccountDetailPage() {
   }
 
   const directHoldings = account.holdings ?? [];
-  const allTickers = [
-    ...directHoldings.map((h) => h.ticker),
-    ...(account.pies ?? []).flatMap((p) => (p.holdings ?? []).map((h) => h.ticker)),
-  ];
-  const totals = aggregateSamples([
-    ...(account.pies ?? []).map((p) => buildPieSample(p.id)),
-    ...directHoldings.map((h) => buildHoldingSample(h.id)),
-  ]);
+  const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
+  const allHoldings = [...directHoldings, ...pieHoldings];
+  const allTickers = allHoldings.map((h) => h.ticker);
+  const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  const holdingValuations = allHoldings.map(computeHoldingValuation);
+  const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
 
   return (
@@ -178,22 +182,18 @@ function AccountDetailPage() {
 
       <div className="ec-stat-grid">
         <StatTile
-          label="Total invested"
-          value={formatCurrency(totals.invested, account.currency)}
-          hint="Sample data"
+          label="Value"
+          value={formatCurrency(totals.currentValue, currency)}
+          hint={`Invested ${formatCurrency(totals.invested, currency)}`}
         />
         <StatTile
           label="Profit / loss"
-          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), account.currency)}`}
+          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
           tone={totalsTone}
-          hint="Sample data"
+          hint={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
+          hintTone={totalsTone}
         />
-        <StatTile
-          label="Profit / loss %"
-          value={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
-          tone={totalsTone}
-          hint="Sample data"
-        />
+        <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
       </div>
 
       <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />

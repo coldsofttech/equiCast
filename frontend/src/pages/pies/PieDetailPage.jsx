@@ -23,6 +23,7 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
+import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
  * backend/pies/views.py's `_enrich_holdings`) are all converted to the
@@ -31,25 +32,6 @@ import { formatCurrency, plTone } from "../sampleFinancials.js";
  * profile (see useCurrentUser.js), falling back only in the unlikely case
  * it hasn't loaded yet by the time these StatTiles first render. */
 const FALLBACK_CURRENCY = "USD";
-
-/**
- * Derives one holding's current value/profit-loss from its already
- * rolled-up fields (`no_of_shares`/`invested`) and its enriched
- * `current_price` (see backend/pies/views.py's `_enrich_holdings`).
- * `current_price` is `null` when the ticker isn't published or no FX rate
- * exists for it — in that case this falls back to valuing the position at
- * its own cost basis (flat P&L) rather than showing a hole in the total,
- * same "degrade gracefully" reasoning as the fields it reads.
- */
-function computeHoldingValuation(holding) {
-  const invested = Number(holding.invested) || 0;
-  const shares = Number(holding.no_of_shares) || 0;
-  const livePrice = holding.current_price;
-  const currentValue = livePrice != null ? shares * livePrice : invested;
-  const plValue = currentValue - invested;
-  const plPct = invested !== 0 ? (plValue / invested) * 100 : 0;
-  return { invested, currentValue, plValue, plPct, hasLivePrice: livePrice != null };
-}
 
 /**
  * Groups a pie's holdings by sector/industry, weighted by each holding's
@@ -238,17 +220,8 @@ function PieDetailPage() {
     ticker: h.ticker,
     value: holdingValuations[index].currentValue,
   }));
-  const totals = (pie.holdings ?? []).reduce(
-    (sum, h, index) => ({
-      invested: sum.invested + holdingValuations[index].invested,
-      currentValue: sum.currentValue + holdingValuations[index].currentValue,
-      dividends: sum.dividends + (Number(h.dividends) || 0),
-    }),
-    { invested: 0, currentValue: 0, dividends: 0 }
-  );
-  const totalsPlValue = totals.currentValue - totals.invested;
-  const totalsPlPct = totals.invested !== 0 ? (totalsPlValue / totals.invested) * 100 : 0;
-  const totalsTone = plTone(totalsPlPct);
+  const totals = summarizeHoldingValuations(pie.holdings ?? [], holdingValuations);
+  const totalsTone = plTone(totals.plPct);
   const { sectorData, industryData, sectorScore } = buildDiversification(
     pie.holdings ?? [],
     holdingValuations
@@ -285,9 +258,9 @@ function PieDetailPage() {
         />
         <StatTile
           label="Profit / loss"
-          value={`${totalsPlValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totalsPlValue), currency)}`}
+          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
           tone={totalsTone}
-          hint={`${totalsPlPct >= 0 ? "+" : "-"}${Math.abs(totalsPlPct).toFixed(1)}%`}
+          hint={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
           hintTone={totalsTone}
         />
         <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
