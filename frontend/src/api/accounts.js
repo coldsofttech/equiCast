@@ -14,19 +14,23 @@
  * @property {number} invested - converted to the user's default_currency.
  * @property {number} dividends_native
  * @property {number} dividends - converted to the user's default_currency.
- * @property {string|null} [name] - only present on a pie's nested holdings
- *   (see backend/pies/views.py's `_enrich_holdings`); `null` if the ticker
- *   has no published market profile yet.
- * @property {string|null} [sector] - pie-nested only; `null` for etf/fx or
- *   an unpublished ticker.
- * @property {string|null} [industry] - pie-nested only; `null` for etf/fx or
- *   an unpublished ticker.
- * @property {string|null} [website] - pie-nested only; feeds AssetIcon's
- *   favicon lookup, `null` for an unpublished ticker.
- * @property {number|null} [current_price_native] - pie-nested only; today's
- *   price in the ticker's own currency, `null` for an unpublished ticker.
- * @property {number|null} [current_price] - pie-nested only; `current_price_native`
- *   converted to the user's default_currency, `null` if no FX rate is published.
+ * @property {string|null} [name] - present on holdings returned from
+ *   /accounts and /pies (both account-direct and pie-nested — see
+ *   equicast_core.client.MarketDataClient.enrich_holdings, called from
+ *   accounts/views.py and pies/views.py); `null` if the ticker has no
+ *   published catalog row yet.
+ * @property {string|null} [sector] - `null` for etf/fx or an unpublished
+ *   ticker.
+ * @property {string|null} [industry] - `null` for etf/fx or an unpublished
+ *   ticker.
+ * @property {string|null} [website] - feeds AssetIcon's favicon lookup,
+ *   `null` for an unpublished ticker.
+ * @property {number|null} [current_price_native] - the catalog's latest
+ *   published price in the ticker's own currency, `null` for an unpublished
+ *   ticker.
+ * @property {number|null} [current_price] - `current_price_native` converted
+ *   to the user's default_currency using the fx catalog's latest published
+ *   rate, `null` if no rate is published for the pair.
  */
 
 /**
