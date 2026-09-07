@@ -4,13 +4,45 @@
   gap: var(--ec-s-6);
 }
 
-.ec-ticker-search-row {
+/* Mirrors TopbarSearch.css's `.ec-topbar-search`/`.ec-topbar-search-input` —
+   same icon + input look, but full-width here instead of the topbar's
+   fixed pill width. */
+.ec-ticker-search-input-wrap {
   display: flex;
+  align-items: center;
   gap: var(--ec-s-6);
+  height: 36px;
+  padding: 0 var(--ec-s-12);
+  border-radius: var(--ec-r-pill);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface-2);
+  color: var(--ec-text-subtle);
 }
 
-.ec-ticker-search-row .ec-input {
+.ec-ticker-search-input-wrap i {
+  font-size: var(--ec-fs-13);
+  flex-shrink: 0;
+}
+
+.ec-ticker-search-input {
   flex: 1;
+  min-width: 0;
+  border: 0;
+  background: none;
+  outline: none;
+  color: var(--ec-text);
+  font-size: var(--ec-fs-13);
+  font-family: inherit;
+}
+
+.ec-ticker-search-input::placeholder {
+  color: var(--ec-text-subtle);
+}
+
+.ec-ticker-search-status {
+  margin: 0;
+  color: var(--ec-text-subtle);
+  font-size: var(--ec-fs-12);
 }
 
 .ec-ticker-search-error {

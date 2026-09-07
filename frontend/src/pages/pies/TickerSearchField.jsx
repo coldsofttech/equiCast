@@ -1,5 +1,5 @@
 import { useState } from "react";
-import Button from "../../components/core/Button.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
 import AssetTypeBadge from "../../components/core/AssetTypeBadge.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
@@ -7,10 +7,12 @@ import "./TickerSearchField.css";
 
 /**
  * A ticker search box for adding a holding to a pie — searches only on
- * Enter or a "Search" click, never per keystroke, to keep this to one API
- * call per lookup against the real catalog search (backend/market_data/
- * views.py's SearchView) rather than one per character. Picking a result
- * calls `onSelect({ ticker, asset_class })` and resets the field.
+ * Enter, never per keystroke, to keep this to one API call per lookup
+ * against the real catalog search (backend/market_data/views.py's
+ * SearchView) rather than one per character. Styled like TopbarSearch (a
+ * plain search icon inside the input, no separate button). Picking a
+ * result calls `onSelect({ ticker, asset_class, name, website })` and
+ * resets the field.
  */
 function TickerSearchField({ onSelect }) {
   const api = useApi();
@@ -31,16 +33,23 @@ function TickerSearchField({ onSelect }) {
   };
 
   const handleSelect = (result) => {
-    onSelect({ ticker: result.ticker, asset_class: result.type });
+    onSelect({
+      ticker: result.ticker,
+      asset_class: result.type,
+      name: result.name,
+      website: result.website,
+    });
     setQuery("");
     setResults(null);
   };
 
   return (
     <div className="ec-ticker-search">
-      <div className="ec-ticker-search-row">
+      <div className="ec-ticker-search-input-wrap">
+        <i className="bi bi-search" aria-hidden="true" />
         <input
-          className="ec-input"
+          type="search"
+          className="ec-ticker-search-input"
           value={query}
           placeholder="Search ticker or name, then press Enter…"
           onChange={(event) => {
@@ -55,17 +64,9 @@ function TickerSearchField({ onSelect }) {
           }}
           aria-label="Search ticker or name"
         />
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={runSearch}
-          isLoading={isSearching}
-          disabled={!query.trim()}
-        >
-          Search
-        </Button>
       </div>
+
+      {isSearching && <p className="ec-ticker-search-status">Searching…</p>}
 
       {error && (
         <p className="ec-ticker-search-error" role="alert">
@@ -85,6 +86,7 @@ function TickerSearchField({ onSelect }) {
                   className="ec-ticker-search-result"
                   onClick={() => handleSelect(result)}
                 >
+                  <AssetIcon website={result.website} size={16} />
                   <span className="ec-ticker-search-result-ticker">{result.ticker}</span>
                   <span className="ec-ticker-search-result-name">{result.name}</span>
                   <AssetTypeBadge type={result.type} />

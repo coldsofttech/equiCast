@@ -41,3 +41,9 @@
   opacity: 0.85;
   white-space: nowrap;
 }
+
+.ec-heatmap-empty {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-subtle);
+  margin: 0;
+}

@@ -18,7 +18,7 @@ async function searchAndAdd(query, result) {
   vi.mocked(searchTickers).mockResolvedValue({ results: [result] });
   fireEvent.change(screen.getByLabelText("Search ticker or name"), { target: { value: query } });
   fireEvent.keyDown(screen.getByLabelText("Search ticker or name"), { key: "Enter" });
-  fireEvent.click(await screen.findByRole("button", { name: new RegExp(result.ticker) }));
+  fireEvent.click(await screen.findByRole("button", { name: new RegExp(`^${result.ticker}`) }));
 }
 
 describe("AllocationEditor", () => {
@@ -92,7 +92,7 @@ describe("AllocationEditor", () => {
     const onSave = vi.fn();
     render(<AllocationEditor holdings={[HOLDINGS[0]]} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Remove" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove AAPL" }));
 
     expect(screen.queryByLabelText("Allocation percent")).not.toBeInTheDocument();
     expect(screen.getByText("No holdings yet — search below to add one.")).toBeInTheDocument();

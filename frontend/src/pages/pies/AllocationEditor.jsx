@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Alert from "../../components/core/Alert.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
+import AssetTypeBadge from "../../components/core/AssetTypeBadge.jsx";
 import TickerSearchField from "./TickerSearchField.jsx";
 import "./AllocationEditor.css";
 
@@ -12,6 +14,8 @@ function holdingsToRows(holdings) {
     key: holding.id,
     id: holding.id,
     ticker: holding.ticker,
+    name: holding.name,
+    website: holding.website,
     asset_class: holding.asset_class,
     allocation_pct: String(holding.allocation_pct),
     removed: false,
@@ -99,7 +103,7 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
 
   const activeRows = rows.filter((row) => !row.removed);
 
-  const handleTickerSelected = ({ ticker, asset_class }) => {
+  const handleTickerSelected = ({ ticker, asset_class, name, website }) => {
     if (activeRows.some((row) => row.ticker === ticker)) {
       setDuplicateError(`${ticker} is already in this pie.`);
       return;
@@ -111,6 +115,8 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
         key: `new-${nextTempKey++}`,
         id: undefined,
         ticker,
+        name,
+        website,
         asset_class,
         allocation_pct: "",
         removed: false,
@@ -170,26 +176,37 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
       ) : (
         <div className="ec-allocation-table">
           <div className="ec-allocation-row ec-allocation-header">
+            <span />
             <span>Ticker</span>
+            <span>Name</span>
             <span>Asset class</span>
             <span>Allocation %</span>
             <span />
           </div>
           {activeRows.map((row) => (
             <div className="ec-allocation-row" key={row.key}>
+              <AssetIcon website={row.website} size={24} />
               <span className="ec-allocation-ticker">{row.ticker}</span>
-              <Badge tone="neutral">{row.asset_class}</Badge>
+              <span className="ec-allocation-name">{row.name ?? "—"}</span>
+              <AssetTypeBadge type={row.asset_class} />
               <input
                 className="ec-input"
+                type="number"
+                min="0"
+                step="0.1"
                 value={row.allocation_pct}
                 placeholder="0"
-                inputMode="decimal"
                 onChange={(event) => updateRow(row.key, "allocation_pct", event.target.value)}
                 aria-label="Allocation percent"
               />
-              <Button variant="ghost" size="sm" onClick={() => removeRow(row.key)}>
-                Remove
-              </Button>
+              <button
+                type="button"
+                className="ec-icon-btn ec-icon-btn--danger"
+                aria-label={`Remove ${row.ticker}`}
+                onClick={() => removeRow(row.key)}
+              >
+                <i className="bi bi-trash" aria-hidden="true" />
+              </button>
             </div>
           ))}
         </div>

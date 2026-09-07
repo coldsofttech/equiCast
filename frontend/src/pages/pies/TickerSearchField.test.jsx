@@ -26,21 +26,37 @@ describe("TickerSearchField", () => {
     expect(searchTickers).toHaveBeenCalledWith(expect.any(Function), "aapl");
   });
 
-  it("also searches on clicking the Search button", () => {
+  it("shows a searching status while the lookup is in flight", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
-    vi.mocked(searchTickers).mockResolvedValue({ results: [] });
+    let resolveSearch;
+    vi.mocked(searchTickers).mockReturnValue(
+      new Promise((resolve) => {
+        resolveSearch = resolve;
+      })
+    );
 
     render(<TickerSearchField onSelect={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("Search ticker or name"), { target: { value: "vwrl" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search" }));
+    fireEvent.keyDown(screen.getByLabelText("Search ticker or name"), { key: "Enter" });
 
-    expect(searchTickers).toHaveBeenCalledWith(expect.any(Function), "vwrl");
+    expect(await screen.findByText("Searching…")).toBeInTheDocument();
+
+    resolveSearch({ results: [] });
+    await screen.findByText("No matches for “vwrl”.");
   });
 
   it("shows results and calls onSelect, then resets the field", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     vi.mocked(searchTickers).mockResolvedValue({
-      results: [{ ticker: "AAPL", name: "Apple Inc.", type: "stock", current_price: 190.5 }],
+      results: [
+        {
+          ticker: "AAPL",
+          name: "Apple Inc.",
+          type: "stock",
+          current_price: 190.5,
+          website: "https://www.apple.com",
+        },
+      ],
     });
     const onSelect = vi.fn();
 
@@ -50,7 +66,12 @@ describe("TickerSearchField", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: /AAPL.*Apple Inc\./s }));
 
-    expect(onSelect).toHaveBeenCalledWith({ ticker: "AAPL", asset_class: "stock" });
+    expect(onSelect).toHaveBeenCalledWith({
+      ticker: "AAPL",
+      asset_class: "stock",
+      name: "Apple Inc.",
+      website: "https://www.apple.com",
+    });
     expect(screen.getByLabelText("Search ticker or name")).toHaveValue("");
   });
 
