@@ -23,7 +23,7 @@ import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js"
 import { createHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
-import { formatCurrency, TICKER_NAMES, buildPieSample, buildHoldingSample, plTone } from "../sampleFinancials.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
 import "./AccountDetailPage.css";
 
@@ -32,9 +32,10 @@ import "./AccountDetailPage.css";
  * default_currency, not the account's own `currency` (see
  * api/accounts.js's `Holding` typedef and equicast_core.client.
  * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
- * top stat row, so the real Value/Profit-loss/Dividends-so-far cards below
- * are labeled in that currency, not `account.currency` (which the still-
- * synthetic Portfolios/Holdings rows and chart further down keep using). */
+ * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row and
+ * the Portfolios/Holdings row lists below are all labeled in that currency,
+ * not `account.currency` (which the still-synthetic price chart and
+ * diversification/heatmap sections further down keep using). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
@@ -221,9 +222,10 @@ function AccountDetailPage() {
           ) : (
             <div className="ec-detail-row-list">
               {account.pies.map((pie) => {
-                const sample = buildPieSample(pie.id);
-                const tone = plTone(sample.plPct);
-                const plSign = sample.plValue >= 0 ? "+" : "-";
+                const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
+                const pieTotals = summarizeHoldingValuations(pie.holdings ?? [], pieValuations);
+                const tone = plTone(pieTotals.plPct);
+                const plSign = pieTotals.plValue >= 0 ? "+" : "-";
                 return (
                   <Card
                     key={pie.id}
@@ -244,12 +246,12 @@ function AccountDetailPage() {
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(sample.currentValue, account.currency)}
+                        {formatCurrency(pieTotals.currentValue, currency)}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
                         {plSign}
-                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
-                        {Math.abs(sample.plPct).toFixed(1)}%)
+                        {formatCurrency(Math.abs(pieTotals.plValue), currency)} ({plSign}
+                        {Math.abs(pieTotals.plPct).toFixed(1)}%)
                       </span>
                     </div>
                   </Card>
@@ -281,10 +283,9 @@ function AccountDetailPage() {
           ) : (
             <div className="ec-detail-row-list">
               {directHoldings.map((holding) => {
-                const sample = buildHoldingSample(holding.id);
-                const tone = plTone(sample.plPct);
-                const plSign = sample.plValue >= 0 ? "+" : "-";
-                const name = TICKER_NAMES[holding.ticker];
+                const valuation = computeHoldingValuation(holding);
+                const tone = plTone(valuation.plPct);
+                const plSign = valuation.plValue >= 0 ? "+" : "-";
                 return (
                   <Card
                     key={holding.id}
@@ -307,18 +308,19 @@ function AccountDetailPage() {
                   >
                     <div className="ec-detail-row-main">
                       <h3 className="ec-detail-row-name">
-                        {name ? `${name} (${holding.ticker})` : holding.ticker}
+                        {holding.name ? `${holding.name} (${holding.ticker})` : holding.ticker}
                       </h3>
-                      <span className="ec-detail-row-meta">{sample.shares} shares</span>
+                      <span className="ec-detail-row-meta">{holding.no_of_shares} shares</span>
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(sample.currentValue, account.currency)}
+                        {formatCurrency(valuation.currentValue, currency)}
+                        {!valuation.hasLivePrice && " (cost basis)"}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
                         {plSign}
-                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
-                        {Math.abs(sample.plPct).toFixed(1)}%)
+                        {formatCurrency(Math.abs(valuation.plValue), currency)} ({plSign}
+                        {Math.abs(valuation.plPct).toFixed(1)}%)
                       </span>
                     </div>
                   </Card>
