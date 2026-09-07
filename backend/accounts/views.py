@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.conf import settings
 from equicast_core import (
     AccountAlreadyExistsError,
@@ -5,8 +7,10 @@ from equicast_core import (
     AccountNotFoundError,
     AccountsClient,
     HoldingsClient,
+    MarketDataClient,
     PiesClient,
     TransactionsClient,
+    UserProfileClient,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -52,6 +56,33 @@ _transactions_client = TransactionsClient(
     region_name=settings.AWS_REGION,
     max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
 )
+#: Needed to merge each holding's current_price_native/current_price (and
+#: name/sector/industry/website) in via `enrich_holdings` — pies/views.py
+#: holds the client instance actually used to validate a ticker has market
+#: data before it's added to a pie.
+_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+#: Needed only to read the user's default_currency, so `enrich_holdings`
+#: converts current_price the same way transactions/views.py converts
+#: average_price/invested/dividends (see resolve_converted_amounts there) —
+#: identity/views.py holds the client actually used for profile CRUD.
+_profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
+
+
+def _enrich_holdings(user_id: str, holdings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Resolve `user_id`'s `default_currency` and delegate to
+    `MarketDataClient.enrich_holdings` for the actual catalog-backed
+    name/sector/industry/website/current_price_native/current_price merge —
+    see that method's docstring for what it fills in and why. Holdings here
+    may be a mix of account-direct and pie-nested (both carry the same
+    `asset_class`/`ticker` shape `enrich_holdings` needs), so this is called
+    once on the full flat list before `_nest_pies_and_holdings` splits it
+    back apart, rather than once per pie. Short-circuits on an empty
+    `holdings` before even reading the caller's profile, since there'd be
+    nothing to enrich either way."""
+    if not holdings:
+        return holdings
+    default_currency = _profile_client.get_or_create_profile(user_id)["default_currency"]
+    return _market_data_client.enrich_holdings(holdings, default_currency)
 
 
 def _nest_pies_and_holdings(accounts, pies, holdings):
@@ -95,7 +126,7 @@ class AccountListView(APIView):
         user_id = request.user.user_id
         accounts = _client.list_accounts(user_id)
         pies = _pies_client.list_pies(user_id)
-        holdings = _holdings_client.list_holdings(user_id)
+        holdings = _enrich_holdings(user_id, _holdings_client.list_holdings(user_id))
         return Response(_nest_pies_and_holdings(accounts, pies, holdings))
 
     def post(self, request: Request) -> Response:
@@ -141,7 +172,7 @@ class AccountDetailView(APIView):
         except AccountNotFoundError:
             return Response(status=404)
         pies = _pies_client.list_pies(user_id, account_id=account_id)
-        holdings = _holdings_client.list_holdings(user_id)
+        holdings = _enrich_holdings(user_id, _holdings_client.list_holdings(user_id))
         nested = _nest_pies_and_holdings([account], pies, holdings)[0]
         return Response(nested)
 

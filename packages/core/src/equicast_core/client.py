@@ -452,6 +452,96 @@ class MarketDataClient:
         rows = self._read_parquet(catalog_key(asset_class))
         return rows if rows is not None else []
 
+    def _latest_fx_rate(
+        self, from_currency: str, to_currency: str, fx_catalog: dict[str, dict[str, Any]]
+    ) -> float | None:
+        """Convert 1 unit of `from_currency` into `to_currency` using the fx
+        catalog's own last-published `current_price` — the direct pair
+        (`<from><to>`) if published, else the reciprocal of the inverted
+        pair (`<to><from>`) if that's what's published instead, same
+        fallback `get_fx_rate_on_date` uses, just off the catalog's latest
+        snapshot rather than a specific date's price history. `1.0` with no
+        lookup at all when the two currencies are the same. `None` if
+        neither pair is in `fx_catalog`."""
+        if from_currency == to_currency:
+            return 1.0
+        direct = fx_catalog.get(f"{from_currency}{to_currency}")
+        if direct is not None and direct.get("current_price") is not None:
+            return direct["current_price"]
+        inverted = fx_catalog.get(f"{to_currency}{from_currency}")
+        if inverted is not None and inverted.get("current_price"):
+            return 1 / inverted["current_price"]
+        return None
+
+    def enrich_holdings(
+        self, holdings: list[dict[str, Any]], default_currency: str
+    ) -> list[dict[str, Any]]:
+        """Return `holdings` with market-derived display/valuation fields
+        merged in from each ticker's catalog row (`catalog/<asset_class>.
+        parquet` — see `equicast_core.catalog`): `name`/`sector`/`industry`/
+        `website` (`website` backs the frontend's favicon-based AssetIcon)
+        and `current_price_native`/`current_price` (the catalog's own
+        last-published price, FX-converted to `default_currency` — the same
+        convention `average_price`/`invested`/`dividends` already use, see
+        `transactions.views.resolve_converted_amounts`), so a caller can
+        derive current value/profit-loss without a market-data round trip
+        per ticker.
+
+        Reads each distinct asset class present in `holdings` once (via
+        `get_catalog`), plus the `fx` catalog for currency conversion, so a
+        user with many holdings across a handful of asset classes costs a
+        handful of S3 reads total, not one profile fetch per holding. The FX
+        rate used is the `fx` catalog's own latest published rate (see
+        `_latest_fx_rate`), not a rate as of a specific date, so this always
+        reflects whatever the fx ingestion pipeline last ran without a
+        second, date-scoped S3 read per currency pair. A field is `None`
+        whenever it can't be resolved (unpublished ticker, no fx rate
+        published for the pair) rather than raising — same degrade-
+        gracefully behavior as `resolve_converted_amounts`.
+        """
+        if not holdings:
+            return holdings
+
+        catalogs: dict[str, dict[str, dict[str, Any]]] = {}
+        for holding in holdings:
+            asset_class = holding["asset_class"]
+            if asset_class not in catalogs:
+                catalogs[asset_class] = {
+                    row["ticker"]: row for row in self.get_catalog(asset_class)
+                }
+        fx_catalog = catalogs.get("fx") or {
+            row["ticker"]: row for row in self.get_catalog("fx")
+        }
+
+        rates: dict[str, float | None] = {}
+        enriched = []
+        for holding in holdings:
+            row = catalogs[holding["asset_class"]].get(holding["ticker"])
+            native_currency = row.get("currency") if row else None
+            current_price_native = row.get("current_price") if row else None
+            if native_currency and native_currency not in rates:
+                rates[native_currency] = self._latest_fx_rate(
+                    native_currency, default_currency, fx_catalog
+                )
+            rate = rates.get(native_currency) if native_currency else None
+            current_price = (
+                current_price_native * rate
+                if current_price_native is not None and rate is not None
+                else None
+            )
+            enriched.append(
+                {
+                    **holding,
+                    "name": row.get("name") if row else None,
+                    "sector": row.get("sector") if row else None,
+                    "industry": row.get("industry") if row else None,
+                    "website": row.get("website") if row else None,
+                    "current_price_native": current_price_native,
+                    "current_price": current_price,
+                }
+            )
+        return enriched
+
     def search(
         self,
         query: str,
