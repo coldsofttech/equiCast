@@ -83,15 +83,16 @@ class PieListViewTests(TestCase):
         }
         mock_holdings_client.list_holdings.return_value = [holding, other_holding]
         mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
-        mock_market_data_client.get_profile.return_value = {
+        enriched_holding = {
+            **holding,
             "name": "Vanguard S&P 500 ETF",
             "sector": None,
             "industry": None,
             "website": "https://investor.vanguard.com",
-            "currency": "USD",
-            "day_close": 450.0,
+            "current_price_native": 450.0,
+            "current_price": 450.0,
         }
-        mock_market_data_client.get_fx_rate_on_date.return_value = 1.0
+        mock_market_data_client.enrich_holdings.return_value = [enriched_holding]
 
         response = self.client.get(reverse("pies-list"), **AUTH_HEADER)
 
@@ -99,23 +100,14 @@ class PieListViewTests(TestCase):
         self.assertEqual(
             response.json(),
             [
-                {
-                    **PIE,
-                    "holdings": [
-                        {
-                            **holding,
-                            "name": "Vanguard S&P 500 ETF",
-                            "sector": None,
-                            "industry": None,
-                            "website": "https://investor.vanguard.com",
-                            "current_price_native": 450.0,
-                            "current_price": 450.0,
-                        }
-                    ],
-                },
+                {**PIE, "holdings": [enriched_holding]},
                 {**other_pie, "holdings": []},
             ],
         )
+        # Only pie-1/pie-2's own holding is passed through — other_holding
+        # belongs to a pie_id outside this caller's pie list, filtered out
+        # before enrichment (see PieListView.get).
+        mock_market_data_client.enrich_holdings.assert_called_once_with([holding], "USD")
 
     @patch("pies.views._holdings_client")
     @patch("pies.views._client")
@@ -243,39 +235,24 @@ class PieDetailViewTests(TestCase):
         holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
         mock_holdings_client.list_holdings.return_value = [holding]
         mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
-        mock_market_data_client.get_profile.return_value = {
+        enriched_holding = {
+            **holding,
             "name": "Vanguard S&P 500 ETF",
             "sector": None,
             "industry": None,
             "website": "https://investor.vanguard.com",
-            "currency": "USD",
-            "day_close": 450.0,
+            "current_price_native": 450.0,
+            "current_price": 450.0,
         }
-        mock_market_data_client.get_fx_rate_on_date.return_value = 1.0
+        mock_market_data_client.enrich_holdings.return_value = [enriched_holding]
 
         response = self.client.get(reverse("pies-detail", args=["pie-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(
-            response.json(),
-            {
-                **PIE,
-                "holdings": [
-                    {
-                        **holding,
-                        "name": "Vanguard S&P 500 ETF",
-                        "sector": None,
-                        "industry": None,
-                        "website": "https://investor.vanguard.com",
-                        "current_price_native": 450.0,
-                        "current_price": 450.0,
-                    }
-                ],
-            },
-        )
+        self.assertEqual(response.json(), {**PIE, "holdings": [enriched_holding]})
         mock_client.get_pie.assert_called_once_with("auth0|abc123", "pie-1")
         mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123", pie_id="pie-1")
-        mock_market_data_client.get_profile.assert_called_once_with("etf", "VOO")
+        mock_market_data_client.enrich_holdings.assert_called_once_with([holding], "USD")
 
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")
