@@ -93,9 +93,11 @@ function formatSyncedDate(isoDatetime) {
  * (rolled up from every instance's recorded transactions plus the
  * instrument's real current price — see holdingFinancials.js), a real
  * price chart for this ticker with a 1D..MAX range picker (see
- * HoldingPriceChart.jsx — unlike account/pie pages' consolidated chart,
- * which stays illustrative since there's no real portfolio-valuation
- * series to plot yet), a per-instance shares/avg price table with delete,
+ * HoldingPriceChart.jsx — unlike account/pie pages' consolidated chart
+ * (PiePriceChart.jsx), which is real too but has no Candles chart type,
+ * since an aggregate's per-date open/high/low is a value-weighted sum
+ * across holdings' own bars, not a real traded range), a per-instance
+ * shares/avg price table with delete,
  * a two-pane stats section, and an About section —
  * both real data from the market profile endpoint where it exists.
  *

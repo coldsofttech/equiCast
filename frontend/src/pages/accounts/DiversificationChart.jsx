@@ -11,13 +11,13 @@ function scoreInfoFor(score) {
 }
 
 /**
- * A horizontal-bar breakdown chart, used by AccountDetailPage (still fully
- * synthetic — see diversificationSampleData.js) and PieDetailPage (real,
- * value-weighted sector/industry breakdowns of its own holdings — see
- * PieDetailPage's `buildDiversification`) for both Sector and Industry
- * diversification; `caption` should say what `data` actually reflects for
- * that caller. `score` (0-100), when given, renders as a qualitative badge
- * next to the title.
+ * A horizontal-bar breakdown chart, used by AccountDetailPage (across every
+ * direct + pie-nested holding) and PieDetailPage (scoped to one pie's own
+ * holdings) for both Sector and Industry diversification — both real,
+ * value-weighted breakdowns built by the shared `buildDiversification`
+ * (see ../holdingValuation.js); `caption` should say what `data` actually
+ * reflects for that caller. `score` (0-100), when given, renders as a
+ * qualitative badge next to the title.
  *
  * Passing `onRowClick` makes rows clickable (used by the Sector chart to
  * drill into the Industry chart) — `activeLabel` then highlights whichever

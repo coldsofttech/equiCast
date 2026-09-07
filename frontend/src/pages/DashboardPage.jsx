@@ -17,11 +17,10 @@ import { MENU_ITEMS } from "./menuItems.js";
 /**
  * The landing page once signed in (App.jsx redirects "/" and unknown
  * paths here — see DashboardPage's routing in App.jsx). An accounts
- * overview: every account as a card (AccountsListPage's own card, reused
- * via AccountCard so the two don't diverge), or a prompt to create one
- * when there aren't any yet. This page is otherwise read-only — clicking
- * any card (or "View all accounts") routes to the Accounts table, which
- * owns viewing/editing/deleting a specific account — but the empty state's
+ * overview: every account as a card (see AccountCard.jsx), or a prompt to
+ * create one when there aren't any yet. This page is otherwise read-only —
+ * clicking any card (or "View all accounts") routes to the Accounts table,
+ * which owns viewing/editing/deleting a specific account — but the empty state's
  * "Create an account" opens the same drawer AccountsListPage uses right
  * here, instead of a redirect + a second button click over there.
  */
@@ -85,7 +84,12 @@ function DashboardPage() {
       {!isLoading && !loadError && accounts.length > 0 && (
         <div className="ec-account-grid">
           {accounts.map((account) => (
-            <AccountCard key={account.id} account={account} onClick={() => navigate(`/accounts/${account.id}`)} />
+            <AccountCard
+              key={account.id}
+              account={account}
+              defaultCurrency={profile?.default_currency}
+              onClick={() => navigate(`/accounts/${account.id}`)}
+            />
           ))}
         </div>
       )}

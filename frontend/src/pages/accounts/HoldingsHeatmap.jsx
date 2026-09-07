@@ -5,10 +5,9 @@ import { squarify } from "../../utils/treemap.js";
 import "./HoldingsHeatmap.css";
 
 /**
- * Stand-in for a real 50-holding portfolio, used only when there's nothing
- * real to show (`weights` not given and `tickers` empty, or `weights` given
- * but empty) so the heatmap has something to illustrate rather than sitting
- * on an empty state — see the `caption` note below.
+ * Stand-in for a real 50-holding portfolio, used only when `weights` is
+ * empty (no real holdings yet) so the heatmap has something to illustrate
+ * rather than sitting on an empty state — see the caption rendered below.
  */
 const SAMPLE_TICKERS = [
   "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "JPM", "V",
@@ -62,33 +61,28 @@ function toWeightedCells(weighted) {
 }
 
 /**
- * A weight-only treemap of a portfolio's holdings — tile *area* is
- * proportional to weight via a squarified layout (see utils/treemap.js);
- * tile *color* is purely categorical (see TILE_TONES), not a performance
- * scale, since this only ever shows weight now.
+ * A weight-only treemap of a portfolio's or account's holdings — tile
+ * *area* is proportional to weight via a squarified layout (see
+ * utils/treemap.js); tile *color* is purely categorical (see TILE_TONES),
+ * not a performance scale, since this only ever shows weight.
  *
- * `weights` (`{ ticker, value }[]`), when given, drives real value-based
- * weight — `value` is each holding's current value (see PieDetailPage's
- * `computeHoldingValuation`), so tile size reflects real portfolio weight.
- * `tickers` (plain ticker strings) is the legacy path still used by
- * AccountDetailPage, which has no real per-holding valuation wired up yet —
- * it falls back to a synthetic, deterministic-per-ticker weight instead
- * (see caption). Whichever is empty (`weights` given but `[]`, or `tickers`
- * with `weights` omitted) falls back to SAMPLE_TICKERS with synthetic
- * weight so there's something illustrative to look at instead of an empty
- * state.
+ * `weights` (`{ ticker, value }[]`) drives real value-based weight —
+ * `value` is each holding's current value (see holdingValuation.js's
+ * `computeHoldingValuation`), so tile size reflects real weight in whatever
+ * `label` names (e.g. "account" for every direct + pie-nested holding, or
+ * "portfolio" for one pie's own holdings). An empty `weights` falls back to
+ * SAMPLE_TICKERS with a synthetic, deterministic-per-ticker weight so
+ * there's something illustrative to look at instead of an empty state.
  */
-function HoldingsHeatmap({ tickers = [], weights }) {
-  const hasRealWeights = Array.isArray(weights);
-  const isEmpty = hasRealWeights ? weights.length === 0 : tickers.length === 0;
+function HoldingsHeatmap({ weights = [], label = "portfolio" }) {
+  const isEmpty = weights.length === 0;
 
   const cells = useMemo(() => {
-    if (hasRealWeights && weights.length > 0) {
-      return toWeightedCells(weights.map((w) => ({ ticker: w.ticker, raw: Math.max(w.value, 0) })));
-    }
-    const weighted = buildSampleWeights(isEmpty ? SAMPLE_TICKERS : [...new Set(tickers)]);
+    const weighted = isEmpty
+      ? buildSampleWeights(SAMPLE_TICKERS)
+      : weights.map((w) => ({ ticker: w.ticker, raw: Math.max(w.value, 0) }));
     return toWeightedCells(weighted);
-  }, [tickers, weights, hasRealWeights, isEmpty]);
+  }, [weights, isEmpty]);
 
   const layout = useMemo(
     () => squarify(cells, 0, 0, LAYOUT_W, LAYOUT_H),
@@ -107,7 +101,7 @@ function HoldingsHeatmap({ tickers = [], weights }) {
             <div
               key={cell.ticker}
               className="ec-heatmap-cell"
-              title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${hasRealWeights ? "portfolio" : "account"}${isEmpty ? " (sample)" : ""}`}
+              title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${label}${isEmpty ? " (sample)" : ""}`}
               style={{
                 left: `${(cell.x / LAYOUT_W) * 100}%`,
                 top: `${(cell.y / LAYOUT_H) * 100}%`,
@@ -124,12 +118,10 @@ function HoldingsHeatmap({ tickers = [], weights }) {
         })}
       </div>
 
-      {(isEmpty || !hasRealWeights) && (
+      {isEmpty && (
         <p className="ec-chart-caption">
-          {isEmpty
-            ? `Sample data — showing 50 illustrative holdings until ${hasRealWeights ? "this portfolio" : "this account"} has real ones. `
-            : "Illustrative weights — "}
-          Tile size is weight in {hasRealWeights ? "the portfolio" : "the account"}.
+          Sample data — showing 50 illustrative holdings until this {label} has real ones. Tile size
+          is weight in the {label}.
         </p>
       )}
     </Card>

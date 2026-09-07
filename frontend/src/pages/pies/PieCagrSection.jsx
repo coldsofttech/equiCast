@@ -18,22 +18,25 @@ const CAGR_PERIODS = [
 ];
 
 /**
- * PieDetailPage's own version of HoldingCagrSection — same diverging-bar
- * list off real `GET .../metrics/` cagr_* fields (reusing the same
- * `ec-cagr-*` styling), but each period is a current-value-weighted average
- * across every one of the pie's own holdings (see PieBenchmarkRating's
- * weightedPortfolioMetric) rather than one ticker's own figure. A holding
- * missing a given window (too recently listed) is excluded from that
- * window's average entirely, same "just skip it" reasoning
+ * PieDetailPage's/AccountDetailPage's own version of HoldingCagrSection —
+ * same diverging-bar list off real `GET .../metrics/` cagr_* fields
+ * (reusing the same `ec-cagr-*` styling), but each period is a
+ * current-value-weighted average across every one of `holdings` (see
+ * PieBenchmarkRating's weightedPortfolioMetric) rather than one ticker's
+ * own figure. `holdings` can be one pie's own holdings or an account's full
+ * direct + pie-nested set — this has no pie- or account-specific logic of
+ * its own, only `label` (used in the caption) distinguishes the caller. A
+ * holding missing a given window (too recently listed) is excluded from
+ * that window's average entirely, same "just skip it" reasoning
  * HoldingCagrSection applies to a single ticker's own missing windows.
  *
  * Renders nothing while metrics haven't loaded yet, or once loaded if no
  * holding has any cagr_* field at all (e.g. every holding too recently
  * listed to annualize).
  *
- * @param {{ holdings: import("../../api/accounts.js").Holding[], valuations: { currentValue: number }[] }} props
+ * @param {{ holdings: import("../../api/accounts.js").Holding[], valuations: { currentValue: number }[], label?: string }} props
  */
-function PieCagrSection({ holdings, valuations }) {
+function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
   const api = useApi();
   const [metricsByHolding, setMetricsByHolding] = useState(null);
 
@@ -90,7 +93,7 @@ function PieCagrSection({ holdings, valuations }) {
       </div>
       <p className="ec-chart-caption">
         Compound annual growth rate, annualized over each trailing return window — each figure is a
-        current-value-weighted average across the portfolio&rsquo;s own holdings.
+        current-value-weighted average across the {label}&rsquo;s own holdings.
       </p>
     </Card>
   );
