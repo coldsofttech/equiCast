@@ -14,9 +14,11 @@ const PREVIEW_SIZE = 7;
 /**
  * The topbar's ticker/company search box. Enter runs one search (never per
  * keystroke — see TickerSearchField.jsx for why) and opens a preview
- * dropdown of up to PREVIEW_SIZE matches; "More results" in that dropdown
- * is the only thing that navigates to /search?q=..., where SearchPage owns
- * paging/filtering the same query further.
+ * dropdown of up to PREVIEW_SIZE matches; clicking a result goes straight to
+ * /holdings/:ticker (same destination/assetClass router state SearchPage's
+ * own rows use), while "More results" in that dropdown navigates to
+ * /search?q=..., where SearchPage owns paging/filtering the same query
+ * further.
  */
 function TopbarSearch() {
   const navigate = useNavigate();
@@ -79,6 +81,11 @@ function TopbarSearch() {
     navigate(`/search?q=${encodeURIComponent(value.trim())}`);
   };
 
+  const handleResultClick = (result) => {
+    setIsOpen(false);
+    navigate(`/holdings/${result.ticker}`, { state: { assetClass: result.type } });
+  };
+
   return (
     <div className="ec-topbar-search-wrap" ref={rootRef}>
       <div className="ec-topbar-search">
@@ -114,7 +121,19 @@ function TopbarSearch() {
                 <ul className="ec-topbar-search-results">
                   {results.map((result) => (
                     <li key={`${result.type}:${result.ticker}`}>
-                      <div className="ec-topbar-search-result">
+                      <div
+                        className="ec-topbar-search-result"
+                        role="option"
+                        tabIndex={0}
+                        aria-selected="false"
+                        onClick={() => handleResultClick(result)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            handleResultClick(result);
+                          }
+                        }}
+                      >
                         <AssetIcon website={result.website} size={16} />
                         <span className="ec-topbar-search-result-ticker">{result.ticker}</span>
                         <span className="ec-topbar-search-result-name">{result.name}</span>
