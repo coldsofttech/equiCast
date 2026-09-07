@@ -11,10 +11,15 @@ import "./HoldingTickerSkeleton.css";
  * swaps in. `isOwned` hides the StatTiles/Owned shares/Recent activity rows
  * for a ticker the user doesn't hold, same as the real content does — the
  * CAGR card isn't gated on it, since HoldingCagrSection.jsx renders off
- * market metrics regardless of ownership. The Dividends and Recent activity
- * placeholders always render three cards regardless of how many (if any)
- * the real sections end up showing — neither's real count is known until
- * the real fetch resolves, so this can't match either exactly.
+ * market metrics regardless of ownership. The Dividends card grid and the
+ * Transactions row list each always render three placeholders regardless
+ * of how many (if any) the real sections end up showing — neither's real
+ * count is known until the real fetch resolves, so this can't match either
+ * exactly. Transactions mirrors HoldingTransactionsSection's AVERAGE-mode
+ * row list (the default transaction_type — see HoldingTickerPage.jsx's
+ * `userProfile?.transaction_type ?? "AVERAGE"`), not its TRANSACTION-mode
+ * card grid, since the two modes' layouts differ and the profile that picks
+ * between them may not have loaded yet.
  *
  * @param {{ isOwned: boolean }} props
  */
@@ -110,16 +115,20 @@ function HoldingTickerSkeleton({ isOwned }) {
 
       {isOwned && (
         <Card className="ec-detail-section">
-          <Skeleton width="110px" height="1.25rem" />
-          <div className="ec-dividend-grid">
+          <div className="ec-section-head">
+            <Skeleton width="120px" height="1.25rem" />
+            <div className="ec-section-head-actions">
+              <Skeleton width="60px" height="1rem" />
+              <Skeleton width="90px" height="1rem" />
+              <Skeleton width="50px" height="1rem" />
+            </div>
+          </div>
+          <div className="ec-transaction-row-list">
             {[0, 1, 2].map((i) => (
-              <div className="ec-dividend-card" key={i}>
-                <Skeleton width="70px" height="1.25rem" />
-                <Skeleton width="60px" height="1.5rem" />
-                <div className="ec-dividend-fields-row">
-                  <Skeleton width="80px" height="2rem" />
-                  <Skeleton width="80px" height="2rem" />
-                </div>
+              <div className="ec-transaction-row-card" key={i}>
+                <Skeleton width="28px" height="28px" circle />
+                <Skeleton width="100%" height="0.875rem" className="ec-transaction-row-date" />
+                <Skeleton width="70px" height="0.875rem" />
               </div>
             ))}
           </div>
