@@ -6,13 +6,15 @@ import "./HoldingTickerSkeleton.css";
  * Placeholder "cards" shown in place of the real page content while the
  * market profile/transactions/price chart/dividends are still loading —
  * mirrors the real layout below (StatTiles row, price chart card, Owned
- * shares table, Stats/About columns, Dividends cards) so the page doesn't
- * jump around once the real content swaps in. `isOwned` hides the
- * StatTiles/Owned shares rows for a ticker the user doesn't hold, same as
- * the real content does. The Dividends placeholder always renders three
- * cards regardless of how many (if any) the real section ends up showing —
- * HoldingDividendsSection.jsx's own upcoming-dividends count isn't known
- * until the real fetch resolves, so this can't match it exactly.
+ * shares table, CAGR card, Stats/About columns, Dividends cards, Recent
+ * activity card) so the page doesn't jump around once the real content
+ * swaps in. `isOwned` hides the StatTiles/Owned shares/Recent activity rows
+ * for a ticker the user doesn't hold, same as the real content does — the
+ * CAGR card isn't gated on it, since HoldingCagrSection.jsx renders off
+ * market metrics regardless of ownership. The Dividends and Recent activity
+ * placeholders always render three cards regardless of how many (if any)
+ * the real sections end up showing — neither's real count is known until
+ * the real fetch resolves, so this can't match either exactly.
  *
  * @param {{ isOwned: boolean }} props
  */
@@ -21,7 +23,7 @@ function HoldingTickerSkeleton({ isOwned }) {
     <>
       {isOwned && (
         <div className="ec-stat-grid">
-          {[0, 1, 2].map((i) => (
+          {[0, 1, 2, 3].map((i) => (
             <div className="ec-stat-tile" key={i}>
               <Skeleton width="70%" height="0.75rem" />
               <Skeleton width="85%" height="1.5rem" />
@@ -51,6 +53,19 @@ function HoldingTickerSkeleton({ isOwned }) {
           </Card>
         </>
       )}
+
+      <Card className="ec-detail-section">
+        <Skeleton width="60px" height="1.25rem" />
+        <div className="ec-cagr-list">
+          {[0, 1, 2].map((i) => (
+            <div className="ec-cagr-row" key={i}>
+              <Skeleton width="30px" height="0.75rem" />
+              <Skeleton width="100%" height="0.75rem" />
+              <Skeleton width="50px" height="0.75rem" />
+            </div>
+          ))}
+        </div>
+      </Card>
 
       <div className="ec-account-columns">
         <Card className="ec-detail-section">
@@ -92,6 +107,24 @@ function HoldingTickerSkeleton({ isOwned }) {
           ))}
         </div>
       </Card>
+
+      {isOwned && (
+        <Card className="ec-detail-section">
+          <Skeleton width="110px" height="1.25rem" />
+          <div className="ec-dividend-grid">
+            {[0, 1, 2].map((i) => (
+              <div className="ec-dividend-card" key={i}>
+                <Skeleton width="70px" height="1.25rem" />
+                <Skeleton width="60px" height="1.5rem" />
+                <div className="ec-dividend-fields-row">
+                  <Skeleton width="80px" height="2rem" />
+                  <Skeleton width="80px" height="2rem" />
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </>
   );
 }
