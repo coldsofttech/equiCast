@@ -29,6 +29,7 @@ import {
   summarizeHoldingValuations,
   buildDiversification,
   buildAssetAllocation,
+  buildMarketCapAllocation,
 } from "../holdingValuation.js";
 import "./AccountDetailPage.css";
 
@@ -198,6 +199,7 @@ function AccountDetailPage() {
     holdingValuations
   );
   const assetData = buildAssetAllocation(allHoldings, holdingValuations);
+  const marketCapData = buildMarketCapAllocation(allHoldings, holdingValuations);
   const heatmapWeights = allHoldings.map((h, index) => ({
     ticker: h.ticker,
     value: holdingValuations[index].currentValue,
@@ -403,6 +405,8 @@ function AccountDetailPage() {
         />
 
         <DiversificationChart title="Asset allocation" data={assetData} />
+
+        <DiversificationChart title="Market cap allocation" data={marketCapData} />
       </div>
 
       <PieCagrSection holdings={allHoldings} valuations={holdingValuations} label="account" />

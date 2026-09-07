@@ -25,6 +25,9 @@
  *   ticker.
  * @property {string|null} [website] - feeds AssetIcon's favicon lookup,
  *   `null` for an unpublished ticker.
+ * @property {number|null} [market_cap] - a stock's real market cap, an
+ *   etf's total assets as the closest comparable "size" figure; `null` for
+ *   fx or an unpublished ticker.
  * @property {number|null} [current_price_native] - the catalog's latest
  *   published price in the ticker's own currency, `null` for an unpublished
  *   ticker.

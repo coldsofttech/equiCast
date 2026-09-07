@@ -111,3 +111,45 @@ export function buildAssetAllocation(holdings, valuations) {
     .map(([label, value]) => ({ label, pct: toPct(value) }))
     .sort((a, b) => b.pct - a.pct);
 }
+
+// Standard equity market-cap tiers (the Morningstar/Investopedia
+// convention), checked largest-first. `market_cap` is a stock's real
+// market cap or an etf's total assets as the closest "size" stand-in (see
+// enrich_holdings) — fx holdings and any ticker with no published
+// market_cap have no size concept at all, so `buildMarketCapAllocation`
+// leaves them out entirely rather than folding them into an "Other"
+// bucket the way asset/sector allocation do (explicit product decision).
+const MARKET_CAP_TIERS = [
+  { label: "Mega Cap", min: 200_000_000_000 },
+  { label: "Large Cap", min: 10_000_000_000 },
+  { label: "Mid Cap", min: 2_000_000_000 },
+  { label: "Small Cap", min: 0 },
+];
+
+/**
+ * Groups `holdings` by market-cap tier (see MARKET_CAP_TIERS), weighted by
+ * current value. Holdings with no `market_cap` are excluded from both the
+ * numerator and denominator, so the shown percentages reflect only the
+ * holdings a tier could actually be resolved for. Rows come back in fixed
+ * Mega->Small order (dropping any tier with no holdings in it) rather than
+ * sorted by size, since that progression is the point of the chart. Shared
+ * by AccountDetailPage and PieDetailPage for their "Market cap allocation"
+ * chart.
+ */
+export function buildMarketCapAllocation(holdings, valuations) {
+  const totals = new Map();
+  let totalValue = 0;
+  holdings.forEach((holding, index) => {
+    const marketCap = holding.market_cap;
+    if (marketCap == null) return;
+    const value = valuations[index].currentValue;
+    totalValue += value;
+    const label = MARKET_CAP_TIERS.find((tier) => marketCap >= tier.min).label;
+    totals.set(label, (totals.get(label) ?? 0) + value);
+  });
+
+  const toPct = (value) => (totalValue > 0 ? Math.round((value / totalValue) * 1000) / 10 : 0);
+  return MARKET_CAP_TIERS.map((tier) => tier.label)
+    .filter((label) => totals.has(label))
+    .map((label) => ({ label, pct: toPct(totals.get(label)) }));
+}
