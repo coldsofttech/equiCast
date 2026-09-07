@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
@@ -16,6 +16,7 @@ import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
+import PieCagrSection from "../pies/PieCagrSection.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
@@ -105,6 +106,18 @@ function AccountDetailPage() {
 
   const needsForce = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
 
+  // Memoized (not just derived inline below) so its reference stays stable
+  // across re-renders that don't actually change `account` — PieCagrSection
+  // re-fetches metrics whenever its `holdings` prop reference changes, and a
+  // fresh array every render (e.g. from a plain `.flatMap()`) would refetch
+  // on every unrelated state update (opening a drawer, editing a field, …).
+  const allHoldings = useMemo(() => {
+    if (!account) return [];
+    const directHoldings = account.holdings ?? [];
+    const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
+    return [...directHoldings, ...pieHoldings];
+  }, [account]);
+
   const handleDelete = () => {
     setIsDeleting(true);
     setDeleteError(null);
@@ -153,8 +166,6 @@ function AccountDetailPage() {
   }
 
   const directHoldings = account.holdings ?? [];
-  const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
-  const allHoldings = [...directHoldings, ...pieHoldings];
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
@@ -358,6 +369,8 @@ function AccountDetailPage() {
           }
         />
       </div>
+
+      <PieCagrSection holdings={allHoldings} valuations={holdingValuations} label="account" />
 
       <HoldingsHeatmap weights={heatmapWeights} label="account" />
 
