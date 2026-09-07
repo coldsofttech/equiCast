@@ -22,9 +22,12 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
-import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
-import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
+import {
+  computeHoldingValuation,
+  summarizeHoldingValuations,
+  buildDiversification,
+} from "../holdingValuation.js";
 import "./AccountDetailPage.css";
 
 /** An account's real holdings (direct and pie-nested alike) carry
@@ -35,7 +38,7 @@ import "./AccountDetailPage.css";
  * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row and
  * the Portfolios/Holdings row lists below are all labeled in that currency,
  * not `account.currency` (which the still-synthetic price chart and
- * diversification/heatmap sections further down keep using). */
+ * heatmap sections further down keep using). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
@@ -157,6 +160,10 @@ function AccountDetailPage() {
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
+  const { sectorData, industryData, sectorScore } = buildDiversification(
+    allHoldings,
+    holdingValuations
+  );
 
   return (
     <AppShell
@@ -334,9 +341,9 @@ function AccountDetailPage() {
       <div className="ec-divchart-grid">
         <DiversificationChart
           title="Sector diversification"
-          score={SECTOR_SCORE}
-          data={SECTOR_DATA}
-          caption="Illustrative sample data — sector classification isn't wired up to real holdings yet. Click a sector to filter industries below; click it again to show all."
+          score={sectorScore ?? undefined}
+          data={sectorData}
+          caption="Click a sector to filter industries below; click it again to show all."
           activeLabel={selectedSector}
           onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
         />
@@ -344,9 +351,8 @@ function AccountDetailPage() {
         <DiversificationChart
           title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
           data={
-            selectedSector ? INDUSTRY_DATA.filter((i) => i.sector === selectedSector) : INDUSTRY_DATA
+            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
           }
-          caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
         />
       </div>
 

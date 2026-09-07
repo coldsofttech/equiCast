@@ -23,7 +23,11 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
-import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
+import {
+  computeHoldingValuation,
+  summarizeHoldingValuations,
+  buildDiversification,
+} from "../holdingValuation.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
  * backend/pies/views.py's `_enrich_holdings`) are all converted to the
@@ -34,58 +38,16 @@ import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingV
 const FALLBACK_CURRENCY = "USD";
 
 /**
- * Groups a pie's holdings by sector/industry, weighted by each holding's
- * current value (see `computeHoldingValuation`) rather than a plain
- * holding count or `allocation_pct` — a small fx position and a large
- * stock position in the same sector should count as two %-of-value rows,
- * not one-holding-each. A holding with no sector/industry (every etf/fx,
- * or an unpublished ticker — see backend/pies/views.py's
- * `_enrich_holdings`) falls into "Other". `sectorScore` is a simple
- * concentration heuristic (100 minus the largest sector's share of
- * value), not a rigorous diversification metric.
- */
-function buildDiversification(holdings, valuations) {
-  const totalValue = valuations.reduce((sum, v) => sum + v.currentValue, 0);
-
-  const sectorTotals = new Map();
-  const industryTotals = new Map();
-  holdings.forEach((holding, index) => {
-    const value = valuations[index].currentValue;
-    sectorTotals.set(holding.sector ?? "Other", (sectorTotals.get(holding.sector ?? "Other") ?? 0) + value);
-    const industryKey = holding.industry ?? "Other";
-    const existing = industryTotals.get(industryKey);
-    if (existing) {
-      existing.value += value;
-    } else {
-      industryTotals.set(industryKey, { value, sector: holding.sector ?? "Other" });
-    }
-  });
-
-  // Rounded to 1 decimal — DiversificationChart renders `pct` verbatim
-  // (`{entry.pct}%`), and an unrounded float would show a long, ugly
-  // fractional percentage next to each bar.
-  const toPct = (value) => (totalValue > 0 ? Math.round((value / totalValue) * 1000) / 10 : 0);
-  const sectorData = [...sectorTotals.entries()]
-    .map(([label, value]) => ({ label, pct: toPct(value) }))
-    .sort((a, b) => b.pct - a.pct);
-  const industryData = [...industryTotals.entries()]
-    .map(([label, { value, sector }]) => ({ label, sector, pct: toPct(value) }))
-    .sort((a, b) => b.pct - a.pct);
-  const sectorScore = sectorData.length > 0 ? Math.round(100 - sectorData[0].pct) : null;
-
-  return { sectorData, industryData, sectorScore };
-}
-
-/**
  * One portfolio's own overview page — same shape as AccountDetailPage (a
  * price chart, a holdings section, bottom-of-page diversification/heatmap),
  * scoped to this pie's own holdings instead of the whole account's. Unlike
- * AccountDetailPage's own price chart/diversification/heatmap sections
- * (still sample data), every one of these is real here: the price chart
- * (PiePriceChart) aggregates every holding's own real price history, sector/
- * industry diversification (buildDiversification) and the holdings heatmap
- * (`weights` prop, see HoldingsHeatmap) are both real, value-weighted
- * breakdowns of this pie's own holdings. Holdings here are read-only (name,
+ * AccountDetailPage's own price chart/heatmap sections (still sample data),
+ * every one of these is real here: the price chart (PiePriceChart)
+ * aggregates every holding's own real price history, sector/industry
+ * diversification (buildDiversification — shared with AccountDetailPage's
+ * own, account-wide breakdown) and the holdings heatmap (`weights` prop,
+ * see HoldingsHeatmap) are both real, value-weighted breakdowns of this
+ * pie's own holdings. Holdings here are read-only (name,
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
