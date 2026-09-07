@@ -37,8 +37,8 @@ import "./AccountDetailPage.css";
  * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
  * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row and
  * the Portfolios/Holdings row lists below are all labeled in that currency,
- * not `account.currency` (which the still-synthetic price chart and
- * heatmap sections further down keep using). */
+ * not `account.currency` (which the still-synthetic price chart further
+ * down keeps using — the heatmap is weight-only and currency-agnostic). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
@@ -155,7 +155,6 @@ function AccountDetailPage() {
   const directHoldings = account.holdings ?? [];
   const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
   const allHoldings = [...directHoldings, ...pieHoldings];
-  const allTickers = allHoldings.map((h) => h.ticker);
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
@@ -164,6 +163,10 @@ function AccountDetailPage() {
     allHoldings,
     holdingValuations
   );
+  const heatmapWeights = allHoldings.map((h, index) => ({
+    ticker: h.ticker,
+    value: holdingValuations[index].currentValue,
+  }));
 
   return (
     <AppShell
@@ -356,7 +359,7 @@ function AccountDetailPage() {
         />
       </div>
 
-      <HoldingsHeatmap tickers={allTickers} />
+      <HoldingsHeatmap weights={heatmapWeights} label="account" />
 
       <Card className="ec-danger-zone">
         <div className="ec-danger-zone-text">

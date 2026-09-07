@@ -41,13 +41,14 @@ const FALLBACK_CURRENCY = "USD";
  * One portfolio's own overview page — same shape as AccountDetailPage (a
  * price chart, a holdings section, bottom-of-page diversification/heatmap),
  * scoped to this pie's own holdings instead of the whole account's. Unlike
- * AccountDetailPage's own price chart/heatmap sections (still sample data),
- * every one of these is real here: the price chart (PiePriceChart)
- * aggregates every holding's own real price history, sector/industry
- * diversification (buildDiversification — shared with AccountDetailPage's
- * own, account-wide breakdown) and the holdings heatmap (`weights` prop,
- * see HoldingsHeatmap) are both real, value-weighted breakdowns of this
- * pie's own holdings. Holdings here are read-only (name,
+ * AccountDetailPage's own price chart (still sample data), every one of
+ * these is real here: the price chart (PiePriceChart) aggregates every
+ * holding's own real price history, sector/industry diversification
+ * (buildDiversification — shared with AccountDetailPage's own, account-wide
+ * breakdown) and the holdings heatmap (`weights` prop, shared with
+ * AccountDetailPage's own account-wide one — see HoldingsHeatmap) are both
+ * real, value-weighted breakdowns of this pie's own holdings. Holdings here
+ * are read-only (name,
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
