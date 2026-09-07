@@ -14,6 +14,7 @@ import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
 import PiePriceChart from "./PiePriceChart.jsx";
 import PieCagrSection from "./PieCagrSection.jsx";
+import PieDetailSkeleton from "./PieDetailSkeleton.jsx";
 import DiversificationChart from "../accounts/DiversificationChart.jsx";
 import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
@@ -208,8 +209,18 @@ function PieDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Loading…" footer={<SiteFooter />}>
-        <p className="ec-loading">Loading…</p>
+      <AppShell
+        menuItems={MENU_ITEMS}
+        eyebrow="Portfolio"
+        title="Loading…"
+        actions={
+          <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
+            Back to account
+          </Button>
+        }
+        footer={<SiteFooter />}
+      >
+        <PieDetailSkeleton />
       </AppShell>
     );
   }
