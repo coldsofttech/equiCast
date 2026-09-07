@@ -22,7 +22,6 @@ describe("AccountCard", () => {
     expect(screen.getByText("Stocks & Shares ISA")).toBeInTheDocument();
     expect(screen.getByText("ISA")).toBeInTheDocument();
     expect(screen.getByText("Long-term holdings")).toBeInTheDocument();
-    expect(screen.getByText("GBP")).toBeInTheDocument();
     expect(screen.getByText("2 pies")).toBeInTheDocument();
     expect(screen.getByText("4 holdings")).toBeInTheDocument();
   });

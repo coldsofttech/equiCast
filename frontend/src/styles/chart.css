@@ -2,9 +2,9 @@
  * Shared hand-rolled SVG chart primitives — a type-toggle pill group,
  * up/down change text, gridlines/line/candle/crosshair strokes, and the
  * OHLC hover tooltip. First built for SignInScreen's DemoChart, now also
- * used by AccountPriceChart, so it lives globally rather than depending on
- * DemoChart's own CSS file being loaded on pages that aren't the landing
- * page.
+ * used by HoldingPriceChart/PiePriceChart, so it lives globally rather than
+ * depending on DemoChart's own CSS file being loaded on pages that aren't
+ * the landing page.
  */
 .ec-chart-toggle {
   display: flex;

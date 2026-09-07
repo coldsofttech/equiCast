@@ -50,10 +50,8 @@ export function compareMetric(holdingValue, benchmarkValue) {
 
 /**
  * A single 0-100 rating of `ticker` against the benchmark currently picked
- * in HoldingComparePicker — real data, not the fully-synthetic placeholder
- * DiversificationChart's SECTOR_SCORE is (equiCast has no real sector
- * classification source yet; it does have real risk/performance metrics
- * for every asset class, benchmark included — see equicast_metrics).
+ * in HoldingComparePicker, built from real risk/performance metrics for
+ * every asset class, benchmark included — see equicast_metrics.
  *
  * Score = the percentage of RATED_METRICS the holding beats the benchmark
  * on (e.g. 3 of 4 → 75/100), each read from the same `GET .../metrics/`

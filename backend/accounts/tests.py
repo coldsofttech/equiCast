@@ -40,13 +40,22 @@ class AccountListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("accounts.views._market_data_client")
+    @patch("accounts.views._profile_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_the_users_accounts_bare_when_nothing_nested(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_accounts.return_value = [ACCOUNT]
@@ -60,22 +69,62 @@ class AccountListViewTests(TestCase):
         mock_client.list_accounts.assert_called_once_with("auth0|abc123")
         mock_pies_client.list_pies.assert_called_once_with("auth0|abc123")
         mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
+        # No holdings to enrich — profile/market-data lookups are skipped
+        # entirely (see accounts.views._enrich_holdings's short-circuit).
+        mock_profile_client.get_or_create_profile.assert_not_called()
+        mock_market_data_client.enrich_holdings.assert_not_called()
 
+    @patch("accounts.views._market_data_client")
+    @patch("accounts.views._profile_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_nests_pies_with_their_holdings_and_direct_account_holdings(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
-        pie_holding = {"id": "h-1", "ticker": "VOO", "pie_id": "pie-1", "account_id": None}
-        direct_holding = {"id": "h-2", "ticker": "AAPL", "pie_id": None, "account_id": "acc-1"}
+        pie_holding = {
+            "id": "h-1",
+            "ticker": "VOO",
+            "asset_class": "etf",
+            "pie_id": "pie-1",
+            "account_id": None,
+        }
+        direct_holding = {
+            "id": "h-2",
+            "ticker": "AAPL",
+            "asset_class": "stock",
+            "pie_id": None,
+            "account_id": "acc-1",
+        }
+        enriched_pie_holding = {
+            **pie_holding, "current_price_native": 450.0, "current_price": 450.0
+        }
+        enriched_direct_holding = {
+            **direct_holding, "current_price_native": 190.0, "current_price": 190.0
+        }
         mock_client.list_accounts.return_value = [ACCOUNT]
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
+        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "GBP"}
+        # Enrichment itself (catalog lookup/FX conversion) is unit-tested at
+        # MarketDataClient.enrich_holdings — this only checks the flat
+        # enriched list is threaded through and split back into
+        # pies/direct holdings correctly (see _nest_pies_and_holdings).
+        mock_market_data_client.enrich_holdings.return_value = [
+            enriched_pie_holding,
+            enriched_direct_holding,
+        ]
 
         response = self.client.get(reverse("accounts-list"), **AUTH_HEADER)
 
@@ -85,10 +134,13 @@ class AccountListViewTests(TestCase):
             [
                 {
                     **ACCOUNT,
-                    "pies": [{**pie, "holdings": [pie_holding]}],
-                    "holdings": [direct_holding],
+                    "pies": [{**pie, "holdings": [enriched_pie_holding]}],
+                    "holdings": [enriched_direct_holding],
                 }
             ],
+        )
+        mock_market_data_client.enrich_holdings.assert_called_once_with(
+            [pie_holding, direct_holding], "GBP"
         )
 
     @patch("accounts.views._client")
@@ -189,32 +241,71 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("accounts.views._market_data_client")
+    @patch("accounts.views._profile_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_the_account_with_its_pies_and_holdings(
-        self, mock_jwks_client, mock_decode, mock_client, mock_pies_client, mock_holdings_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_profile_client,
+        mock_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_account.return_value = ACCOUNT
         pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
-        pie_holding = {"id": "h-1", "ticker": "VOO", "pie_id": "pie-1", "account_id": None}
-        direct_holding = {"id": "h-2", "ticker": "AAPL", "pie_id": None, "account_id": "acc-1"}
+        pie_holding = {
+            "id": "h-1",
+            "ticker": "VOO",
+            "asset_class": "etf",
+            "pie_id": "pie-1",
+            "account_id": None,
+        }
+        direct_holding = {
+            "id": "h-2",
+            "ticker": "AAPL",
+            "asset_class": "stock",
+            "pie_id": None,
+            "account_id": "acc-1",
+        }
+        enriched_pie_holding = {
+            **pie_holding, "current_price_native": 450.0, "current_price": 450.0
+        }
+        enriched_direct_holding = {
+            **direct_holding, "current_price_native": 190.0, "current_price": 190.0
+        }
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
+        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "GBP"}
+        mock_market_data_client.enrich_holdings.return_value = [
+            enriched_pie_holding,
+            enriched_direct_holding,
+        ]
 
         response = self.client.get(reverse("accounts-detail", args=["acc-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {**ACCOUNT, "pies": [{**pie, "holdings": [pie_holding]}], "holdings": [direct_holding]},
+            {
+                **ACCOUNT,
+                "pies": [{**pie, "holdings": [enriched_pie_holding]}],
+                "holdings": [enriched_direct_holding],
+            },
         )
         mock_client.get_account.assert_called_once_with("auth0|abc123", "acc-1")
         mock_pies_client.list_pies.assert_called_once_with("auth0|abc123", account_id="acc-1")
         mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
+        mock_market_data_client.enrich_holdings.assert_called_once_with(
+            [pie_holding, direct_holding], "GBP"
+        )
 
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")

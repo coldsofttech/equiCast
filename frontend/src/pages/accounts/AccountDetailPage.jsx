@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
@@ -11,32 +11,43 @@ import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import AccountForm from "./AccountForm.jsx";
-import PriceChart from "./PriceChart.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
+import PieCagrSection from "../pies/PieCagrSection.jsx";
+import PiePriceChart from "../pies/PiePriceChart.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
+import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
 import { MENU_ITEMS } from "../menuItems.js";
-import { INDUSTRY_DATA, SECTOR_DATA, SECTOR_SCORE } from "../diversificationSampleData.js";
+import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
-  formatCurrency,
-  TICKER_NAMES,
-  buildPieSample,
-  buildHoldingSample,
-  plTone,
-  aggregateSamples,
-} from "../sampleFinancials.js";
+  computeHoldingValuation,
+  summarizeHoldingValuations,
+  buildDiversification,
+} from "../holdingValuation.js";
 import "./AccountDetailPage.css";
+
+/** An account's real holdings (direct and pie-nested alike) carry
+ * `invested`/`dividends`/`current_price` already converted to the user's
+ * default_currency, not the account's own `currency` (see
+ * api/accounts.js's `Holding` typedef and equicast_core.client.
+ * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
+ * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row,
+ * the Portfolios/Holdings row lists, and the price chart below are all
+ * labeled in that currency, not `account.currency` (the heatmap is
+ * weight-only and currency-agnostic). */
+const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
   const { accountId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
+  const { accounts: cachedAccounts, setAccounts: setCachedAccounts } = useAccounts();
+  const { profile: userProfile } = useCurrentUser();
 
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -95,6 +106,40 @@ function AccountDetailPage() {
 
   const needsForce = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
 
+  // Memoized (not just derived inline below) so its reference stays stable
+  // across re-renders that don't actually change `account` — PieCagrSection
+  // re-fetches metrics whenever its `holdings` prop reference changes, and a
+  // fresh array every render (e.g. from a plain `.flatMap()`) would refetch
+  // on every unrelated state update (opening a drawer, editing a field, …).
+  const allHoldings = useMemo(() => {
+    if (!account) return [];
+    const directHoldings = account.holdings ?? [];
+    const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
+    return [...directHoldings, ...pieHoldings];
+  }, [account]);
+
+  // PiePriceChart's "Compare against" picker's own options here — every
+  // other account the user has, sourced from the session-cached accounts
+  // list (see useAccounts.js) rather than a fresh fetch, since it's already
+  // available. Memoized for the same reason `allHoldings` is.
+  const compareItems = useMemo(
+    () => cachedAccounts.filter((a) => a.id !== accountId).map((a) => ({ id: a.id, name: a.name })),
+    [cachedAccounts, accountId]
+  );
+
+  // Combines a compare account's own direct + pie-nested holdings the same
+  // way `allHoldings` does for this account — memoized so PiePriceChart's
+  // compare-fetch effect (keyed on this callback) doesn't refire on every
+  // unrelated re-render.
+  const fetchCompareHoldings = useCallback(
+    (compareAccountId) =>
+      getAccount(api, compareAccountId).then((a) => [
+        ...(a.holdings ?? []),
+        ...(a.pies ?? []).flatMap((p) => p.holdings ?? []),
+      ]),
+    [api]
+  );
+
   const handleDelete = () => {
     setIsDeleting(true);
     setDeleteError(null);
@@ -143,15 +188,18 @@ function AccountDetailPage() {
   }
 
   const directHoldings = account.holdings ?? [];
-  const allTickers = [
-    ...directHoldings.map((h) => h.ticker),
-    ...(account.pies ?? []).flatMap((p) => (p.holdings ?? []).map((h) => h.ticker)),
-  ];
-  const totals = aggregateSamples([
-    ...(account.pies ?? []).map((p) => buildPieSample(p.id)),
-    ...directHoldings.map((h) => buildHoldingSample(h.id)),
-  ]);
+  const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  const holdingValuations = allHoldings.map(computeHoldingValuation);
+  const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
+  const { sectorData, industryData, sectorScore } = buildDiversification(
+    allHoldings,
+    holdingValuations
+  );
+  const heatmapWeights = allHoldings.map((h, index) => ({
+    ticker: h.ticker,
+    value: holdingValuations[index].currentValue,
+  }));
 
   return (
     <AppShell
@@ -173,30 +221,35 @@ function AccountDetailPage() {
     >
       <div className="ec-account-detail-badges">
         <Badge tone="accent">{account.account_type}</Badge>
-        <Badge tone="neutral">{account.currency}</Badge>
       </div>
 
       <div className="ec-stat-grid">
         <StatTile
-          label="Total invested"
-          value={formatCurrency(totals.invested, account.currency)}
-          hint="Sample data"
+          label="Value"
+          value={formatCurrency(totals.currentValue, currency)}
+          hint={`Invested ${formatCurrency(totals.invested, currency)}`}
         />
         <StatTile
           label="Profit / loss"
-          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), account.currency)}`}
+          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
           tone={totalsTone}
-          hint="Sample data"
+          hint={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
+          hintTone={totalsTone}
         />
-        <StatTile
-          label="Profit / loss %"
-          value={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
-          tone={totalsTone}
-          hint="Sample data"
-        />
+        <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
       </div>
 
-      <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />
+      <PiePriceChart
+        holdings={allHoldings}
+        currency={currency}
+        entityLabel="account"
+        compareItems={compareItems}
+        compareItemType="account"
+        fetchCompareHoldings={fetchCompareHoldings}
+        investedTotal={totals.invested}
+        currentValueTotal={totals.currentValue}
+        holdingValuations={holdingValuations}
+      />
 
       <div className="ec-account-columns">
         <div>
@@ -221,9 +274,10 @@ function AccountDetailPage() {
           ) : (
             <div className="ec-detail-row-list">
               {account.pies.map((pie) => {
-                const sample = buildPieSample(pie.id);
-                const tone = plTone(sample.plPct);
-                const plSign = sample.plValue >= 0 ? "+" : "-";
+                const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
+                const pieTotals = summarizeHoldingValuations(pie.holdings ?? [], pieValuations);
+                const tone = plTone(pieTotals.plPct);
+                const plSign = pieTotals.plValue >= 0 ? "+" : "-";
                 return (
                   <Card
                     key={pie.id}
@@ -244,12 +298,12 @@ function AccountDetailPage() {
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(sample.currentValue, account.currency)}
+                        {formatCurrency(pieTotals.currentValue, currency)}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
                         {plSign}
-                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
-                        {Math.abs(sample.plPct).toFixed(1)}%)
+                        {formatCurrency(Math.abs(pieTotals.plValue), currency)} ({plSign}
+                        {Math.abs(pieTotals.plPct).toFixed(1)}%)
                       </span>
                     </div>
                   </Card>
@@ -281,10 +335,9 @@ function AccountDetailPage() {
           ) : (
             <div className="ec-detail-row-list">
               {directHoldings.map((holding) => {
-                const sample = buildHoldingSample(holding.id);
-                const tone = plTone(sample.plPct);
-                const plSign = sample.plValue >= 0 ? "+" : "-";
-                const name = TICKER_NAMES[holding.ticker];
+                const valuation = computeHoldingValuation(holding);
+                const tone = plTone(valuation.plPct);
+                const plSign = valuation.plValue >= 0 ? "+" : "-";
                 return (
                   <Card
                     key={holding.id}
@@ -307,18 +360,19 @@ function AccountDetailPage() {
                   >
                     <div className="ec-detail-row-main">
                       <h3 className="ec-detail-row-name">
-                        {name ? `${name} (${holding.ticker})` : holding.ticker}
+                        {holding.name ? `${holding.name} (${holding.ticker})` : holding.ticker}
                       </h3>
-                      <span className="ec-detail-row-meta">{sample.shares} shares</span>
+                      <span className="ec-detail-row-meta">{holding.no_of_shares} shares</span>
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(sample.currentValue, account.currency)}
+                        {formatCurrency(valuation.currentValue, currency)}
+                        {!valuation.hasLivePrice && " (cost basis)"}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
                         {plSign}
-                        {formatCurrency(Math.abs(sample.plValue), account.currency)} ({plSign}
-                        {Math.abs(sample.plPct).toFixed(1)}%)
+                        {formatCurrency(Math.abs(valuation.plValue), currency)} ({plSign}
+                        {Math.abs(valuation.plPct).toFixed(1)}%)
                       </span>
                     </div>
                   </Card>
@@ -332,9 +386,9 @@ function AccountDetailPage() {
       <div className="ec-divchart-grid">
         <DiversificationChart
           title="Sector diversification"
-          score={SECTOR_SCORE}
-          data={SECTOR_DATA}
-          caption="Illustrative sample data — sector classification isn't wired up to real holdings yet. Click a sector to filter industries below; click it again to show all."
+          score={sectorScore ?? undefined}
+          data={sectorData}
+          caption="Click a sector to filter industries below; click it again to show all."
           activeLabel={selectedSector}
           onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
         />
@@ -342,13 +396,14 @@ function AccountDetailPage() {
         <DiversificationChart
           title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
           data={
-            selectedSector ? INDUSTRY_DATA.filter((i) => i.sector === selectedSector) : INDUSTRY_DATA
+            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
           }
-          caption="Illustrative sample data — industry classification isn't wired up to real holdings yet."
         />
       </div>
 
-      <HoldingsHeatmap tickers={allTickers} />
+      <PieCagrSection holdings={allHoldings} valuations={holdingValuations} label="account" />
+
+      <HoldingsHeatmap weights={heatmapWeights} label="account" />
 
       <Card className="ec-danger-zone">
         <div className="ec-danger-zone-text">

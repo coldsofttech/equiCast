@@ -93,6 +93,23 @@ describe("TopbarSearch", () => {
     expect(await screen.findByRole("button", { name: "More results (42)" })).toBeInTheDocument();
   });
 
+  it("navigates to /holdings/:ticker when a result is clicked", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    const navigate = vi.fn();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
+    vi.mocked(searchTickers).mockResolvedValue({
+      results: [{ ticker: "AAPL", name: "Apple Inc.", type: "stock", current_price: 190.5 }],
+      count: 1,
+    });
+
+    render(<TopbarSearch />);
+    typeAndEnter("aapl");
+
+    fireEvent.click(await screen.findByText("AAPL"));
+
+    expect(navigate).toHaveBeenCalledWith("/holdings/AAPL", { state: { assetClass: "stock" } });
+  });
+
   it("navigates to /search only when More results is clicked", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     const navigate = vi.fn();

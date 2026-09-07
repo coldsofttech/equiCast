@@ -1,22 +1,7 @@
 import { useMemo } from "react";
 import Card from "../../components/core/Card.jsx";
-import { seededRandom } from "../../utils/deterministicRandom.js";
 import { squarify } from "../../utils/treemap.js";
 import "./HoldingsHeatmap.css";
-
-/**
- * Stand-in for a real 50-holding portfolio, used only when there's nothing
- * real to show (`weights` not given and `tickers` empty, or `weights` given
- * but empty) so the heatmap has something to illustrate rather than sitting
- * on an empty state — see the `caption` note below.
- */
-const SAMPLE_TICKERS = [
-  "AAPL", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "TSLA", "BRK.B", "JPM", "V",
-  "UNH", "XOM", "JNJ", "WMT", "MA", "PG", "HD", "CVX", "MRK", "ABBV",
-  "PEP", "KO", "COST", "AVGO", "ADBE", "CSCO", "TMO", "MCD", "ACN", "CRM",
-  "NFLX", "DIS", "ABT", "DHR", "NKE", "LIN", "TXN", "PM", "NEE", "UPS",
-  "BMY", "RTX", "HON", "ORCL", "QCOM", "LOW", "AMD", "INTC", "IBM", "GE",
-];
 
 /** Layout-only virtual coordinate space — see `.ec-heatmap`'s matching
  * aspect-ratio in HoldingsHeatmap.css, which is what makes squarify's
@@ -43,10 +28,6 @@ const TILE_TONES = [
   { background: "var(--ec-surface-2)", color: "var(--ec-text-muted)" },
 ];
 
-function buildSampleWeights(tickers) {
-  return tickers.map((ticker) => ({ ticker, raw: 1 + seededRandom(`weight:${ticker}`)() * 4 }));
-}
-
 /** Turns a list of `{ raw }` weights into `{ pct, area }` tiles, evenly
  * splitting when every raw weight is 0 (e.g. every holding valued at cost
  * basis of 0) rather than dividing by zero. */
@@ -62,84 +43,61 @@ function toWeightedCells(weighted) {
 }
 
 /**
- * A weight-only treemap of a portfolio's holdings — tile *area* is
- * proportional to weight via a squarified layout (see utils/treemap.js);
- * tile *color* is purely categorical (see TILE_TONES), not a performance
- * scale, since this only ever shows weight now.
+ * A weight-only treemap of a portfolio's or account's holdings — tile
+ * *area* is proportional to weight via a squarified layout (see
+ * utils/treemap.js); tile *color* is purely categorical (see TILE_TONES),
+ * not a performance scale, since this only ever shows weight.
  *
- * `weights` (`{ ticker, value }[]`), when given, drives real value-based
- * weight — `value` is each holding's current value (see PieDetailPage's
- * `computeHoldingValuation`), so tile size reflects real portfolio weight.
- * An empty `weights` array (a pie with no holdings yet) renders an empty
- * state instead, matching DiversificationChart's "nothing to show" message.
- * `tickers` (plain ticker strings) is the legacy path still used by
- * AccountDetailPage, which has no real per-holding valuation wired up yet —
- * an empty `tickers` list falls back to SAMPLE_TICKERS with synthetic,
- * deterministic-per-ticker weight instead (see caption), since that account
- * page has no equivalent empty state to defer to.
+ * `weights` (`{ ticker, value }[]`) drives real value-based weight —
+ * `value` is each holding's current value (see holdingValuation.js's
+ * `computeHoldingValuation`), so tile size reflects real weight in whatever
+ * `label` names (e.g. "account" for every direct + pie-nested holding, or
+ * "portfolio" for one pie's own holdings). An empty `weights` (no holdings
+ * yet) renders an empty state instead of synthetic sample tickers, matching
+ * DiversificationChart's "nothing to show" treatment.
  */
-function HoldingsHeatmap({ tickers = [], weights }) {
-  const hasRealWeights = Array.isArray(weights);
-  const isEmpty = hasRealWeights ? weights.length === 0 : tickers.length === 0;
-  const showEmptyState = hasRealWeights && isEmpty;
+function HoldingsHeatmap({ weights = [], label = "portfolio" }) {
+  const isEmpty = weights.length === 0;
 
   const cells = useMemo(() => {
-    if (showEmptyState) return [];
-    if (hasRealWeights && weights.length > 0) {
-      return toWeightedCells(weights.map((w) => ({ ticker: w.ticker, raw: Math.max(w.value, 0) })));
-    }
-    const weighted = buildSampleWeights(isEmpty ? SAMPLE_TICKERS : [...new Set(tickers)]);
-    return toWeightedCells(weighted);
-  }, [tickers, weights, hasRealWeights, isEmpty, showEmptyState]);
+    if (isEmpty) return [];
+    return toWeightedCells(weights.map((w) => ({ ticker: w.ticker, raw: Math.max(w.value, 0) })));
+  }, [weights, isEmpty]);
 
-  const layout = useMemo(
-    () => squarify(cells, 0, 0, LAYOUT_W, LAYOUT_H),
-    [cells]
-  );
+  const layout = useMemo(() => squarify(cells, 0, 0, LAYOUT_W, LAYOUT_H), [cells]);
 
   return (
     <Card className="ec-detail-section">
       <h3 className="ec-divchart-title">Holdings heatmap</h3>
 
-      {showEmptyState ? (
-        <p className="ec-heatmap-empty">Nothing to show — this pie has no holdings yet.</p>
+      {isEmpty ? (
+        <p className="ec-heatmap-empty">Nothing to show — this {label} has no holdings yet.</p>
       ) : (
-        <>
-          <div className="ec-heatmap">
-            {layout.map((cell, i) => {
-              const tone = TILE_TONES[i % TILE_TONES.length];
-              const area = cell.w * cell.h;
-              const showDetail = area > 3200;
-              return (
-                <div
-                  key={cell.ticker}
-                  className="ec-heatmap-cell"
-                  title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${hasRealWeights ? "portfolio" : "account"}${isEmpty ? " (sample)" : ""}`}
-                  style={{
-                    left: `${(cell.x / LAYOUT_W) * 100}%`,
-                    top: `${(cell.y / LAYOUT_H) * 100}%`,
-                    width: `${(cell.w / LAYOUT_W) * 100}%`,
-                    height: `${(cell.h / LAYOUT_H) * 100}%`,
-                    background: tone.background,
-                    color: tone.color,
-                  }}
-                >
-                  <span className="ec-heatmap-ticker">{cell.ticker}</span>
-                  {showDetail && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
-                </div>
-              );
-            })}
-          </div>
-
-          {(isEmpty || !hasRealWeights) && (
-            <p className="ec-chart-caption">
-              {isEmpty
-                ? `Sample data — showing 50 illustrative holdings until ${hasRealWeights ? "this portfolio" : "this account"} has real ones. `
-                : "Illustrative weights — "}
-              Tile size is weight in {hasRealWeights ? "the portfolio" : "the account"}.
-            </p>
-          )}
-        </>
+        <div className="ec-heatmap">
+          {layout.map((cell, i) => {
+            const tone = TILE_TONES[i % TILE_TONES.length];
+            const area = cell.w * cell.h;
+            const showDetail = area > 3200;
+            return (
+              <div
+                key={cell.ticker}
+                className="ec-heatmap-cell"
+                title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${label}`}
+                style={{
+                  left: `${(cell.x / LAYOUT_W) * 100}%`,
+                  top: `${(cell.y / LAYOUT_H) * 100}%`,
+                  width: `${(cell.w / LAYOUT_W) * 100}%`,
+                  height: `${(cell.h / LAYOUT_H) * 100}%`,
+                  background: tone.background,
+                  color: tone.color,
+                }}
+              >
+                <span className="ec-heatmap-ticker">{cell.ticker}</span>
+                {showDetail && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
+              </div>
+            );
+          })}
+        </div>
       )}
     </Card>
   );

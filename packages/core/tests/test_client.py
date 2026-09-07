@@ -610,6 +610,121 @@ class TestGetCatalog:
         assert client.get_catalog("stock") == []
 
 
+class TestEnrichHoldings:
+    def test_returns_empty_list_unchanged(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.enrich_holdings([], "USD") == []
+
+    def test_merges_catalog_fields_and_skips_conversion_when_same_currency(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "etf",
+            [
+                {
+                    "ticker": "VOO",
+                    "name": "Vanguard S&P 500 ETF",
+                    "current_price": 450.0,
+                    "currency": "USD",
+                    "website": "https://investor.vanguard.com",
+                    "sector": None,
+                    "industry": None,
+                }
+            ],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf"}
+
+        [enriched] = client.enrich_holdings([holding], "USD")
+
+        assert enriched == {
+            **holding,
+            "name": "Vanguard S&P 500 ETF",
+            "sector": None,
+            "industry": None,
+            "website": "https://investor.vanguard.com",
+            "current_price_native": 450.0,
+            "current_price": 450.0,
+        }
+
+    def test_converts_current_price_using_the_direct_fx_pair(self, s3_client) -> None:
+        _put_catalog(
+            s3_client, "stock", [{"ticker": "AAPL", "current_price": 190.0, "currency": "USD"}]
+        )
+        _put_catalog(s3_client, "fx", [{"ticker": "USDGBP", "current_price": 0.8}])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "AAPL", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "GBP")
+
+        assert enriched["current_price_native"] == 190.0
+        assert enriched["current_price"] == pytest.approx(190.0 * 0.8)
+
+    def test_converts_current_price_using_the_inverted_fx_pair_when_direct_is_missing(
+        self, s3_client
+    ) -> None:
+        _put_catalog(
+            s3_client, "stock", [{"ticker": "AAPL", "current_price": 190.0, "currency": "USD"}]
+        )
+        # Only GBPUSD is published (1 GBP = 1.25 USD) — converting USD->GBP
+        # needs the reciprocal.
+        _put_catalog(s3_client, "fx", [{"ticker": "GBPUSD", "current_price": 1.25}])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "AAPL", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "GBP")
+
+        assert enriched["current_price"] == pytest.approx(190.0 / 1.25)
+
+    def test_returns_none_fields_when_ticker_has_no_catalog_row(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "UNKNOWN", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "USD")
+
+        assert enriched["name"] is None
+        assert enriched["current_price_native"] is None
+        assert enriched["current_price"] is None
+
+    def test_returns_none_current_price_when_no_fx_rate_is_published(self, s3_client) -> None:
+        _put_catalog(
+            s3_client, "stock", [{"ticker": "AAPL", "current_price": 190.0, "currency": "USD"}]
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "AAPL", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "GBP")
+
+        assert enriched["current_price_native"] == 190.0
+        assert enriched["current_price"] is None
+
+    def test_reads_each_distinct_asset_class_catalog_once(self, s3_client, monkeypatch) -> None:
+        _put_catalog(
+            s3_client, "stock", [{"ticker": "AAPL", "current_price": 190.0, "currency": "USD"}]
+        )
+        _put_catalog(
+            s3_client, "etf", [{"ticker": "VOO", "current_price": 450.0, "currency": "USD"}]
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        calls = []
+        original = client.get_catalog
+
+        def counting_get_catalog(asset_class):
+            calls.append(asset_class)
+            return original(asset_class)
+
+        monkeypatch.setattr(client, "get_catalog", counting_get_catalog)
+        holdings = [
+            {"id": "h-1", "ticker": "AAPL", "asset_class": "stock"},
+            {"id": "h-2", "ticker": "AAPL", "asset_class": "stock"},
+            {"id": "h-3", "ticker": "VOO", "asset_class": "etf"},
+        ]
+
+        client.enrich_holdings(holdings, "USD")
+
+        assert sorted(calls) == ["etf", "fx", "stock"]
+
+
 class TestSearch:
     def _seed(self, s3_client) -> None:
         _put_catalog(

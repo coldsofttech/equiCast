@@ -80,6 +80,7 @@
   gap: var(--ec-s-8);
   padding: var(--ec-s-8);
   border-radius: var(--ec-r-6);
+  cursor: pointer;
 }
 
 .ec-topbar-search-results li:hover .ec-topbar-search-result {

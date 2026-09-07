@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
-import { getPie, listPies } from "../../api/pies.js";
 import { resolveFxRate, formatPrice } from "../holdings/holdingFinancials.js";
 import PieComparePicker from "./PieComparePicker.jsx";
 import PieBenchmarkRating from "./PieBenchmarkRating.jsx";
@@ -168,50 +167,60 @@ async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
 }
 
 /**
- * PieDetailPage's price chart — same real range picker, hover tooltip and
- * "compare against" overlay as HoldingPriceChart.jsx, but its own subject
- * series is every one of the pie's holdings combined into one aggregate
- * value curve (see buildAggregateBars) rather than a single ticker's own
- * price. There's no Candles chart type: unlike one ticker's own real daily
- * OHLC bar, an aggregate's per-date open/high/low is itself a
- * value-weighted sum across holdings' own bars, not a real traded range, so
- * rendering it as a candle would imply a precision the underlying number
- * doesn't have. Line/Area are the only two types.
+ * PieDetailPage's/AccountDetailPage's aggregate price chart — same real
+ * range picker, hover tooltip and "compare against" overlay as
+ * HoldingPriceChart.jsx, but its own subject series is every one of
+ * `holdings` combined into one aggregate value curve (see
+ * buildAggregateBars) rather than a single ticker's own price. `holdings`
+ * is one pie's own holdings for PieDetailPage, or an account's full direct
+ * + pie-nested set for AccountDetailPage — this component has no pie- or
+ * account-specific logic of its own; `entityLabel` (used in on-screen copy)
+ * and the compare-related props below are what the caller supplies to
+ * distinguish itself. There's no Candles chart type: unlike one ticker's
+ * own real daily OHLC bar, an aggregate's per-date open/high/low is itself
+ * a value-weighted sum across holdings' own bars, not a real traded range,
+ * so rendering it as a candle would imply a precision the underlying
+ * number doesn't have. Line/Area are the only two types.
  *
  * The "Compare against" control (PieComparePicker) reuses HoldingComparePicker's
  * own visual styling (same CSS classes/collapsed-trigger/open-panel/selected-
- * chip states) but is deliberately narrower in content: only this account's
- * other portfolios (fetched via `listPies`) or a real benchmark (the same
- * curated set HoldingComparePicker offers as quick-picks, see BENCHMARKS) —
- * no free-text stock/ETF/fx search, since comparing an aggregate against one
+ * chip states) but is deliberately narrower in content: only `compareItems`
+ * (this pie's sibling portfolios, or this account's sibling accounts —
+ * already fetched by the caller) or a real benchmark (the same curated set
+ * HoldingComparePicker offers as quick-picks, see BENCHMARKS) — no
+ * free-text stock/ETF/fx search, since comparing an aggregate against one
  * arbitrary ticker isn't a meaningful comparison the way it is for a single
- * holding. Picking another pie re-runs the exact same `fetchAggregateBars`
- * pipeline against that pie's own holdings; picking a benchmark just fetches
- * its own real price series. Once a comparison is active the chart switches
- * to a log-scaled "growth since range start" % axis, exactly like
+ * holding. Picking a `compareItems` entry calls the caller's own
+ * `fetchCompareHoldings(refId)` (a pie's own holdings, or an account's full
+ * direct + pie-nested set) and re-runs the exact same `fetchAggregateBars`
+ * pipeline against them; picking a benchmark just fetches its own real
+ * price series. Once a comparison is active the chart switches to a
+ * log-scaled "growth since range start" % axis, exactly like
  * HoldingPriceChart's own pctMode (see that component's docstring for why
  * log-scaling, not a plain linear %, is what keeps two very different-sized
  * curves both visibly dynamic) — the chart-type toggle hides in this mode
  * for the same reason it does there. Picking a benchmark specifically also
- * renders PieBenchmarkRating below the chart — a real 0-100 rating of the
- * portfolio's own current-value-weighted metrics against the benchmark's,
+ * renders PieBenchmarkRating below the chart — a real 0-100 rating of
+ * `holdings`' own current-value-weighted metrics against the benchmark's,
  * independent of this chart's own range picker, same as HoldingPriceChart's
  * own HoldingBenchmarkRating.
  *
- * `investedTotal`/`currentValueTotal` (PieDetailPage's `totals.invested`/
+ * `investedTotal`/`currentValueTotal` (the caller's own `totals.invested`/
  * `totals.currentValue`, both in `currency`) draw as reference lines (grey
  * dashed / accent info dashed respectively) the same way HoldingPriceChart
  * treats avg buy price/current price — including in pctMode, log-scaled via
  * their own ratio to the first bar's close, so they stay meaningful and
  * on-screen even while comparing.
  *
- * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, accountId: string, pieId: string, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
+ * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, entityLabel?: string, compareItems?: { id: string, name: string }[], compareItemType?: "pie"|"account", fetchCompareHoldings: (refId: string) => Promise<import("../../api/accounts.js").Holding[]>, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
  */
 function PiePriceChart({
   holdings,
   currency,
-  accountId,
-  pieId,
+  entityLabel = "portfolio",
+  compareItems = [],
+  compareItemType = "pie",
+  fetchCompareHoldings,
   investedTotal = null,
   currentValueTotal = null,
   holdingValuations = null,
@@ -251,17 +260,6 @@ function PiePriceChart({
     };
   }, [api, holdings, rangeId, currency]);
 
-  // The "Compare against" picker's own options — this account's other
-  // pies. Non-critical for the chart to function, so a failure here just
-  // leaves the picker offering benchmarks only rather than surfacing an
-  // error state.
-  const [siblingPies, setSiblingPies] = useState([]);
-  useEffect(() => {
-    listPies(api, { accountId })
-      .then((pies) => setSiblingPies(pies.filter((p) => p.id !== pieId)))
-      .catch(() => {});
-  }, [api, accountId, pieId]);
-
   const [compare, setCompare] = useState({ id: "", type: null, refId: null, label: null });
   const [compareBars, setCompareBars] = useState(null);
   const [compareStatus, setCompareStatus] = useState("idle");
@@ -277,9 +275,9 @@ function PiePriceChart({
     setCompareStatus("loading");
 
     const load =
-      compare.type === "pie"
-        ? getPie(api, compare.refId).then((pie) => fetchAggregateBars(api, pie.holdings ?? [], rangeId, currency))
-        : getPrices(api, "benchmark", compare.refId, { range: rangeId }).then((series) => series.prices);
+      compare.type === "benchmark"
+        ? getPrices(api, "benchmark", compare.refId, { range: rangeId }).then((series) => series.prices)
+        : fetchCompareHoldings(compare.refId).then((h) => fetchAggregateBars(api, h, rangeId, currency));
 
     load
       .then((result) => {
@@ -295,7 +293,7 @@ function PiePriceChart({
     return () => {
       cancelled = true;
     };
-  }, [api, compare.id, compare.type, compare.refId, rangeId, currency]);
+  }, [api, compare.id, compare.type, compare.refId, rangeId, currency, fetchCompareHoldings]);
 
   const handleCompareClear = () => setCompare({ id: "", type: null, refId: null, label: null });
 
@@ -435,7 +433,8 @@ function PiePriceChart({
         )}
 
         <PieComparePicker
-          pies={siblingPies}
+          items={compareItems}
+          itemType={compareItemType}
           compareId={compare.id}
           compareLabel={compare.label}
           onSelect={setCompare}
@@ -469,7 +468,7 @@ function PiePriceChart({
           <div className="ec-pchart-legend">
             <span className="ec-pchart-legend-item">
               <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
-              This portfolio
+              This {entityLabel}
               {changePct !== null && (
                 <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
                   {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
@@ -508,8 +507,8 @@ function PiePriceChart({
             role="img"
             aria-label={
               pctMode
-                ? `Line chart of this portfolio's % change vs ${compare.label} for the ${rangeId} range`
-                : `${chartType} chart of this portfolio's aggregate value for the ${rangeId} range`
+                ? `Line chart of this ${entityLabel}'s % change vs ${compare.label} for the ${rangeId} range`
+                : `${chartType} chart of this ${entityLabel}'s aggregate value for the ${rangeId} range`
             }
           >
             {yTicks.map(({ key, value, y }) => (
@@ -629,6 +628,7 @@ function PiePriceChart({
               valuations={holdingValuations}
               benchmarkKey={compare.refId}
               benchmarkLabel={compare.label}
+              label={entityLabel}
             />
           )}
         </>
