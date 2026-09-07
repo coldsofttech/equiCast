@@ -13,7 +13,6 @@ import { useApi } from "../../api/useApi.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { createAccount, deleteAccount, updateAccount } from "../../api/accounts.js";
-import { MENU_ITEMS } from "../menuItems.js";
 
 /** True once an account has pies/holdings that a plain delete would refuse (see accounts/views.py). */
 function needsForce(account) {
@@ -100,7 +99,6 @@ function AccountsListPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Portfolio"
       title="Accounts"
       subtitle="Every account you're tracking, with its pies and holdings nested underneath."

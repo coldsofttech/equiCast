@@ -10,7 +10,6 @@ import SearchFilters from "./SearchFilters.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import "./SearchPage.css";
 
 const PAGE_SIZE = 25;
@@ -136,7 +135,6 @@ function SearchPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Search"
       title="Search"
       subtitle={query ? `Results for “${query}”` : "Search for a ticker or company name."}

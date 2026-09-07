@@ -22,7 +22,6 @@ import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
   computeHoldingValuation,
@@ -173,7 +172,7 @@ function AccountDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Loading…" footer={<SiteFooter />}>
+      <AppShell eyebrow="Account" title="Loading…" footer={<SiteFooter />}>
         <p className="ec-loading">Loading…</p>
       </AppShell>
     );
@@ -181,7 +180,7 @@ function AccountDetailPage() {
 
   if (loadError || !account) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Account" footer={<SiteFooter />}>
+      <AppShell eyebrow="Account" title="Account" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Account not found."}</Alert>
       </AppShell>
     );
@@ -203,10 +202,10 @@ function AccountDetailPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Account"
       title={account.name}
       subtitle={account.description}
+      stickyTitle
       actions={
         <Button
           variant="secondary"
