@@ -32,22 +32,27 @@ export function weightedPortfolioMetric(metricsByHolding, valuations, key) {
 }
 
 /**
- * PiePriceChart's own version of HoldingBenchmarkRating — same 0-100
- * "beats the benchmark on N of `RATED_METRICS.length`" score and row
- * breakdown (reusing that component's own RATED_METRICS/compareMetric/
- * scoreInfoFor), but the "holding" side is a current-value-weighted average
- * of every one of the pie's own holdings' real `GET .../metrics/` (see
- * weightedPortfolioMetric) rather than one ticker's own figures.
+ * PiePriceChart's own version of HoldingBenchmarkRating (rendered from both
+ * PieDetailPage and AccountDetailPage, which share that one chart component
+ * — see PiePriceChart.jsx) — same 0-100 "beats the benchmark on N of
+ * `RATED_METRICS.length`" score
+ * and row breakdown (reusing that component's own RATED_METRICS/
+ * compareMetric/scoreInfoFor), but the "holding" side is a
+ * current-value-weighted average of every one of `holdings`' real
+ * `GET .../metrics/` (see weightedPortfolioMetric) rather than one ticker's
+ * own figures. `holdings` can be one pie's own holdings or an account's
+ * full direct + pie-nested set — only `label` (used in the on-screen
+ * copy) distinguishes the caller.
  *
  * This is a simplification, most notably for sharpe_ratio: a true
  * portfolio Sharpe ratio depends on covariances between holdings, not just
  * a weighted average of their individual ratios. Same "reasonable
- * heuristic, not a rigorous metric" tradeoff this page already makes for
- * its own sectorScore (see buildDiversification).
+ * heuristic, not a rigorous metric" tradeoff PieDetailPage/AccountDetailPage
+ * already make for their own sectorScore (see buildDiversification).
  *
- * @param {{ holdings: import("../../api/accounts.js").Holding[], valuations: { currentValue: number }[], benchmarkKey: string, benchmarkLabel: string }} props
+ * @param {{ holdings: import("../../api/accounts.js").Holding[], valuations: { currentValue: number }[], benchmarkKey: string, benchmarkLabel: string, label?: string }} props
  */
-function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel }) {
+function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel, label = "portfolio" }) {
   const api = useApi();
   const [metricsByHolding, setMetricsByHolding] = useState(null);
   const [benchmarkMetrics, setBenchmarkMetrics] = useState(null);
@@ -76,7 +81,7 @@ function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel
   }, [api, holdings, benchmarkKey]);
 
   if (status === "loading") {
-    return <p className="ec-chart-caption">Rating this portfolio against {benchmarkLabel}…</p>;
+    return <p className="ec-chart-caption">Rating this {label} against {benchmarkLabel}…</p>;
   }
   if (status === "error") {
     return <p className="ec-chart-caption">Couldn&rsquo;t load a rating against {benchmarkLabel}.</p>;
@@ -97,7 +102,7 @@ function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel
   if (rated.length === 0) {
     return (
       <p className="ec-chart-caption">
-        Not enough overlapping data to rate this portfolio against {benchmarkLabel} yet.
+        Not enough overlapping data to rate this {label} against {benchmarkLabel} yet.
       </p>
     );
   }
@@ -135,9 +140,9 @@ function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel
         ))}
       </div>
       <p className="ec-chart-caption">
-        Beats the benchmark on {wins} of {rated.length} metric{rated.length === 1 ? "" : "s"} this
-        portfolio and {benchmarkLabel} both have data for — each figure is a current-value-weighted
-        average across the portfolio's own holdings, not a true covariance-aware portfolio metric.
+        Beats the benchmark on {wins} of {rated.length} metric{rated.length === 1 ? "" : "s"} this{" "}
+        {label} and {benchmarkLabel} both have data for — each figure is a current-value-weighted
+        average across the {label}&rsquo;s own holdings, not a true covariance-aware portfolio metric.
       </p>
     </Card>
   );

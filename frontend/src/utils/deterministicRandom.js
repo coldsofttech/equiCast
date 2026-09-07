@@ -1,10 +1,10 @@
 /**
  * A tiny deterministic PRNG (mulberry32), seeded from a string hash —
- * shared by every illustrative/dummy chart on the accounts pages
- * (AccountPriceChart, HoldingsHeatmap) so a given input always renders the
- * same synthetic shape instead of reshuffling on every re-render, without
- * pulling in a real random-number or charting library for what's
- * explicitly placeholder data.
+ * shared by every illustrative/dummy chart still using synthetic data
+ * (HoldingsHeatmap's empty-state fallback, sampleFinancials.js) so a given
+ * input always renders the same synthetic shape instead of reshuffling on
+ * every re-render, without pulling in a real random-number or charting
+ * library for what's explicitly placeholder data.
  */
 
 /** Small deterministic string hash, seeding mulberry32 below. */

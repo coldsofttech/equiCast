@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
@@ -11,12 +11,12 @@ import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
 import AccountForm from "./AccountForm.jsx";
-import PriceChart from "./PriceChart.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import PieCagrSection from "../pies/PieCagrSection.jsx";
+import PiePriceChart from "../pies/PiePriceChart.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
@@ -36,17 +36,17 @@ import "./AccountDetailPage.css";
  * default_currency, not the account's own `currency` (see
  * api/accounts.js's `Holding` typedef and equicast_core.client.
  * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
- * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row and
- * the Portfolios/Holdings row lists below are all labeled in that currency,
- * not `account.currency` (which the still-synthetic price chart further
- * down keeps using — the heatmap is weight-only and currency-agnostic). */
+ * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row,
+ * the Portfolios/Holdings row lists, and the price chart below are all
+ * labeled in that currency, not `account.currency` (the heatmap is
+ * weight-only and currency-agnostic). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
   const { accountId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
+  const { accounts: cachedAccounts, setAccounts: setCachedAccounts } = useAccounts();
   const { profile: userProfile } = useCurrentUser();
 
   const [account, setAccount] = useState(null);
@@ -117,6 +117,28 @@ function AccountDetailPage() {
     const pieHoldings = (account.pies ?? []).flatMap((p) => p.holdings ?? []);
     return [...directHoldings, ...pieHoldings];
   }, [account]);
+
+  // PiePriceChart's "Compare against" picker's own options here — every
+  // other account the user has, sourced from the session-cached accounts
+  // list (see useAccounts.js) rather than a fresh fetch, since it's already
+  // available. Memoized for the same reason `allHoldings` is.
+  const compareItems = useMemo(
+    () => cachedAccounts.filter((a) => a.id !== accountId).map((a) => ({ id: a.id, name: a.name })),
+    [cachedAccounts, accountId]
+  );
+
+  // Combines a compare account's own direct + pie-nested holdings the same
+  // way `allHoldings` does for this account — memoized so PiePriceChart's
+  // compare-fetch effect (keyed on this callback) doesn't refire on every
+  // unrelated re-render.
+  const fetchCompareHoldings = useCallback(
+    (compareAccountId) =>
+      getAccount(api, compareAccountId).then((a) => [
+        ...(a.holdings ?? []),
+        ...(a.pies ?? []).flatMap((p) => p.holdings ?? []),
+      ]),
+    [api]
+  );
 
   const handleDelete = () => {
     setIsDeleting(true);
@@ -218,7 +240,17 @@ function AccountDetailPage() {
         <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
       </div>
 
-      <PriceChart pies={account.pies ?? []} seedKey={`account:${accountId}`} subjectLabel="This account" />
+      <PiePriceChart
+        holdings={allHoldings}
+        currency={currency}
+        entityLabel="account"
+        compareItems={compareItems}
+        compareItemType="account"
+        fetchCompareHoldings={fetchCompareHoldings}
+        investedTotal={totals.invested}
+        currentValueTotal={totals.currentValue}
+        holdingValuations={holdingValuations}
+      />
 
       <div className="ec-account-columns">
         <div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
@@ -20,7 +20,7 @@ import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
-import { deletePie, getPie, syncPieHoldings, updatePie } from "../../api/pies.js";
+import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
 import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
@@ -40,15 +40,14 @@ const FALLBACK_CURRENCY = "USD";
 /**
  * One portfolio's own overview page — same shape as AccountDetailPage (a
  * price chart, a holdings section, bottom-of-page diversification/heatmap),
- * scoped to this pie's own holdings instead of the whole account's. Unlike
- * AccountDetailPage's own price chart (still sample data), every one of
- * these is real here: the price chart (PiePriceChart) aggregates every
- * holding's own real price history, sector/industry diversification
- * (buildDiversification — shared with AccountDetailPage's own, account-wide
- * breakdown) and the holdings heatmap (`weights` prop, shared with
- * AccountDetailPage's own account-wide one — see HoldingsHeatmap) are both
- * real, value-weighted breakdowns of this pie's own holdings. Holdings here
- * are read-only (name,
+ * scoped to this pie's own holdings instead of the whole account's. Every
+ * one of these is real, and shared with AccountDetailPage's own account-wide
+ * versions: the price chart (PiePriceChart) aggregates every holding's own
+ * real price history — AccountDetailPage passes it every direct + pie-nested
+ * holding and compares against sibling accounts instead of sibling pies —
+ * sector/industry diversification (buildDiversification) and the holdings
+ * heatmap (`weights` prop, see HoldingsHeatmap) are both real, value-weighted
+ * breakdowns of this pie's own holdings. Holdings here are read-only (name,
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
@@ -152,6 +151,25 @@ function PieDetailPage() {
       .finally(() => setIsAllocationSaving(false));
   };
 
+  // PiePriceChart's "Compare against" picker's own options — this
+  // account's other pies. Non-critical for the chart to function, so a
+  // failure here just leaves the picker offering benchmarks only rather
+  // than surfacing an error state.
+  const [siblingPies, setSiblingPies] = useState([]);
+  useEffect(() => {
+    listPies(api, { accountId })
+      .then((pies) => setSiblingPies(pies.filter((p) => p.id !== pieId)))
+      .catch(() => {});
+  }, [api, accountId, pieId]);
+
+  // Memoized so PiePriceChart's own compare-fetch effect (keyed on this
+  // callback) doesn't refire on every unrelated re-render — same reasoning
+  // as AccountDetailPage's memoized `allHoldings`.
+  const fetchCompareHoldings = useCallback(
+    (comparePieId) => getPie(api, comparePieId).then((p) => p.holdings ?? []),
+    [api]
+  );
+
   if (isLoading) {
     return (
       <AppShell
@@ -232,8 +250,9 @@ function PieDetailPage() {
       <PiePriceChart
         holdings={pie.holdings ?? []}
         currency={currency}
-        accountId={accountId}
-        pieId={pieId}
+        compareItems={siblingPies}
+        compareItemType="pie"
+        fetchCompareHoldings={fetchCompareHoldings}
         investedTotal={totals.invested}
         currentValueTotal={totals.currentValue}
         holdingValuations={holdingValuations}

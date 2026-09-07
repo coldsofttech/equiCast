@@ -3,24 +3,27 @@ import { BENCHMARKS } from "../holdings/HoldingComparePicker.jsx";
 import "../holdings/HoldingComparePicker.css";
 
 /**
- * PiePriceChart's own "Compare against" control — same collapsed-trigger /
- * open-panel / selected-chip visual states and CSS classes as
- * HoldingComparePicker, but deliberately narrower: only this account's
- * other portfolios (`pies`, already fetched by PiePriceChart) or a real
- * benchmark (the same curated set HoldingComparePicker offers as quick-
- * picks — see BENCHMARKS), never a free-text stock/ETF/fx search. A pie's
- * own list is short and already known, so the trigger opens straight to a
- * panel of buttons rather than a search box.
+ * PiePriceChart's own "Compare against" control (rendered from both
+ * PieDetailPage and AccountDetailPage, which share that one chart
+ * component — see PiePriceChart.jsx) — same collapsed-trigger / open-panel
+ * / selected-chip visual states and CSS classes as HoldingComparePicker,
+ * but deliberately narrower: only `items`
+ * (this pie's sibling portfolios, or this account's sibling accounts —
+ * already fetched by the caller) or a real benchmark (the same curated set
+ * HoldingComparePicker offers as quick-picks — see BENCHMARKS), never a
+ * free-text stock/ETF/fx search. `items` is always short and already
+ * known, so the trigger opens straight to a panel of buttons rather than a
+ * search box.
  *
  * A selection's `onSelect` always carries `{ id, type, refId, label }` —
- * `id` a prefixed string (`pie:<id>` / `benchmark:<key>`) suitable as the
- * caller's own state/effect-dependency key, `type` ("pie" | "benchmark")
- * and `refId` (the pie id or benchmark key) telling the caller what to
- * fetch, and `label` for display.
+ * `id` a prefixed string (`${itemType}:<id>` / `benchmark:<key>`) suitable
+ * as the caller's own state/effect-dependency key, `type` (`itemType` as
+ * given, or `"benchmark"`) and `refId` (the item's id or benchmark key)
+ * telling the caller what to fetch, and `label` for display.
  *
- * @param {{ pies: { id: string, name: string }[], compareId: string, compareLabel: string|null, onSelect: (next: { id: string, type: "pie"|"benchmark", refId: string, label: string }) => void, onClear: () => void }} props
+ * @param {{ items: { id: string, name: string }[], itemType?: "pie"|"account", compareId: string, compareLabel: string|null, onSelect: (next: { id: string, type: string, refId: string, label: string }) => void, onClear: () => void }} props
  */
-function PieComparePicker({ pies, compareId, compareLabel, onSelect, onClear }) {
+function PieComparePicker({ items, itemType = "pie", compareId, compareLabel, onSelect, onClear }) {
   const rootRef = useRef(null);
   const [isOpen, setIsOpen] = useState(false);
 
@@ -44,8 +47,8 @@ function PieComparePicker({ pies, compareId, compareLabel, onSelect, onClear }) 
     };
   }, [isOpen]);
 
-  const handleSelectPie = (pie) => {
-    onSelect({ id: `pie:${pie.id}`, type: "pie", refId: pie.id, label: pie.name });
+  const handleSelectItem = (item) => {
+    onSelect({ id: `${itemType}:${item.id}`, type: itemType, refId: item.id, label: item.name });
     setIsOpen(false);
   };
 
@@ -85,22 +88,24 @@ function PieComparePicker({ pies, compareId, compareLabel, onSelect, onClear }) 
 
       {isOpen && (
         <div className="ec-compare-panel" role="listbox">
-          {pies.length > 0 ? (
+          {items.length > 0 ? (
             <ul className="ec-compare-results">
-              {pies.map((pie) => (
-                <li key={pie.id}>
+              {items.map((item) => (
+                <li key={item.id}>
                   <button
                     type="button"
                     className="ec-compare-result"
-                    onClick={() => handleSelectPie(pie)}
+                    onClick={() => handleSelectItem(item)}
                   >
-                    <span className="ec-compare-result-label">{pie.name}</span>
+                    <span className="ec-compare-result-label">{item.name}</span>
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="ec-compare-status">No other portfolios in this account yet.</p>
+            <p className="ec-compare-status">
+              {itemType === "account" ? "No other accounts yet." : "No other portfolios in this account yet."}
+            </p>
           )}
 
           <div className="ec-compare-benchmarks">
