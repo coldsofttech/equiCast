@@ -10,10 +10,12 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import Skeleton from "../../components/core/Skeleton.jsx";
 import AccountForm from "./AccountForm.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
+import AccountDetailSkeleton from "./AccountDetailSkeleton.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import PieCagrSection from "../pies/PieCagrSection.jsx";
 import PiePriceChart from "../pies/PiePriceChart.jsx";
@@ -175,8 +177,18 @@ function AccountDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell eyebrow="Account" title="Loading…" footer={<SiteFooter />}>
-        <p className="ec-loading">Loading…</p>
+      <AppShell
+        eyebrow="Account"
+        title="Loading…"
+        titleBadges={<Skeleton circle width="110px" height="22px" />}
+        actions={
+          <Button variant="ghost" onClick={() => navigate("/accounts")}>
+            Back to accounts
+          </Button>
+        }
+        footer={<SiteFooter />}
+      >
+        <AccountDetailSkeleton />
       </AppShell>
     );
   }
