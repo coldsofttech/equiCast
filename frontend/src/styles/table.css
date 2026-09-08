@@ -45,6 +45,12 @@
   background: var(--ec-surface-hover);
 }
 
+.ec-table-name-cell {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+}
+
 .ec-table-name {
   font-weight: 600;
   color: var(--ec-text);

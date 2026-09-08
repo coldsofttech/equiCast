@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { TextField, TextAreaField } from "../../components/core/Field.jsx";
+import IconPicker from "../../components/core/IconPicker.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import ACCOUNT_TYPE_SUGGESTIONS from "../../config/accountTypes.json";
 import CURRENCIES from "../../config/currencies.json";
+import { ACCOUNT_ICON_OPTIONS, DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
 /**
  * Shared create/edit body for AccountsListPage's "New account" drawer and
@@ -26,6 +28,7 @@ const EMPTY_VALUES = {
   description: "",
   account_type: "",
   currency: "",
+  icon: DEFAULT_ACCOUNT_ICON,
 };
 
 function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSubmitting, error }) {
@@ -87,6 +90,14 @@ function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSub
           <option key={option} value={option} />
         ))}
       </datalist>
+      <IconPicker
+        id="account-icon"
+        label="Icon"
+        icons={ACCOUNT_ICON_OPTIONS}
+        value={values.icon}
+        onChange={(icon) => setValues((current) => ({ ...current, icon }))}
+        hint="Optional — defaults to a bank icon if not set."
+      />
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancel

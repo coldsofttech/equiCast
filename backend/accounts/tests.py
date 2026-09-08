@@ -167,6 +167,32 @@ class AccountListViewTests(TestCase):
         self.assertEqual(response.json(), ACCOUNT)
         mock_client.create_account.assert_called_once_with("auth0|abc123", **create_fields)
 
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_passes_icon_through_when_given(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.create_account.return_value = {**ACCOUNT, "icon": "bank2"}
+
+        create_fields = {
+            "name": "ISA",
+            "description": "Stocks & shares ISA",
+            "account_type": "ISA",
+            "currency": "GBP",
+            "icon": "bank2",
+        }
+        response = self.client.post(
+            reverse("accounts-list"),
+            data=create_fields,
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_client.create_account.assert_called_once_with("auth0|abc123", **create_fields)
+
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_when_a_required_field_is_missing(
@@ -338,6 +364,24 @@ class AccountDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_account.assert_called_once_with("auth0|abc123", "acc-1", name="Renamed")
+
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_the_icon(self, mock_jwks_client, mock_decode, mock_client) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        updated = {**ACCOUNT, "icon": "bank2"}
+        mock_client.update_account.return_value = updated
+
+        response = self.client.patch(
+            reverse("accounts-detail", args=["acc-1"]),
+            data={"icon": "bank2"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.update_account.assert_called_once_with("auth0|abc123", "acc-1", icon="bank2")
 
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")

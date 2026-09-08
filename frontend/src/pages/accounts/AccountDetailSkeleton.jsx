@@ -6,7 +6,7 @@ import "../holdings/HoldingTickerPage.css";
 /**
  * Placeholder "cards" shown in place of the real account detail content
  * while GET /accounts/<id> is still loading — mirrors AccountDetailPage's
- * real layout (account-type badge, StatTiles row, price chart card, the
+ * real layout (StatTiles row, price chart card, the
  * two-column Portfolios/Holdings row lists, Sector/Industry/Asset/
  * Market-cap allocation cards, CAGR card, Holdings heatmap card) so the page
  * doesn't jump around once the real content swaps in. Every section here renders
@@ -18,10 +18,6 @@ import "../holdings/HoldingTickerPage.css";
 function AccountDetailSkeleton() {
   return (
     <>
-      <div className="ec-account-detail-badges">
-        <Skeleton width="80px" height="1.25rem" />
-      </div>
-
       <div className="ec-stat-grid">
         {[0, 1, 2].map((i) => (
           <div className="ec-stat-tile" key={i}>

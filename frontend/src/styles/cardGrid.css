@@ -30,6 +30,13 @@
   gap: var(--ec-s-8);
 }
 
+.ec-account-card-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  min-width: 0;
+}
+
 .ec-account-card-name {
   font-size: var(--ec-fs-16);
   margin: 0;
