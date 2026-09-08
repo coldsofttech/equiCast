@@ -781,8 +781,8 @@ class TestSearch:
                     "market_cap": 500_000_000_000,
                     "exchange": "PCX",
                     "region": "us",
-                    "sector": None,
-                    "industry": None,
+                    "sector": "Exchange Traded Fund",
+                    "industry": "Exchange Traded Fund",
                 }
             ],
         )
@@ -1027,13 +1027,21 @@ class TestSearch:
 
         assert result == []
 
-    def test_sector_filter_excludes_an_etf_row_with_no_sector(self, s3_client) -> None:
+    def test_sector_filter_excludes_an_etf_row_in_a_different_sector(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("voo", sector="Technology")
 
         assert result == []
+
+    def test_sector_filter_matches_an_etf_row_by_its_fixed_sector(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo", sector="Exchange Traded Fund")
+
+        assert {r["ticker"] for r in result} == {"VOO"}
 
     def test_industry_filters_stock_case_insensitively(self, s3_client) -> None:
         self._seed(s3_client)
@@ -1050,6 +1058,14 @@ class TestSearch:
         result = client.search("gbp", industry="Semiconductors")
 
         assert result == []
+
+    def test_industry_filter_matches_an_etf_row_by_its_fixed_industry(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo", industry="Exchange Traded Fund")
+
+        assert {r["ticker"] for r in result} == {"VOO"}
 
     def test_sector_and_industry_filters_combine(self, s3_client) -> None:
         self._seed(s3_client)

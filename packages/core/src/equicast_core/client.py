@@ -569,16 +569,19 @@ class MarketDataClient:
         and `industry`, when given, additionally filter stock/etf rows by
         their `market_cap` (a stock's real market cap, an etf's total
         assets as the closest comparable "size" figure a fund has),
-        `exchange`, `region`, `sector`, and `industry` respectively (see
         `equicast_core.catalog.build_catalog_rows`). fx rows have none of
-        those concepts for a currency pair (always `None`), same as
-        etf/benchmark rows for `sector`/`industry`, or a benchmark row for
-        `market_cap` — any row missing the field being filtered on is
-        excluded whenever that filter is given, rather than guessed to
-        match, there's nothing to compare it against. `exchange`/`region`/
-        `sector`/`industry` match case-insensitively against the row's
-        exact value (not a substring, unlike `query`), since all four are
-        short codes/labels (e.g. "NMS"/"us"/"Technology"), not free text.
+        those concepts for a currency pair (always `None`), same as a
+        benchmark row for `market_cap`/`sector`/`industry` — any row
+        missing the field being filtered on is excluded whenever that
+        filter is given, rather than guessed to match, there's nothing to
+        compare it against. An etf row's `sector`/`industry` are instead
+        always the fixed "Exchange Traded Fund" (see
+        `equicast_etf.client.ETFClient.profile`), so it matches only that
+        value under either filter rather than always being excluded.
+        `exchange`/`region`/`sector`/`industry` match case-insensitively
+        against the row's exact value (not a substring, unlike `query`),
+        since all four are short codes/labels (e.g. "NMS"/"us"/
+        "Technology"), not free text.
 
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""

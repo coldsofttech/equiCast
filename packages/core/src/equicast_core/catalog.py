@@ -92,10 +92,13 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     "NASDAQ"/"NYSE" string; `None` for fx, which isn't traded on one),
     `region` (stock/etf/benchmark's own `region`, yfinance's short country
     code, e.g. "us"/"gb"; `None` for fx, which isn't domiciled anywhere),
-    and `sector`/`industry` (a stock's own `sector`/`industry` fields;
-    always `None` for etf/benchmark, which yfinance never populates these
-    for — `category` is etf's closest equivalent but isn't surfaced here —
-    and for fx, which has no such concept at all), and `last_updated` (every
+    and `sector`/`industry` (a stock's own `sector`/`industry` fields; an
+    etf profile always sets both to the literal "Exchange Traded Fund",
+    since yfinance never populates either for a fund — `category` is its
+    closest equivalent but isn't surfaced here — same reasoning as
+    "Mutual Fund" for a mutual-fund profile, once that asset class exists;
+    always `None` for benchmark, which yfinance never populates these for
+    either, and for fx, which has no such concept at all), and `last_updated` (every
     asset class's profile carries this field already, stamped by its own
     ingestion pipeline — see equicast_stock/etf/fx/benchmark's writers/
     clients — so it round-trips here unchanged).
