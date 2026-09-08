@@ -31,6 +31,10 @@
  * @property {number|null} [current_price] - `current_price_native` converted
  *   to the user's default_currency using the fx catalog's latest published
  *   rate, `null` if no rate is published for the pair.
+ * @property {string|null} [last_updated] - the catalog's own `last_updated`
+ *   for this ticker (that ticker's ingestion pipeline's last run, a full
+ *   ISO 8601 datetime — see equicast_core.catalog.build_catalog_rows),
+ *   `null` for an unpublished ticker.
  */
 
 /**

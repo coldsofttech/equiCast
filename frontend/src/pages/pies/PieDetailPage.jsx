@@ -5,6 +5,7 @@ import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
 import PortfolioIcon from "../../components/core/PortfolioIcon.jsx";
+import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
@@ -23,12 +24,14 @@ import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
-import { MENU_ITEMS } from "../menuItems.js";
+import { MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
   computeHoldingValuation,
   summarizeHoldingValuations,
   buildDiversification,
+  formatSyncedDate,
+  minLastUpdated,
 } from "../holdingValuation.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
@@ -175,10 +178,10 @@ function PieDetailPage() {
   if (isLoading) {
     return (
       <AppShell
-        menuItems={MENU_ITEMS}
         eyebrow="Portfolio"
         title="Loading…"
         titleIcon={<Skeleton circle width="64px" height="64px" />}
+        titleBadges={<Skeleton circle width="110px" height="22px" />}
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
             Back to account
@@ -193,7 +196,7 @@ function PieDetailPage() {
 
   if (loadError || !pie) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
+      <AppShell eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Pie not found."}</Alert>
       </AppShell>
     );
@@ -210,14 +213,19 @@ function PieDetailPage() {
     pie.holdings ?? [],
     holdingValuations
   );
+  const syncedIso = minLastUpdated(pie.holdings ?? []);
+  const syncedDate = syncedIso && formatSyncedDate(syncedIso);
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
       titleIcon={<PortfolioIcon icon={pie.icon} size={64} />}
+      stickyTitle
+      titleBadges={
+        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+      }
       actions={
         <>
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
