@@ -67,9 +67,20 @@
   }
 }
 
+/** The comparison/benchmark series overlay's clip-path reveal rect
+ * (compareClipRectRef in HoldingPriceChart.jsx) — same left-to-right
+ * draw-in as the main line, but as a growing clip region rather than a
+ * stroke-dasharray trick, so the line's own "4 3" dasharray
+ * (ec-pchart-compare-line, accounts/PriceChart.css) stays intact instead of
+ * being flattened into one solid dash for the duration. */
+.ec-chart-compare-clip {
+  transition: width 0.6s ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ec-chart-avg-line,
-  .ec-chart-current-line {
+  .ec-chart-current-line,
+  .ec-chart-compare-clip {
     animation: none;
     transition: none;
   }

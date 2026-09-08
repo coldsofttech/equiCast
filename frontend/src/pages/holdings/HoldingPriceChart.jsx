@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
@@ -140,7 +140,13 @@ const X_AXIS_MAX_TICKS = 6;
  * directions so the two read as distinct — rather than a one-shot reveal,
  * plus a `transition: y1, y2` so a change in their vertical position (a
  * range switch rescaling the y-domain, or the price itself changing) eases
- * there instead of jumping.
+ * there instead of jumping. The comparison/benchmark overlay line gets the
+ * *same* draw-in as the main line instead (left-to-right), but via an
+ * animated clip-path reveal rather than mainLineRef's stroke-dasharray
+ * trick — that trick only works because the main line has no dash pattern
+ * of its own to preserve; the compare line's real "4 3" dasharray would get
+ * permanently flattened into one solid dash by it. See compareClipRectRef's
+ * effect below.
  *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
@@ -152,6 +158,8 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
   const mainLineRef = useRef(null);
+  const compareClipId = useId();
+  const compareClipRectRef = useRef(null);
 
   // Keeps the viewBox's width equal to the SVG's own real rendered width
   // (see DEFAULT_WIDTH's comment above) — measured on layout (before
@@ -403,6 +411,29 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     el.style.strokeDashoffset = "0";
   }, [revision]);
 
+  // Same left-to-right draw-in as the main line above, but via a growing
+  // clip-path rect (0 -> plotWidth wide) rather than stroke-dasharray/
+  // dashoffset — the compare line keeps a real "4 3" dasharray
+  // (ec-pchart-compare-line, accounts/PriceChart.css) the whole time, this
+  // just reveals progressively more of it, so the dash pattern itself is
+  // never touched. Keyed on `comparePctPath` (the actual path data) rather
+  // than `revision`, since the comparison's own fetch resolves on its own
+  // schedule, independent of the main series'.
+  useLayoutEffect(() => {
+    const el = compareClipRectRef.current;
+    if (!el) return;
+    el.style.transitionProperty = "none";
+    el.setAttribute("width", "0");
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.setAttribute("width", String(Math.max(plotWidth, 0)));
+    // Deliberately excludes `plotWidth` — the <rect>'s `width` prop below
+    // already tracks it declaratively on every render (a resize just
+    // updates that attribute directly), so re-running this effect on
+    // resize would only replay the reveal-from-0 animation for no reason.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparePctPath]);
+
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
@@ -537,7 +568,28 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                   className="ec-chart-zero-line"
                 />
                 <path ref={mainLineRef} d={pctLinePath} className="ec-chart-line" fill="none" />
-                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                {comparePctPath && (
+                  <>
+                    <defs>
+                      <clipPath id={compareClipId}>
+                        <rect
+                          ref={compareClipRectRef}
+                          className="ec-chart-compare-clip"
+                          x={PADDING_LEFT}
+                          y={PADDING_TOP}
+                          width={plotWidth}
+                          height={plotHeight}
+                        />
+                      </clipPath>
+                    </defs>
+                    <path
+                      d={comparePctPath}
+                      className="ec-pchart-compare-line"
+                      fill="none"
+                      clipPath={`url(#${compareClipId})`}
+                    />
+                  </>
+                )}
                 {avgLog != null && (
                   <line
                     x1={PADDING_LEFT}
