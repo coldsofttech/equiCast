@@ -1,3 +1,5 @@
+import SECTORS from "../../config/sectors.json";
+
 /**
  * Static UK/US-only option lists for SearchFilters' Region/Exchange
  * dropdowns — a curated list rather than a dynamic distinct-values lookup
@@ -29,28 +31,31 @@ export const EXCHANGE_OPTIONS = [
 ];
 
 /**
- * Sector/Industry only ever narrow stock rows — etf/fx rows carry neither
- * field at all (see equicast_core.catalog.build_catalog_rows and
+ * Sector/Industry only ever narrow stock rows today — etf/fx rows carry
+ * neither field at all (see equicast_core.catalog.build_catalog_rows and
  * MarketDataClient.search's docstring) and are excluded whenever either
- * filter is applied, the same as a stock row missing the field. Values are
- * yfinance's own `sector`/`industry` strings for the currently configured
- * stock tickers (see packages/stock/config/*.yaml) — a curated list, same
- * reasoning as REGION_OPTIONS/EXCHANGE_OPTIONS above; extend it if/when a
- * ticker in a new sector/industry is added.
+ * filter is applied, the same as a stock row missing the field. Values come
+ * from config/sectors.json — yfinance's standard 11 equity sectors (each
+ * with its own yfinance industry list) plus "Exchange Traded Fund"/"Mutual
+ * Fund" (each its own one-entry "sector") for when those asset classes
+ * carry a matching `sector` of their own — etf's ingestion pipeline
+ * doesn't set one yet, and equiCast has no mutual-fund asset class at all,
+ * so neither currently matches any row. Extend sectors.json if a ticker in
+ * a new sector/industry is added.
  */
 export const SECTOR_OPTIONS = [
   { value: "", label: "All sectors" },
-  { value: "Technology", label: "Technology" },
-  { value: "Communication Services", label: "Communication Services" },
-  { value: "Consumer Cyclical", label: "Consumer Cyclical" },
+  ...SECTORS.map(({ name }) => ({ value: name, label: name })),
 ];
 
-export const INDUSTRY_OPTIONS = [
-  { value: "", label: "All industries" },
-  { value: "Consumer Electronics", label: "Consumer Electronics" },
-  { value: "Software—Infrastructure", label: "Software—Infrastructure" },
-  { value: "Internet Content & Information", label: "Internet Content & Information" },
-  { value: "Internet Retail", label: "Internet Retail" },
-  { value: "Semiconductors", label: "Semiconductors" },
-  { value: "Auto Manufacturers", label: "Auto Manufacturers" },
-];
+const ALL_INDUSTRIES = [...new Set(SECTORS.flatMap((s) => s.industries))].sort();
+
+/**
+ * Industry options for SearchFilters' Industry dropdown, narrowed to the
+ * given sector's own yfinance industries — every industry across every
+ * sector (deduped, alphabetical) when no sector is selected.
+ */
+export function getIndustryOptions(sector) {
+  const industries = sector ? (SECTORS.find((s) => s.name === sector)?.industries ?? []) : ALL_INDUSTRIES;
+  return [{ value: "", label: "All industries" }, ...industries.map((i) => ({ value: i, label: i }))];
+}
