@@ -14,6 +14,7 @@ import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
 import { createAccount } from "../api/accounts.js";
 import { getSessionGreeting } from "../utils/greeting.js";
+import DashboardSkeleton from "./DashboardSkeleton.jsx";
 
 /**
  * The landing page once signed in (App.jsx redirects "/" and unknown
@@ -24,6 +25,7 @@ import { getSessionGreeting } from "../utils/greeting.js";
  * which owns viewing/editing/deleting a specific account — but the empty state's
  * "Create an account" opens the same drawer AccountsListPage uses right
  * here, instead of a redirect + a second button click over there.
+ * DashboardSkeleton fills the grid's place while useAccounts() is loading.
  */
 function DashboardPage() {
   const api = useApi();
@@ -79,7 +81,7 @@ function DashboardPage() {
       }
       footer={<SiteFooter />}
     >
-      {isLoading && <p className="ec-loading">Loading…</p>}
+      {isLoading && <DashboardSkeleton />}
       {loadError && <Alert tone="danger">{loadError}</Alert>}
 
       {!isLoading && !loadError && accounts.length === 0 && (
