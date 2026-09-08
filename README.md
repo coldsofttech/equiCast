@@ -542,11 +542,26 @@ benchmark schedule so none of the five weekday pipelines overlap.
 
 ## Watchlist data products
 
-A system watchlist (e.g. "Global Markets") is a curated list of fx pairs,
-futures, and benchmarks — configured in
-`packages/watchlist/config/global_markets.{dev,prod}.yaml` — built into a
-single snapshot fresh from yfinance, unlike every pipeline above: it never
-reads any of their already-published S3 output.
+A system watchlist is one curated or ranked snapshot, built fresh each run
+rather than accumulated over time. Three exist today:
+
+- **Global Markets** — a curated list of fx pairs, futures, and
+  benchmarks, configured in
+  `packages/watchlist/config/global_markets.{dev,prod}.yaml`.
+- **Top Winners** / **Top Losers** — the stock/ETF universe (the same
+  tickers `equicast-stock`/`equicast-etf` ingest, from their own
+  `config/stocks.{dev,prod}.yaml`/`etfs.{dev,prod}.yaml`) ranked by
+  trailing 1-year CAGR, keeping the highest/lowest performers, up to the
+  `MAX_HOLDINGS_FOR_WATCHLIST` repo variable (default 50). Computing every
+  ticker's CAGR is its own step (`equicast_watchlist.movers.
+  compute_cagr_rankings`), independent of which side of the ranking (if
+  any) ends up using it — the same ranking a future user-specific "my top
+  winners/losers" feature would need, just over a caller's own holdings
+  instead of the whole universe.
+
+All three are built fresh from yfinance every run — unlike every pipeline
+above, `equicast-watchlist` never reads any of their already-published S3
+output.
 
 ```python
 from pathlib import Path
@@ -568,13 +583,18 @@ watchlist has no single owner to convert it for. `change_1w_pct`/
 `change_1m_pct` come back `None` when there isn't enough published history
 yet for a symbol, rather than failing the whole build — see
 [the watchlist pipeline docs](docs/watchlist-pipeline.md) for the exact
-lookback windows. The pipeline writes one Parquet file per watchlist
-(not per instrument, unlike every other pipeline here), landing in the
-same bucket:
+lookback windows. Top Winners/Top Losers entries carry one further field,
+`change_1y_pct` — the trailing 1-year CAGR they're ranked by, as a percent.
+The pipeline writes one Parquet file per watchlist (not per instrument,
+unlike every other pipeline here), landing in the same bucket:
 
 ```
 s3://equicast-market-data-<env>/
-└── watchlist=GLOBAL_MARKETS/
+├── watchlist=GLOBAL_MARKETS/
+│   └── entries.parquet
+├── watchlist=TOP_WINNERS/
+│   └── entries.parquet
+└── watchlist=TOP_LOSERS/
     └── entries.parquet
 ```
 

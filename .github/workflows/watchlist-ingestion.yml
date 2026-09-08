@@ -36,12 +36,14 @@ permissions:
   contents: read
 
 jobs:
-  # One job, one step per system watchlist — today just Global Markets.
-  # There's no "plan"/matrix-chunk job like the other five pipelines: a
-  # system watchlist's entry list is small enough (today: 24 for Global
-  # Markets) to fetch in a single container run, and no "build-catalog"
-  # job either, since equicast-watchlist doesn't produce (or read) a
-  # catalog/*.parquet file at all.
+  # One job: one step per system watchlist that's built straight from a
+  # config file (today just Global Markets), plus the rank/movers steps
+  # that build Top Winners/Top Losers from the stock/ETF universe instead
+  # (see packages/watchlist/src/equicast_watchlist/movers.py). There's no
+  # "plan"/matrix-chunk job like the other five pipelines: a system
+  # watchlist's entry list is small enough to fetch in a single container
+  # run, and no "build-catalog" job either, since equicast-watchlist
+  # doesn't produce (or read) a catalog/*.parquet file at all.
   ingest:
     runs-on: ubuntu-latest
     steps:
@@ -57,9 +59,13 @@ jobs:
           if [ "$ENVIRONMENT" = "production" ]; then
             BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
             CONFIG="config/global_markets.prod.yaml"
+            STOCK_CONFIG="../stock/config/stocks.prod.yaml"
+            ETF_CONFIG="../etf/config/etfs.prod.yaml"
           else
             BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
             CONFIG="config/global_markets.dev.yaml"
+            STOCK_CONFIG="../stock/config/stocks.dev.yaml"
+            ETF_CONFIG="../etf/config/etfs.dev.yaml"
           fi
 
           if [ -z "$BUCKET" ]; then
@@ -69,6 +75,8 @@ jobs:
 
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "global_markets_config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "stock_config=$STOCK_CONFIG" >> "$GITHUB_OUTPUT"
+          echo "etf_config=$ETF_CONFIG" >> "$GITHUB_OUTPUT"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -89,6 +97,63 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest \
             --watchlist-key GLOBAL_MARKETS \
             --config "${{ steps.env.outputs.global_markets_config }}" \
+            --out /output \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      # --- Top Winners / Top Losers ---
+      # Step 1 (independent of winners/losers — see
+      # packages/watchlist/src/equicast_watchlist/movers.py): every stock/ETF
+      # ticker's trailing 1-year CAGR, computed once and written to
+      # ./rankings/rankings.json — a plain JSON file, not a watchlist itself,
+      # so it's kept out of ./output (never uploaded to S3 below).
+      - name: Compute stock/ETF 1-year CAGR rankings
+        run: |
+          mkdir -p rankings
+          docker run --rm \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest \
+            --mode rank \
+            --stock-config "${{ steps.env.outputs.stock_config }}" \
+            --etf-config "${{ steps.env.outputs.etf_config }}" \
+            --out /rankings \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      # Steps 2 and 3: the rankings' top and bottom
+      # MAX_HOLDINGS_FOR_WATCHLIST tickers (same repo variable
+      # backend/watchlists/views.py's HoldingsClient reads for a custom
+      # watchlist's own holdings cap), each built into full watchlist
+      # entries the same way Global Markets' entries are above.
+      - name: Build Top Winners watchlist entries
+        run: |
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest \
+            --mode movers \
+            --watchlist-key TOP_WINNERS \
+            --direction winners \
+            --rankings /rankings/rankings.json \
+            --limit "${{ vars.MAX_HOLDINGS_FOR_WATCHLIST || '50' }}" \
+            --out /output \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      - name: Build Top Losers watchlist entries
+        run: |
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest \
+            --mode movers \
+            --watchlist-key TOP_LOSERS \
+            --direction losers \
+            --rankings /rankings/rankings.json \
+            --limit "${{ vars.MAX_HOLDINGS_FOR_WATCHLIST || '50' }}" \
             --out /output \
             --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
             --max-calls "${{ github.event.inputs.max_calls || '5' }}" \

@@ -5,6 +5,56 @@ run. For local package setup (installing deps, running unit tests), see
 [local-setup.md](local-setup.md). For what a system watchlist's `entries`
 data actually contains, see the root [README](../README.md).
 
+## Top Winners / Top Losers
+
+Unlike Global Markets' hand-curated entries, Top Winners and Top Losers
+rank the *entire* stock/ETF universe — every ticker in
+`packages/stock/config/stocks.{dev,prod}.yaml` and
+`packages/etf/config/etfs.{dev,prod}.yaml` — by trailing 1-year CAGR, and
+keep the highest (Top Winners) or lowest (Top Losers) side of that
+ranking, up to the `MAX_HOLDINGS_FOR_WATCHLIST` repo variable (default
+50 — see `equicast_watchlist.cli.DEFAULT_MOVERS_LIMIT`). A ticker only
+ever appears in Top Winners if it actually gained over the trailing year
+(positive CAGR), and only in Top Losers if it actually lost (negative
+CAGR) — neither list backfills with flat/wrong-sign tickers just to reach
+the cap.
+
+This is three CLI invocations against the same ranking, not one:
+
+1. **`--mode rank`** (step 1, `equicast_watchlist.movers.
+   compute_cagr_rankings`): every stock/ETF ticker's trailing 1-year CAGR
+   (via `equicast_metrics.MetricsClient`, the same client
+   equicast-stock/-etf/-fx/-future/-benchmark use for their own
+   `cagr_1y`), written as a plain JSON ranking file — not a watchlist
+   itself, so it's never uploaded to S3. Deliberately independent of
+   winners/losers: the same ranking a future user-specific "my top
+   winners/losers" feature (ranking only a caller's own holdings) would
+   need, just over the full universe instead.
+2. **`--mode movers --direction winners`** (step 2): that ranking's top N
+   positive-CAGR tickers, built into full watchlist entries (profile +
+   1-week/1-month change, same as Global Markets) and written to
+   `watchlist=TOP_WINNERS/entries.parquet`.
+3. **`--mode movers --direction losers`** (step 3): the bottom N
+   negative-CAGR tickers, written to `watchlist=TOP_LOSERS/entries.parquet`.
+
+Each Top Winners/Losers entry carries one field Global Markets' entries
+don't: `change_1y_pct` — the ranking CAGR itself, as a percent (same scale
+as `change_1w_pct`/`change_1m_pct`).
+
+```bash
+cd packages/watchlist
+uv run equicast-watchlist --mode rank \
+  --stock-config config/../../stock/config/stocks.dev.yaml \
+  --etf-config config/../../etf/config/etfs.dev.yaml \
+  --out ./rankings
+
+uv run equicast-watchlist --mode movers --watchlist-key TOP_WINNERS --direction winners \
+  --rankings ./rankings/rankings.json --limit 50 --out ./output
+
+uv run equicast-watchlist --mode movers --watchlist-key TOP_LOSERS --direction losers \
+  --rankings ./rankings/rankings.json --limit 50 --out ./output
+```
+
 ## How this differs from fx/stock/etf/benchmark/future
 
 Every other ingestion pipeline fetches its own instruments from yfinance
@@ -139,20 +189,26 @@ The scheduled (cron) trigger always targets **production** — there's no
 applies to manual `workflow_dispatch` runs, where it defaults to `dev` so
 an ad-hoc run doesn't write to production by accident.
 
-The workflow has one job, **ingest**, with one step per system
-watchlist — today just "Build Global Markets watchlist entries". Unlike
+The workflow has one job, **ingest**, with one step per config-driven
+system watchlist ("Build Global Markets watchlist entries") plus the
+rank/movers steps that build Top Winners/Top Losers from the stock/ETF
+universe instead (see "Top Winners / Top Losers" above). Unlike
 fx/stock/etf/benchmark/future-ingestion.yml, there's no "plan" job
 splitting work into matrix chunks (a system watchlist's entry list is
 small enough to fetch in a single container run) and no "build-catalog"
 job (`equicast-watchlist` doesn't produce or read a `catalog/*.parquet`
-file at all). Adding a second system watchlist later means adding another
-step here, each with its own config file — no new job, no changes to the
-steps already there.
+file at all). Adding another config-driven system watchlist later means
+adding another `--mode config` step here, each with its own config file —
+no new job, no changes to the steps already there.
 
 ### S3 layout produced
 
 ```
 s3://equicast-market-data-<env>/
-└── watchlist=GLOBAL_MARKETS/
+├── watchlist=GLOBAL_MARKETS/
+│   └── entries.parquet
+├── watchlist=TOP_WINNERS/
+│   └── entries.parquet
+└── watchlist=TOP_LOSERS/
     └── entries.parquet
 ```

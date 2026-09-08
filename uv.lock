@@ -1121,8 +1121,11 @@ source = { editable = "packages/watchlist" }
 dependencies = [
     { name = "equicast-benchmark" },
     { name = "equicast-datafeed" },
+    { name = "equicast-etf" },
     { name = "equicast-future" },
     { name = "equicast-fx" },
+    { name = "equicast-metrics" },
+    { name = "equicast-stock" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyyaml" },
@@ -1141,8 +1144,11 @@ dev = [
 requires-dist = [
     { name = "equicast-benchmark", editable = "packages/benchmark" },
     { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "equicast-etf", editable = "packages/etf" },
     { name = "equicast-future", editable = "packages/future" },
     { name = "equicast-fx", editable = "packages/fx" },
+    { name = "equicast-metrics", editable = "packages/metrics" },
+    { name = "equicast-stock", editable = "packages/stock" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },

@@ -53,7 +53,10 @@ class WatchlistListViewTests(TestCase):
         self.assertEqual(
             response.json(), [{**w, "type": "system", "holdings": []} for w in SYSTEM_WATCHLISTS]
         )
-        mock_market_data_client.get_watchlist_entries.assert_called_once_with("GLOBAL_MARKETS")
+        mock_market_data_client.get_watchlist_entries.assert_any_call("GLOBAL_MARKETS")
+        mock_market_data_client.get_watchlist_entries.assert_any_call("TOP_WINNERS")
+        mock_market_data_client.get_watchlist_entries.assert_any_call("TOP_LOSERS")
+        self.assertEqual(mock_market_data_client.get_watchlist_entries.call_count, 3)
 
     @patch("watchlists.views._market_data_client")
     @patch("watchlists.views._holdings_client")
@@ -79,7 +82,9 @@ class WatchlistListViewTests(TestCase):
             "last_updated": "2026-08-28T21:29:05+00:00",
             "source": "yfinance",
         }
-        mock_market_data_client.get_watchlist_entries.return_value = [entry]
+        mock_market_data_client.get_watchlist_entries.side_effect = (
+            lambda key: [entry] if key == "GLOBAL_MARKETS" else []
+        )
 
         response = self.client.get(reverse("watchlists-list"), **AUTH_HEADER)
 
@@ -87,11 +92,17 @@ class WatchlistListViewTests(TestCase):
         body = response.json()
         global_markets = next(w for w in body if w["id"] == "global-markets")
         self.assertEqual(global_markets["holdings"], [entry])
-        # Every other system watchlist has no storage key mapped yet, so
-        # none of them ever call get_watchlist_entries at all.
-        other_system = [w for w in body if w["type"] == "system" and w["id"] != "global-markets"]
-        self.assertTrue(all(w["holdings"] == [] for w in other_system))
-        mock_market_data_client.get_watchlist_entries.assert_called_once_with("GLOBAL_MARKETS")
+        # Top Winners/Top Losers have a storage key mapped too (they just
+        # weren't published under it in this test), but the "(Your
+        # Accounts)" watchlists have no storage key at all, so neither ever
+        # calls get_watchlist_entries.
+        no_storage_key = [
+            w for w in body if w["type"] == "system" and w["id"].endswith("-accounts")
+        ]
+        self.assertTrue(all(w["holdings"] == [] for w in no_storage_key))
+        mock_market_data_client.get_watchlist_entries.assert_any_call("GLOBAL_MARKETS")
+        mock_market_data_client.get_watchlist_entries.assert_any_call("TOP_WINNERS")
+        mock_market_data_client.get_watchlist_entries.assert_any_call("TOP_LOSERS")
 
     @patch("watchlists.views._market_data_client")
     @patch("watchlists.views._profile_client")

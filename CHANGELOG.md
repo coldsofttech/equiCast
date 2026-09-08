@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Top Winners and Top Losers are now live system watchlists, ranking the
+  entire stock/ETF universe (every ticker in equicast-stock/-etf's own
+  `config/stocks.{dev,prod}.yaml`/`etfs.{dev,prod}.yaml`) by trailing
+  1-year CAGR rather than a hand-curated list like Global Markets.
+  `equicast_watchlist` gained a `movers` module and two new CLI modes:
+  `--mode rank` (step 1, independent of winners/losers — every ticker's
+  1-year CAGR via `equicast_metrics.MetricsClient`, written as a plain
+  JSON ranking so a future user-specific "my top winners/losers" can reuse
+  it) and `--mode movers --direction winners|losers` (steps 2/3 — that
+  ranking's top/bottom N, up to the `MAX_HOLDINGS_FOR_WATCHLIST` repo
+  variable, default 50, built into full watchlist entries the same way
+  `--mode config` does). Only positive-CAGR tickers ever land in Top
+  Winners, only negative-CAGR in Top Losers — neither list backfills with
+  wrong-sign tickers to reach the cap. Each entry carries one field Global
+  Markets' entries don't: `change_1y_pct`, the ranking CAGR itself as a
+  percent, rendered by `WatchlistEntryCard` as a third "1Y" stat only when
+  present. `watchlist-ingestion.yml` gained three steps ("Compute
+  stock/ETF 1-year CAGR rankings", "Build Top Winners watchlist entries",
+  "Build Top Losers watchlist entries") between Global Markets and the S3
+  upload; `backend/watchlists/views.py`'s `_SYSTEM_WATCHLIST_STORAGE_KEYS`
+  now maps `"top-winners"`/`"top-losers"` to `"TOP_WINNERS"`/
+  `"TOP_LOSERS"` (the two "(Your Accounts)" system watchlists still come
+  back `holdings: []`, unaffected — ranking a caller's own accounts'
+  movers is separate, not-yet-built work).
+
 - Global Markets is now a live system watchlist end to end.
   `MarketDataClient.get_watchlist_entries` reads `equicast-watchlist`'s
   published `watchlist=<KEY>/entries.parquet`; `backend/watchlists/views.py`

@@ -51,6 +51,16 @@ describe("WatchlistEntryCard", () => {
     expect(dashes).toHaveLength(3); // price + 1W + 1M
   });
 
+  it("shows a 1Y change stat only when change_1y_pct is present", () => {
+    const { rerender } = render(
+      <WatchlistEntryCard holding={{ ticker: "AAPL", change_1y_pct: 15.5 }} />
+    );
+    expect(screen.getByText("+15.50%")).toBeInTheDocument();
+
+    rerender(<WatchlistEntryCard holding={{ ticker: "AAPL" }} />);
+    expect(screen.queryByText(/15\.50%/)).not.toBeInTheDocument();
+  });
+
   it("shows a remove button only when isRemovable, and wires onRemove", () => {
     const onRemove = vi.fn();
     const { rerender } = render(

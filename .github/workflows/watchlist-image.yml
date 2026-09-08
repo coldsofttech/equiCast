@@ -5,9 +5,14 @@ on:
     branches: [main]
     paths:
       - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
       - "packages/fx/**"
       - "packages/benchmark/**"
       - "packages/future/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
       - "packages/watchlist/**"
       - "pyproject.toml"
       - "uv.lock"

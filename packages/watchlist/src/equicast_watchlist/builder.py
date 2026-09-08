@@ -1,9 +1,10 @@
 """Build one system watchlist's entries by fetching each configured
 instrument fresh from yfinance, via its own package's Client class
 (equicast_fx.FXClient/equicast_future.FutureClient/
-equicast_benchmark.BenchmarkClient) — this never reads any other
-pipeline's already-published S3 output, so it doesn't depend on
-fx/future/benchmark-ingestion.yml having run first.
+equicast_benchmark.BenchmarkClient/equicast_stock.StockClient/
+equicast_etf.ETFClient) — this never reads any other pipeline's
+already-published S3 output, so it doesn't depend on
+fx/future/benchmark/stock/etf-ingestion.yml having run first.
 """
 
 from __future__ import annotations
@@ -13,8 +14,10 @@ from typing import Any
 
 from equicast_benchmark import BenchmarkClient
 from equicast_datafeed import DatafeedClient, round_value
+from equicast_etf import ETFClient
 from equicast_future import FutureClient
 from equicast_fx import FXClient
+from equicast_stock import StockClient
 
 from equicast_watchlist.config import WatchlistEntry
 
@@ -40,6 +43,14 @@ def _build_client(entry: WatchlistEntry, datafeed: DatafeedClient) -> Any:
         return FutureClient(entry.key, entry.symbol, datafeed=datafeed)
     if entry.asset_class == "benchmark":
         return BenchmarkClient(entry.key, entry.symbol, datafeed=datafeed)
+    # stock/etf entries never come from equicast_watchlist.config's explicit-entries
+    # YAML (see its own ASSET_CLASSES — fx/future/benchmark only) — they're built
+    # programmatically by equicast_watchlist.movers from the Top Winners/Top Losers
+    # ranking, one WatchlistEntry per selected ticker.
+    if entry.asset_class == "stock":
+        return StockClient(entry.ticker, datafeed=datafeed)
+    if entry.asset_class == "etf":
+        return ETFClient(entry.ticker, datafeed=datafeed)
     raise ValueError(f"Unknown asset_class '{entry.asset_class}'.")
 
 
