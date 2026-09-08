@@ -117,8 +117,6 @@ class SearchView(APIView):
 
     def get(self, request: Request) -> Response:
         query = request.query_params.get("q", "")
-        if len(query) < 1:
-            return Response({"detail": "q must be at least 1 character."}, status=400)
 
         asset_class = request.query_params.get("asset_class")
         if asset_class is not None and asset_class not in ASSET_CLASSES:
