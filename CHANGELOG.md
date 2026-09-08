@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
+  "pie-chart-fill"), settable via a new generic `IconPicker`
+  (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over
+  whatever icon list a caller passes it — added to `PieForm` alongside
+  name/description. The icon set offered is presently a curated,
+  finance-themed subset (`config/portfolioIcons.js`'s
+  `PORTFOLIO_ICON_OPTIONS`), meant to grow over time rather than jumping
+  straight to bootstrap-icons' full ~2000-icon catalog. The field is
+  optional end to end (`backend/pies/views.py`'s new
+  `OPTIONAL_CREATE_FIELDS`, added to `UPDATABLE_FIELDS` for PATCH) — a pie
+  without one, including every pre-existing pie, renders
+  `DEFAULT_PORTFOLIO_ICON` via the new generic `IconBadge` display
+  component (`components/core/IconBadge.jsx`), shown on `PieDetailPage`'s
+  title and each row of `AccountDetailPage`'s Portfolios list.
+
+- Accounts get the same `icon` field, reusing `IconPicker`/`IconBadge`
+  with their own separate curated list (`config/accountIcons.js`'s
+  `ACCOUNT_ICON_OPTIONS`/`DEFAULT_ACCOUNT_ICON`, bank/vault/shield-themed
+  rather than the pies' finance-chart set) — same optional,
+  `OPTIONAL_CREATE_FIELDS`/`UPDATABLE_FIELDS` treatment in
+  `backend/accounts/views.py`. Set via `AccountForm`, shown on
+  `AccountDetailPage`'s title, `AccountsListPage`'s table rows, and
+  `AccountCard`'s dashboard cards.
+
 - The holding page's benchmark comparison now also shows a real 0-100
   "Rating vs <benchmark>" score (`HoldingBenchmarkRating`, rendered by
   `HoldingPriceChart` whenever `HoldingComparePicker`'s selection is a

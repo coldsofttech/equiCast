@@ -114,12 +114,17 @@ class AccountsClient:
         description: str,
         account_type: str,
         currency: str,
+        icon: str | None = None,
     ) -> dict[str, Any]:
         """Append a new account, raising `AccountLimitExceededError` if the
         user is already at this client's `max_accounts`.
 
         Membership isn't validated here — the caller (the Django view) does
-        that, the same way it validates `account_type`/`currency`."""
+        that, the same way it validates `account_type`/`currency`. `icon` is
+        a bare bootstrap-icons name (e.g. "bank2", not "bi bi-bank2") and is
+        optional — an account without one falls back to a default icon
+        client-side (see frontend's DEFAULT_ACCOUNT_ICON), same reasoning as
+        PiesClient.create_pie's own `icon`."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             accounts, etag = self._load(user_id)
             if any(a["name"].casefold() == name.casefold() for a in accounts):
@@ -137,6 +142,7 @@ class AccountsClient:
                 "description": description,
                 "account_type": account_type,
                 "currency": currency,
+                "icon": icon,
                 "created_at": now,
                 "updated_at": now,
             }

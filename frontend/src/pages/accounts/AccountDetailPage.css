@@ -1,9 +1,3 @@
-.ec-account-detail-badges {
-  display: flex;
-  gap: var(--ec-s-8);
-  margin-bottom: var(--ec-s-24);
-}
-
 .ec-account-holding-hint {
   font-size: var(--ec-fs-13);
   color: var(--ec-text-muted);

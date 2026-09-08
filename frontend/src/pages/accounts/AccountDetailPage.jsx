@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
@@ -33,6 +34,8 @@ import {
   formatSyncedDate,
   minLastUpdated,
 } from "../holdingValuation.js";
+import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
+import { DEFAULT_PORTFOLIO_ICON } from "../../config/portfolioIcons.js";
 import "./AccountDetailPage.css";
 
 /** An account's real holdings (direct and pie-nested alike) carry
@@ -180,7 +183,13 @@ function AccountDetailPage() {
       <AppShell
         eyebrow="Account"
         title="Loading…"
-        titleBadges={<Skeleton circle width="110px" height="22px" />}
+        titleIcon={<Skeleton circle width="64px" height="64px" />}
+        titleBadges={
+          <>
+            <Skeleton width="80px" height="1.25rem" />
+            <Skeleton circle width="110px" height="22px" />
+          </>
+        }
         actions={
           <Button variant="ghost" onClick={() => navigate("/accounts")}>
             Back to accounts
@@ -222,9 +231,13 @@ function AccountDetailPage() {
       eyebrow="Account"
       title={account.name}
       subtitle={account.description}
+      titleIcon={<IconBadge icon={account.icon} defaultIcon={DEFAULT_ACCOUNT_ICON} size={64} />}
       stickyTitle
       titleBadges={
-        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+        <>
+          <Badge tone="accent">{account.account_type}</Badge>
+          {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
+        </>
       }
       actions={
         <Button
@@ -238,10 +251,6 @@ function AccountDetailPage() {
       }
       footer={<SiteFooter />}
     >
-      <div className="ec-account-detail-badges">
-        <Badge tone="accent">{account.account_type}</Badge>
-      </div>
-
       <div className="ec-stat-grid">
         <StatTile
           label="Value"
@@ -311,9 +320,12 @@ function AccountDetailPage() {
                       }
                     }}
                   >
-                    <div className="ec-detail-row-main">
-                      <h3 className="ec-detail-row-name">{pie.name}</h3>
-                      <span className="ec-detail-row-meta">{(pie.holdings ?? []).length} holdings</span>
+                    <div className="ec-detail-row-heading">
+                      <IconBadge icon={pie.icon} defaultIcon={DEFAULT_PORTFOLIO_ICON} size={32} />
+                      <div className="ec-detail-row-main">
+                        <h3 className="ec-detail-row-name">{pie.name}</h3>
+                        <span className="ec-detail-row-meta">{(pie.holdings ?? []).length} holdings</span>
+                      </div>
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">

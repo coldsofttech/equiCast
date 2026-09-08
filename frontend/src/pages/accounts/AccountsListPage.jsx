@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
@@ -13,6 +14,7 @@ import { useApi } from "../../api/useApi.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { createAccount, deleteAccount, updateAccount } from "../../api/accounts.js";
+import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
 /** True once an account has pies/holdings that a plain delete would refuse (see accounts/views.py). */
 function needsForce(account) {
@@ -143,8 +145,13 @@ function AccountsListPage() {
               {accounts.map((account) => (
                 <tr key={account.id} onClick={() => navigate(`/accounts/${account.id}`)}>
                   <td>
-                    <div className="ec-table-name">{account.name}</div>
-                    <div className="ec-table-desc">{account.description}</div>
+                    <div className="ec-table-name-cell">
+                      <IconBadge icon={account.icon} defaultIcon={DEFAULT_ACCOUNT_ICON} size={28} />
+                      <div>
+                        <div className="ec-table-name">{account.name}</div>
+                        <div className="ec-table-desc">{account.description}</div>
+                      </div>
+                    </div>
                   </td>
                   <td>
                     <Badge tone="accent">{account.account_type}</Badge>
