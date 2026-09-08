@@ -17,8 +17,8 @@ function initialsFor(name, email) {
 /**
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
- * `user` — no extra API round trip), "Accounts" (MenuBar has no direct
- * item for it — see menuItems.js), "Settings" (opens SettingsModal), and
+ * `user` — no extra API round trip), "Accounts" (its only nav entry point
+ * now that MenuBar is gone), "Settings" (opens SettingsModal), and
  * the sign-out action. Only rendered inside AppShell, which only mounts
  * once RequireAuth has already confirmed `isAuthenticated`, so `user` is
  * always populated here.

@@ -21,7 +21,6 @@ import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
   computeHoldingValuation,
@@ -173,7 +172,6 @@ function PieDetailPage() {
   if (isLoading) {
     return (
       <AppShell
-        menuItems={MENU_ITEMS}
         eyebrow="Portfolio"
         title="Loading…"
         actions={
@@ -190,7 +188,7 @@ function PieDetailPage() {
 
   if (loadError || !pie) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
+      <AppShell eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Pie not found."}</Alert>
       </AppShell>
     );
@@ -210,10 +208,10 @@ function PieDetailPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
+      stickyTitle
       actions={
         <>
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>

@@ -41,7 +41,6 @@ import {
   readCachedTransactionsPage,
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
@@ -418,10 +417,10 @@ function HoldingTickerPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
+      stickyTitle
       titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
       titleBadges={
         marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
