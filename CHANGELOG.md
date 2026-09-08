@@ -9,6 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A watchlists panel on `/dashboard` (`WatchlistsPanel`, below the accounts
+  grid), tabbed across five system-default watchlists (Global Markets, Top
+  Winners, Top Losers, Top Winners/Losers within your accounts — always
+  present, always first, holdings empty for now; how each actually gets
+  populated is deliberately separate, not-yet-built work) followed by the
+  caller's own custom watchlists. Custom watchlists reuse the
+  already-existing `WatchlistsClient`/`backend/watchlists` CRUD (capped at
+  `MAX_WATCHLISTS`, 5) — `GET /api/watchlists/` now returns one merged list
+  (system + custom, each tagged `type`), with every custom watchlist's
+  holdings nested and enriched the same way `PieListView.get` nests a pie's.
+  Adding/removing a custom watchlist's holdings goes through the existing
+  `POST`/`DELETE /api/holdings/` with `watchlist_id` (already supported
+  server-side, just not previously used from the frontend) rather than any
+  new endpoint. New generic `Tabs` component (`components/core/Tabs.jsx`).
+  Per-watchlist holding caps (`MAX_HOLDINGS_FOR_WATCHLIST`, already a
+  GitHub Environment variable wired into terraform) aren't yet set to
+  different dev/prod values — that's a config change, not code.
+
 - The holding page's benchmark comparison now also shows a real 0-100
   "Rating vs <benchmark>" score (`HoldingBenchmarkRating`, rendered by
   `HoldingPriceChart` whenever `HoldingComparePicker`'s selection is a
