@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
+  "pie-chart-fill"), settable via a new generic `IconPicker`
+  (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over
+  whatever icon list a caller passes it — added to `PieForm` alongside
+  name/description. The icon set offered is presently a curated,
+  finance-themed subset (`config/portfolioIcons.js`'s
+  `PORTFOLIO_ICON_OPTIONS`), meant to grow over time rather than jumping
+  straight to bootstrap-icons' full ~2000-icon catalog. The field is
+  optional end to end (`backend/pies/views.py`'s new
+  `OPTIONAL_CREATE_FIELDS`, added to `UPDATABLE_FIELDS` for PATCH) — a pie
+  without one, including every pre-existing pie, renders
+  `DEFAULT_PORTFOLIO_ICON` via the new `PortfolioIcon` display component,
+  shown on `PieDetailPage`'s title and each row of `AccountDetailPage`'s
+  Portfolios list.
+
 - The holding page's benchmark comparison now also shows a real 0-100
   "Rating vs <benchmark>" score (`HoldingBenchmarkRating`, rendered by
   `HoldingPriceChart` whenever `HoldingComparePicker`'s selection is a

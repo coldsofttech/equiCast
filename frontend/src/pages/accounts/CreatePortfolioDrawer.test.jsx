@@ -35,6 +35,7 @@ describe("CreatePortfolioDrawer", () => {
     expect(createPie).toHaveBeenCalledWith(expect.any(Function), {
       name: "Growth",
       description: "Long-term",
+      icon: "pie-chart-fill",
       account_id: "a-1",
     });
     expect(onClose).toHaveBeenCalledTimes(1);

@@ -1,0 +1,37 @@
+.ec-icon-picker {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(36px, 1fr));
+  gap: var(--ec-s-8);
+}
+
+.ec-icon-picker-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--ec-r-6);
+  border: 1px solid var(--ec-border-strong);
+  background: var(--ec-bg-elev);
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-16);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.ec-icon-picker-option:hover {
+  background: var(--ec-surface-hover);
+  color: var(--ec-text);
+}
+
+.ec-icon-picker-option:focus-visible {
+  outline: none;
+  border-color: var(--ec-accent);
+  box-shadow: var(--ec-shadow-focus);
+}
+
+.ec-icon-picker-option.is-selected {
+  border-color: var(--ec-accent);
+  background: var(--ec-accent-soft);
+  color: var(--ec-accent-soft-text);
+}

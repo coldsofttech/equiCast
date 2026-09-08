@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
+import PortfolioIcon from "../../components/core/PortfolioIcon.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -55,8 +56,8 @@ const FALLBACK_CURRENCY = "USD";
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
- * separate from the "Edit pie" Drawer (name/description only), so editing
- * one never shows form fields for the other.
+ * separate from the "Edit pie" Drawer (name/description/icon only), so
+ * editing one never shows form fields for the other.
  */
 function PieDetailPage() {
   const { accountId, pieId } = useParams();
@@ -179,6 +180,7 @@ function PieDetailPage() {
       <AppShell
         eyebrow="Portfolio"
         title="Loading…"
+        titleIcon={<Skeleton circle width="64px" height="64px" />}
         titleBadges={<Skeleton circle width="110px" height="22px" />}
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
@@ -219,6 +221,7 @@ function PieDetailPage() {
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
+      titleIcon={<PortfolioIcon icon={pie.icon} size={64} />}
       stickyTitle
       titleBadges={
         syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
