@@ -479,8 +479,11 @@ class MarketDataClient:
         """Return `holdings` with market-derived display/valuation fields
         merged in from each ticker's catalog row (`catalog/<asset_class>.
         parquet` — see `equicast_core.catalog`): `name`/`sector`/`industry`/
-        `website` (`website` backs the frontend's favicon-based AssetIcon)
-        and `current_price_native`/`current_price` (the catalog's own
+        `website` (`website` backs the frontend's favicon-based AssetIcon),
+        `market_cap` (a stock's real market cap, an etf's total assets as
+        the closest comparable "size" figure a fund has — same convention
+        as `search`'s `min_market_cap`/`max_market_cap` filters), and
+        `current_price_native`/`current_price` (the catalog's own
         last-published price, FX-converted to `default_currency` — the same
         convention `average_price`/`invested`/`dividends` already use, see
         `transactions.views.resolve_converted_amounts`) and `last_updated`
@@ -538,6 +541,7 @@ class MarketDataClient:
                     "sector": row.get("sector") if row else None,
                     "industry": row.get("industry") if row else None,
                     "website": row.get("website") if row else None,
+                    "market_cap": row.get("market_cap") if row else None,
                     "current_price_native": current_price_native,
                     "current_price": current_price,
                     "last_updated": row.get("last_updated") if row else None,

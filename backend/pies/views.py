@@ -77,8 +77,9 @@ _profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=se
 def _enrich_holdings(user_id: str, holdings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Resolve `user_id`'s `default_currency` and delegate to
     `MarketDataClient.enrich_holdings` for the actual catalog-backed
-    name/sector/industry/website/current_price_native/current_price
-    merge — see that method's docstring for what it fills in and why.
+    name/sector/industry/website/market_cap/current_price_native/
+    current_price merge — see that method's docstring for what it fills in
+    and why.
     Short-circuits on an empty `holdings` before even reading the caller's
     profile, since there'd be nothing to enrich either way."""
     if not holdings:

@@ -629,6 +629,7 @@ class TestEnrichHoldings:
                     "website": "https://investor.vanguard.com",
                     "sector": None,
                     "industry": None,
+                    "market_cap": 400_000_000_000.0,
                     "last_updated": "2026-08-30T09:00:00+00:00",
                 }
             ],
@@ -644,6 +645,7 @@ class TestEnrichHoldings:
             "sector": None,
             "industry": None,
             "website": "https://investor.vanguard.com",
+            "market_cap": 400_000_000_000.0,
             "current_price_native": 450.0,
             "current_price": 450.0,
             "last_updated": "2026-08-30T09:00:00+00:00",
@@ -685,6 +687,7 @@ class TestEnrichHoldings:
         [enriched] = client.enrich_holdings([holding], "USD")
 
         assert enriched["name"] is None
+        assert enriched["market_cap"] is None
         assert enriched["current_price_native"] is None
         assert enriched["current_price"] is None
         assert enriched["last_updated"] is None

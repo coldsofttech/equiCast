@@ -6,8 +6,8 @@ import "../holdings/HoldingTickerPage.css";
 /**
  * Placeholder "cards" shown in place of the real pie detail content while
  * GET /pies/<id> is still loading — mirrors PieDetailPage's real layout
- * (StatTiles row, price chart card, Holdings rows, Sector/Industry
- * diversification cards, CAGR card, Holdings heatmap card) so the page
+ * (StatTiles row, price chart card, Holdings rows, Sector/Industry/Asset/
+ * Market-cap allocation cards, CAGR card, Holdings heatmap card) so the page
  * doesn't jump around once the real content swaps in. Unlike
  * HoldingTickerSkeleton, every section here renders unconditionally — a pie
  * is only ever reached once it's known to exist, so there's no "not owned"
@@ -58,7 +58,7 @@ function PieDetailSkeleton() {
       </div>
 
       <div className="ec-divchart-grid">
-        {[0, 1].map((i) => (
+        {[0, 1, 2, 3].map((i) => (
           <Card className="ec-divchart ec-detail-section" key={i}>
             <div className="ec-divchart-head">
               <Skeleton width="160px" height="1.1rem" />
