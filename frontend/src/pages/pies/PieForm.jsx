@@ -1,9 +1,14 @@
 import { useState } from "react";
 import { TextField, TextAreaField } from "../../components/core/Field.jsx";
+import IconPicker from "../../components/core/IconPicker.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
+import {
+  DEFAULT_PORTFOLIO_ICON,
+  PORTFOLIO_ICON_OPTIONS,
+} from "../../config/portfolioIcons.js";
 
-const EMPTY_VALUES = { name: "", description: "" };
+const EMPTY_VALUES = { name: "", description: "", icon: DEFAULT_PORTFOLIO_ICON };
 
 /** Shared create/edit body for a pie — `account_id` is fixed by the
  * caller (AccountDetailPage), never edited here: it's immutable once a
@@ -34,6 +39,14 @@ function PieForm({ initialValues, onSubmit, onCancel, isSubmitting, error }) {
         label="Description"
         value={values.description}
         onChange={setField("description")}
+      />
+      <IconPicker
+        id="pie-icon"
+        label="Icon"
+        icons={PORTFOLIO_ICON_OPTIONS}
+        value={values.icon}
+        onChange={(icon) => setValues((current) => ({ ...current, icon }))}
+        hint="Optional — defaults to a pie chart if not set."
       />
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>

@@ -149,6 +149,30 @@ class PieListViewTests(TestCase):
         self.assertEqual(response.json(), PIE)
         mock_client.create_pie.assert_called_once_with("auth0|abc123", **create_fields)
 
+    @patch("pies.views._accounts_client")
+    @patch("pies.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_passes_icon_through_when_given(
+        self, mock_jwks_client, mock_decode, mock_client, mock_accounts_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1"}]
+        mock_client.create_pie.return_value = {**PIE, "icon": "pie-chart-fill"}
+
+        create_fields = {
+            "name": "Core ETFs",
+            "description": "Broad market trackers",
+            "account_id": "acc-1",
+            "icon": "pie-chart-fill",
+        }
+        response = self.client.post(
+            reverse("pies-list"), data=create_fields, content_type="application/json", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_client.create_pie.assert_called_once_with("auth0|abc123", **create_fields)
+
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_when_a_required_field_is_missing(
@@ -285,6 +309,24 @@ class PieDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_pie.assert_called_once_with("auth0|abc123", "pie-1", name="Renamed")
+
+    @patch("pies.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_the_icon(self, mock_jwks_client, mock_decode, mock_client) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        updated = {**PIE, "icon": "wallet2"}
+        mock_client.update_pie.return_value = updated
+
+        response = self.client.patch(
+            reverse("pies-detail", args=["pie-1"]),
+            data={"icon": "wallet2"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.update_pie.assert_called_once_with("auth0|abc123", "pie-1", icon="wallet2")
 
     @patch("pies.views._client")
     @patch("identity.authentication.jwt.decode")

@@ -4,12 +4,14 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
+import PortfolioIcon from "../../components/core/PortfolioIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import Skeleton from "../../components/core/Skeleton.jsx";
 import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
 import PiePriceChart from "./PiePriceChart.jsx";
@@ -51,8 +53,8 @@ const FALLBACK_CURRENCY = "USD";
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
- * separate from the "Edit pie" Drawer (name/description only), so editing
- * one never shows form fields for the other.
+ * separate from the "Edit pie" Drawer (name/description/icon only), so
+ * editing one never shows form fields for the other.
  */
 function PieDetailPage() {
   const { accountId, pieId } = useParams();
@@ -176,6 +178,7 @@ function PieDetailPage() {
         menuItems={MENU_ITEMS}
         eyebrow="Portfolio"
         title="Loading…"
+        titleIcon={<Skeleton circle width="64px" height="64px" />}
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
             Back to account
@@ -214,6 +217,7 @@ function PieDetailPage() {
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
+      titleIcon={<PortfolioIcon icon={pie.icon} size={64} />}
       actions={
         <>
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>

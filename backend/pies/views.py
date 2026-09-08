@@ -24,9 +24,12 @@ from rest_framework.views import APIView
 #: Fields required to create a pie; description may be blank but must be
 #: present so a caller doesn't silently omit it.
 REQUIRED_CREATE_FIELDS = {"name", "description", "account_id"}
+#: Optional at create time — a pie without one falls back to a default icon
+#: client-side, so omitting it entirely (rather than sending "") is fine too.
+OPTIONAL_CREATE_FIELDS = {"icon"}
 #: account_id is intentionally excluded — a pie doesn't move between
 #: accounts, so it's immutable after creation.
-UPDATABLE_FIELDS = {"name", "description"}
+UPDATABLE_FIELDS = {"name", "description", "icon"}
 
 #: One shared client for the process, mirroring accounts/views.py's
 #: module-level _client pattern.
@@ -118,12 +121,14 @@ class PieListView(APIView):
         if account_id not in caller_account_ids:
             return Response({"detail": "Unknown account_id."}, status=400)
 
+        optional_fields = {k: v for k, v in request.data.items() if k in OPTIONAL_CREATE_FIELDS}
         try:
             pie = _client.create_pie(
                 request.user.user_id,
                 account_id=account_id,
                 name=request.data["name"],
                 description=request.data["description"],
+                **optional_fields,
             )
         except PieLimitExceededError:
             # Static, caller-agnostic message — same py/stack-trace-exposure

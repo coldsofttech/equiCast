@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import PortfolioIcon from "../../components/core/PortfolioIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
@@ -292,9 +293,12 @@ function AccountDetailPage() {
                       }
                     }}
                   >
-                    <div className="ec-detail-row-main">
-                      <h3 className="ec-detail-row-name">{pie.name}</h3>
-                      <span className="ec-detail-row-meta">{(pie.holdings ?? []).length} holdings</span>
+                    <div className="ec-detail-row-heading">
+                      <PortfolioIcon icon={pie.icon} size={32} />
+                      <div className="ec-detail-row-main">
+                        <h3 className="ec-detail-row-name">{pie.name}</h3>
+                        <span className="ec-detail-row-meta">{(pie.holdings ?? []).length} holdings</span>
+                      </div>
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">

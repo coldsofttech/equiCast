@@ -32,7 +32,7 @@ export function getPie(api, pieId) {
  * POST /api/pies/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ name: string, description: string, account_id: string }} data
+ * @param {{ name: string, description: string, account_id: string, icon?: string }} data
  * @returns {Promise<Pie>}
  */
 export function createPie(api, data) {
@@ -40,12 +40,12 @@ export function createPie(api, data) {
 }
 
 /**
- * PATCH /api/pies/<id>/ — only `name`/`description` are updatable;
+ * PATCH /api/pies/<id>/ — only `name`/`description`/`icon` are updatable;
  * `account_id` is immutable after creation.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} pieId
- * @param {Partial<{ name: string, description: string }>} fields
+ * @param {Partial<{ name: string, description: string, icon: string }>} fields
  * @returns {Promise<Pie>}
  */
 export function updatePie(api, pieId, fields) {

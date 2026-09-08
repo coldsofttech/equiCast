@@ -39,6 +39,10 @@
  * @property {string} account_id
  * @property {string} name
  * @property {string} description
+ * @property {string|null} [icon] - bare bootstrap-icons name (e.g.
+ *   "pie-chart-fill"), `null`/absent for a pie predating this field — see
+ *   config/portfolioIcons.js's DEFAULT_PORTFOLIO_ICON for the display
+ *   fallback.
  * @property {Holding[]} [holdings]
  */
 
