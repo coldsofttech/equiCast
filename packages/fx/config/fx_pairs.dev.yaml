@@ -11,3 +11,9 @@ pairs:
     to: EUR
   - from: EUR
     to: GBP
+  - from: EUR
+    to: USD
+  - from: USD
+    to: JPY
+  - from: USD
+    to: CNY

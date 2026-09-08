@@ -50,19 +50,19 @@ resource_usage:
   # FX + stock + ETF + benchmark + future profile data (and the backend's
   # on-demand search/profile/price cache reads) lands here. No scheduled runs
   # in dev — only manual `workflow_dispatch(environment=dev)` runs against
-  # today's small packages/{fx,stock,etf,benchmark,future}/config/*.dev.yaml
-  # lists, for ad hoc validation. Modeled at ~20 manual runs/month total
-  # (within the ~10-15/month per-pipeline range this was originally sized
-  # against), split evenly across the five pipelines (~4 each) absent any
-  # reason to weight one pipeline's manual testing over another's.
+  # today's small packages/{fx,stock,etf,benchmark,future,watchlist}/config/
+  # *.dev.yaml lists, for ad hoc validation. Modeled at ~24 manual runs/month
+  # total (within the ~10-15/month per-pipeline range this was originally
+  # sized against), split evenly across the six pipelines (~4 each) absent
+  # any reason to weight one pipeline's manual testing over another's.
   #
-  # --- FX (packages/fx/config/fx_pairs.dev.yaml, currently 4 pairs) ---
+  # --- FX (packages/fx/config/fx_pairs.dev.yaml, currently 7 pairs) ---
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
   #             price.parquet ~20KB (current year only) = ~45KB/pair
-  #   storage:  4 pairs * 45KB = 180KB
+  #   storage:  7 pairs * 45KB = 315KB
   #   manual runs: ~4/month
   #   requests: 3 files/pair (profile + metrics + price), all PUT
-  #             4 runs * 4 pairs * 3 files = 48 PUTs -> 50 (rounded up)
+  #             4 runs * 7 pairs * 3 files = 84 PUTs -> 90 (rounded up)
   #
   # --- Stock (packages/stock/config/stocks.dev.yaml, currently 9 tickers)
   #     --- see infracost-usage.prod.yml's Stock section for the real
@@ -99,15 +99,15 @@ resource_usage:
   #             4 runs * 5 tickers * 5 files = 100 PUTs
   #
   # --- Benchmark (packages/benchmark/config/benchmarks.dev.yaml, currently
-  #     5 benchmarks) --- no dividends/fundamentals, same per-file size
+  #     7 benchmarks) --- no dividends/fundamentals, same per-file size
   #     assumption as the FX section above (a benchmark is a single
   #     yfinance symbol, not a pair, but priced/sized the same way).
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
   #             price.parquet ~20KB (current year only) = ~45KB/benchmark
-  #   storage:  5 benchmarks * 45KB = 225KB
+  #   storage:  7 benchmarks * 45KB = 315KB
   #   manual runs: ~4/month
   #   requests: 3 files/benchmark (profile + metrics + price), all PUT
-  #             4 runs * 5 benchmarks * 3 files = 60 PUTs
+  #             4 runs * 7 benchmarks * 3 files = 84 PUTs -> 90 (rounded up)
   #
   # --- Future (packages/future/config/futures.dev.yaml, currently 16
   #     futures contracts) --- no dividends/fundamentals, same per-file size
@@ -119,16 +119,26 @@ resource_usage:
   #   requests: 3 files/future (profile + metrics + price), all PUT
   #             4 runs * 16 futures * 3 files = 192 PUTs -> 200 (rounded up)
   #
+  # --- Watchlist (packages/watchlist/config/global_markets.dev.yaml,
+  #     currently 5 entries) --- writes one Parquet file per watchlist (not
+  #     per instrument) — see infracost-usage.prod.yml's Watchlist section
+  #     for the full reasoning.
+  #   size:     ~5 rows * ~250 bytes/row = ~1.25KB, rounded up to 5KB
+  #   storage:  5KB (one file)
+  #   manual runs: ~4/month
+  #   requests: 1 file (entries.parquet) per watchlist per run, all PUT
+  #             4 runs * 1 watchlist * 1 file = 4 PUTs -> 5 (rounded up)
+  #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650KB + 2,695KB + 225KB + 720KB = 11,470KB (~0.01GB, rounded up)
-  #   requests (PUT): 50 (FX) + 200 (stock) + 100 (ETF) + 60 (benchmark) + 200 (future) = 610
+  #   storage:  315KB + 7,650KB + 2,695KB + 315KB + 720KB + 5KB = 11,700KB (~0.01GB, rounded up)
+  #   requests (PUT): 90 (FX) + 200 (stock) + 100 (ETF) + 90 (benchmark) + 200 (future) + 5 (watchlist) = 685
   #   requests (GET): 120 — backend on-demand reads, from the session model
   #             above (60/user/month * 2 users), not sized from the ticker
   #             count
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 610 # PUT/COPY/POST/LIST — FX (50) + stock (200) + ETF (100) + benchmark (60) + future (200), manual runs only
+      monthly_tier_1_requests: 685 # PUT/COPY/POST/LIST — FX (90) + stock (200) + ETF (100) + benchmark (90) + future (200) + watchlist (5), manual runs only
       monthly_tier_2_requests: 120 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/

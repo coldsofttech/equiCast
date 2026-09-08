@@ -20,3 +20,7 @@ benchmarks:
     symbol: "^GDAXI"
   - key: STOXX_EUROPE_600
     symbol: "^STOXX"
+  - key: NASDAQ100
+    symbol: "^NDX"
+  - key: VIX
+    symbol: "^VIX"

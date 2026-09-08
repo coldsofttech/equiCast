@@ -46,6 +46,13 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   metrics from Yahoo Finance and lands them in the same S3 bucket as
   Parquet, as a reference asset class (not directly holdable in a pie/
   account/watchlist, the same as a benchmark).
+- **Watchlist pipeline (`equicast-datafeed`, `equicast-fx`,
+  `equicast-benchmark`, `equicast-future`, `equicast-watchlist`)** — a
+  weekly (Saturday) pipeline that builds a system watchlist's entries
+  (e.g. "Global Markets": major currencies, futures, and indices) fresh
+  from Yahoo Finance and lands them as one Parquet file per watchlist —
+  unlike the pipelines above, it reads nothing from S3, fetching every
+  entry itself via equicast-fx/-benchmark/-future's own clients.
 
 ## Disclaimer
 
@@ -69,8 +76,9 @@ for details. See
 [equicast-events](packages/events/README.md#disclaimer),
 [equicast-stock](packages/stock/README.md#disclaimer),
 [equicast-etf](packages/etf/README.md#disclaimer),
-[equicast-benchmark](packages/benchmark/README.md#disclaimer), and
-[equicast-future](packages/future/README.md#disclaimer) for the full
+[equicast-benchmark](packages/benchmark/README.md#disclaimer),
+[equicast-future](packages/future/README.md#disclaimer), and
+[equicast-watchlist](packages/watchlist/README.md#disclaimer) for the full
 text; each is also logged as a console warning the first time its client is
 used.
 
@@ -530,7 +538,49 @@ s3://equicast-market-data-<env>/
 ```
 
 Refreshed once daily automatically on weekdays, offset 15 minutes from the
-benchmark schedule so none of the five pipelines overlap.
+benchmark schedule so none of the five weekday pipelines overlap.
+
+## Watchlist data products
+
+A system watchlist (e.g. "Global Markets") is a curated list of fx pairs,
+futures, and benchmarks — configured in
+`packages/watchlist/config/global_markets.{dev,prod}.yaml` — built into a
+single snapshot fresh from yfinance, unlike every pipeline above: it never
+reads any of their already-published S3 output.
+
+```python
+from pathlib import Path
+
+from equicast_datafeed import DatafeedClient
+from equicast_watchlist import build_entries, load_watchlist_entries
+
+entries = load_watchlist_entries(Path("config/global_markets.dev.yaml"))
+build_entries(entries, DatafeedClient())
+# [{"asset_class": "future", "ticker": "GOLD", "symbol": "GC=F",
+#   "name": "Gold", "currency": "USD", "current_price": 2440.3,
+#   "change_1w_pct": 1.2, "change_1m_pct": -0.4,
+#   "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance"},
+#  ...]
+```
+
+`current_price` is always the instrument's own native currency — a system
+watchlist has no single owner to convert it for. `change_1w_pct`/
+`change_1m_pct` come back `None` when there isn't enough published history
+yet for a symbol, rather than failing the whole build — see
+[the watchlist pipeline docs](docs/watchlist-pipeline.md) for the exact
+lookback windows. The pipeline writes one Parquet file per watchlist
+(not per instrument, unlike every other pipeline here), landing in the
+same bucket:
+
+```
+s3://equicast-market-data-<env>/
+└── watchlist=GLOBAL_MARKETS/
+    └── entries.parquet
+```
+
+Refreshed once **weekly**, Saturday only — a system watchlist is a
+periodic snapshot, not a daily feed, and has no ordering dependency on the
+five weekday pipelines since it fetches everything itself.
 
 ## Documentation
 
@@ -545,9 +595,12 @@ benchmark schedule so none of the five pipelines overlap.
   for the market index (benchmark) pipeline
 - [Future pipeline: deployment and execution](docs/future-pipeline.md) — same,
   for the futures contract pipeline
+- [Watchlist pipeline: deployment and execution](docs/watchlist-pipeline.md) — same,
+  for the system watchlist pipeline (note: weekly, not daily, and reads
+  nothing from S3 — see that doc's "How this differs" section)
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark/future
-  ingestion), and how to troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark/future/
+  watchlist ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo
 - [Changelog](CHANGELOG.md)

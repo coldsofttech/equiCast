@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A sixth pipeline, `equicast-watchlist` (`packages/watchlist`), building
+  the first system watchlist's real content: "Global Markets" (16 futures
+  + 4 currency pairs [EUR/USD, GBP/USD, USD/JPY, USD/CNY — added to
+  `packages/fx/config/fx_pairs.{dev,prod}.yaml`] + 3 equity benchmarks +
+  VIX [added to `packages/benchmark/config/benchmarks.{dev,prod}.yaml`],
+  configurable via `packages/watchlist/config/global_markets.{dev,prod}.yaml`).
+  Architecturally distinct from every other pipeline: it reads nothing from
+  S3, fetching each entry fresh from yfinance via equicast-fx/-benchmark/
+  -future's own Client classes, and writes one Parquet file per *watchlist*
+  (`watchlist=<KEY>/entries.parquet`, all entries as rows) rather than one
+  per instrument. Each row carries `current_price` in the instrument's own
+  native currency plus `change_1w_pct`/`change_1m_pct` (from one month of
+  daily closes; `None` when there isn't enough history yet, rather than
+  failing the row). `watchlist-ingestion.yml` runs weekly (Saturday only,
+  06:00 UTC) — a system watchlist is a periodic snapshot, not a daily feed,
+  so it doesn't share the Monday-Friday schedule the other five pipelines
+  stagger across. Not yet wired into the backend/frontend — this is the
+  data-producing half; `backend/watchlists/views.py`'s `SYSTEM_WATCHLISTS`
+  still returns empty `holdings` for "Global Markets" until that's built.
+
 - A fifth ingestion pipeline, `equicast-future` (`packages/future`), for
   futures contracts (Gold, Silver, Platinum, Palladium, WTI/Brent Crude,
   Natural Gas, Heating Oil, Copper, Aluminum, Wheat, Corn, Soybeans,

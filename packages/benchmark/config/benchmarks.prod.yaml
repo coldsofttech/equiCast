@@ -52,3 +52,5 @@ benchmarks:
     symbol: "^GDAXI"
   - key: NIKKEI225
     symbol: "^N225"
+  - key: VIX
+    symbol: "^VIX"

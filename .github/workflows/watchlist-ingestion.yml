@@ -1,0 +1,108 @@
+name: Watchlist Ingestion
+
+on:
+  # Once weekly, Saturday only — unlike fx/stock/etf/benchmark/future-
+  # ingestion.yml (all Monday-Friday), a system watchlist is a snapshot
+  # meant to be refreshed periodically, not a daily feed, and Saturday
+  # gives it a full week's worth of trading (through Friday's close) to
+  # summarize. equicast-watchlist fetches straight from yfinance itself
+  # (see packages/watchlist/README.md) rather than reading any of the
+  # other five pipelines' S3 output, so it has no ordering dependency on
+  # them and no reason to run on their Monday-Friday schedule.
+  schedule:
+    - cron: "0 6 * * 6"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to run against"
+        type: choice
+        options:
+          - dev
+          - production
+        default: dev
+      max_workers:
+        description: "Concurrent fetches within each container"
+        default: "5"
+      max_calls:
+        description: "Max yfinance calls per period-seconds, per container"
+        default: "5"
+      period_seconds:
+        description: "Rate-limit window in seconds, per container"
+        default: "1.0"
+
+permissions:
+  id-token: write
+  packages: read
+  contents: read
+
+jobs:
+  # One job, one step per system watchlist — today just Global Markets.
+  # There's no "plan"/matrix-chunk job like the other five pipelines: a
+  # system watchlist's entry list is small enough (today: 24 for Global
+  # Markets) to fetch in a single container run, and no "build-catalog"
+  # job either, since equicast-watchlist doesn't produce (or read) a
+  # catalog/*.parquet file at all.
+  ingest:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve target environment, bucket, and config
+        id: env
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ENVIRONMENT=production
+          else
+            ENVIRONMENT="${{ github.event.inputs.environment || 'dev' }}"
+          fi
+
+          if [ "$ENVIRONMENT" = "production" ]; then
+            BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
+            CONFIG="config/global_markets.prod.yaml"
+          else
+            BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
+            CONFIG="config/global_markets.dev.yaml"
+          fi
+
+          if [ -z "$BUCKET" ]; then
+            echo "::error::MARKET_DATA_BUCKET_$(echo "$ENVIRONMENT" | tr '[:lower:]' '[:upper:]') repo variable is not set"
+            exit 1
+          fi
+
+          echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
+          echo "global_markets_config=$CONFIG" >> "$GITHUB_OUTPUT"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull equicast-watchlist image
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest
+
+      # --- Global Markets ---
+      - name: Build Global Markets watchlist entries
+        run: |
+          mkdir -p output
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:latest \
+            --watchlist-key GLOBAL_MARKETS \
+            --config "${{ steps.env.outputs.global_markets_config }}" \
+            --out /output \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Upload watchlist entries to S3
+        run: aws s3 cp output/ "s3://${{ steps.env.outputs.bucket }}/" --recursive
+
+      # (Additional system watchlists land here later as their own
+      # "Build <name> watchlist entries" step, each pointing at its own
+      # config file — no new job needed, no changes to the steps above.)
