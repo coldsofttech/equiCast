@@ -64,7 +64,7 @@ function PieDetailPage() {
   const { accountId, pieId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
+  const { accounts, setAccounts: setCachedAccounts } = useAccounts();
   const { profile: userProfile } = useCurrentUser();
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
 
@@ -182,7 +182,12 @@ function PieDetailPage() {
         eyebrow="Portfolio"
         title="Loading…"
         titleIcon={<Skeleton circle width="64px" height="64px" />}
-        titleBadges={<Skeleton circle width="110px" height="22px" />}
+        titleBadges={
+          <>
+            <Skeleton width="120px" height="1.25rem" />
+            <Skeleton circle width="110px" height="22px" />
+          </>
+        }
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
             Back to account
@@ -216,6 +221,7 @@ function PieDetailPage() {
   );
   const syncedIso = minLastUpdated(pie.holdings ?? []);
   const syncedDate = syncedIso && formatSyncedDate(syncedIso);
+  const accountName = accounts.find((a) => a.id === accountId)?.name;
 
   return (
     <AppShell
@@ -225,7 +231,10 @@ function PieDetailPage() {
       titleIcon={<IconBadge icon={pie.icon} defaultIcon={DEFAULT_PORTFOLIO_ICON} size={64} />}
       stickyTitle
       titleBadges={
-        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+        <>
+          {accountName && <Badge tone="purple">Account: {accountName}</Badge>}
+          {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
+        </>
       }
       actions={
         <>
