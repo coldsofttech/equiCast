@@ -184,7 +184,12 @@ function AccountDetailPage() {
         eyebrow="Account"
         title="Loading…"
         titleIcon={<Skeleton circle width="64px" height="64px" />}
-        titleBadges={<Skeleton circle width="110px" height="22px" />}
+        titleBadges={
+          <>
+            <Skeleton width="80px" height="1.25rem" />
+            <Skeleton circle width="110px" height="22px" />
+          </>
+        }
         actions={
           <Button variant="ghost" onClick={() => navigate("/accounts")}>
             Back to accounts
@@ -229,7 +234,10 @@ function AccountDetailPage() {
       titleIcon={<IconBadge icon={account.icon} defaultIcon={DEFAULT_ACCOUNT_ICON} size={64} />}
       stickyTitle
       titleBadges={
-        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+        <>
+          <Badge tone="accent">{account.account_type}</Badge>
+          {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
+        </>
       }
       actions={
         <Button
@@ -243,10 +251,6 @@ function AccountDetailPage() {
       }
       footer={<SiteFooter />}
     >
-      <div className="ec-account-detail-badges">
-        <Badge tone="accent">{account.account_type}</Badge>
-      </div>
-
       <div className="ec-stat-grid">
         <StatTile
           label="Value"
