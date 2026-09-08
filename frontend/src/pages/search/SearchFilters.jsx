@@ -21,6 +21,7 @@ const TYPES = [
   { value: "stock", label: "Stocks" },
   { value: "etf", label: "ETFs" },
   { value: "fx", label: "FX" },
+  { value: "benchmark", label: "Benchmark Index" },
 ];
 
 /**
@@ -32,10 +33,9 @@ const TYPES = [
  * (searchFilterOptions.js) rather than derived from the catalog, since
  * equiCast's ticker list is presently hand-picked from a small fixed set.
  * Type/Market cap/Region/Exchange only meaningfully narrow stock/etf rows,
- * and Sector/Industry only stock rows — fx always matches every one of
- * them regardless (see MarketDataClient.search's docstring) — but none of
- * the controls call that out per-row; a fx-heavy result set simply won't
- * visibly shrink as they tighten.
+ * and Sector/Industry only stock rows — a row from any other asset class
+ * has none of those fields (always `None`) and is excluded outright once
+ * such a filter is applied (see MarketDataClient.search's docstring).
  *
  * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange`/
  * `sector`/`industry` are the currently-applied filters (from the URL —
