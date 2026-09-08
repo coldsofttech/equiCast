@@ -23,10 +23,13 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
+import { MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import {
   computeHoldingValuation,
   summarizeHoldingValuations,
   buildDiversification,
+  formatSyncedDate,
+  minLastUpdated,
 } from "../holdingValuation.js";
 import "./AccountDetailPage.css";
 
@@ -188,6 +191,8 @@ function AccountDetailPage() {
 
   const directHoldings = account.holdings ?? [];
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  const syncedIso = minLastUpdated(allHoldings);
+  const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
@@ -206,6 +211,9 @@ function AccountDetailPage() {
       title={account.name}
       subtitle={account.description}
       stickyTitle
+      titleBadges={
+        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+      }
       actions={
         <Button
           variant="secondary"

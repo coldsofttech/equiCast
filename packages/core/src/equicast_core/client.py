@@ -483,9 +483,11 @@ class MarketDataClient:
         and `current_price_native`/`current_price` (the catalog's own
         last-published price, FX-converted to `default_currency` — the same
         convention `average_price`/`invested`/`dividends` already use, see
-        `transactions.views.resolve_converted_amounts`), so a caller can
-        derive current value/profit-loss without a market-data round trip
-        per ticker.
+        `transactions.views.resolve_converted_amounts`) and `last_updated`
+        (the catalog's own, i.e. that ticker's ingestion pipeline's last run
+        — see `equicast_core.catalog.build_catalog_rows`), so a caller can
+        derive current value/profit-loss, or a "Synced" date, without a
+        market-data round trip per ticker.
 
         Reads each distinct asset class present in `holdings` once (via
         `get_catalog`), plus the `fx` catalog for currency conversion, so a
@@ -538,6 +540,7 @@ class MarketDataClient:
                     "website": row.get("website") if row else None,
                     "current_price_native": current_price_native,
                     "current_price": current_price,
+                    "last_updated": row.get("last_updated") if row else None,
                 }
             )
         return enriched

@@ -85,3 +85,31 @@ export function buildDiversification(holdings, valuations) {
 
   return { sectorData, industryData, sectorScore };
 }
+
+/** A `last_updated` value is a full ISO 8601 datetime (see equicast_core's
+ * writers) — the Synced badge only needs the date. Shared by
+ * HoldingTickerPage (a single ticker's own marketProfile.last_updated) and
+ * AccountDetailPage/PieDetailPage (see `minLastUpdated` below). */
+export function formatSyncedDate(isoDatetime) {
+  const date = new Date(isoDatetime);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/**
+ * The oldest `last_updated` among `holdings` (see api/accounts.js's
+ * `Holding` typedef) — an account/pie's Synced badge should reflect its
+ * stalest holding rather than its freshest, so a user isn't shown a recent
+ * date while one ticker's catalog data is actually out of date. Holdings
+ * with no `last_updated` (unpublished ticker) are skipped; `null` if none
+ * of `holdings` have one (including an empty list).
+ */
+export function minLastUpdated(holdings) {
+  const timestamps = holdings
+    .map((h) => h.last_updated)
+    .filter(Boolean)
+    .map((iso) => ({ iso, time: new Date(iso).getTime() }))
+    .filter((entry) => !Number.isNaN(entry.time));
+  if (timestamps.length === 0) return null;
+  return timestamps.reduce((oldest, entry) => (entry.time < oldest.time ? entry : oldest)).iso;
+}

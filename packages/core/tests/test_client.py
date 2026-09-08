@@ -629,6 +629,7 @@ class TestEnrichHoldings:
                     "website": "https://investor.vanguard.com",
                     "sector": None,
                     "industry": None,
+                    "last_updated": "2026-08-30T09:00:00+00:00",
                 }
             ],
         )
@@ -645,6 +646,7 @@ class TestEnrichHoldings:
             "website": "https://investor.vanguard.com",
             "current_price_native": 450.0,
             "current_price": 450.0,
+            "last_updated": "2026-08-30T09:00:00+00:00",
         }
 
     def test_converts_current_price_using_the_direct_fx_pair(self, s3_client) -> None:
@@ -685,6 +687,7 @@ class TestEnrichHoldings:
         assert enriched["name"] is None
         assert enriched["current_price_native"] is None
         assert enriched["current_price"] is None
+        assert enriched["last_updated"] is None
 
     def test_returns_none_current_price_when_no_fx_rate_is_published(self, s3_client) -> None:
         _put_catalog(

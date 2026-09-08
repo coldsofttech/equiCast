@@ -60,6 +60,7 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("region", pa.string()),
         pa.field("sector", pa.string()),
         pa.field("industry", pa.string()),
+        pa.field("last_updated", pa.string()),
     ]
 )
 
@@ -94,7 +95,10 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     and `sector`/`industry` (a stock's own `sector`/`industry` fields;
     always `None` for etf/benchmark, which yfinance never populates these
     for — `category` is etf's closest equivalent but isn't surfaced here —
-    and for fx, which has no such concept at all).
+    and for fx, which has no such concept at all), and `last_updated` (every
+    asset class's profile carries this field already, stamped by its own
+    ingestion pipeline — see equicast_stock/etf/fx/benchmark's writers/
+    clients — so it round-trips here unchanged).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -116,6 +120,7 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "region": profile.get("region"),
                 "sector": profile.get("sector"),
                 "industry": profile.get("industry"),
+                "last_updated": profile.get("last_updated"),
             }
         )
     return rows
