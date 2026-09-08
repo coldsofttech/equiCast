@@ -610,45 +610,6 @@ class TestGetCatalog:
         assert client.get_catalog("stock") == []
 
 
-class TestGetWatchlistEntries:
-    def test_returns_the_published_rows(self, s3_client) -> None:
-        rows = [
-            {
-                "watchlist_key": "GLOBAL_MARKETS",
-                "asset_class": "future",
-                "ticker": "GOLD",
-                "symbol": "GC=F",
-                "name": "Gold",
-                "currency": "USD",
-                "current_price": 2440.3,
-                "change_1w_pct": 1.2,
-                "change_1m_pct": -0.4,
-                "last_updated": "2026-08-28T21:29:05+00:00",
-                "source": "yfinance",
-            }
-        ]
-        s3_client.put_object(
-            Bucket=BUCKET, Key="watchlist=GLOBAL_MARKETS/entries.parquet", Body=_parquet_bytes(rows)
-        )
-        client = MarketDataClient(BUCKET, s3_client=s3_client)
-
-        assert client.get_watchlist_entries("GLOBAL_MARKETS") == rows
-
-    def test_uppercases_the_key(self, s3_client) -> None:
-        rows = [{"watchlist_key": "GLOBAL_MARKETS", "ticker": "GOLD"}]
-        s3_client.put_object(
-            Bucket=BUCKET, Key="watchlist=GLOBAL_MARKETS/entries.parquet", Body=_parquet_bytes(rows)
-        )
-        client = MarketDataClient(BUCKET, s3_client=s3_client)
-
-        assert client.get_watchlist_entries("global_markets") == rows
-
-    def test_returns_empty_list_when_not_built_yet(self, s3_client) -> None:
-        client = MarketDataClient(BUCKET, s3_client=s3_client)
-
-        assert client.get_watchlist_entries("GLOBAL_MARKETS") == []
-
-
 class TestEnrichHoldings:
     def test_returns_empty_list_unchanged(self, s3_client) -> None:
         client = MarketDataClient(BUCKET, s3_client=s3_client)

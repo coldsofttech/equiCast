@@ -3,27 +3,25 @@
  */
 
 /**
- * @typedef {Object} WatchlistSystemEntry - one row of a system watchlist's
- *   pre-built content (Global Markets, Top Winners, or Top Losers — see
- *   equicast_watchlist.builder/writer and MarketDataClient.
- *   get_watchlist_entries). Not a real Holding: no `id` (nothing to key a
- *   remove action off), no shares/cost-basis fields. `current_price` is
- *   always this instrument's own native currency — a system watchlist has
- *   no single owner to convert it for.
+ * @typedef {Object} WatchlistSystemEntry - one row of Global Markets',
+ *   Top Winners', or Top Losers' content — computed live at request time
+ *   by backend/watchlists/system_watchlists.py from each asset class's own
+ *   published `catalog/<asset_class>.parquet` (see equicast_core.catalog),
+ *   not a separate ingestion pipeline. Not a real Holding: no `id`
+ *   (nothing to key a remove action off), no shares/cost-basis fields.
+ *   `current_price` is always this instrument's own native currency — a
+ *   system watchlist has no single owner to convert it for.
  * @property {"fx"|"future"|"benchmark"|"stock"|"etf"} asset_class
  * @property {string} ticker
- * @property {string} symbol
  * @property {string|null} name
  * @property {string|null} currency
  * @property {number|null} current_price
  * @property {number|null} change_1w_pct
  * @property {number|null} change_1m_pct
- * @property {number|null} [change_1y_pct] - Top Winners/Top Losers only —
- *   the trailing 1-year CAGR those two watchlists are ranked by, as a
- *   percent (see equicast_watchlist.movers). Never set on a Global Markets
- *   row.
- * @property {string} last_updated
- * @property {string} source
+ * @property {number|null} [change_1y_pct] - Top Winners/Top Losers (and
+ *   Your Top Winners/Your Top Losers, on a real Holding there — see
+ *   `Watchlist.holdings`) only — the trailing 1-year CAGR those rankings
+ *   use, as a percent. Never set on a Global Markets row.
  */
 
 /**
@@ -35,22 +33,25 @@
  *   defaults (see backend/watchlists/views.py's SYSTEM_WATCHLISTS — not
  *   user-editable, no `description`/`created_at`/`updated_at`), "custom"
  *   for one of the caller's own (up to MAX_WATCHLISTS, currently 5).
- * @property {(Holding|WatchlistSystemEntry)[]} holdings - always present;
- *   `WatchlistSystemEntry` rows for a system watchlist that's been built
- *   ("global-markets"/"top-winners"/"top-losers" — see
- *   backend/watchlists/views.py's `_SYSTEM_WATCHLIST_STORAGE_KEYS"),
- *   `holdings: []` for the two "(Your Accounts)" system watchlists
- *   (population is separate, not-yet-built work) and for any custom
+ * @property {(Holding|WatchlistSystemEntry)[]} holdings - always present.
+ *   `WatchlistSystemEntry` rows for "global-markets"/"top-winners"/
+ *   "top-losers" (a Global Markets row can still have every field but
+ *   `name`/`asset_class`/`ticker` `null`, if that instrument's own
+ *   ingestion pipeline hasn't published it yet — never dropped). Real
+ *   `Holding` rows (plus each one's own `change_1y_pct`) for
+ *   "top-winners-accounts"/"top-losers-accounts" — the caller's own
+ *   account/pie holdings that rank as a winner/loser, enriched the same
+ *   way a custom watchlist's holdings are. Empty for any of the five
+ *   system tabs with nothing currently qualifying, and for any custom
  *   watchlist with nothing added to it yet.
  */
 
 /**
  * GET /api/watchlists/ — see backend/watchlists/views.py's
  * WatchlistListView.get. Returns the five system watchlists (in a fixed
- * order — "global-markets"/"top-winners"/"top-losers" nested with their
- * `WatchlistSystemEntry` rows, the two "(Your Accounts)" ones still
- * `holdings: []`) followed by the caller's own custom ones, each nested
- * with its enriched real holdings — one fetch for the whole tabbed panel.
+ * order, each computed live — see `Watchlist.holdings`) followed by the
+ * caller's own custom ones, each nested with its enriched real holdings —
+ * one fetch for the whole tabbed panel.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @returns {Promise<Watchlist[]>}

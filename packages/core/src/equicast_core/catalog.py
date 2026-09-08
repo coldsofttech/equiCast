@@ -61,6 +61,9 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("region", pa.string()),
         pa.field("sector", pa.string()),
         pa.field("industry", pa.string()),
+        pa.field("cagr_1y", pa.float64()),
+        pa.field("change_1w_pct", pa.float64()),
+        pa.field("change_1m_pct", pa.float64()),
     ]
 )
 
@@ -100,6 +103,17 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     equivalent but isn't surfaced here — and for fx, which has no such
     concept at all).
 
+    Also folds in `cagr_1y`/`change_1w_pct`/`change_1m_pct` from that same
+    ticker's sibling `metrics.parquet` (see `equicast_metrics.MetricsClient.
+    metrics()`) when present alongside its `profile.parquet` — the same
+    ingestion run already writes both, and the workflow that calls this
+    (each ingestion pipeline's own "build-catalog" job) already downloads
+    both as one artifact, so this is a local read, never a new S3 round
+    trip. All three come back `None` for a ticker with no `metrics.parquet`
+    yet (an ingestion run predating this feature, or one that only
+    refreshed profiles) rather than raising — one asset class's catalog
+    build shouldn't fail because one ticker's metrics happened to lag.
+
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
     prefix = f"{asset_class.lower()}="
@@ -107,6 +121,10 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     for profile_path in sorted(output_dir.glob(f"{prefix}*/profile.parquet")):
         ticker = profile_path.parent.name[len(prefix) :]
         profile = pq.read_table(profile_path).to_pylist()[0]
+
+        metrics_path = profile_path.parent / "metrics.parquet"
+        metrics = pq.read_table(metrics_path).to_pylist()[0] if metrics_path.exists() else {}
+
         rows.append(
             {
                 "ticker": ticker,
@@ -120,6 +138,9 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "region": profile.get("region"),
                 "sector": profile.get("sector"),
                 "industry": profile.get("industry"),
+                "cagr_1y": metrics.get("cagr_1y"),
+                "change_1w_pct": metrics.get("change_1w_pct"),
+                "change_1m_pct": metrics.get("change_1m_pct"),
             }
         )
     return rows

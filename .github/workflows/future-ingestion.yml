@@ -163,23 +163,32 @@ jobs:
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
 
       # Feeds build-catalog below — that job needs every chunk's
-      # profile.parquet files in one place to build a complete catalog, and
-      # a matrix leg only ever sees its own chunk. Short retention: this
-      # artifact only exists to hand off within this run, not for later
-      # reference (see equicast_core.catalog's module docstring for why the
-      # catalog can't be built inside this per-chunk job at all).
-      - name: Publish this chunk's profiles for the catalog build
+      # profile.parquet (and, since equicast_core.catalog folds cagr_1y/
+      # change_1w_pct/change_1m_pct into the catalog too, each future's
+      # sibling metrics.parquet) in one place to build a complete catalog,
+      # and a matrix leg only ever sees its own chunk. Publishing
+      # metrics.parquet here — rather than having build-catalog read it
+      # back from S3 per future — keeps that job to the one S3 read per
+      # asset class it already does (the catalog itself), no per-future S3
+      # calls added. Short retention: this artifact only exists to hand off
+      # within this run, not for later reference (see equicast_core.
+      # catalog's module docstring for why the catalog can't be built
+      # inside this per-chunk job at all).
+      - name: Publish this chunk's profiles and metrics for the catalog build
         uses: actions/upload-artifact@v4
         with:
           name: future-profiles-${{ strategy.job-index }}
-          path: output/future=*/profile.parquet
+          path: |
+            output/future=*/profile.parquet
+            output/future=*/metrics.parquet
           retention-days: 1
 
   # Rebuilds catalog/future.parquet (see equicast_core.catalog) from every
-  # chunk's freshly-fetched profiles, merged back together here since no
-  # single ingest leg above ever sees the full future list. Needs no new
-  # S3 permission beyond what ingest already has (s3:PutObject) — it reads
-  # the profiles locally, from the downloaded artifacts, not back from S3.
+  # chunk's freshly-fetched profiles and metrics, merged back together here
+  # since no single ingest leg above ever sees the full future list. Needs
+  # no new S3 permission beyond what ingest already has (s3:PutObject) — it
+  # reads the profiles/metrics locally, from the downloaded artifacts, not
+  # back from S3.
   build-catalog:
     needs: [plan, ingest]
     if: needs.plan.outputs.has_chunks == 'true'
@@ -192,7 +201,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Download every chunk's profiles
+      - name: Download every chunk's profiles and metrics
         uses: actions/download-artifact@v4
         with:
           pattern: future-profiles-*

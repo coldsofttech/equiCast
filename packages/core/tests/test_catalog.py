@@ -17,6 +17,13 @@ def _write_profile(output_dir: Path, asset_class: str, ticker: str, profile: dic
     pq.write_table(table, directory / "profile.parquet")
 
 
+def _write_metrics(output_dir: Path, asset_class: str, ticker: str, metrics: dict) -> None:
+    directory = output_dir / f"{asset_class}={ticker}"
+    directory.mkdir(parents=True, exist_ok=True)
+    table = pa.Table.from_pylist([metrics])
+    pq.write_table(table, directory / "metrics.parquet")
+
+
 def _read_catalog(s3_client, key: str) -> list[dict]:
     response = s3_client.get_object(Bucket=BUCKET, Key=key)
     return pq.read_table(pa.BufferReader(response["Body"].read())).to_pylist()
@@ -38,6 +45,9 @@ _EMPTY_ROW = {
     "region": None,
     "sector": None,
     "industry": None,
+    "cagr_1y": None,
+    "change_1w_pct": None,
+    "change_1m_pct": None,
 }
 
 
@@ -108,6 +118,9 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Consumer Electronics",
+                "cagr_1y": None,
+                "change_1w_pct": None,
+                "change_1m_pct": None,
             },
             {
                 "ticker": "MSFT",
@@ -121,6 +134,9 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Software—Infrastructure",
+                "cagr_1y": None,
+                "change_1w_pct": None,
+                "change_1m_pct": None,
             },
         ]
 
@@ -174,8 +190,37 @@ class TestBuildCatalogRows:
                 "region": None,
                 "sector": None,
                 "industry": None,
+                "cagr_1y": None,
+                "change_1w_pct": None,
+                "change_1m_pct": None,
             }
         ]
+
+    def test_merges_cagr_and_change_from_the_sibling_metrics_parquet(self, tmp_path: Path) -> None:
+        _write_profile(tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc."})
+        _write_metrics(
+            tmp_path,
+            "stock",
+            "AAPL",
+            {"cagr_1y": 0.18, "change_1w_pct": 1.2, "change_1m_pct": -0.4, "cagr_2y": 0.3},
+        )
+
+        rows = build_catalog_rows(tmp_path, "stock")
+
+        assert rows[0]["cagr_1y"] == 0.18
+        assert rows[0]["change_1w_pct"] == 1.2
+        assert rows[0]["change_1m_pct"] == -0.4
+
+    def test_defaults_cagr_and_change_to_none_without_a_sibling_metrics_parquet(
+        self, tmp_path: Path
+    ) -> None:
+        _write_profile(tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc."})
+
+        rows = build_catalog_rows(tmp_path, "stock")
+
+        assert rows[0]["cagr_1y"] is None
+        assert rows[0]["change_1w_pct"] is None
+        assert rows[0]["change_1m_pct"] is None
 
     def test_only_matches_the_given_asset_class(self, tmp_path: Path) -> None:
         _write_profile(tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc."})

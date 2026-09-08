@@ -15,6 +15,13 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from watchlists.system_watchlists import (
+    build_account_movers,
+    build_global_markets,
+    build_top_movers,
+    stock_etf_catalog_rows,
+)
+
 #: Fields required to create a watchlist; description may be blank but must
 #: be present so a caller doesn't silently omit it.
 REQUIRED_CREATE_FIELDS = {"name", "description"}
@@ -25,31 +32,19 @@ UPDATABLE_FIELDS = {"name", "description"}
 #: WatchlistsClient's docstring — that store only ever holds user-created
 #: ones) — just a fixed list merged into WatchlistListView.get's response
 #: alongside the caller's own custom watchlists, each tagged "type": "system"
-#: there.
+#: there. All three "real content" ids (global-markets/top-winners/
+#: top-losers) and the two account-scoped ones
+#: (top-winners-accounts/top-losers-accounts) are computed live from
+#: already-published market/user data — see watchlists.system_watchlists
+#: and `WatchlistListView.get`'s `_system_holdings` — not by any separate
+#: ingestion pipeline.
 SYSTEM_WATCHLISTS: list[dict[str, Any]] = [
     {"id": "global-markets", "name": "Global Markets"},
     {"id": "top-winners", "name": "Top Winners"},
     {"id": "top-losers", "name": "Top Losers"},
-    {"id": "top-winners-accounts", "name": "Top Winners (Your Accounts)"},
-    {"id": "top-losers-accounts", "name": "Top Losers (Your Accounts)"},
+    {"id": "top-winners-accounts", "name": "Your Top Winners"},
+    {"id": "top-losers-accounts", "name": "Your Top Losers"},
 ]
-
-#: Maps a system watchlist's `id` to the S3 partition key `equicast-watchlist`
-#: publishes it under (`watchlist=<KEY>/entries.parquet` — see
-#: MarketDataClient.get_watchlist_entries and packages/watchlist/README.md).
-#: Deliberately a separate lookup from SYSTEM_WATCHLISTS itself rather than
-#: a third field on each entry there, so `**w` below only ever echoes
-#: display fields (id/name) to the frontend, never this internal wiring
-#: detail. A system watchlist with no entry here (the two "(Your Accounts)"
-#: ones, for now) always comes back with `holdings: []` — ranking a
-#: caller's own accounts' movers is deliberately separate, not-yet-built
-#: work; Top Winners/Top Losers themselves rank the whole stock/ETF
-#: universe (see equicast_watchlist.movers), not anyone's own holdings.
-_SYSTEM_WATCHLIST_STORAGE_KEYS: dict[str, str] = {
-    "global-markets": "GLOBAL_MARKETS",
-    "top-winners": "TOP_WINNERS",
-    "top-losers": "TOP_LOSERS",
-}
 
 #: One shared client for the process, mirroring accounts/views.py's
 #: module-level _client pattern.
@@ -99,26 +94,54 @@ class WatchlistListView(APIView):
     def get(self, request: Request) -> Response:
         user_id = request.user.user_id
         watchlists = _client.list_watchlists(user_id)
+        all_holdings = _holdings_client.list_holdings(user_id)
 
         watchlist_ids = {w["id"] for w in watchlists}
-        holdings = [
-            h for h in _holdings_client.list_holdings(user_id) if h["watchlist_id"] in watchlist_ids
-        ]
+        holdings = [h for h in all_holdings if h["watchlist_id"] in watchlist_ids]
         holdings_by_watchlist: dict[str, list[dict[str, Any]]] = {}
         for holding in _enrich_holdings(user_id, holdings):
             holdings_by_watchlist.setdefault(holding["watchlist_id"], []).append(holding)
 
+        # "Your Top Winners"/"Your Top Losers" only ever draw from real
+        # positions — account holdings and pie holdings — never a plain
+        # watchlist's reference tickers (those were never "held").
+        account_pie_holdings = [
+            h for h in all_holdings if h.get("account_id") is not None or h.get("pie_id") is not None
+        ]
+        # Computed at most once per request, lazily — most requests only
+        # ever render one or two system tabs' worth of holdings at a time,
+        # but every system tab is built here regardless (see `system`
+        # below), so this still needs to exist before whichever tab first
+        # asks for it.
+        stock_etf_rows: list[dict[str, Any]] | None = None
+
+        def _stock_etf_rows() -> list[dict[str, Any]]:
+            nonlocal stock_etf_rows
+            if stock_etf_rows is None:
+                stock_etf_rows = stock_etf_catalog_rows(_market_data_client)
+            return stock_etf_rows
+
+        def _system_holdings(watchlist_id: str) -> list[dict[str, Any]]:
+            if watchlist_id == "global-markets":
+                return build_global_markets(_market_data_client)
+            if watchlist_id in ("top-winners", "top-losers"):
+                direction = "winners" if watchlist_id == "top-winners" else "losers"
+                return build_top_movers(
+                    _stock_etf_rows(), direction, settings.MAX_HOLDINGS_FOR_WATCHLIST
+                )
+            if watchlist_id in ("top-winners-accounts", "top-losers-accounts"):
+                direction = "winners" if watchlist_id == "top-winners-accounts" else "losers"
+                return build_account_movers(
+                    _stock_etf_rows(),
+                    direction,
+                    settings.MAX_HOLDINGS_FOR_WATCHLIST,
+                    account_pie_holdings,
+                    lambda holdings: _enrich_holdings(user_id, holdings),
+                )
+            return []
+
         system = [
-            {
-                **w,
-                "type": "system",
-                "holdings": (
-                    _market_data_client.get_watchlist_entries(storage_key)
-                    if (storage_key := _SYSTEM_WATCHLIST_STORAGE_KEYS.get(w["id"]))
-                    else []
-                ),
-            }
-            for w in SYSTEM_WATCHLISTS
+            {**w, "type": "system", "holdings": _system_holdings(w["id"])} for w in SYSTEM_WATCHLISTS
         ]
         custom = [
             {**w, "type": "custom", "holdings": holdings_by_watchlist.get(w["id"], [])}

@@ -119,26 +119,24 @@ resource_usage:
   #   requests: 3 files/future (profile + metrics + price), all PUT
   #             4 runs * 16 futures * 3 files = 192 PUTs -> 200 (rounded up)
   #
-  # --- Watchlist (packages/watchlist/config/global_markets.dev.yaml,
-  #     currently 5 entries) --- writes one Parquet file per watchlist (not
-  #     per instrument) — see infracost-usage.prod.yml's Watchlist section
-  #     for the full reasoning.
-  #   size:     ~5 rows * ~250 bytes/row = ~1.25KB, rounded up to 5KB
-  #   storage:  5KB (one file)
-  #   manual runs: ~4/month
-  #   requests: 1 file (entries.parquet) per watchlist per run, all PUT
-  #             4 runs * 1 watchlist * 1 file = 4 PUTs -> 5 (rounded up)
+  # Global Markets/Top Winners/Top Losers/Your Top Winners/Your Top Losers
+  # (backend/watchlists/system_watchlists.py) add no separate pipeline or
+  # storage here — they're computed live, at request time, from each asset
+  # class's own already-published catalog/<asset_class>.parquet (folded
+  # into monthly_tier_2_requests' GET count below, not a new PUT source),
+  # replacing what used to be a dedicated equicast-watchlist pipeline
+  # writing its own watchlist=<KEY>/entries.parquet snapshot.
   #
   # --- Totals used below ---
-  #   storage:  315KB + 7,650KB + 2,695KB + 315KB + 720KB + 5KB = 11,700KB (~0.01GB, rounded up)
-  #   requests (PUT): 90 (FX) + 200 (stock) + 100 (ETF) + 90 (benchmark) + 200 (future) + 5 (watchlist) = 685
+  #   storage:  315KB + 7,650KB + 2,695KB + 315KB + 720KB = 11,695KB (~0.01GB, rounded up)
+  #   requests (PUT): 90 (FX) + 200 (stock) + 100 (ETF) + 90 (benchmark) + 200 (future) = 680
   #   requests (GET): 120 — backend on-demand reads, from the session model
   #             above (60/user/month * 2 users), not sized from the ticker
   #             count
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 0.01
-      monthly_tier_1_requests: 685 # PUT/COPY/POST/LIST — FX (90) + stock (200) + ETF (100) + benchmark (90) + future (200) + watchlist (5), manual runs only
+      monthly_tier_1_requests: 680 # PUT/COPY/POST/LIST — FX (90) + stock (200) + ETF (100) + benchmark (90) + future (200), manual runs only
       monthly_tier_2_requests: 120 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/

@@ -9,62 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Top Winners and Top Losers are now live system watchlists, ranking the
-  entire stock/ETF universe (every ticker in equicast-stock/-etf's own
-  `config/stocks.{dev,prod}.yaml`/`etfs.{dev,prod}.yaml`) by trailing
-  1-year CAGR rather than a hand-curated list like Global Markets.
-  `equicast_watchlist` gained a `movers` module and two new CLI modes:
-  `--mode rank` (step 1, independent of winners/losers — every ticker's
-  1-year CAGR via `equicast_metrics.MetricsClient`, written as a plain
-  JSON ranking so a future user-specific "my top winners/losers" can reuse
-  it) and `--mode movers --direction winners|losers` (steps 2/3 — that
-  ranking's top/bottom N, up to the `MAX_HOLDINGS_FOR_WATCHLIST` repo
-  variable, default 50, built into full watchlist entries the same way
-  `--mode config` does). Only positive-CAGR tickers ever land in Top
-  Winners, only negative-CAGR in Top Losers — neither list backfills with
-  wrong-sign tickers to reach the cap. Each entry carries one field Global
-  Markets' entries don't: `change_1y_pct`, the ranking CAGR itself as a
-  percent, rendered by `WatchlistEntryCard` as a third "1Y" stat only when
-  present. `watchlist-ingestion.yml` gained three steps ("Compute
-  stock/ETF 1-year CAGR rankings", "Build Top Winners watchlist entries",
-  "Build Top Losers watchlist entries") between Global Markets and the S3
-  upload; `backend/watchlists/views.py`'s `_SYSTEM_WATCHLIST_STORAGE_KEYS`
-  now maps `"top-winners"`/`"top-losers"` to `"TOP_WINNERS"`/
-  `"TOP_LOSERS"` (the two "(Your Accounts)" system watchlists still come
-  back `holdings: []`, unaffected — ranking a caller's own accounts'
-  movers is separate, not-yet-built work).
-
-- Global Markets is now a live system watchlist end to end.
-  `MarketDataClient.get_watchlist_entries` reads `equicast-watchlist`'s
-  published `watchlist=<KEY>/entries.parquet`; `backend/watchlists/views.py`
-  gained `_SYSTEM_WATCHLIST_STORAGE_KEYS` mapping `"global-markets"` to
-  `"GLOBAL_MARKETS"` so `WatchlistListView.get` populates that tab's
-  `holdings` from real data (every other system watchlist still comes back
-  `holdings: []`, unaffected). The frontend's `WatchlistsPanel` renders
-  every entry — system or custom — as a new `WatchlistEntryCard` (logo,
-  name, ticker, current price in the instrument's own native currency via
-  `current_price_native ?? current_price`, and green/red 1-week/1-month %
-  change), replacing the old list-row layout.
-
-- A sixth pipeline, `equicast-watchlist` (`packages/watchlist`), building
-  the first system watchlist's real content: "Global Markets" (16 futures
-  + 4 currency pairs [EUR/USD, GBP/USD, USD/JPY, USD/CNY — added to
-  `packages/fx/config/fx_pairs.{dev,prod}.yaml`] + 3 equity benchmarks +
-  VIX [added to `packages/benchmark/config/benchmarks.{dev,prod}.yaml`],
-  configurable via `packages/watchlist/config/global_markets.{dev,prod}.yaml`).
-  Architecturally distinct from every other pipeline: it reads nothing from
-  S3, fetching each entry fresh from yfinance via equicast-fx/-benchmark/
-  -future's own Client classes, and writes one Parquet file per *watchlist*
-  (`watchlist=<KEY>/entries.parquet`, all entries as rows) rather than one
-  per instrument. Each row carries `current_price` in the instrument's own
-  native currency plus `change_1w_pct`/`change_1m_pct` (from one month of
-  daily closes; `None` when there isn't enough history yet, rather than
-  failing the row). `watchlist-ingestion.yml` runs weekly (Saturday only,
-  06:00 UTC) — a system watchlist is a periodic snapshot, not a daily feed,
-  so it doesn't share the Monday-Friday schedule the other five pipelines
-  stagger across. Not yet wired into the backend/frontend — this is the
-  data-producing half; `backend/watchlists/views.py`'s `SYSTEM_WATCHLISTS`
-  still returns empty `holdings` for "Global Markets" until that's built.
+- All five system-default watchlists (Global Markets, Top Winners, Top
+  Losers, Your Top Winners, Your Top Losers) are now live, computed at
+  request time by `backend/watchlists/system_watchlists.py` from what
+  fx/stock/etf/benchmark/future-ingestion.yml already publish — no
+  separate ingestion pipeline builds or schedules them. `equicast_metrics.
+  MetricsClient.metrics()` gained `change_1w_pct`/`change_1m_pct`
+  (alongside the `cagr_1y` it already computed), shared by all five
+  pipelines for free; `equicast_core.catalog.build_catalog_rows` folds all
+  three into each asset class's `catalog/<asset_class>.parquet` from that
+  ticker's sibling `metrics.parquet` (each ingestion workflow's `ingest`
+  job now bundles `metrics.parquet` into the same artifact `build-catalog`
+  already downloads, so this adds zero S3 reads anywhere, build time or
+  request time — the backend needs at most one `get_catalog` read per
+  asset class per system watchlist). Global Markets looks up a
+  hand-curated 24-ticker list (`GLOBAL_MARKETS_ENTRIES`) across the fx/
+  future/benchmark catalogs; Top Winners/Top Losers rank the whole stock/
+  ETF universe by `cagr_1y`, positive/negative only, capped at
+  `MAX_HOLDINGS_FOR_WATCHLIST` (default 50); Your Top Winners/Your Top
+  Losers apply that same ranking to just the caller's own account/pie
+  holdings (deduplicated by ticker — plain watchlist holdings never
+  count, they were never "held"), enriched the same way a custom
+  watchlist's holdings are. `WatchlistEntryCard` renders a third "1Y"
+  stat (`change_1y_pct`, the ranking CAGR as a percent) whenever it's
+  present. Retires the `equicast-watchlist` package
+  (`packages/watchlist`) and its `watchlist-ingestion.yml`/
+  `watchlist-image.yml`/`watchlist-ci.yml` workflows entirely — the
+  weekly-batch, fetch-fresh-from-yfinance design they replaced never
+  reused any other pipeline's published data; this one reuses all of it.
 
 - A fifth ingestion pipeline, `equicast-future` (`packages/future`), for
   futures contracts (Gold, Silver, Platinum, Palladium, WTI/Brent Crude,

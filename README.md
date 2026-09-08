@@ -46,13 +46,11 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   metrics from Yahoo Finance and lands them in the same S3 bucket as
   Parquet, as a reference asset class (not directly holdable in a pie/
   account/watchlist, the same as a benchmark).
-- **Watchlist pipeline (`equicast-datafeed`, `equicast-fx`,
-  `equicast-benchmark`, `equicast-future`, `equicast-watchlist`)** — a
-  weekly (Saturday) pipeline that builds a system watchlist's entries
-  (e.g. "Global Markets": major currencies, futures, and indices) fresh
-  from Yahoo Finance and lands them as one Parquet file per watchlist —
-  unlike the pipelines above, it reads nothing from S3, fetching every
-  entry itself via equicast-fx/-benchmark/-future's own clients.
+
+See ["Watchlist data products"](#watchlist-data-products) below for how
+the five system-default watchlists (Global Markets, Top Winners/Losers,
+Your Top Winners/Losers) are served — computed live from the pipelines
+above at request time, not a pipeline of their own.
 
 ## Disclaimer
 
@@ -76,9 +74,8 @@ for details. See
 [equicast-events](packages/events/README.md#disclaimer),
 [equicast-stock](packages/stock/README.md#disclaimer),
 [equicast-etf](packages/etf/README.md#disclaimer),
-[equicast-benchmark](packages/benchmark/README.md#disclaimer),
-[equicast-future](packages/future/README.md#disclaimer), and
-[equicast-watchlist](packages/watchlist/README.md#disclaimer) for the full
+[equicast-benchmark](packages/benchmark/README.md#disclaimer), and
+[equicast-future](packages/future/README.md#disclaimer) for the full
 text; each is also logged as a console warning the first time its client is
 used.
 
@@ -542,65 +539,53 @@ benchmark schedule so none of the five weekday pipelines overlap.
 
 ## Watchlist data products
 
-A system watchlist is one curated or ranked snapshot, built fresh each run
-rather than accumulated over time. Three exist today:
+Five system-default watchlists (`GET /api/watchlists/` — see
+`backend/watchlists/system_watchlists.py`) are computed **live, at request
+time**, from what fx/stock/etf/benchmark/future-ingestion.yml have already
+published — no separate ingestion pipeline builds or schedules them:
 
-- **Global Markets** — a curated list of fx pairs, futures, and
-  benchmarks, configured in
-  `packages/watchlist/config/global_markets.{dev,prod}.yaml`.
-- **Top Winners** / **Top Losers** — the stock/ETF universe (the same
-  tickers `equicast-stock`/`equicast-etf` ingest, from their own
-  `config/stocks.{dev,prod}.yaml`/`etfs.{dev,prod}.yaml`) ranked by
-  trailing 1-year CAGR, keeping the highest/lowest performers, up to the
-  `MAX_HOLDINGS_FOR_WATCHLIST` repo variable (default 50). Computing every
-  ticker's CAGR is its own step (`equicast_watchlist.movers.
-  compute_cagr_rankings`), independent of which side of the ranking (if
-  any) ends up using it — the same ranking a future user-specific "my top
-  winners/losers" feature would need, just over a caller's own holdings
-  instead of the whole universe.
+- **Global Markets** — a hand-curated list of 16 futures, 4 fx pairs, and
+  4 benchmarks (`system_watchlists.GLOBAL_MARKETS_ENTRIES`), each looked
+  up in its own asset class's `catalog/<asset_class>.parquet`.
+- **Top Winners** / **Top Losers** — the whole stock/ETF universe (every
+  row in `catalog/stock.parquet` + `catalog/etf.parquet`) ranked by
+  trailing 1-year CAGR, keeping the positive/negative side, up to the
+  `MAX_HOLDINGS_FOR_WATCHLIST` setting (default 50).
+- **Your Top Winners** / **Your Top Losers** — the same ranking, restricted
+  to the caller's own account/pie holdings instead of the whole universe.
 
-All three are built fresh from yfinance every run — unlike every pipeline
-above, `equicast-watchlist` never reads any of their already-published S3
-output.
+This works because every ingestion pipeline's `catalog/<asset_class>.
+parquet` (see `equicast_core.catalog`) carries `cagr_1y`/`change_1w_pct`/
+`change_1m_pct` alongside each ticker's name/price/currency — folded in
+from that ticker's own `metrics.parquet` at catalog-build time (see
+`equicast_metrics.MetricsClient.metrics()`), itself already computed by
+every pipeline for its own risk/performance metrics. Reading one catalog
+file per asset class (at most five, in practice two or three per system
+watchlist) is all a request needs; nothing here calls yfinance or writes
+anything.
 
 ```python
-from pathlib import Path
+from equicast_core import MarketDataClient
+from watchlists.system_watchlists import build_global_markets, build_top_movers, stock_etf_catalog_rows
 
-from equicast_datafeed import DatafeedClient
-from equicast_watchlist import build_entries, load_watchlist_entries
+client = MarketDataClient("equicast-market-data-dev")
+build_global_markets(client)
+# [{"asset_class": "future", "ticker": "GOLD", "name": "Gold",
+#   "currency": "USD", "current_price": 2440.3,
+#   "change_1w_pct": 1.2, "change_1m_pct": -0.4}, ...]
 
-entries = load_watchlist_entries(Path("config/global_markets.dev.yaml"))
-build_entries(entries, DatafeedClient())
-# [{"asset_class": "future", "ticker": "GOLD", "symbol": "GC=F",
-#   "name": "Gold", "currency": "USD", "current_price": 2440.3,
-#   "change_1w_pct": 1.2, "change_1m_pct": -0.4,
-#   "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance"},
-#  ...]
+build_top_movers(stock_etf_catalog_rows(client), "winners", limit=50)
+# [{..., "change_1y_pct": 23.4}, ...]  # cagr_1y, as a percent
 ```
 
-`current_price` is always the instrument's own native currency — a system
-watchlist has no single owner to convert it for. `change_1w_pct`/
-`change_1m_pct` come back `None` when there isn't enough published history
-yet for a symbol, rather than failing the whole build — see
-[the watchlist pipeline docs](docs/watchlist-pipeline.md) for the exact
-lookback windows. Top Winners/Top Losers entries carry one further field,
-`change_1y_pct` — the trailing 1-year CAGR they're ranked by, as a percent.
-The pipeline writes one Parquet file per watchlist (not per instrument,
-unlike every other pipeline here), landing in the same bucket:
-
-```
-s3://equicast-market-data-<env>/
-├── watchlist=GLOBAL_MARKETS/
-│   └── entries.parquet
-├── watchlist=TOP_WINNERS/
-│   └── entries.parquet
-└── watchlist=TOP_LOSERS/
-    └── entries.parquet
-```
-
-Refreshed once **weekly**, Saturday only — a system watchlist is a
-periodic snapshot, not a daily feed, and has no ordering dependency on the
-five weekday pipelines since it fetches everything itself.
+`current_price` is always the instrument's own native currency for
+Global Markets/Top Winners/Top Losers (no single owner to convert it
+for); Your Top Winners/Your Top Losers holdings are enriched the same way
+a custom watchlist's holdings are (`current_price_native`/
+`current_price` in the caller's own `default_currency`). Any field can
+come back `None` when a ticker hasn't been published yet, rather than
+dropping the row — Global Markets always shows all 24 configured entries
+even if one's own pipeline hasn't run yet.
 
 ## Documentation
 
@@ -615,12 +600,9 @@ five weekday pipelines since it fetches everything itself.
   for the market index (benchmark) pipeline
 - [Future pipeline: deployment and execution](docs/future-pipeline.md) — same,
   for the futures contract pipeline
-- [Watchlist pipeline: deployment and execution](docs/watchlist-pipeline.md) — same,
-  for the system watchlist pipeline (note: weekly, not daily, and reads
-  nothing from S3 — see that doc's "How this differs" section)
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark/future/
-  watchlist ingestion), and how to troubleshoot it
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark/future
+  ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo
 - [Changelog](CHANGELOG.md)

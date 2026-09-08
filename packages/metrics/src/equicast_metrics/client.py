@@ -12,6 +12,7 @@ from equicast_datafeed import DatafeedClient, DatafeedError, round_value, warn_o
 from equicast_metrics.calculations import (
     annualized_volatility,
     cagr,
+    change_pct,
     max_drawdown,
     sharpe_ratio,
     trailing_window,
@@ -90,6 +91,14 @@ class MetricsClient:
             "sharpe_ratio": sharpe_ratio(window),
             "max_drawdown": max_drawdown(window),
             **cagr_values,
+            # Unlike cagr_1y, neither has a yfinance equivalent to prefer —
+            # always equicast-computed. Used by the watchlists API to
+            # render Global Markets/Top Winners/Top Losers/Your Top
+            # Winners/Your Top Losers without a separate ingestion pipeline
+            # (see backend/watchlists/views.py) — every asset class gets
+            # these for free here, no per-pipeline changes needed.
+            "change_1w_pct": change_pct(close, pd.DateOffset(weeks=1)),
+            "change_1m_pct": change_pct(close, pd.DateOffset(months=1)),
             "last_updated": datetime.now(UTC).isoformat(),
             "source": "equicast",
         }

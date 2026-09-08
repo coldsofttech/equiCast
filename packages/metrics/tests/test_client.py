@@ -75,6 +75,28 @@ def test_metrics_handles_empty_history() -> None:
     assert metrics["sharpe_ratio"] is None
     assert metrics["max_drawdown"] is None
     assert all(metrics[f"cagr_{y}y"] is None for y in (1, 2, 3, 5, 10))
+    assert metrics["change_1w_pct"] is None
+    assert metrics["change_1m_pct"] is None
+
+
+def test_metrics_computes_change_1w_and_1m_pct() -> None:
+    # 60 daily closes rising by 1.0/day, starting 2015-01-01: the last
+    # close (index 59) falls on 2015-03-01 (Jan has 31 days, 2015's Feb
+    # has 28), so a week back (2015-02-22, index 52) and a month back
+    # (2015-02-01, index 31) both land exactly on a present date.
+    history = _history([100.0 + i for i in range(60)])
+    metrics = MetricsClient("AAPL", datafeed=_datafeed({}, history)).metrics()
+
+    assert metrics["change_1w_pct"] == pytest.approx((159.0 - 152.0) / 152.0 * 100)
+    assert metrics["change_1m_pct"] == pytest.approx((159.0 - 131.0) / 131.0 * 100)
+
+
+def test_metrics_change_pct_is_none_without_enough_history() -> None:
+    history = _history([100.0, 101.0, 99.0])  # 3 days: not even a week back
+    metrics = MetricsClient("AAPL", datafeed=_datafeed({}, history)).metrics()
+
+    assert metrics["change_1w_pct"] is None
+    assert metrics["change_1m_pct"] is None
 
 
 def test_metrics_includes_last_updated_and_source() -> None:

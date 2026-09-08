@@ -74,3 +74,28 @@ def cagr(close: pd.Series, years: int) -> float | None:
         return None
 
     return round_value((end_price / start_price) ** (1 / years) - 1)
+
+
+def change_pct(close: pd.Series, offset: pd.DateOffset) -> float | None:
+    """Percent change from the closest trading day at or before (`close`'s
+    latest date - `offset`) to that latest close — e.g.
+    `change_pct(close, pd.DateOffset(weeks=1))` for a "1 week" change.
+    Falls back to the nearest earlier trading day when the exact calendar
+    date isn't one (weekends/holidays), same convention as `cagr`'s own
+    `start_cutoff` lookback. Returns `None` if `close` is empty or doesn't
+    reach back that far.
+    """
+    if close.empty:
+        return None
+
+    cutoff = close.index[-1] - offset
+    window = close[close.index <= cutoff]
+    if window.empty:
+        return None
+
+    reference_price = float(window.iloc[-1])
+    if reference_price == 0:
+        return None
+
+    current_price = float(close.iloc[-1])
+    return round_value((current_price - reference_price) / reference_price * 100)
