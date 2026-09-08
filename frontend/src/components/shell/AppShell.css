@@ -65,6 +65,53 @@
   display: none;
 }
 
+/* No fill — plain, centered, large, light text on the page background
+   (Claude.ai's own new-chat greeting is the reference), with a small
+   time-matched icon (sunrise/sun/sunset/moon, see greeting.js) carrying
+   the only color. `color` uses the theme text token rather than a fixed
+   white now that there's no background band to sit on. */
+.ec-page-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ec-s-12);
+  width: 100%;
+  margin-bottom: var(--ec-s-24);
+  font-size: var(--ec-fs-32);
+  font-weight: 300;
+  color: var(--ec-text);
+  animation: ec-greeting-in 0.4s ease;
+}
+
+.ec-page-greeting-icon {
+  font-size: var(--ec-fs-24);
+}
+
+.ec-page-greeting-icon--warning {
+  color: var(--ec-warning);
+}
+
+.ec-page-greeting-icon--purple {
+  color: var(--ec-purple);
+}
+
+@keyframes ec-greeting-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-page-greeting {
+    animation: none;
+  }
+}
+
 .ec-eyebrow {
   font-size: var(--ec-fs-12);
   font-weight: 700;
