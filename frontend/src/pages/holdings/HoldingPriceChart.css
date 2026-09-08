@@ -21,21 +21,58 @@
 
 /** The user's average buy price for this holding — a grey dashed
  * reference line so it reads as a marker against the real price series,
- * distinct from ec-pchart-compare-line's colored dashed overlay. */
+ * distinct from ec-pchart-compare-line's colored dashed overlay. The dash
+ * pattern continuously flows right-to-left (`stroke-dashoffset` walking
+ * positive — against the direction the line itself is drawn in, since it
+ * always runs from PADDING_LEFT to width - PADDING_RIGHT) — the opposite
+ * direction from ec-chart-current-line below, so the two read as distinct
+ * live references rather than one repeated treatment; `y1`/`y2` also
+ * transition so a change in its vertical position (a range switch
+ * rescaling the y-domain, or `avgPrice` itself changing) eases there
+ * instead of jumping. */
 .ec-chart-avg-line {
   stroke: var(--ec-text-muted);
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
+  animation: ec-chart-line-flow-rtl 1s linear infinite;
+  transition: y1 0.4s ease, y2 0.4s ease;
 }
 
 /** The latest real market price (marketProfile's day_close) — same dashed
- * treatment as ec-chart-avg-line, but in the accent info color so it reads
- * as a distinct marker whenever both lines are on-screen and don't
- * coincide with the series' own last bar. */
+ * treatment as ec-chart-avg-line, in the accent info color, but flowing
+ * left-to-right (the direction the line is actually drawn in) rather than
+ * against it. */
 .ec-chart-current-line {
   stroke: var(--ec-info);
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
+  animation: ec-chart-line-flow-ltr 1s linear infinite;
+  transition: y1 0.4s ease, y2 0.4s ease;
+}
+
+/* +/-20 is two full "6 4" (length-10) pattern cycles each — any multiple of
+   10 loops seamlessly, this just spreads it over more of the animation's
+   duration than one cycle would. Positive dashoffset walks the pattern
+   backward along the path (right-to-left here); negative walks it forward
+   (left-to-right). */
+@keyframes ec-chart-line-flow-rtl {
+  to {
+    stroke-dashoffset: 20;
+  }
+}
+
+@keyframes ec-chart-line-flow-ltr {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-chart-avg-line,
+  .ec-chart-current-line {
+    animation: none;
+    transition: none;
+  }
 }
 
 /** The 0% baseline in comparison (pctMode) charts — a plain gridline

@@ -131,9 +131,16 @@ const X_AXIS_MAX_TICKS = 6;
  * stays up (dimmed via "is-refreshing", styles/chart.css) rather than
  * flashing to a bare loading line. Once the new bars land, the main line
  * "draws" across the plot (stroke-dasharray/dashoffset, see mainLineRef's
- * effect) and the area fill/candles fade+rise in (`ec-chart-reveal`,
- * keyed on `revision` so it only replays when there's actually a new curve)
- * — the same reveal Yahoo Finance's own chart uses on a range change.
+ * effect) and the area fill/candles fade+rise in (`ec-chart-reveal`, keyed
+ * on `revision` so it only replays when there's actually a new curve) —
+ * the same reveal Yahoo Finance's own chart uses on a range change. The
+ * avg-price/current-price reference lines get their own, different
+ * treatment (HoldingPriceChart.css): a continuously flowing dash pattern —
+ * avg-price right-to-left, current-price left-to-right, opposite
+ * directions so the two read as distinct — rather than a one-shot reveal,
+ * plus a `transition: y1, y2` so a change in their vertical position (a
+ * range switch rescaling the y-domain, or the price itself changing) eases
+ * there instead of jumping.
  *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
