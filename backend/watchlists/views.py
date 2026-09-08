@@ -25,12 +25,7 @@ UPDATABLE_FIELDS = {"name", "description"}
 #: WatchlistsClient's docstring — that store only ever holds user-created
 #: ones) — just a fixed list merged into WatchlistListView.get's response
 #: alongside the caller's own custom watchlists, each tagged "type": "system"
-#: there. `holdings` comes back empty for every one of these for now: how
-#: each actually gets populated (global market movers, the caller's own
-#: accounts' movers, …) is deliberately separate, not-yet-built work — this
-#: only wires up the stable id/name shape the frontend's tabs render today,
-#: so populating them later is a backend-only change with no API shape
-#: change needed.
+#: there.
 SYSTEM_WATCHLISTS: list[dict[str, Any]] = [
     {"id": "global-markets", "name": "Global Markets"},
     {"id": "top-winners", "name": "Top Winners"},
@@ -38,6 +33,20 @@ SYSTEM_WATCHLISTS: list[dict[str, Any]] = [
     {"id": "top-winners-accounts", "name": "Top Winners (Your Accounts)"},
     {"id": "top-losers-accounts", "name": "Top Losers (Your Accounts)"},
 ]
+
+#: Maps a system watchlist's `id` to the S3 partition key `equicast-watchlist`
+#: publishes it under (`watchlist=<KEY>/entries.parquet` — see
+#: MarketDataClient.get_watchlist_entries and packages/watchlist/README.md).
+#: Deliberately a separate lookup from SYSTEM_WATCHLISTS itself rather than
+#: a third field on each entry there, so `**w` below only ever echoes
+#: display fields (id/name) to the frontend, never this internal wiring
+#: detail. A system watchlist with no entry here (every one but Global
+#: Markets, for now) always comes back with `holdings: []` — how each of
+#: those gets populated (global market movers, the caller's own accounts'
+#: movers, …) is deliberately separate, not-yet-built work.
+_SYSTEM_WATCHLIST_STORAGE_KEYS: dict[str, str] = {
+    "global-markets": "GLOBAL_MARKETS",
+}
 
 #: One shared client for the process, mirroring accounts/views.py's
 #: module-level _client pattern.
@@ -96,7 +105,18 @@ class WatchlistListView(APIView):
         for holding in _enrich_holdings(user_id, holdings):
             holdings_by_watchlist.setdefault(holding["watchlist_id"], []).append(holding)
 
-        system = [{**w, "type": "system", "holdings": []} for w in SYSTEM_WATCHLISTS]
+        system = [
+            {
+                **w,
+                "type": "system",
+                "holdings": (
+                    _market_data_client.get_watchlist_entries(storage_key)
+                    if (storage_key := _SYSTEM_WATCHLIST_STORAGE_KEYS.get(w["id"]))
+                    else []
+                ),
+            }
+            for w in SYSTEM_WATCHLISTS
+        ]
         custom = [
             {**w, "type": "custom", "holdings": holdings_by_watchlist.get(w["id"], [])}
             for w in watchlists

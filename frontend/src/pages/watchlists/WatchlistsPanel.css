@@ -36,11 +36,10 @@
   margin-left: auto;
 }
 
-.ec-watchlist-row-actions {
-  display: flex;
-  align-items: center;
+.ec-watchlist-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: var(--ec-s-12);
-  flex-shrink: 0;
 }
 
 .ec-watchlist-holding-hint {

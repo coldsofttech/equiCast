@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Global Markets is now a live system watchlist end to end.
+  `MarketDataClient.get_watchlist_entries` reads `equicast-watchlist`'s
+  published `watchlist=<KEY>/entries.parquet`; `backend/watchlists/views.py`
+  gained `_SYSTEM_WATCHLIST_STORAGE_KEYS` mapping `"global-markets"` to
+  `"GLOBAL_MARKETS"` so `WatchlistListView.get` populates that tab's
+  `holdings` from real data (every other system watchlist still comes back
+  `holdings: []`, unaffected). The frontend's `WatchlistsPanel` renders
+  every entry — system or custom — as a new `WatchlistEntryCard` (logo,
+  name, ticker, current price in the instrument's own native currency via
+  `current_price_native ?? current_price`, and green/red 1-week/1-month %
+  change), replacing the old list-row layout.
+
 - A sixth pipeline, `equicast-watchlist` (`packages/watchlist`), building
   the first system watchlist's real content: "Global Markets" (16 futures
   + 4 currency pairs [EUR/USD, GBP/USD, USD/JPY, USD/CNY — added to

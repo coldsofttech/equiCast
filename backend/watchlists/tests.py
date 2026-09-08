@@ -34,16 +34,18 @@ class WatchlistListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("watchlists.views._market_data_client")
     @patch("watchlists.views._holdings_client")
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_system_watchlists_with_empty_holdings(
-        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+    def test_get_returns_system_watchlists_with_empty_holdings_when_nothing_published(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client, mock_market_data_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_watchlists.return_value = []
         mock_holdings_client.list_holdings.return_value = []
+        mock_market_data_client.get_watchlist_entries.return_value = []
 
         response = self.client.get(reverse("watchlists-list"), **AUTH_HEADER)
 
@@ -51,6 +53,45 @@ class WatchlistListViewTests(TestCase):
         self.assertEqual(
             response.json(), [{**w, "type": "system", "holdings": []} for w in SYSTEM_WATCHLISTS]
         )
+        mock_market_data_client.get_watchlist_entries.assert_called_once_with("GLOBAL_MARKETS")
+
+    @patch("watchlists.views._market_data_client")
+    @patch("watchlists.views._holdings_client")
+    @patch("watchlists.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_get_populates_global_markets_from_the_published_watchlist_entries(
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.list_watchlists.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
+        entry = {
+            "watchlist_key": "GLOBAL_MARKETS",
+            "asset_class": "future",
+            "ticker": "GOLD",
+            "symbol": "GC=F",
+            "name": "Gold",
+            "currency": "USD",
+            "current_price": 2440.3,
+            "change_1w_pct": 1.2,
+            "change_1m_pct": -0.4,
+            "last_updated": "2026-08-28T21:29:05+00:00",
+            "source": "yfinance",
+        }
+        mock_market_data_client.get_watchlist_entries.return_value = [entry]
+
+        response = self.client.get(reverse("watchlists-list"), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        global_markets = next(w for w in body if w["id"] == "global-markets")
+        self.assertEqual(global_markets["holdings"], [entry])
+        # Every other system watchlist has no storage key mapped yet, so
+        # none of them ever call get_watchlist_entries at all.
+        other_system = [w for w in body if w["type"] == "system" and w["id"] != "global-markets"]
+        self.assertTrue(all(w["holdings"] == [] for w in other_system))
+        mock_market_data_client.get_watchlist_entries.assert_called_once_with("GLOBAL_MARKETS")
 
     @patch("watchlists.views._market_data_client")
     @patch("watchlists.views._profile_client")
@@ -85,6 +126,7 @@ class WatchlistListViewTests(TestCase):
             "current_price": 200.0,
         }
         mock_market_data_client.enrich_holdings.return_value = [enriched_holding]
+        mock_market_data_client.get_watchlist_entries.return_value = []
 
         response = self.client.get(reverse("watchlists-list"), **AUTH_HEADER)
 
@@ -97,16 +139,18 @@ class WatchlistListViewTests(TestCase):
         # filtered out before enrichment (see WatchlistListView.get).
         mock_market_data_client.enrich_holdings.assert_called_once_with([holding], "USD")
 
+    @patch("watchlists.views._market_data_client")
     @patch("watchlists.views._holdings_client")
     @patch("watchlists.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_system_watchlists_before_custom_ones(
-        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client
+        self, mock_jwks_client, mock_decode, mock_client, mock_holdings_client, mock_market_data_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_watchlists.return_value = [WATCHLIST]
         mock_holdings_client.list_holdings.return_value = []
+        mock_market_data_client.get_watchlist_entries.return_value = []
 
         response = self.client.get(reverse("watchlists-list"), **AUTH_HEADER)
 

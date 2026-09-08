@@ -455,6 +455,20 @@ class MarketDataClient:
         rows = self._read_parquet(catalog_key(asset_class))
         return rows if rows is not None else []
 
+    def get_watchlist_entries(self, key: str) -> list[dict[str, Any]]:
+        """Return every `{watchlist_key, asset_class, ticker, symbol, name,
+        currency, current_price, change_1w_pct, change_1m_pct, last_updated,
+        source}` row `equicast-watchlist` last published for the system
+        watchlist `key` (e.g. "GLOBAL_MARKETS" — see
+        `packages/watchlist/src/equicast_watchlist/writer.py`), or `[]` if
+        that watchlist hasn't been built yet (no ingestion run, or the key
+        doesn't match any configured system watchlist). Unlike a real
+        holding, `current_price` here is always in the instrument's own
+        native currency — a system watchlist has no single owner to convert
+        it for."""
+        rows = self._read_parquet(f"watchlist={key.upper()}/entries.parquet")
+        return rows if rows is not None else []
+
     def _latest_fx_rate(
         self, from_currency: str, to_currency: str, fx_catalog: dict[str, dict[str, Any]]
     ) -> float | None:

@@ -1,0 +1,87 @@
+.ec-watchlist-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-12) var(--ec-s-16);
+  border: 1px solid var(--ec-border);
+  border-radius: var(--ec-r-12);
+  background: var(--ec-surface);
+}
+
+.ec-watchlist-card-remove {
+  position: absolute;
+  top: var(--ec-s-8);
+  right: var(--ec-s-8);
+}
+
+.ec-watchlist-card-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+  min-width: 0;
+  padding-right: var(--ec-s-24);
+}
+
+.ec-watchlist-card-titles {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-2);
+  min-width: 0;
+}
+
+.ec-watchlist-card-name {
+  font-size: var(--ec-fs-14);
+  font-weight: 600;
+  color: var(--ec-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-watchlist-card-ticker {
+  font-size: var(--ec-fs-12);
+  font-family: var(--ec-font-mono);
+  color: var(--ec-text-subtle);
+}
+
+.ec-watchlist-card-price {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-20);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-watchlist-card-changes {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+}
+
+.ec-watchlist-card-change {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-s-4);
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+}
+
+.ec-watchlist-card-change-label {
+  font-family: var(--ec-font-sans);
+  font-size: var(--ec-fs-12);
+  font-weight: 600;
+  color: var(--ec-text-subtle);
+}
+
+.ec-watchlist-card-change.is-up {
+  color: var(--ec-success);
+}
+
+.ec-watchlist-card-change.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-watchlist-card-change.is-flat {
+  color: var(--ec-text-subtle);
+}
