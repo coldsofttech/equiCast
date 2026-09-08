@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A fifth ingestion pipeline, `equicast-future` (`packages/future`), for
+  futures contracts (Gold, Silver, Platinum, Palladium, WTI/Brent Crude,
+  Natural Gas, Heating Oil, Copper, Aluminum, Wheat, Corn, Soybeans,
+  Coffee, Cotton, Sugar — 16 total, same list in both dev and prod
+  configs) — mirrors `equicast-benchmark` exactly (a future is a single
+  yfinance symbol, no dividends/fundamentals), landing as `future=<KEY>/
+  {profile,metrics,price}.parquet` in the shared market-data bucket and a
+  `catalog/future.parquet` search catalog. `future-ingestion.yml` runs
+  once daily on weekdays at 23:15 UTC, 15 minutes after
+  `benchmark-ingestion.yml` (`fx > etf > stock > benchmark > future`, none
+  ever overlap). Like a benchmark, a future isn't directly holdable in a
+  pie/account/watchlist — `equicast_core.client.ASSET_CLASSES` gained
+  `"future"` as an opt-in-only search class (not part of
+  `DEFAULT_SEARCH_ASSET_CLASSES`), and `equicast_core.catalog`'s
+  `--asset-class` choices gained it too; no change to
+  `backend/holdings/views.py`'s own (narrower) holdable-asset-class set.
+
 - A watchlists panel on `/dashboard` (`WatchlistsPanel`, below the accounts
   grid), tabbed across five system-default watchlists (Global Markets, Top
   Winners, Top Losers, Top Winners/Losers within your accounts — always

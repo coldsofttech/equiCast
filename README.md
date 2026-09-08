@@ -40,14 +40,20 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   (e.g. S&P 500, FTSE 100, MSCI World) profiles, daily prices, and risk
   metrics from Yahoo Finance and lands them in the same S3 bucket as
   Parquet, for comparing a holding/pie against a benchmark.
+- **Future data pipeline (`equicast-datafeed`, `equicast-metrics`,
+  `equicast-future`)** — a scheduled pipeline that extracts futures
+  contract (e.g. gold, crude oil, wheat) profiles, daily prices, and risk
+  metrics from Yahoo Finance and lands them in the same S3 bucket as
+  Parquet, as a reference asset class (not directly holdable in a pie/
+  account/watchlist, the same as a benchmark).
 
 ## Disclaimer
 
-FX, stock, ETF, and benchmark profile/price data is sourced via
+FX, stock, ETF, benchmark, and future profile/price data is sourced via
 [yfinance](https://github.com/ranaroussi/yfinance) (Yahoo Finance) for
 educational and informational purposes only — not financial advice, with no
-guarantee of accuracy, completeness, or timeliness. FX/stock/ETF/benchmark
-risk metrics (volatility, Sharpe ratio, max drawdown, CAGR) and stock
+guarantee of accuracy, completeness, or timeliness. FX/stock/ETF/benchmark/
+future risk metrics (volatility, Sharpe ratio, max drawdown, CAGR) and stock
 fundamentals (PE, EPS, margins, returns, leverage) are calculated by
 equicast where yfinance doesn't provide them directly, not sourced from a
 licensed provider —
@@ -62,8 +68,9 @@ for details. See
 [equicast-dividends](packages/dividends/README.md#disclaimer),
 [equicast-events](packages/events/README.md#disclaimer),
 [equicast-stock](packages/stock/README.md#disclaimer),
-[equicast-etf](packages/etf/README.md#disclaimer), and
-[equicast-benchmark](packages/benchmark/README.md#disclaimer) for the full
+[equicast-etf](packages/etf/README.md#disclaimer),
+[equicast-benchmark](packages/benchmark/README.md#disclaimer), and
+[equicast-future](packages/future/README.md#disclaimer) for the full
 text; each is also logged as a console warning the first time its client is
 used.
 
@@ -463,7 +470,67 @@ s3://equicast-market-data-<env>/
 ```
 
 Refreshed once daily automatically on weekdays, offset 15 minutes from the
-stock schedule so none of the four pipelines overlap.
+stock schedule so none of the five pipelines overlap.
+
+## Future data products
+
+Each configured future (a futures contract — default: Gold, Silver,
+Platinum, Palladium, WTI Crude, Brent Crude, Natural Gas, Heating Oil,
+Copper, Aluminum, Wheat, Corn, Soybeans, Coffee, Cotton, Sugar) yields a
+profile, daily prices, and risk metrics — the same three data products as
+Benchmark, since a future is a single yfinance symbol (like a stock
+ticker), not a pair, and pays no dividends/has no fundamentals. Unlike
+FX/stock/ETF, a future isn't directly holdable in a pie/account/watchlist —
+it's a reference asset class, the same as a benchmark.
+
+```python
+from equicast_future import FutureClient
+
+FutureClient("GOLD", "GC=F").profile()
+# {"key": "GOLD", "symbol": "GC=F", "name": "Gold", "exchange": "CMX",
+#  "currency": "USD", "region": None,
+#  "last_updated": "2026-08-28T21:29:05+00:00", "source": "yfinance",
+#  "day_open": 2410.5, "day_high": 2455.2, "day_low": 2398.1,
+#  "day_close": 2440.3, "year_open": 2100.0, "year_high": 2500.8,
+#  "year_low": 1900.4, "year_close": 2440.3}
+```
+
+`key` is a stable, human-readable S3 partition identifier you choose (e.g.
+`"GOLD"`); `symbol` is the exact yfinance ticker to fetch (e.g. `"GC=F"`).
+`name` is derived from yfinance's own `longName`/`shortName`, same fallback
+`equicast-benchmark`'s `name` uses — see
+[equicast-future's README](packages/future/README.md) for the full
+field-by-field breakdown.
+
+```python
+FutureClient("GOLD", "GC=F").prices()
+# [{"key": "GOLD", "symbol": "GC=F", "currency": "USD", "date": "2026-01-02",
+#   "open": 2400.0, "high": 2420.0, "low": 2390.0, "close": 2410.0,
+#   "average": 2405.0, "last_updated": "2026-08-29T11:10:39+00:00",
+#   "source": "yfinance"},
+#  ...]
+
+MetricsClient("GC=F").metrics()   # volatility, Sharpe ratio, max drawdown, CAGR — same as FX/stock/ETF/benchmark
+```
+
+One row per trading day, current-year-only by default with the same
+`--full-load` option as FX/stock/ETF/benchmark — see
+[the future pipeline docs](docs/future-pipeline.md). The pipeline writes
+all three as Parquet, landing in the same bucket as FX/stock/ETF/benchmark
+data:
+
+```
+s3://equicast-market-data-<env>/
+└── future=GOLD/
+    ├── profile.parquet
+    ├── metrics.parquet
+    └── price/
+        ├── history.parquet
+        └── current.parquet
+```
+
+Refreshed once daily automatically on weekdays, offset 15 minutes from the
+benchmark schedule so none of the five pipelines overlap.
 
 ## Documentation
 
@@ -476,8 +543,10 @@ stock schedule so none of the four pipelines overlap.
   for the ETF ticker pipeline
 - [Benchmark pipeline: deployment and execution](docs/benchmark-pipeline.md) — same,
   for the market index (benchmark) pipeline
+- [Future pipeline: deployment and execution](docs/future-pipeline.md) — same,
+  for the futures contract pipeline
 - [AWS ↔ GitHub OIDC setup](docs/aws-github-oidc-setup.md) — how GitHub Actions
-  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark
+  authenticates to AWS (Terraform, ECR/S3 deploy, FX/stock/ETF/benchmark/future
   ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo

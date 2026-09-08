@@ -1,7 +1,7 @@
 """Class-based client for reading equicast's S3 market-data layout.
 
 Generic across consumers (Django backend, Lambda, scripts) and across asset
-classes (`fx`/`stock`/`etf`/`benchmark`) — it only knows the S3 key layout
+classes (`fx`/`stock`/`etf`/`benchmark`/`future`) — it only knows the S3 key layout
 the ingestion pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
 `<asset_class>=<symbol>/price/current.parquet` and
 `<asset_class>=<symbol>/price/history.parquet`,
@@ -29,17 +29,20 @@ from equicast_core.catalog import catalog_key
 #: accept for a direct, explicit request — a symbol's own profile/metrics/
 #: prices/dividends, or a `search()` call that explicitly names it via
 #: `asset_classes`. Deliberately broader than `DEFAULT_SEARCH_ASSET_CLASSES`
-#: below: `benchmark` is fetchable/searchable on request (e.g. the holding
-#: page's "compare against a benchmark" picker explicitly searches
-#: `asset_classes=["benchmark"]`), but isn't one of the classes a plain,
-#: unfiltered search (TopbarSearch, SearchPage's "All types") scans.
-ASSET_CLASSES = ("fx", "stock", "etf", "benchmark")
+#: below: `benchmark`/`future` are fetchable/searchable on request (e.g. the
+#: holding page's "compare against a benchmark" picker explicitly searches
+#: `asset_classes=["benchmark"]`), but aren't among the classes a plain,
+#: unfiltered search (TopbarSearch, SearchPage's "All types") scans — a
+#: futures contract, like a benchmark, isn't something a pie/account/
+#: watchlist holding can be created against (see backend/holdings/views.py's
+#: own, narrower ASSET_CLASSES), just a reference symbol.
+ASSET_CLASSES = ("fx", "stock", "etf", "benchmark", "future")
 
 #: Every asset class `search()` scans when no `asset_classes` filter is
 #: given, in a fixed order so results are grouped predictably rather than
 #: interleaved by whatever order a caller happened to pass filters in.
 #: Narrower than `ASSET_CLASSES` on purpose — see that constant's docstring
-#: for why `benchmark` is opt-in only, not part of this default set.
+#: for why `benchmark`/`future` are opt-in only, not part of this default set.
 DEFAULT_SEARCH_ASSET_CLASSES = ("fx", "stock", "etf")
 
 #: Every price range get_prices()/PricesView accepts, in the order a range
@@ -555,12 +558,12 @@ class MarketDataClient:
     ) -> list[dict[str, Any]]:
         """Case-insensitive substring match of `query` against every
         catalog row's `ticker` and `name`, across `asset_classes` (default:
-        `DEFAULT_SEARCH_ASSET_CLASSES` — `benchmark` is scanned only when a
-        caller explicitly asks for it, e.g. `asset_classes=["benchmark"]`;
-        see that constant's docstring for why). Reads each scanned asset
-        class's catalog file once (via `get_catalog`) rather than the
-        bucket itself — no per-ticker S3 reads here, unlike
-        `get_profile`/`get_prices`.
+        `DEFAULT_SEARCH_ASSET_CLASSES` — `benchmark`/`future` are scanned
+        only when a caller explicitly asks for one, e.g.
+        `asset_classes=["benchmark"]`; see that constant's docstring for
+        why). Reads each scanned asset class's catalog file once (via
+        `get_catalog`) rather than the bucket itself — no per-ticker S3
+        reads here, unlike `get_profile`/`get_prices`.
 
         `min_market_cap`/`max_market_cap`, `exchange`, `region`, `sector`,
         and `industry`, when given, additionally filter stock/etf rows by
@@ -569,19 +572,19 @@ class MarketDataClient:
         `exchange`, `region`, `sector`, and `industry` respectively (see
         `equicast_core.catalog.build_catalog_rows`) — fx rows always match
         every one of these regardless, having none of those concepts for a
-        currency pair; etf/benchmark rows have no `sector`/`industry` of
-        their own either (always `None`), so a row from either is excluded
-        whenever either of those two filters is given, the same as a stock
-        row missing the field — a benchmark row is likewise excluded
-        whenever `min_market_cap`/`max_market_cap` is given, having no
-        market-cap concept of its own (unlike etf's `total_assets` stand-
-        in). `exchange`/`region`/`sector`/`industry` match
-        case-insensitively against the row's exact value (not a substring,
-        unlike `query`), since all four are short codes/labels (e.g.
-        "NMS"/"us"/"Technology"), not free text. A stock/etf/benchmark row
-        missing the field being filtered on is excluded whenever that
-        filter is given, rather than guessed to match — there's nothing to
-        compare it against.
+        currency pair; etf/benchmark/future rows have no `sector`/`industry`
+        of their own either (always `None`), so a row from any of the three
+        is excluded whenever either of those two filters is given, the same
+        as a stock row missing the field — a benchmark/future row is
+        likewise excluded whenever `min_market_cap`/`max_market_cap` is
+        given, having no market-cap concept of its own (unlike etf's
+        `total_assets` stand-in). `exchange`/`region`/`sector`/`industry`
+        match case-insensitively against the row's exact value (not a
+        substring, unlike `query`), since all four are short codes/labels
+        (e.g. "NMS"/"us"/"Technology"), not free text. A stock/etf/
+        benchmark/future row missing the field being filtered on is
+        excluded whenever that filter is given, rather than guessed to
+        match — there's nothing to compare it against.
 
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""
