@@ -7,6 +7,7 @@ import AssetIcon from "../../components/core/AssetIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import SearchFilters from "./SearchFilters.jsx";
+import SearchSkeleton from "./SearchSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
@@ -169,7 +170,7 @@ function SearchPage() {
           description="Use the search box in the top bar to look up a stock, ETF or FX pair, or apply a filter."
         />
       ) : isLoading ? (
-        <p className="ec-loading">Searching…</p>
+        <SearchSkeleton />
       ) : results.length === 0 ? (
         <EmptyState
           title="No matches"
