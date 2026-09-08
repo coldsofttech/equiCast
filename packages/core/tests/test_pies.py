@@ -46,6 +46,22 @@ def test_create_pie_persists_and_returns_the_pie(s3_client) -> None:
     assert client.list_pies("auth0|abc123") == [pie]
 
 
+def test_create_pie_defaults_icon_to_none(s3_client) -> None:
+    client = PiesClient(BUCKET, s3_client=s3_client)
+
+    pie = _create(client, "auth0|abc123")
+
+    assert pie["icon"] is None
+
+
+def test_create_pie_persists_a_given_icon(s3_client) -> None:
+    client = PiesClient(BUCKET, s3_client=s3_client)
+
+    pie = _create(client, "auth0|abc123", icon="pie-chart-fill")
+
+    assert pie["icon"] == "pie-chart-fill"
+
+
 def test_list_pies_filters_by_account_id(s3_client) -> None:
     client = PiesClient(BUCKET, s3_client=s3_client)
     pie_a = _create(client, "auth0|abc123", account_id="acc-a")
@@ -114,6 +130,15 @@ def test_update_pie_patches_fields_and_bumps_updated_at(s3_client) -> None:
     assert updated["account_id"] == ACCOUNT_ID
     assert updated["updated_at"] >= pie["updated_at"]
     assert client.list_pies("auth0|abc123") == [updated]
+
+
+def test_update_pie_can_set_icon(s3_client) -> None:
+    client = PiesClient(BUCKET, s3_client=s3_client)
+    pie = _create(client, "auth0|abc123")
+
+    updated = client.update_pie("auth0|abc123", pie["id"], icon="wallet2")
+
+    assert updated["icon"] == "wallet2"
 
 
 def test_update_pie_raises_for_unknown_id(s3_client) -> None:

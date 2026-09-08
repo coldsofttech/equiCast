@@ -21,7 +21,10 @@ from rest_framework.views import APIView
 #: Fields required to create an account; description may be blank but must
 #: be present so a caller doesn't silently omit it.
 REQUIRED_CREATE_FIELDS = {"name", "description", "account_type", "currency"}
-UPDATABLE_FIELDS = {"name", "description", "account_type", "currency"}
+#: Optional at create time — an account without one falls back to a default
+#: icon client-side, same reasoning as pies/views.py's OPTIONAL_CREATE_FIELDS.
+OPTIONAL_CREATE_FIELDS = {"icon"}
+UPDATABLE_FIELDS = {"name", "description", "account_type", "currency", "icon"}
 
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
@@ -137,6 +140,7 @@ class AccountListView(APIView):
                 {"detail": f"Missing field(s): {', '.join(sorted(missing))}."}, status=400
             )
 
+        optional_fields = {k: v for k, v in request.data.items() if k in OPTIONAL_CREATE_FIELDS}
         try:
             account = _client.create_account(
                 request.user.user_id,
@@ -144,6 +148,7 @@ class AccountListView(APIView):
                 description=request.data["description"],
                 account_type=request.data["account_type"],
                 currency=request.data["currency"],
+                **optional_fields,
             )
         except AccountAlreadyExistsError:
             return Response(

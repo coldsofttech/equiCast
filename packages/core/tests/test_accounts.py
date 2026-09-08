@@ -53,6 +53,22 @@ def test_create_account_persists_and_returns_the_account(s3_client) -> None:
     assert client.list_accounts("auth0|abc123") == [account]
 
 
+def test_create_account_defaults_icon_to_none(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+
+    account = _create(client, "auth0|abc123")
+
+    assert account["icon"] is None
+
+
+def test_create_account_persists_a_given_icon(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+
+    account = _create(client, "auth0|abc123", icon="bank2")
+
+    assert account["icon"] == "bank2"
+
+
 def test_get_account_returns_the_matching_account(s3_client) -> None:
     client = AccountsClient(BUCKET, s3_client=s3_client)
     account = _create(client, "auth0|abc123")
@@ -119,6 +135,15 @@ def test_update_account_patches_fields_and_bumps_updated_at(s3_client) -> None:
     assert updated["account_type"] == "ISA"
     assert updated["updated_at"] >= account["updated_at"]
     assert client.list_accounts("auth0|abc123") == [updated]
+
+
+def test_update_account_can_set_icon(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    account = _create(client, "auth0|abc123")
+
+    updated = client.update_account("auth0|abc123", account["id"], icon="bank2")
+
+    assert updated["icon"] == "bank2"
 
 
 def test_update_account_raises_for_unknown_id(s3_client) -> None:

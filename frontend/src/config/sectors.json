@@ -1,0 +1,210 @@
+[
+  {
+    "name": "Basic Materials",
+    "industries": [
+      "Agricultural Inputs",
+      "Aluminum",
+      "Building Materials",
+      "Chemicals",
+      "Coking Coal",
+      "Copper",
+      "Gold",
+      "Lumber & Wood Production",
+      "Other Industrial Metals & Mining",
+      "Other Precious Metals & Mining",
+      "Paper & Paper Products",
+      "Silver",
+      "Specialty Chemicals",
+      "Steel"
+    ]
+  },
+  {
+    "name": "Communication Services",
+    "industries": [
+      "Advertising Agencies",
+      "Broadcasting",
+      "Electronic Gaming & Multimedia",
+      "Entertainment",
+      "Internet Content & Information",
+      "Publishing",
+      "Telecom Services"
+    ]
+  },
+  {
+    "name": "Consumer Cyclical",
+    "industries": [
+      "Apparel Manufacturing",
+      "Apparel Retail",
+      "Auto & Truck Dealerships",
+      "Auto Manufacturers",
+      "Auto Parts",
+      "Department Stores",
+      "Footwear & Accessories",
+      "Furnishings, Fixtures & Appliances",
+      "Gambling",
+      "Home Improvement Retail",
+      "Internet Retail",
+      "Leisure",
+      "Lodging",
+      "Luxury Goods",
+      "Packaging & Containers",
+      "Personal Services",
+      "Recreational Vehicles",
+      "Residential Construction",
+      "Resorts & Casinos",
+      "Restaurants",
+      "Specialty Retail",
+      "Textile Manufacturing",
+      "Travel Services"
+    ]
+  },
+  {
+    "name": "Consumer Defensive",
+    "industries": [
+      "Beverages - Brewers",
+      "Beverages - Non-Alcoholic",
+      "Beverages - Wineries & Distilleries",
+      "Confectioners",
+      "Discount Stores",
+      "Education & Training Services",
+      "Farm Products",
+      "Food Distribution",
+      "Grocery Stores",
+      "Household & Personal Products",
+      "Packaged Foods",
+      "Tobacco"
+    ]
+  },
+  {
+    "name": "Energy",
+    "industries": [
+      "Oil & Gas Drilling",
+      "Oil & Gas E&P",
+      "Oil & Gas Equipment & Services",
+      "Oil & Gas Integrated",
+      "Oil & Gas Midstream",
+      "Oil & Gas Refining & Marketing",
+      "Thermal Coal",
+      "Uranium"
+    ]
+  },
+  {
+    "name": "Financial Services",
+    "industries": [
+      "Asset Management",
+      "Banks - Diversified",
+      "Banks - Regional",
+      "Capital Markets",
+      "Credit Services",
+      "Financial Conglomerates",
+      "Financial Data & Stock Exchanges",
+      "Insurance - Diversified",
+      "Insurance - Life",
+      "Insurance - Property & Casualty",
+      "Insurance - Reinsurance",
+      "Insurance - Specialty",
+      "Insurance Brokers",
+      "Mortgage Finance",
+      "Shell Companies"
+    ]
+  },
+  {
+    "name": "Real Estate",
+    "industries": [
+      "Real Estate - Development",
+      "Real Estate - Diversified",
+      "Real Estate Services",
+      "REIT - Diversified",
+      "REIT - Healthcare Facilities",
+      "REIT - Hotel & Motel",
+      "REIT - Industrial",
+      "REIT - Mortgage",
+      "REIT - Office",
+      "REIT - Residential",
+      "REIT - Retail",
+      "REIT - Specialty"
+    ]
+  },
+  {
+    "name": "Healthcare",
+    "industries": [
+      "Biotechnology",
+      "Diagnostics & Research",
+      "Drug Manufacturers - General",
+      "Drug Manufacturers - Specialty & Generic",
+      "Health Information Services",
+      "Healthcare Plans",
+      "Medical Care Facilities",
+      "Medical Devices",
+      "Medical Distribution",
+      "Medical Instruments & Supplies",
+      "Pharmaceutical Retailers"
+    ]
+  },
+  {
+    "name": "Utilities",
+    "industries": [
+      "Utilities - Diversified",
+      "Utilities - Independent Power Producers",
+      "Utilities - Regulated Electric",
+      "Utilities - Regulated Gas",
+      "Utilities - Regulated Water",
+      "Utilities - Renewable"
+    ]
+  },
+  {
+    "name": "Technology",
+    "industries": [
+      "Communication Equipment",
+      "Computer Hardware",
+      "Consumer Electronics",
+      "Electronic Components",
+      "Electronics & Computer Distribution",
+      "Information Technology Services",
+      "Scientific & Technical Instruments",
+      "Semiconductor Equipment & Materials",
+      "Semiconductors",
+      "Software - Application",
+      "Software - Infrastructure",
+      "Solar"
+    ]
+  },
+  {
+    "name": "Industrials",
+    "industries": [
+      "Aerospace & Defense",
+      "Airlines",
+      "Airports & Air Services",
+      "Building Products & Equipment",
+      "Business Equipment & Supplies",
+      "Conglomerates",
+      "Consulting Services",
+      "Electrical Equipment & Parts",
+      "Engineering & Construction",
+      "Farm & Heavy Construction Machinery",
+      "Industrial Distribution",
+      "Infrastructure Operations",
+      "Integrated Freight & Logistics",
+      "Marine Shipping",
+      "Metal Fabrication",
+      "Pollution & Treatment Controls",
+      "Railroads",
+      "Rental & Leasing Services",
+      "Security & Protection Services",
+      "Specialty Business Services",
+      "Specialty Industrial Machinery",
+      "Staffing & Employment Services",
+      "Tools & Accessories",
+      "Trucking",
+      "Waste Management"
+    ]
+  },
+  {
+    "name": "Exchange Traded Fund",
+    "industries": ["Exchange Traded Fund"]
+  },
+  {
+    "name": "Mutual Fund",
+    "industries": ["Mutual Fund"]
+  }
+]

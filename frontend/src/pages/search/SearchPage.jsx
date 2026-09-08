@@ -7,10 +7,10 @@ import AssetIcon from "../../components/core/AssetIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import SearchFilters from "./SearchFilters.jsx";
+import SearchSkeleton from "./SearchSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import "./SearchPage.css";
 
 const PAGE_SIZE = 25;
@@ -40,6 +40,9 @@ function SearchPage() {
   const exchange = searchParams.get("exchange") ?? "";
   const sector = searchParams.get("sector") ?? "";
   const industry = searchParams.get("industry") ?? "";
+  const hasFilters = Boolean(
+    type || minMarketCap != null || maxMarketCap != null || region || exchange || sector || industry
+  );
   const api = useApi();
 
   const [results, setResults] = useState([]);
@@ -51,7 +54,7 @@ function SearchPage() {
   const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
-    if (!query.trim()) {
+    if (!query.trim() && !hasFilters) {
       setResults([]);
       setCount(0);
       setTotalPages(0);
@@ -88,7 +91,7 @@ function SearchPage() {
     return () => {
       cancelled = true;
     };
-  }, [api, query, type, minMarketCap, maxMarketCap, region, exchange, sector, industry]);
+  }, [api, query, hasFilters, type, minMarketCap, maxMarketCap, region, exchange, sector, industry]);
 
   const handleLoadMore = () => {
     setIsLoadingMore(true);
@@ -136,10 +139,15 @@ function SearchPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Search"
       title="Search"
-      subtitle={query ? `Results for “${query}”` : "Search for a ticker or company name."}
+      subtitle={
+        query
+          ? `Results for “${query}”`
+          : hasFilters
+            ? "Results for your filters."
+            : "Search for a ticker or company name."
+      }
       sidebar={
         <SearchFilters
           query={query}
@@ -156,17 +164,21 @@ function SearchPage() {
     >
       {loadError && <Alert tone="danger">{loadError}</Alert>}
 
-      {!query.trim() ? (
+      {!query.trim() && !hasFilters ? (
         <EmptyState
           title="Search for a ticker"
-          description="Use the search box in the top bar to look up a stock, ETF or FX pair."
+          description="Use the search box in the top bar to look up a stock, ETF or FX pair, or apply a filter."
         />
       ) : isLoading ? (
-        <p className="ec-loading">Searching…</p>
+        <SearchSkeleton />
       ) : results.length === 0 ? (
         <EmptyState
           title="No matches"
-          description={`No tickers matched “${query}”. Try a different name or ticker, or adjust the filters.`}
+          description={
+            query
+              ? `No tickers matched “${query}”. Try a different name or ticker, or adjust the filters.`
+              : "No tickers matched your filters. Try adjusting them."
+          }
         />
       ) : (
         <>

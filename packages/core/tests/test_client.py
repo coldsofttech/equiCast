@@ -630,6 +630,7 @@ class TestEnrichHoldings:
                     "sector": None,
                     "industry": None,
                     "market_cap": 400_000_000_000.0,
+                    "last_updated": "2026-08-30T09:00:00+00:00",
                 }
             ],
         )
@@ -647,6 +648,7 @@ class TestEnrichHoldings:
             "market_cap": 400_000_000_000.0,
             "current_price_native": 450.0,
             "current_price": 450.0,
+            "last_updated": "2026-08-30T09:00:00+00:00",
         }
 
     def test_converts_current_price_using_the_direct_fx_pair(self, s3_client) -> None:
@@ -688,6 +690,7 @@ class TestEnrichHoldings:
         assert enriched["market_cap"] is None
         assert enriched["current_price_native"] is None
         assert enriched["current_price"] is None
+        assert enriched["last_updated"] is None
 
     def test_returns_none_current_price_when_no_fx_rate_is_published(self, s3_client) -> None:
         _put_catalog(
@@ -781,8 +784,8 @@ class TestSearch:
                     "market_cap": 500_000_000_000,
                     "exchange": "PCX",
                     "region": "us",
-                    "sector": None,
-                    "industry": None,
+                    "sector": "Exchange Traded Fund",
+                    "industry": "Exchange Traded Fund",
                 }
             ],
         )
@@ -890,13 +893,13 @@ class TestSearch:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        # "a" also matches GBPUSD's name ("... to US Dollar") — expected to
-        # stay in the results regardless of the bound, per fx always
-        # matching a market cap filter (see test_market_cap_filter_never_
-        # excludes_fx below for a more targeted check of that).
+        # "a" also matches GBPUSD's name ("... to US Dollar"), but fx has no
+        # market_cap concept (always None) — excluded whenever a bound is
+        # given, same as a stock/etf row with no market_cap resolved (see
+        # test_market_cap_filter_excludes_fx below for a targeted check).
         result = client.search("a", min_market_cap=1_000_000_000_000)
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
 
     def test_market_cap_range_is_inclusive_on_both_ends(self, s3_client) -> None:
         self._seed(s3_client)
@@ -906,15 +909,15 @@ class TestSearch:
             "a", min_market_cap=3_400_000_000_000, max_market_cap=3_400_000_000_000
         )
 
-        assert {r["ticker"] for r in result} == {"AAPL", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL"}
 
-    def test_market_cap_filter_never_excludes_fx(self, s3_client) -> None:
+    def test_market_cap_filter_excludes_fx(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("gbp", min_market_cap=1_000_000_000_000)
 
-        assert {r["ticker"] for r in result} == {"GBPUSD"}
+        assert result == []
 
     def test_market_cap_filter_excludes_a_stock_with_no_market_cap_resolved(
         self, s3_client
@@ -950,20 +953,20 @@ class TestSearch:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        # "a" also matches GBPUSD's name ("... US Dollar") — expected to stay
-        # regardless of the exchange given, per fx always matching (see
-        # test_exchange_filter_never_excludes_fx for a more targeted check).
+        # "a" also matches GBPUSD's name ("... US Dollar"), but fx has no
+        # exchange concept (always None) — excluded whenever an exchange is
+        # given (see test_exchange_filter_excludes_fx for a targeted check).
         result = client.search("a", exchange="nms")
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
 
-    def test_exchange_filter_never_excludes_fx(self, s3_client) -> None:
+    def test_exchange_filter_excludes_fx(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("gbp", exchange="LSE")
 
-        assert {r["ticker"] for r in result} == {"GBPUSD"}
+        assert result == []
 
     def test_exchange_filter_excludes_a_row_on_a_different_exchange(self, s3_client) -> None:
         self._seed(s3_client)
@@ -977,20 +980,20 @@ class TestSearch:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        # "a" also matches GBPUSD's name — stays regardless of the region
-        # given, per fx always matching (see test_region_filter_never_
-        # excludes_fx for a more targeted check).
+        # "a" also matches GBPUSD's name, but fx has no region concept
+        # (always None) — excluded whenever a region is given (see
+        # test_region_filter_excludes_fx for a targeted check).
         result = client.search("a", region="GB")
 
-        assert {r["ticker"] for r in result} == {"HSBA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"HSBA"}
 
-    def test_region_filter_never_excludes_fx(self, s3_client) -> None:
+    def test_region_filter_excludes_fx(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("gbp", region="gb")
 
-        assert {r["ticker"] for r in result} == {"GBPUSD"}
+        assert result == []
 
     def test_exchange_and_region_filters_combine(self, s3_client) -> None:
         self._seed(s3_client)
@@ -998,26 +1001,26 @@ class TestSearch:
 
         result = client.search("a", exchange="NMS", region="us")
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
 
     def test_sector_filters_stock_case_insensitively(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        # "a" also matches GBPUSD's name ("... US Dollar") — expected to stay
-        # regardless of the sector given, per fx always matching (see
-        # test_sector_filter_never_excludes_fx for a more targeted check).
+        # "a" also matches GBPUSD's name ("... US Dollar"), but fx has no
+        # sector concept (always None) — excluded whenever a sector is
+        # given (see test_sector_filter_excludes_fx for a targeted check).
         result = client.search("a", sector="technology")
 
-        assert {r["ticker"] for r in result} == {"AAPL", "NVDA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"AAPL", "NVDA"}
 
-    def test_sector_filter_never_excludes_fx(self, s3_client) -> None:
+    def test_sector_filter_excludes_fx(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("gbp", sector="Technology")
 
-        assert {r["ticker"] for r in result} == {"GBPUSD"}
+        assert result == []
 
     def test_sector_filter_excludes_a_row_in_a_different_sector(self, s3_client) -> None:
         self._seed(s3_client)
@@ -1027,13 +1030,21 @@ class TestSearch:
 
         assert result == []
 
-    def test_sector_filter_excludes_an_etf_row_with_no_sector(self, s3_client) -> None:
+    def test_sector_filter_excludes_an_etf_row_in_a_different_sector(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("voo", sector="Technology")
 
         assert result == []
+
+    def test_sector_filter_matches_an_etf_row_by_its_fixed_sector(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo", sector="Exchange Traded Fund")
+
+        assert {r["ticker"] for r in result} == {"VOO"}
 
     def test_industry_filters_stock_case_insensitively(self, s3_client) -> None:
         self._seed(s3_client)
@@ -1043,13 +1054,21 @@ class TestSearch:
 
         assert {r["ticker"] for r in result} == {"NVDA"}
 
-    def test_industry_filter_never_excludes_fx(self, s3_client) -> None:
+    def test_industry_filter_excludes_fx(self, s3_client) -> None:
         self._seed(s3_client)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
         result = client.search("gbp", industry="Semiconductors")
 
-        assert {r["ticker"] for r in result} == {"GBPUSD"}
+        assert result == []
+
+    def test_industry_filter_matches_an_etf_row_by_its_fixed_industry(self, s3_client) -> None:
+        self._seed(s3_client)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.search("voo", industry="Exchange Traded Fund")
+
+        assert {r["ticker"] for r in result} == {"VOO"}
 
     def test_sector_and_industry_filters_combine(self, s3_client) -> None:
         self._seed(s3_client)
@@ -1057,4 +1076,4 @@ class TestSearch:
 
         result = client.search("a", sector="Technology", industry="Semiconductors")
 
-        assert {r["ticker"] for r in result} == {"NVDA", "GBPUSD"}
+        assert {r["ticker"] for r in result} == {"NVDA"}

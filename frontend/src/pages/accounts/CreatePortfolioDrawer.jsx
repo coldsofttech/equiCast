@@ -6,10 +6,10 @@ import { createPie } from "../../api/pies.js";
 
 /**
  * "New portfolio" drawer, opened from AccountDetailPage just before the
- * Portfolios list — just the pie's name/description (PieForm, the same
- * form PieDetailPage uses to edit one). Holdings aren't set here: once the
- * pie exists, its own detail page's Edit action is where allocations get
- * added, same as any other pie.
+ * Portfolios list — just the pie's name/description/icon (PieForm, the
+ * same form PieDetailPage uses to edit one). Holdings aren't set here: once
+ * the pie exists, its own detail page's Edit action is where allocations
+ * get added, same as any other pie.
  */
 function CreatePortfolioDrawer({ open, accountId, onClose, onCreated }) {
   const api = useApi();

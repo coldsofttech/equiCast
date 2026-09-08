@@ -41,8 +41,8 @@ import {
   readCachedTransactionsPage,
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
+import { formatSyncedDate } from "../holdingValuation.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
@@ -78,14 +78,6 @@ function formatMoney(value, currency) {
   return new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(
     value
   );
-}
-
-/** marketProfile.last_updated is a full ISO 8601 datetime (see
- * equicast_core's writers) — the Synced badge only needs the date. */
-function formatSyncedDate(isoDatetime) {
-  const date = new Date(isoDatetime);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 }
 
 /**
@@ -418,10 +410,10 @@ function HoldingTickerPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Holding"
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
+      stickyTitle
       titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
       titleBadges={
         marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (

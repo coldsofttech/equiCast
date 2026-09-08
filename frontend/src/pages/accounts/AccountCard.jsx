@@ -1,7 +1,9 @@
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
+import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
 /**
  * One account's summary card — used by DashboardPage's landing overview
@@ -39,7 +41,10 @@ function AccountCard({ account, onClick, defaultCurrency }) {
       }}
     >
       <div className="ec-account-card-head">
-        <h2 className="ec-account-card-name">{account.name}</h2>
+        <div className="ec-account-card-title">
+          <IconBadge icon={account.icon} defaultIcon={DEFAULT_ACCOUNT_ICON} size={28} />
+          <h2 className="ec-account-card-name">{account.name}</h2>
+        </div>
         <Badge tone="accent">{account.account_type}</Badge>
       </div>
       <p className="ec-account-card-desc">{account.description}</p>

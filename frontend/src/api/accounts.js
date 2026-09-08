@@ -34,6 +34,10 @@
  * @property {number|null} [current_price] - `current_price_native` converted
  *   to the user's default_currency using the fx catalog's latest published
  *   rate, `null` if no rate is published for the pair.
+ * @property {string|null} [last_updated] - the catalog's own `last_updated`
+ *   for this ticker (that ticker's ingestion pipeline's last run, a full
+ *   ISO 8601 datetime — see equicast_core.catalog.build_catalog_rows),
+ *   `null` for an unpublished ticker.
  */
 
 /**
@@ -42,6 +46,10 @@
  * @property {string} account_id
  * @property {string} name
  * @property {string} description
+ * @property {string|null} [icon] - bare bootstrap-icons name (e.g.
+ *   "pie-chart-fill"), `null`/absent for a pie predating this field — see
+ *   config/portfolioIcons.js's DEFAULT_PORTFOLIO_ICON for the display
+ *   fallback.
  * @property {Holding[]} [holdings]
  */
 
@@ -52,6 +60,9 @@
  * @property {string} description
  * @property {string} account_type
  * @property {string} currency
+ * @property {string|null} [icon] - bare bootstrap-icons name (e.g. "bank2"),
+ *   `null`/absent for an account predating this field — see
+ *   config/accountIcons.js's DEFAULT_ACCOUNT_ICON for the display fallback.
  * @property {Pie[]} [pies]
  * @property {Holding[]} [holdings]
  */
@@ -83,7 +94,7 @@ export function getAccount(api, accountId) {
  * POST /api/accounts/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ name: string, description: string, account_type: string, currency: string }} data
+ * @param {{ name: string, description: string, account_type: string, currency: string, icon?: string }} data
  * @returns {Promise<Account>}
  */
 export function createAccount(api, data) {
@@ -96,7 +107,7 @@ export function createAccount(api, data) {
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} accountId
- * @param {Partial<{ name: string, description: string, account_type: string, currency: string }>} fields
+ * @param {Partial<{ name: string, description: string, account_type: string, currency: string, icon: string }>} fields
  * @returns {Promise<Account>}
  */
 export function updateAccount(api, accountId, fields) {

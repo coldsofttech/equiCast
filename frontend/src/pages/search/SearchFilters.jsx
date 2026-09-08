@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Button from "../../components/core/Button.jsx";
 import RangeSlider from "../../components/core/RangeSlider.jsx";
 import {
@@ -10,9 +10,9 @@ import {
 } from "./marketCapSteps.js";
 import {
   EXCHANGE_OPTIONS,
-  INDUSTRY_OPTIONS,
   REGION_OPTIONS,
   SECTOR_OPTIONS,
+  getIndustryOptions,
 } from "./searchFilterOptions.js";
 import "./SearchFilters.css";
 
@@ -21,6 +21,7 @@ const TYPES = [
   { value: "stock", label: "Stocks" },
   { value: "etf", label: "ETFs" },
   { value: "fx", label: "FX" },
+  { value: "benchmark", label: "Benchmark Index" },
 ];
 
 /**
@@ -32,10 +33,9 @@ const TYPES = [
  * (searchFilterOptions.js) rather than derived from the catalog, since
  * equiCast's ticker list is presently hand-picked from a small fixed set.
  * Type/Market cap/Region/Exchange only meaningfully narrow stock/etf rows,
- * and Sector/Industry only stock rows — fx always matches every one of
- * them regardless (see MarketDataClient.search's docstring) — but none of
- * the controls call that out per-row; a fx-heavy result set simply won't
- * visibly shrink as they tighten.
+ * and Sector/Industry only stock rows — a row from any other asset class
+ * has none of those fields (always `None`) and is excluded outright once
+ * such a filter is applied (see MarketDataClient.search's docstring).
  *
  * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange`/
  * `sector`/`industry` are the currently-applied filters (from the URL —
@@ -100,6 +100,19 @@ function SearchFilters({
   useEffect(() => {
     setDraftIndustry(industry ?? "");
   }, [industry]);
+
+  // Narrowed to draftSector's own yfinance industries — every industry
+  // across every sector when no sector is selected (see
+  // searchFilterOptions.js's getIndustryOptions).
+  const industryOptions = useMemo(() => getIndustryOptions(draftSector), [draftSector]);
+
+  const handleSectorChange = (value) => {
+    setDraftSector(value);
+    // The previously-selected industry may not belong to the new sector
+    // (or to any sector, once cleared back to "All sectors") — cleared
+    // rather than left pointing at an option no longer offered.
+    setDraftIndustry("");
+  };
 
   const handleSearch = () => {
     onApply({
@@ -228,7 +241,7 @@ function SearchFilters({
           className="ec-select"
           aria-label="Sector"
           value={draftSector}
-          onChange={(event) => setDraftSector(event.target.value)}
+          onChange={(event) => handleSectorChange(event.target.value)}
         >
           {SECTOR_OPTIONS.map((option) => (
             <option key={option.value || "all"} value={option.value}>
@@ -246,7 +259,7 @@ function SearchFilters({
           value={draftIndustry}
           onChange={(event) => setDraftIndustry(event.target.value)}
         >
-          {INDUSTRY_OPTIONS.map((option) => (
+          {industryOptions.map((option) => (
             <option key={option.value || "all"} value={option.value}>
               {option.label}
             </option>

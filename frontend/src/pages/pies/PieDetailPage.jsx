@@ -4,12 +4,15 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
+import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import Skeleton from "../../components/core/Skeleton.jsx";
 import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
 import PiePriceChart from "./PiePriceChart.jsx";
@@ -21,7 +24,7 @@ import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
-import { MENU_ITEMS } from "../menuItems.js";
+import { MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
   computeHoldingValuation,
@@ -29,7 +32,10 @@ import {
   buildDiversification,
   buildAssetAllocation,
   buildMarketCapAllocation,
+  formatSyncedDate,
+  minLastUpdated,
 } from "../holdingValuation.js";
+import { DEFAULT_PORTFOLIO_ICON } from "../../config/portfolioIcons.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
  * backend/pies/views.py's `_enrich_holdings`) are all converted to the
@@ -54,14 +60,14 @@ const FALLBACK_CURRENCY = "USD";
  * allocation %, live value/P&L off the enriched fields GET /pies/<id>
  * returns — see computeHoldingValuation) — adding/removing/reallocating
  * them happens via AllocationEditor inside its own "Add holdings" Drawer,
- * separate from the "Edit pie" Drawer (name/description only), so editing
- * one never shows form fields for the other.
+ * separate from the "Edit pie" Drawer (name/description/icon only), so
+ * editing one never shows form fields for the other.
  */
 function PieDetailPage() {
   const { accountId, pieId } = useParams();
   const api = useApi();
   const navigate = useNavigate();
-  const { setAccounts: setCachedAccounts } = useAccounts();
+  const { accounts, setAccounts: setCachedAccounts } = useAccounts();
   const { profile: userProfile } = useCurrentUser();
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
 
@@ -176,9 +182,15 @@ function PieDetailPage() {
   if (isLoading) {
     return (
       <AppShell
-        menuItems={MENU_ITEMS}
         eyebrow="Portfolio"
         title="Loading…"
+        titleIcon={<Skeleton circle width="64px" height="64px" />}
+        titleBadges={
+          <>
+            <Skeleton width="120px" height="1.25rem" />
+            <Skeleton circle width="110px" height="22px" />
+          </>
+        }
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
             Back to account
@@ -193,7 +205,7 @@ function PieDetailPage() {
 
   if (loadError || !pie) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
+      <AppShell eyebrow="Portfolio" title="Pie" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Pie not found."}</Alert>
       </AppShell>
     );
@@ -212,13 +224,23 @@ function PieDetailPage() {
   );
   const assetData = buildAssetAllocation(pie.holdings ?? [], holdingValuations);
   const marketCapData = buildMarketCapAllocation(pie.holdings ?? [], holdingValuations);
+  const syncedIso = minLastUpdated(pie.holdings ?? []);
+  const syncedDate = syncedIso && formatSyncedDate(syncedIso);
+  const accountName = accounts.find((a) => a.id === accountId)?.name;
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
+      titleIcon={<IconBadge icon={pie.icon} defaultIcon={DEFAULT_PORTFOLIO_ICON} size={64} />}
+      stickyTitle
+      titleBadges={
+        <>
+          {accountName && <Badge tone="purple">Account: {accountName}</Badge>}
+          {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
+        </>
+      }
       actions={
         <>
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>

@@ -486,9 +486,11 @@ class MarketDataClient:
         `current_price_native`/`current_price` (the catalog's own
         last-published price, FX-converted to `default_currency` — the same
         convention `average_price`/`invested`/`dividends` already use, see
-        `transactions.views.resolve_converted_amounts`), so a caller can
-        derive current value/profit-loss without a market-data round trip
-        per ticker.
+        `transactions.views.resolve_converted_amounts`) and `last_updated`
+        (the catalog's own, i.e. that ticker's ingestion pipeline's last run
+        — see `equicast_core.catalog.build_catalog_rows`), so a caller can
+        derive current value/profit-loss, or a "Synced" date, without a
+        market-data round trip per ticker.
 
         Reads each distinct asset class present in `holdings` once (via
         `get_catalog`), plus the `fx` catalog for currency conversion, so a
@@ -542,6 +544,7 @@ class MarketDataClient:
                     "market_cap": row.get("market_cap") if row else None,
                     "current_price_native": current_price_native,
                     "current_price": current_price,
+                    "last_updated": row.get("last_updated") if row else None,
                 }
             )
         return enriched
@@ -570,22 +573,19 @@ class MarketDataClient:
         and `industry`, when given, additionally filter stock/etf rows by
         their `market_cap` (a stock's real market cap, an etf's total
         assets as the closest comparable "size" figure a fund has),
-        `exchange`, `region`, `sector`, and `industry` respectively (see
-        `equicast_core.catalog.build_catalog_rows`) — fx rows always match
-        every one of these regardless, having none of those concepts for a
-        currency pair; etf/benchmark rows have no `sector`/`industry` of
-        their own either (always `None`), so a row from either is excluded
-        whenever either of those two filters is given, the same as a stock
-        row missing the field — a benchmark row is likewise excluded
-        whenever `min_market_cap`/`max_market_cap` is given, having no
-        market-cap concept of its own (unlike etf's `total_assets` stand-
-        in). `exchange`/`region`/`sector`/`industry` match
-        case-insensitively against the row's exact value (not a substring,
-        unlike `query`), since all four are short codes/labels (e.g.
-        "NMS"/"us"/"Technology"), not free text. A stock/etf/benchmark row
+        `equicast_core.catalog.build_catalog_rows`). fx rows have none of
+        those concepts for a currency pair (always `None`), same as a
+        benchmark row for `market_cap`/`sector`/`industry` — any row
         missing the field being filtered on is excluded whenever that
-        filter is given, rather than guessed to match — there's nothing to
-        compare it against.
+        filter is given, rather than guessed to match, there's nothing to
+        compare it against. An etf row's `sector`/`industry` are instead
+        always the fixed "Exchange Traded Fund" (see
+        `equicast_etf.client.ETFClient.profile`), so it matches only that
+        value under either filter rather than always being excluded.
+        `exchange`/`region`/`sector`/`industry` match case-insensitively
+        against the row's exact value (not a substring, unlike `query`),
+        since all four are short codes/labels (e.g. "NMS"/"us"/
+        "Technology"), not free text.
 
         Results are sorted by ticker for a stable order across calls (the
         caller — e.g. the Django view — owns pagination on top of this)."""
@@ -604,31 +604,30 @@ class MarketDataClient:
                 name = row.get("name") or ""
                 if query_lower not in ticker.lower() and query_lower not in name.lower():
                     continue
-                if asset_class != "fx":
-                    if filter_by_market_cap:
-                        market_cap = row.get("market_cap")
-                        if market_cap is None:
-                            continue
-                        if min_market_cap is not None and market_cap < min_market_cap:
-                            continue
-                        if max_market_cap is not None and market_cap > max_market_cap:
-                            continue
-                    if exchange_lower is not None:
-                        row_exchange = row.get("exchange")
-                        if row_exchange is None or row_exchange.lower() != exchange_lower:
-                            continue
-                    if region_lower is not None:
-                        row_region = row.get("region")
-                        if row_region is None or row_region.lower() != region_lower:
-                            continue
-                    if sector_lower is not None:
-                        row_sector = row.get("sector")
-                        if row_sector is None or row_sector.lower() != sector_lower:
-                            continue
-                    if industry_lower is not None:
-                        row_industry = row.get("industry")
-                        if row_industry is None or row_industry.lower() != industry_lower:
-                            continue
+                if filter_by_market_cap:
+                    market_cap = row.get("market_cap")
+                    if market_cap is None:
+                        continue
+                    if min_market_cap is not None and market_cap < min_market_cap:
+                        continue
+                    if max_market_cap is not None and market_cap > max_market_cap:
+                        continue
+                if exchange_lower is not None:
+                    row_exchange = row.get("exchange")
+                    if row_exchange is None or row_exchange.lower() != exchange_lower:
+                        continue
+                if region_lower is not None:
+                    row_region = row.get("region")
+                    if row_region is None or row_region.lower() != region_lower:
+                        continue
+                if sector_lower is not None:
+                    row_sector = row.get("sector")
+                    if row_sector is None or row_sector.lower() != sector_lower:
+                        continue
+                if industry_lower is not None:
+                    row_industry = row.get("industry")
+                    if row_industry is None or row_industry.lower() != industry_lower:
+                        continue
                 matches.append(row)
         matches.sort(key=lambda row: row["ticker"])
         return matches

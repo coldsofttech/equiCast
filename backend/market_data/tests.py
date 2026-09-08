@@ -257,23 +257,41 @@ class SearchViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_400_when_q_missing(self, mock_jwks_client, mock_decode) -> None:
+    def test_q_missing_searches_with_empty_query(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
 
-        response = self.client.get(reverse("search"), **AUTH_HEADER)
+        response = self.client.get(reverse("search"), {"region": "United States"}, **AUTH_HEADER)
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        mock_client.search.assert_called_once_with(
+            "",
+            asset_classes=None,
+            min_market_cap=None,
+            max_market_cap=None,
+            exchange=None,
+            region="United States",
+            sector=None,
+            industry=None,
+        )
 
+    @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_400_when_q_is_empty(self, mock_jwks_client, mock_decode) -> None:
+    def test_q_empty_searches_with_empty_query(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_client.search.return_value = []
 
         response = self.client.get(reverse("search"), {"q": ""}, **AUTH_HEADER)
 
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 200)
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")

@@ -109,11 +109,19 @@ class PiesClient:
         return pie
 
     def create_pie(
-        self, user_id: str, account_id: str, name: str, description: str
+        self,
+        user_id: str,
+        account_id: str,
+        name: str,
+        description: str,
+        icon: str | None = None,
     ) -> dict[str, Any]:
         """Append a new pie under `account_id`, raising
         `PieLimitExceededError` if that account is already at this client's
-        `max_pies_per_account`."""
+        `max_pies_per_account`. `icon` is a bare bootstrap-icons name (e.g.
+        "pie-chart-fill", not "bi bi-pie-chart-fill") and is optional — a
+        pie without one falls back to a default icon client-side (see
+        frontend's DEFAULT_PORTFOLIO_ICON)."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             pies, etag = self._load(user_id)
             existing_in_account = sum(1 for p in pies if p["account_id"] == account_id)
@@ -127,6 +135,7 @@ class PiesClient:
                 "account_id": account_id,
                 "name": name,
                 "description": description,
+                "icon": icon,
                 "created_at": now,
                 "updated_at": now,
             }
