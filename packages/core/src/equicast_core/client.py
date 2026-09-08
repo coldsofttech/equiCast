@@ -572,10 +572,13 @@ class MarketDataClient:
         `exchange`, `region`, `sector`, and `industry` respectively (see
         `equicast_core.catalog.build_catalog_rows`) — fx rows always match
         every one of these regardless, having none of those concepts for a
-        currency pair; etf/benchmark rows have no `sector`/`industry` of
-        their own either (always `None`), so a row from either is excluded
-        whenever either of those two filters is given, the same as a stock
-        row missing the field — a benchmark row is likewise excluded
+        currency pair; a benchmark row has no `sector`/`industry` of its
+        own either (always `None`, since yfinance never populates either
+        for one), so it's excluded whenever either of those two filters is
+        given, the same as a stock row missing the field — an etf row's
+        `sector`/`industry` are instead always the fixed "Exchange Traded
+        Fund" (see equicast_etf.client.ETFClient.profile), so it matches
+        only that value under either filter. A benchmark row is likewise excluded
         whenever `min_market_cap`/`max_market_cap` is given, having no
         market-cap concept of its own (unlike etf's `total_assets` stand-
         in). `exchange`/`region`/`sector`/`industry` match

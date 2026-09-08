@@ -84,6 +84,8 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "exchange": "PCX",
         "currency": "USD",
         "region": "US",
+        "sector": "Exchange Traded Fund",
+        "industry": "Exchange Traded Fund",
         "description": "Tracks the performance of the S&P 500 Index.",
         "category": "Large Blend",
         "fund_family": "Vanguard",
@@ -140,6 +142,15 @@ def test_profile_dividend_and_fund_fields_are_none_when_unavailable() -> None:
     assert profile["ytd_return"] is None
     assert profile["three_year_average_return"] is None
     assert profile["five_year_average_return"] is None
+
+
+def test_profile_sector_and_industry_are_always_exchange_traded_fund() -> None:
+    client = ETFClient("VOO", datafeed=_datafeed({}))
+
+    profile = client.profile()
+
+    assert profile["sector"] == "Exchange Traded Fund"
+    assert profile["industry"] == "Exchange Traded Fund"
 
 
 def test_profile_volume_falls_back_to_regular_market_volume() -> None:

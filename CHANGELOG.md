@@ -50,6 +50,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
+  `sector`/`industry` at all — yfinance doesn't populate either for a fund
+  — so every etf catalog row carried `None` for both, and a `/search`
+  Sector/Industry filter silently excluded every etf regardless of which
+  value was picked (the same "row missing the filtered field is excluded"
+  rule a stock row without a `sector` already hits). Both now default to
+  the fixed value `"Exchange Traded Fund"`.
 - `equicast_core.client.MarketDataClient.get_prices()` raised `KeyError:
   'currency'` for any asset class whose price rows carry no `currency`
   field — a pre-existing gap in `fx` (a pair converts *between* two
