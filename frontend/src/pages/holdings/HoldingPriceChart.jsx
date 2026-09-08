@@ -126,6 +126,15 @@ const X_AXIS_MAX_TICKS = 6;
  * from both sides' `GET .../metrics/`, independent of this chart's own
  * range picker (see that component's docstring for the exact formula).
  *
+ * Switching ranges doesn't blank the view while the new bars load: `series`
+ * is left in place until the fetch resolves, so the previous range's chart
+ * stays up (dimmed via "is-refreshing", styles/chart.css) rather than
+ * flashing to a bare loading line. Once the new bars land, the main line
+ * "draws" across the plot (stroke-dasharray/dashoffset, see mainLineRef's
+ * effect) and the area fill/candles fade+rise in (`ec-chart-reveal`,
+ * keyed on `revision` so it only replays when there's actually a new curve)
+ * — the same reveal Yahoo Finance's own chart uses on a range change.
+ *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
 function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, currentPrice = null }) {
@@ -135,6 +144,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [compare, setCompare] = useState({ id: "", label: null, ticker: null, assetClass: null });
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+  const mainLineRef = useRef(null);
 
   // Keeps the viewBox's width equal to the SVG's own real rendered width
   // (see DEFAULT_WIDTH's comment above) — measured on layout (before
@@ -157,6 +167,12 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [series, setSeries] = useState(null);
   const [status, setStatus] = useState("loading");
 
+  // Bumped each time a fetch actually lands new bars — the reveal
+  // animation (see mainLineRef's effect and ec-chart-reveal below) keys off
+  // this rather than `rangeId` directly, so it only replays once there's
+  // really a new curve to draw, not on every render in between.
+  const [revision, setRevision] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
@@ -166,6 +182,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
         if (cancelled) return;
         setSeries(result);
         setStatus(result.prices.length > 0 ? "ok" : "empty");
+        setRevision((r) => r + 1);
       })
       .catch(() => {
         if (cancelled) return;
@@ -176,7 +193,13 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     };
   }, [api, assetClass, ticker, rangeId]);
 
+  // `series` is deliberately left in place while a range switch is in
+  // flight (nothing here clears it), so `bars` keeps rendering the
+  // previous range's chart — dimmed via the "is-refreshing" class below —
+  // right up until the new one lands, instead of the view blanking out to
+  // a bare "Loading…" line every time a range button is clicked.
   const bars = useMemo(() => series?.prices ?? [], [series]);
+  const hasData = bars.length > 0;
   const seriesCurrency = series?.currency ?? currency ?? null;
 
   // Fetches the selected comparison's (a ticker or a benchmark, both carry
@@ -346,6 +369,33 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   });
   const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
 
+  // "Draws" the main line across the plot on every new revision (a range
+  // switch, a ticker change, or the initial load) via the classic
+  // stroke-dasharray/dashoffset reveal — set the offset back to the path's
+  // full length with transitions off, force a reflow so the browser
+  // registers that as the starting point, then hand off to CSS's own
+  // `transition: stroke-dashoffset` (ec-chart-line, styles/chart.css) to
+  // animate it back to 0. Left untouched under prefers-reduced-motion:
+  // that media query just turns the CSS transition off, so the dashoffset
+  // set here still resolves to 0, just without animating there.
+  useLayoutEffect(() => {
+    const el = mainLineRef.current;
+    if (!el || typeof el.getTotalLength !== "function") return;
+    let length;
+    try {
+      length = el.getTotalLength();
+    } catch {
+      return;
+    }
+    if (!length) return;
+    el.style.transitionProperty = "none";
+    el.style.strokeDasharray = `${length}`;
+    el.style.strokeDashoffset = `${length}`;
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.style.strokeDashoffset = "0";
+  }, [revision]);
+
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
@@ -388,14 +438,14 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
         ))}
       </div>
 
-      {status === "loading" && <p className="ec-loading">Loading price history…</p>}
+      {status === "loading" && !hasData && <p className="ec-loading">Loading price history…</p>}
       {status === "error" && <p className="ec-chart-caption">Couldn&rsquo;t load price history for {ticker}.</p>}
       {status === "empty" && (
         <p className="ec-chart-caption">No price history published for {ticker} for this range yet.</p>
       )}
 
-      {status === "ok" && (
-        <>
+      {(status === "ok" || (status === "loading" && hasData)) && (
+        <div className={`ec-pchart-chart${status === "loading" ? " is-refreshing" : ""}`}>
           <div className="ec-pchart-legend">
             <span className="ec-pchart-legend-item">
               <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
@@ -479,7 +529,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                   y2={yFor(0)}
                   className="ec-chart-zero-line"
                 />
-                <path d={pctLinePath} className="ec-chart-line" fill="none" />
+                <path ref={mainLineRef} d={pctLinePath} className="ec-chart-line" fill="none" />
                 {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
                 {avgLog != null && (
                   <line
@@ -502,29 +552,36 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
               </>
             ) : (
               <>
-                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
-                {(chartType === "line" || chartType === "area") && (
-                  <path d={linePath} className="ec-chart-line" fill="none" />
+                {chartType === "area" && (
+                  <g className="ec-chart-reveal" key={revision}>
+                    <path d={areaPath} className="ec-pchart-area" />
+                  </g>
                 )}
-                {chartType === "candle" &&
-                  bars.map((b, i) => (
-                    <g key={b.date}>
-                      <line
-                        x1={xFor(i)}
-                        x2={xFor(i)}
-                        y1={yFor(b.high)}
-                        y2={yFor(b.low)}
-                        className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
-                      />
-                      <rect
-                        x={xFor(i) - step * 0.3}
-                        y={yFor(Math.max(b.open, b.close))}
-                        width={step * 0.6}
-                        height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
-                        className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
-                      />
-                    </g>
-                  ))}
+                {(chartType === "line" || chartType === "area") && (
+                  <path ref={mainLineRef} d={linePath} className="ec-chart-line" fill="none" />
+                )}
+                {chartType === "candle" && (
+                  <g className="ec-chart-reveal" key={revision}>
+                    {bars.map((b, i) => (
+                      <g key={b.date}>
+                        <line
+                          x1={xFor(i)}
+                          x2={xFor(i)}
+                          y1={yFor(b.high)}
+                          y2={yFor(b.low)}
+                          className={b.close >= b.open ? "ec-chart-wick-up" : "ec-chart-wick-down"}
+                        />
+                        <rect
+                          x={xFor(i) - step * 0.3}
+                          y={yFor(Math.max(b.open, b.close))}
+                          width={step * 0.6}
+                          height={Math.max(1.5, Math.abs(yFor(b.open) - yFor(b.close)))}
+                          className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
+                        />
+                      </g>
+                    ))}
+                  </g>
+                )}
 
                 {avgPrice != null && (
                   <line
@@ -585,7 +642,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
               benchmarkLabel={compare.label}
             />
           )}
-        </>
+        </div>
       )}
     </Card>
   );

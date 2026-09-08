@@ -61,6 +61,54 @@
 .ec-chart-line {
   stroke: var(--ec-accent);
   stroke-width: 2;
+  /* The actual dasharray/dashoffset values are set from JS (see
+     HoldingPriceChart's mainLineRef effect) — this only owns the easing,
+     so a plain CSS-var-free override here is enough to disable it below. */
+  transition: stroke-dashoffset 0.6s ease-out;
+}
+
+/** A range switch keeps the previous chart on-screen (see HoldingPriceChart's
+    `hasData` gate) instead of blanking to a loading line — this just dims
+    it while the new bars are in flight, `.ec-pchart-chart`'s own
+    transition on `opacity` handling the fade in either direction. */
+.ec-pchart-chart {
+  transition: opacity 0.2s ease;
+}
+
+.ec-pchart-chart.is-refreshing {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+/** Fade+rise reveal for the area fill / candle group once a new range's
+    bars land — remounted (via a `key` on `revision`) rather than
+    transitioned, since there's no meaningful "previous" area/candle shape
+    to animate from once the bar count itself has changed. */
+.ec-chart-reveal {
+  animation: ec-chart-reveal-in 0.5s ease-out both;
+  transform-box: fill-box;
+  transform-origin: bottom;
+}
+
+@keyframes ec-chart-reveal-in {
+  from {
+    opacity: 0;
+    transform: scaleY(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-chart-line {
+    transition: none;
+  }
+
+  .ec-chart-reveal {
+    animation: none;
+  }
 }
 
 .ec-chart-wick-up,
