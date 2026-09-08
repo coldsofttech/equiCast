@@ -4,7 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
-import PortfolioIcon from "../../components/core/PortfolioIcon.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -33,6 +33,7 @@ import {
   formatSyncedDate,
   minLastUpdated,
 } from "../holdingValuation.js";
+import { DEFAULT_PORTFOLIO_ICON } from "../../config/portfolioIcons.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
  * backend/pies/views.py's `_enrich_holdings`) are all converted to the
@@ -221,7 +222,7 @@ function PieDetailPage() {
       eyebrow="Portfolio"
       title={pie.name}
       subtitle={pie.description}
-      titleIcon={<PortfolioIcon icon={pie.icon} size={64} />}
+      titleIcon={<IconBadge icon={pie.icon} defaultIcon={DEFAULT_PORTFOLIO_ICON} size={64} />}
       stickyTitle
       titleBadges={
         syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
