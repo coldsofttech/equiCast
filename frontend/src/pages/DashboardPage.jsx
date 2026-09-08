@@ -12,7 +12,6 @@ import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
 import { createAccount } from "../api/accounts.js";
-import { MENU_ITEMS } from "./menuItems.js";
 
 /**
  * The landing page once signed in (App.jsx redirects "/" and unknown
@@ -53,7 +52,6 @@ function DashboardPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Overview"
       title="Dashboard"
       subtitle="Every account you're tracking, at a glance."

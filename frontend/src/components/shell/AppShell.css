@@ -13,6 +13,39 @@
   box-sizing: border-box;
 }
 
+/* AppShell's opt-in `stickyTitle` bar — fixed (not sticky) so it overlaps
+   content instead of reserving space when hidden, occupying the same
+   top-of-page slot MenuBar used to. Toggled visible via `.is-visible`
+   rather than mount/unmount so the slide/fade transition actually plays. */
+.ec-frozen-title {
+  position: fixed;
+  top: var(--ec-topbar-h);
+  left: 0;
+  right: 0;
+  z-index: 9;
+  height: var(--ec-menubar-h);
+  display: flex;
+  align-items: center;
+  padding: 0 var(--ec-s-16);
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+  background: var(--ec-bg-elev);
+  border-top: 1px solid var(--ec-divider);
+  border-bottom: 1px solid var(--ec-divider);
+  transform: translateY(-100%);
+  opacity: 0;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ec-frozen-title.is-visible {
+  transform: translateY(0);
+  opacity: 1;
+}
+
 .ec-page-head {
   display: flex;
   align-items: flex-start;

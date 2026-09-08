@@ -11,10 +11,12 @@ import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import Skeleton from "../../components/core/Skeleton.jsx";
 import AccountForm from "./AccountForm.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
+import AccountDetailSkeleton from "./AccountDetailSkeleton.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import PieCagrSection from "../pies/PieCagrSection.jsx";
 import PiePriceChart from "../pies/PiePriceChart.jsx";
@@ -23,12 +25,14 @@ import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deleteAccount, getAccount, updateAccount } from "../../api/accounts.js";
 import { createHolding } from "../../api/holdings.js";
-import { MENU_ITEMS } from "../menuItems.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
+import { MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import {
   computeHoldingValuation,
   summarizeHoldingValuations,
   buildDiversification,
+  formatSyncedDate,
+  minLastUpdated,
 } from "../holdingValuation.js";
 import "./AccountDetailPage.css";
 
@@ -174,15 +178,25 @@ function AccountDetailPage() {
 
   if (isLoading) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Loading…" footer={<SiteFooter />}>
-        <p className="ec-loading">Loading…</p>
+      <AppShell
+        eyebrow="Account"
+        title="Loading…"
+        titleBadges={<Skeleton circle width="110px" height="22px" />}
+        actions={
+          <Button variant="ghost" onClick={() => navigate("/accounts")}>
+            Back to accounts
+          </Button>
+        }
+        footer={<SiteFooter />}
+      >
+        <AccountDetailSkeleton />
       </AppShell>
     );
   }
 
   if (loadError || !account) {
     return (
-      <AppShell menuItems={MENU_ITEMS} eyebrow="Account" title="Account" footer={<SiteFooter />}>
+      <AppShell eyebrow="Account" title="Account" footer={<SiteFooter />}>
         <Alert tone="danger">{loadError ?? "Account not found."}</Alert>
       </AppShell>
     );
@@ -190,6 +204,8 @@ function AccountDetailPage() {
 
   const directHoldings = account.holdings ?? [];
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  const syncedIso = minLastUpdated(allHoldings);
+  const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
@@ -204,10 +220,13 @@ function AccountDetailPage() {
 
   return (
     <AppShell
-      menuItems={MENU_ITEMS}
       eyebrow="Account"
       title={account.name}
       subtitle={account.description}
+      stickyTitle
+      titleBadges={
+        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+      }
       actions={
         <Button
           variant="secondary"
