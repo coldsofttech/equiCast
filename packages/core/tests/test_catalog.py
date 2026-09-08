@@ -38,6 +38,7 @@ _EMPTY_ROW = {
     "region": None,
     "sector": None,
     "industry": None,
+    "last_updated": None,
 }
 
 
@@ -73,6 +74,7 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Consumer Electronics",
+                "last_updated": "2026-08-30T09:00:00+00:00",
             },
         )
         _write_profile(
@@ -90,6 +92,7 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Software—Infrastructure",
+                "last_updated": "2026-08-29T09:00:00+00:00",
             },
         )
 
@@ -108,6 +111,7 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Consumer Electronics",
+                "last_updated": "2026-08-30T09:00:00+00:00",
             },
             {
                 "ticker": "MSFT",
@@ -121,6 +125,7 @@ class TestBuildCatalogRows:
                 "region": "us",
                 "sector": "Technology",
                 "industry": "Software—Infrastructure",
+                "last_updated": "2026-08-29T09:00:00+00:00",
             },
         ]
 
@@ -174,6 +179,7 @@ class TestBuildCatalogRows:
                 "region": None,
                 "sector": None,
                 "industry": None,
+                "last_updated": None,
             }
         ]
 

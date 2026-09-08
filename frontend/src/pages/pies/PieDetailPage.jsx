@@ -4,12 +4,14 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import AssetIcon from "../../components/core/AssetIcon.jsx";
+import Badge from "../../components/core/Badge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import StatTile from "../../components/core/StatTile.jsx";
+import Skeleton from "../../components/core/Skeleton.jsx";
 import PieForm from "./PieForm.jsx";
 import AllocationEditor from "./AllocationEditor.jsx";
 import PiePriceChart from "./PiePriceChart.jsx";
@@ -21,11 +23,14 @@ import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { deletePie, getPie, listPies, syncPieHoldings, updatePie } from "../../api/pies.js";
+import { MARKET_PROFILE_BADGE_TONES } from "../../api/market.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import {
   computeHoldingValuation,
   summarizeHoldingValuations,
   buildDiversification,
+  formatSyncedDate,
+  minLastUpdated,
 } from "../holdingValuation.js";
 
 /** A pie holding's `invested`/`dividends`/`current_price` (see
@@ -174,6 +179,7 @@ function PieDetailPage() {
       <AppShell
         eyebrow="Portfolio"
         title="Loading…"
+        titleBadges={<Skeleton circle width="110px" height="22px" />}
         actions={
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
             Back to account
@@ -205,6 +211,8 @@ function PieDetailPage() {
     pie.holdings ?? [],
     holdingValuations
   );
+  const syncedIso = minLastUpdated(pie.holdings ?? []);
+  const syncedDate = syncedIso && formatSyncedDate(syncedIso);
 
   return (
     <AppShell
@@ -212,6 +220,9 @@ function PieDetailPage() {
       title={pie.name}
       subtitle={pie.description}
       stickyTitle
+      titleBadges={
+        syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>
+      }
       actions={
         <>
           <Button variant="ghost" onClick={() => navigate(`/accounts/${accountId}`)}>
