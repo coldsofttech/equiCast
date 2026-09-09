@@ -141,6 +141,27 @@ export function selectRecentTradeTransactions(transactions, limit = MAX_RECENT_T
 }
 
 /**
+ * Net shares currently held for one TRANSACTION-mode holding — sum of its
+ * BUY records minus its SELL records, in whatever order they happen to be
+ * stored (not date-ordered), mirroring the net-shares check
+ * `equicast_core.transactions.TransactionsClient.create_transaction` itself
+ * runs server-side for a SELL. Used client-side only to decide which
+ * instances are even eligible for "Add Sell" (a holding with 0 net shares
+ * has nothing left to sell) — the backend is still the source of truth for
+ * whether a given SELL quantity is actually allowed.
+ *
+ * @param {import("../../api/transactions.js").Transaction[]} transactions
+ * @returns {number}
+ */
+export function selectNetShares(transactions) {
+  return transactions.reduce((net, t) => {
+    if (t.type === "BUY") return net + Number(t.no_of_shares);
+    if (t.type === "SELL") return net - Number(t.no_of_shares);
+    return net;
+  }, 0);
+}
+
+/**
  * Rolls up every instance of one ticker (direct-in-account and/or
  * in-pie, possibly spanning both AVERAGE- and TRANSACTION-mode accounts)
  * into one page-level total. Safe as a plain sum in native currency — every

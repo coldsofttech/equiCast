@@ -148,6 +148,17 @@
   color: var(--ec-text-subtle);
 }
 
+.ec-transaction-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  width: 100%;
+}
+
+.ec-transaction-card-head .ec-table-actions {
+  margin-left: auto;
+}
+
 .ec-badge i.bi {
   margin-right: var(--ec-s-4);
 }
