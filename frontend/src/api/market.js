@@ -226,20 +226,20 @@ export async function getMetrics(api, assetClass, symbol) {
 }
 
 /**
+ * `ticker`/`currency` (one instrument) and `last_updated` (the latest of
+ * every contributing row's own) are surfaced once on `DividendsResponse`
+ * rather than repeated on every record — a `DividendRecord` itself only
+ * ever carries what actually varies per payout (see GitHub issue #57).
+ *
  * @typedef {Object} DividendRecord
- * @property {string} ticker
- * @property {string} currency
  * @property {string} ex_dividend_date
  * @property {string|null} payment_date - only ever set for a `"declared"`
  *   record, and even then only when yfinance has reported one yet.
- * @property {number} price - per-share cash amount, in `currency`.
+ * @property {number} price - per-share cash amount, in `DividendsResponse.currency`.
  * @property {"paid"|"declared"|"estimated"} status - `"paid"`: an
  *   already-happened payout. `"declared"`: a real, yfinance-confirmed
  *   upcoming payout (0 or 1 of these ever exist for a ticker at a time).
- *   `"estimated"`: a computed projection from historical cadence/growth,
- *   `source: "equicast"` rather than `"yfinance"`.
- * @property {string} last_updated
- * @property {string} source
+ *   `"estimated"`: a computed projection from historical cadence/growth.
  */
 
 /**
