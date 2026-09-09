@@ -63,11 +63,8 @@ function DashboardPage() {
     <AppShell
       greeting={
         <>
-          <i
-            className={`bi ${greeting.icon} ec-page-greeting-icon ec-page-greeting-icon--${greeting.tone}`}
-            aria-hidden="true"
-          />
-          {greeting.text}
+          <div className="ec-page-greeting-title">{greeting.title}</div>
+          <div className="ec-page-greeting-subtitle">{greeting.subtitle}</div>
         </>
       }
       title="Dashboard"

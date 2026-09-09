@@ -1,14 +1,12 @@
 /**
- * Time-of-day welcome message for /dashboard. Each hour bucket mixes a few
- * different phrasings — classic ("Good afternoon"), a bare time-word
- * ("Noon"), and generic friendly lines ("Hope you're having a good day") —
- * so the greeting doesn't read as one template repeated with a different
- * name, plus a bootstrap-icons glyph + tone (warm for daylight buckets,
- * purple for night) DashboardPage renders before the text. buildGreeting
- * picks one at random on every call; getSessionGreeting (what DashboardPage
- * actually uses) rolls it once and pins it to sessionStorage so navigating
- * away and back within the same tab session keeps showing the same line
- * instead of reshuffling.
+ * Time-of-day welcome message for /dashboard: a fixed classic title
+ * ("Good morning/afternoon/evening/night, {name}") paired with a
+ * randomly-picked friendly subtitle line for the same bucket, so the
+ * subtitle varies without the title itself changing every visit.
+ * buildGreeting picks the subtitle at random on every call;
+ * getSessionGreeting (what DashboardPage actually uses) rolls it once and
+ * pins it to sessionStorage so navigating away and back within the same
+ * tab session keeps showing the same line instead of reshuffling.
  */
 import { readCache, writeCache, clearCache } from "../api/sessionCache.js";
 
@@ -16,62 +14,50 @@ const CACHE_KEY = "ec_greeting";
 
 // Spans midnight (21:00-04:59), so it's referenced by both the first and
 // last bucket below rather than written out twice.
-const NIGHT_PHRASES = [
-  "Working late, {name}?",
-  "Burning the midnight oil, {name}?",
-  "Good to see you, {name}",
-  "Hope you're having a good night, {name}",
-  "{name}, night owl mode?",
+const NIGHT_SUBTITLES = [
+  "Working late?",
+  "Burning the midnight oil?",
+  "Good to see you",
+  "Hope you're having a good night",
+  "Night owl mode?",
 ];
 
 const BUCKETS = [
   {
     maxHour: 5,
-    icon: "bi-moon-stars-fill",
-    tone: "purple",
-    phrases: NIGHT_PHRASES,
+    title: "Good night, {name}",
+    subtitles: NIGHT_SUBTITLES,
   },
   {
     maxHour: 12,
-    icon: "bi-sunrise-fill",
-    tone: "warning",
-    phrases: [
-      "Good morning, {name}",
-      "Morning, {name}",
-      "Rise and shine, {name}",
-      "Hope your morning's off to a good start, {name}",
-      "{name}, ready for the day?",
+    title: "Good morning, {name}",
+    subtitles: [
+      "Rise and shine",
+      "Hope your morning's off to a good start",
+      "Ready for the day?",
     ],
   },
   {
     maxHour: 17,
-    icon: "bi-sun-fill",
-    tone: "warning",
-    phrases: [
-      "Good afternoon, {name}",
-      "Afternoon, {name}",
-      "Noon, {name}",
-      "Hope you're having a good day, {name}",
-      "Hope the afternoon's treating you well, {name}",
+    title: "Good afternoon, {name}",
+    subtitles: [
+      "Hope you're having a good day",
+      "Hope the afternoon's treating you well",
     ],
   },
   {
     maxHour: 21,
-    icon: "bi-sunset-fill",
-    tone: "warning",
-    phrases: [
-      "Good evening, {name}",
-      "Evening, {name}",
-      "Hope you had a good day, {name}",
-      "Winding down, {name}?",
-      "{name}, hope your evening's off to a nice start",
+    title: "Good evening, {name}",
+    subtitles: [
+      "Hope you had a good day",
+      "Winding down?",
+      "Hope your evening's off to a nice start",
     ],
   },
   {
     maxHour: 24,
-    icon: "bi-moon-stars-fill",
-    tone: "purple",
-    phrases: NIGHT_PHRASES,
+    title: "Good night, {name}",
+    subtitles: NIGHT_SUBTITLES,
   },
 ];
 
@@ -80,16 +66,16 @@ function bucketForHour(hour) {
 }
 
 /**
- * Picks a random phrase + icon/tone for the current hour and fills in
- * `firstName`.
+ * Builds the fixed title plus a random subtitle for the current hour, with
+ * `firstName` filled into the title.
  * @param {string} firstName
  * @param {Date} [now]
- * @returns {{ text: string, icon: string, tone: "warning" | "purple" }}
+ * @returns {{ title: string, subtitle: string }}
  */
 export function buildGreeting(firstName, now = new Date()) {
   const bucket = bucketForHour(now.getHours());
-  const template = bucket.phrases[Math.floor(Math.random() * bucket.phrases.length)];
-  return { text: template.replace("{name}", firstName), icon: bucket.icon, tone: bucket.tone };
+  const subtitle = bucket.subtitles[Math.floor(Math.random() * bucket.subtitles.length)];
+  return { title: bucket.title.replace("{name}", firstName), subtitle };
 }
 
 /**
@@ -114,11 +100,11 @@ export function firstNameFrom(user) {
  * next sign-in on the same tab doesn't briefly show the previous user's
  * cached line before their own name loads.
  * @param {{ given_name?: string, name?: string }} [user]
- * @returns {{ text: string, icon: string, tone: "warning" | "purple" }}
+ * @returns {{ title: string, subtitle: string }}
  */
 export function getSessionGreeting(user) {
   const cached = readCache(CACHE_KEY);
-  if (cached?.text && cached?.icon) return cached;
+  if (cached?.title && cached?.subtitle) return cached;
   const next = buildGreeting(firstNameFrom(user));
   writeCache(CACHE_KEY, next);
   return next;
