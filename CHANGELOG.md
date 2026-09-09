@@ -22,6 +22,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stock and ETF holdings get a new "Buy/Sell Rating" gauge on the holding
+  detail page (`/holdings/:ticker`), below the CAGR panel —
+  `HoldingBuySellGauge.jsx`, a single stacked bar split at `buyers_pct`
+  (green) / `sellers_pct` (red), both new fields on `GET .../metrics/`.
+  Computed by a new `equicast_metrics.calculations.buy_sell_volume_pressure`
+  (a Chaikin-Money-Flow-style technical proxy for order-flow sentiment,
+  derived from OHLCV price/volume history over the trailing year — not
+  literal buy/sell order counts) and exposed via a new
+  `MetricsClient.buy_sell_pressure()`, merged into `metrics.parquet` by
+  `equicast-stock`/`equicast-etf`'s own CLIs only (benchmark/fx have no
+  reliable volume data for this, so their `metrics.parquet` is unchanged).
+  Renders nothing for a holding with no recorded volume in the window (both
+  fields come back `None` together) or for a benchmark/fx holding (the
+  fields are simply absent there).
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over

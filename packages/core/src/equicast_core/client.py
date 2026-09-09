@@ -171,12 +171,13 @@ class MarketDataClient:
 
         Always carries the generic risk/performance fields
         (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
-        see `equicast_metrics.MetricsClient.metrics()`); a stock's record
-        additionally carries the valuation/fundamental fields
-        (`trailing_pe`, etc. — see `.fundamentals()`), merged in by each
-        ingestion pipeline's own CLI before writing (etf/fx have no
-        fundamentals, so their `metrics.parquet` only ever has the generic
-        fields).
+        see `equicast_metrics.MetricsClient.metrics()`); a stock or etf's
+        record additionally carries `buyers_pct`/`sellers_pct` (see
+        `.buy_sell_pressure()`), and a stock's record further carries the
+        valuation/fundamental fields (`trailing_pe`, etc. — see
+        `.fundamentals()`) — all merged in by each ingestion pipeline's own
+        CLI before writing (benchmark/fx have neither, so their
+        `metrics.parquet` only ever has the generic fields).
         """
         key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
         rows = self._read_parquet(key)
