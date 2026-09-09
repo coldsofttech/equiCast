@@ -2,6 +2,21 @@ import Card from "../components/core/Card.jsx";
 import Skeleton from "../components/core/Skeleton.jsx";
 
 /**
+ * Placeholder for the greeting's title + subtitle (see greeting.js and
+ * AppShell's `greeting` prop) shown in its place while useAccounts() is
+ * still loading, so the page head doesn't pop in a beat before the account
+ * cards below it do.
+ */
+export function DashboardGreetingSkeleton() {
+  return (
+    <>
+      <Skeleton width="220px" height="1.5rem" />
+      <Skeleton width="260px" height="1rem" />
+    </>
+  );
+}
+
+/**
  * Placeholder account cards shown while useAccounts() is still loading —
  * mirrors AccountCard.jsx's layout (icon+name, type badge, description,
  * current value/P&L, pies/holdings counts) inside the same `.ec-account-grid`/
