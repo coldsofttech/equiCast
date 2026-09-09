@@ -53,6 +53,11 @@ wired through a GitHub Environment variable since it's a fixed
 infrastructure safety net rather than a product-tunable cap. Both reject
 with `429`; a request the API Gateway limit rejects never reaches Lambda at
 all.
+Set `MARKET_DATA_CACHE_TTL_SECONDS` (default `21600`, 6 hours) the same way
+to tune `MarketDataClient`'s in-process S3 parquet cache TTL — see
+`infra/variables.tf`'s `market_data_cache_ttl_seconds`; `0` disables caching
+outright. See [equicast-core's README](../packages/core/README.md#caching)
+for how the cache itself works.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of

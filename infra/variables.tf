@@ -89,3 +89,9 @@ variable "api_rate_limit_per_minute" {
   type        = number
   default     = 120
 }
+
+variable "market_data_cache_ttl_seconds" {
+  description = "TTL (seconds) for MarketDataClient's in-process S3 parquet cache — every asset class's ingestion pipeline refreshes at most once a day, so several hours is safe."
+  type        = number
+  default     = 21600 # 6 hours
+}

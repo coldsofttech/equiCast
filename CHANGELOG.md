@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
+  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
+  — those are the same across every row for one symbol, so they're now
+  surfaced once at the top level only (`last_updated` there is still the
+  *latest* of every contributing row's own, same as before). Each
+  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
+  `price`/`status` (GitHub issue #57). `equicast_core.client.
+  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
+  `DividendRecord` typedef updated to match; no frontend call site actually
+  read the removed per-record fields, so this needed no other UI changes.
+
 ### Added
 
 - Two-layer rate limiting for the API, neither previously present at all.
@@ -38,6 +51,47 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   throttle otherwise shares one counter across every test authenticating
   as the same fixture user, tripping unrelated tests' assertions once
   enough of them ran in one session.
+
+- `MarketDataClient._read_parquet` (the single choke point every S3 read
+  in `equicast_core.client` goes through) now caches in-process, in a
+  module-level TTL cache shared by every `MarketDataClient` instance in
+  the process — previously every request re-fetched the same profile/
+  metrics/dividends/prices/catalog Parquet from S3 from scratch, even
+  though nothing in it had changed since the last ingestion run, possibly
+  a full day earlier. TTL defaults to 6 hours (`DEFAULT_CACHE_TTL_SECONDS`),
+  overridable per deployment via the new `MARKET_DATA_CACHE_TTL_SECONDS`
+  env var (see `infra/variables.tf`'s `market_data_cache_ttl_seconds` and
+  `.github/workflows/terraform.yml`) — `0` disables caching outright. A
+  confirmed-missing key is cached too (e.g. a ticker with no dividends
+  published); a real S3 error never is. New `MarketDataClient.
+  warm_fx_cache()` prefetches the fx catalog and every configured pair's
+  current-year prices, called once from `backend/equicast_api/
+  lambda_handler.py` at Lambda cold start (deliberately not a Django
+  `AppConfig.ready()` hook, so it never fires during `manage.py test`/
+  local `runserver`) — fx conversion sits on the request path of nearly
+  every write (a transaction in a non-default currency) and every
+  holdings/pies/accounts read, the one piece of market data genuinely
+  needed for any operation. No new AWS resource backs any of this — each
+  Lambda execution environment gets its own independent, in-memory-only
+  cache, exactly as cheap as (and strictly faster than) every request
+  hitting S3 directly did before. See
+  [equicast-core's README](packages/core/README.md#caching) for how it
+  works.
+
+- Stock and ETF holdings get a new "Buy/Sell Rating" gauge on the holding
+  detail page (`/holdings/:ticker`), below the CAGR panel —
+  `HoldingBuySellGauge.jsx`, a single stacked bar split at `buyers_pct`
+  (green) / `sellers_pct` (red), both new fields on `GET .../metrics/`.
+  Computed by a new `equicast_metrics.calculations.buy_sell_volume_pressure`
+  (a Chaikin-Money-Flow-style technical proxy for order-flow sentiment,
+  derived from OHLCV price/volume history over the trailing year — not
+  literal buy/sell order counts) and exposed via a new
+  `MetricsClient.buy_sell_pressure()`, merged into `metrics.parquet` by
+  `equicast-stock`/`equicast-etf`'s own CLIs only (benchmark/fx have no
+  reliable volume data for this, so their `metrics.parquet` is unchanged).
+  Renders nothing for a holding with no recorded volume in the window (both
+  fields come back `None` together) or for a benchmark/fx holding (the
+  fields are simply absent there).
 
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
