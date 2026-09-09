@@ -103,6 +103,18 @@ CORS_ALLOWED_ORIGINS = [
     o for o in os.environ.get("DJANGO_CORS_ORIGINS", "http://localhost:5173").split(",") if o
 ]
 
+# Retry-After isn't one of the handful of response headers a browser
+# exposes to a cross-origin fetch() by default (the CORS-safelisted set —
+# Cache-Control/Content-Language/Content-Length/Content-Type/Expires/
+# Last-Modified/Pragma) — without this, DRF's own Retry-After header on a
+# 429 (see rest_framework's exception_handler, set from
+# identity.throttling.Auth0UserRateThrottle) would be present on the wire
+# but silently unreadable via response.headers.get("Retry-After") in the
+# frontend's apiFetch (client.js), which only ever hits this cross-origin
+# in a real deployment — same-origin locally, via Vite's dev proxy, is why
+# this could otherwise go unnoticed in local testing.
+CORS_EXPOSE_HEADERS = ["Retry-After"]
+
 # No default: there's no sane bucket to fall back to, so an unset value
 # should fail loudly rather than silently pointing at nothing.
 MARKET_DATA_BUCKET = os.environ.get("MARKET_DATA_BUCKET")
