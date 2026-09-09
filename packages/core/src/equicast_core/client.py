@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import calendar
 import json
+import threading
+import time
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -123,24 +125,134 @@ def _aggregate_prices(rows: list[dict[str, Any]], bucket: str) -> list[dict[str,
     ]
 
 
+#: Default TTL (seconds) for `MarketDataClient`'s in-process parquet cache
+#: (see `_cache`/`_read_parquet`), used when a caller doesn't pass its own
+#: `cache_ttl_seconds`. Overridable per deployment via the
+#: `MARKET_DATA_CACHE_TTL_SECONDS` env var (see backend's settings.py and
+#: infra/variables.tf's `market_data_cache_ttl_seconds`), not a code
+#: change. Every asset class's ingestion pipeline refreshes at most once a
+#: day, on weekdays only (see the `*-ingestion.yml` workflows) — several
+#: hours of staleness is always safe regardless of how long a Lambda
+#: execution environment happens to stay warm.
+DEFAULT_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+
+#: `{s3_key: (expires_at, value)}` — a process-wide cache for
+#: `_read_parquet`, deliberately module-level rather than kept on `self`.
+#: `backend/{accounts,holdings,market_data,pies,transactions}/views.py`
+#: each construct their *own* independent `MarketDataClient` at import
+#: time; a per-instance cache would mean `warm_fx_cache()` (below) only
+#: ever benefited whichever one instance happened to call it, instead of
+#: every request path in the process. `value` is whatever `_read_parquet`
+#: returns — a row list, or `None` for a confirmed-missing key, cached the
+#: same way so a ticker with nothing published yet (e.g. no dividends)
+#: isn't re-checked against S3 on every call within the TTL window.
+#: `expires_at` is a `time.monotonic()` reading, immune to wall-clock
+#: adjustments during a container's lifetime.
+#:
+#: Not shared *across* Lambda execution environments — each cold-started
+#: container gets its own independent (initially empty) cache; that would
+#: need a new AWS resource (e.g. ElastiCache) to change, which this
+#: deliberately avoids. A cold-started container just pays the S3 read
+#: cost again, the same as every request did before this cache existed.
+_cache: dict[str, tuple[float, Any]] = {}
+_cache_lock = threading.Lock()
+
+
+def clear_cache() -> None:
+    """Drop every cached parquet read. Test-only; not part of the public
+    API — without this, a fresh moto-backed `MarketDataClient` in one test
+    could silently "hit" a value a differently-seeded earlier test left
+    behind, since `_cache` is module-level rather than per-instance (see
+    its own docstring for why)."""
+    with _cache_lock:
+        _cache.clear()
+
+
 class MarketDataClient:
     """Reads profile/price/catalog Parquet/JSON objects from one S3
     bucket."""
 
-    def __init__(self, bucket: str, s3_client: Any = None, region_name: str | None = None) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        s3_client: Any = None,
+        region_name: str | None = None,
+        cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+    ) -> None:
         self._bucket = bucket
         self._s3 = s3_client or boto3.client("s3", region_name=region_name)
+        self._cache_ttl_seconds = cache_ttl_seconds
 
     def _read_parquet(self, key: str) -> list[dict[str, Any]] | None:
         """Return every row of the Parquet object at `key`, or `None` if it
-        doesn't exist. Any other S3 error propagates as-is."""
+        doesn't exist. Any other S3 error propagates as-is — and is never
+        cached, since a transient failure shouldn't be remembered as "this
+        key is missing" for the rest of the TTL window.
+
+        Cached in-process for `self._cache_ttl_seconds` (default
+        `DEFAULT_CACHE_TTL_SECONDS`) in a cache shared by every
+        `MarketDataClient` instance in this process, not just this one —
+        see the module-level `_cache`'s docstring for why. A cache hit
+        skips S3 entirely. `cache_ttl_seconds <= 0` disables caching
+        outright — every call reads through to S3, the same behavior this
+        method always had before caching existed.
+        """
+        with _cache_lock:
+            cached = _cache.get(key)
+        if cached is not None and time.monotonic() < cached[0]:
+            return cached[1]
+
         try:
             response = self._s3.get_object(Bucket=self._bucket, Key=key)
         except self._s3.exceptions.NoSuchKey:
-            return None
-        body = response["Body"].read()
-        table = pq.read_table(BufferReader(body))
-        return table.to_pylist()
+            result = None
+        else:
+            body = response["Body"].read()
+            table = pq.read_table(BufferReader(body))
+            result = table.to_pylist()
+
+        if self._cache_ttl_seconds > 0:
+            with _cache_lock:
+                _cache[key] = (time.monotonic() + self._cache_ttl_seconds, result)
+        return result
+
+    def warm_fx_cache(self) -> None:
+        """Prefetch `catalog/fx.parquet` and every configured fx pair's
+        `price/current.parquet` into `_read_parquet`'s shared cache — meant
+        to be called once, at Lambda cold start (see
+        `backend/equicast_api/lambda_handler.py`), since fx conversion
+        (`get_fx_rate_on_date`, via `resolve_converted_amounts`) sits on
+        the request path of nearly every write (a transaction create/
+        update in any non-default currency) and every holdings/pies/
+        accounts read (`enrich_holdings`) — the one piece of market data
+        genuinely needed by "any operation," unlike a single stock/etf/
+        benchmark profile a request may never touch.
+
+        Deliberately narrow: only `price/current.parquet` (this calendar
+        year), not `price/history.parquet` — covers `get_fx_rate_on_date`
+        for any current-year transaction, the overwhelming common case. A
+        transaction backdated into an earlier year still resolves
+        correctly; it just falls back to a normal (now cached-after-first-
+        use) `price/history.parquet` read instead of being pre-warmed.
+
+        Never raises — a transient S3/network error here would otherwise
+        take down the whole Lambda at cold start before it ever serves a
+        request, which is strictly worse than just not having pre-warmed
+        the cache (every request still works, falling back to the same
+        lazy, cached-after-first-use reads every other asset class already
+        gets)."""
+        try:
+            fx_catalog = self.get_catalog("fx")
+        except Exception:
+            return
+        for row in fx_catalog:
+            ticker = row.get("ticker")
+            if not ticker:
+                continue
+            try:
+                self._read_parquet(f"fx={ticker.upper()}/price/current.parquet")
+            except Exception:
+                continue
 
     def get_profile(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single profile record for `symbol`, or `None` if this

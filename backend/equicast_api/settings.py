@@ -138,3 +138,10 @@ MAX_HOLDINGS_FOR_ACCOUNT = int(os.environ.get("MAX_HOLDINGS_FOR_ACCOUNT", 100))
 MAX_HOLDINGS_FOR_PIE = int(os.environ.get("MAX_HOLDINGS_FOR_PIE", 50))
 MAX_HOLDINGS_FOR_WATCHLIST = int(os.environ.get("MAX_HOLDINGS_FOR_WATCHLIST", 20))
 MAX_TRANSACTIONS_FOR_HOLDING = int(os.environ.get("MAX_TRANSACTIONS_FOR_HOLDING", 500))
+
+# TTL (seconds) for MarketDataClient's in-process S3 parquet cache — same
+# overridable-per-environment convention as the MAX_* caps above (see
+# infra/variables.tf's market_data_cache_ttl_seconds and
+# .github/workflows/terraform.yml), default matching equicast_core's own
+# DEFAULT_CACHE_TTL_SECONDS for local/unset use.
+MARKET_DATA_CACHE_TTL_SECONDS = int(os.environ.get("MARKET_DATA_CACHE_TTL_SECONDS", 6 * 60 * 60))

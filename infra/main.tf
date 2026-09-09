@@ -258,13 +258,14 @@ module "backend_lambda" {
     # at this API Gateway URL instead of getting an HTML fallback page back.
     DJANGO_CORS_ORIGINS = "https://${aws_cloudfront_distribution.frontend.domain_name}"
     # Lambda env vars are always strings; settings.py int()-parses these.
-    MAX_ACCOUNTS                 = tostring(var.max_accounts)
-    MAX_PIES                     = tostring(var.max_pies)
-    MAX_WATCHLISTS               = tostring(var.max_watchlists)
-    MAX_HOLDINGS_FOR_ACCOUNT     = tostring(var.max_holdings_for_account)
-    MAX_HOLDINGS_FOR_PIE         = tostring(var.max_holdings_for_pie)
-    MAX_HOLDINGS_FOR_WATCHLIST   = tostring(var.max_holdings_for_watchlist)
-    MAX_TRANSACTIONS_FOR_HOLDING = tostring(var.max_transactions_for_holding)
+    MAX_ACCOUNTS                  = tostring(var.max_accounts)
+    MAX_PIES                      = tostring(var.max_pies)
+    MAX_WATCHLISTS                = tostring(var.max_watchlists)
+    MAX_HOLDINGS_FOR_ACCOUNT      = tostring(var.max_holdings_for_account)
+    MAX_HOLDINGS_FOR_PIE          = tostring(var.max_holdings_for_pie)
+    MAX_HOLDINGS_FOR_WATCHLIST    = tostring(var.max_holdings_for_watchlist)
+    MAX_TRANSACTIONS_FOR_HOLDING  = tostring(var.max_transactions_for_holding)
+    MARKET_DATA_CACHE_TTL_SECONDS = tostring(var.market_data_cache_ttl_seconds)
     # Previously unset here, silently falling back to settings.py's
     # DEBUG default of "true" for every deployed environment (dev and
     # prod alike) — a real information-disclosure risk in prod, since an

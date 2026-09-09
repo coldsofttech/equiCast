@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `MarketDataClient._read_parquet` (the single choke point every S3 read
+  in `equicast_core.client` goes through) now caches in-process, in a
+  module-level TTL cache shared by every `MarketDataClient` instance in
+  the process — previously every request re-fetched the same profile/
+  metrics/dividends/prices/catalog Parquet from S3 from scratch, even
+  though nothing in it had changed since the last ingestion run, possibly
+  a full day earlier. TTL defaults to 6 hours (`DEFAULT_CACHE_TTL_SECONDS`),
+  overridable per deployment via the new `MARKET_DATA_CACHE_TTL_SECONDS`
+  env var (see `infra/variables.tf`'s `market_data_cache_ttl_seconds` and
+  `.github/workflows/terraform.yml`) — `0` disables caching outright. A
+  confirmed-missing key is cached too (e.g. a ticker with no dividends
+  published); a real S3 error never is. New `MarketDataClient.
+  warm_fx_cache()` prefetches the fx catalog and every configured pair's
+  current-year prices, called once from `backend/equicast_api/
+  lambda_handler.py` at Lambda cold start (deliberately not a Django
+  `AppConfig.ready()` hook, so it never fires during `manage.py test`/
+  local `runserver`) — fx conversion sits on the request path of nearly
+  every write (a transaction in a non-default currency) and every
+  holdings/pies/accounts read, the one piece of market data genuinely
+  needed for any operation. No new AWS resource backs any of this — each
+  Lambda execution environment gets its own independent, in-memory-only
+  cache, exactly as cheap as (and strictly faster than) every request
+  hitting S3 directly did before. See
+  [equicast-core's README](packages/core/README.md#caching) for how it
+  works.
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over
