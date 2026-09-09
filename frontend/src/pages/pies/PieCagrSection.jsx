@@ -34,11 +34,20 @@ const CAGR_PERIODS = [
  * holding has any cagr_* field at all (e.g. every holding too recently
  * listed to annualize).
  *
+ * Once `rows` are ready, each bar segment grows from the zero-line out to
+ * its real width (rather than just appearing at full width) — `revealed`
+ * starts false on every fresh `metricsByHolding`, then flips true on the
+ * next frame so there's an actual 0 -> final width change for
+ * `.ec-cagr-bar-segment`'s own `transition: width` (HoldingTickerPage.css)
+ * to animate. Each row's transition-delay is staggered by index so the
+ * bars fill in one after another rather than all at once.
+ *
  * @param {{ holdings: import("../../api/accounts.js").Holding[], valuations: { currentValue: number }[], label?: string }} props
  */
 function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
   const api = useApi();
   const [metricsByHolding, setMetricsByHolding] = useState(null);
+  const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +60,13 @@ function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
       cancelled = true;
     };
   }, [api, holdings]);
+
+  useEffect(() => {
+    if (!metricsByHolding) return undefined;
+    setRevealed(false);
+    const frame = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [metricsByHolding]);
 
   if (!metricsByHolding) return null;
 
@@ -70,9 +86,10 @@ function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
       </div>
 
       <div className="ec-cagr-list">
-        {rows.map(({ label, value }) => {
+        {rows.map(({ label, value }, index) => {
           const tone = plTone(value * 100);
           const barPct = maxAbs > 0 ? (Math.abs(value) / maxAbs) * 50 : 0;
+          const revealedWidth = revealed ? `${barPct}%` : "0%";
           return (
             <div className="ec-cagr-row" key={label}>
               <span className="ec-cagr-period">{label}</span>
@@ -80,7 +97,11 @@ function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
                 <div className="ec-cagr-bar-zero" />
                 <div
                   className={`ec-cagr-bar-segment ${tone}`}
-                  style={value >= 0 ? { left: "50%", width: `${barPct}%` } : { right: "50%", width: `${barPct}%` }}
+                  style={
+                    value >= 0
+                      ? { left: "50%", width: revealedWidth, transitionDelay: `${index * 60}ms` }
+                      : { right: "50%", width: revealedWidth, transitionDelay: `${index * 60}ms` }
+                  }
                 />
               </div>
               <span className={`ec-cagr-value ${tone}`}>
