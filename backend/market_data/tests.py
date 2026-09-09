@@ -125,7 +125,6 @@ class DividendsViewTests(TestCase):
                     "price": 0.26,
                     "status": "declared",
                     "last_updated": "2026-08-30T09:00:00+00:00",
-                    "source": "yfinance",
                 }
             ],
         }
@@ -176,7 +175,6 @@ class PricesViewTests(TestCase):
             "ticker": "VOO",
             "currency": "USD",
             "last_updated": "2026-01-02T21:00:00+00:00",
-            "source": "yfinance",
             "prices": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
         }
 
@@ -202,7 +200,6 @@ class PricesViewTests(TestCase):
             "ticker": "VOO",
             "currency": "USD",
             "last_updated": None,
-            "source": None,
             "prices": [],
         }
 
@@ -232,7 +229,6 @@ class PricesViewTests(TestCase):
             "ticker": "UNKNOWN",
             "currency": None,
             "last_updated": None,
-            "source": None,
             "prices": [],
         }
 

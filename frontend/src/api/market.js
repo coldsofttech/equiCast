@@ -92,6 +92,13 @@ export function searchTickers(
 }
 
 /**
+ * None of MarketProfile/MarketMetrics/DividendRecord/PriceSeries carry a
+ * `source` field ("yfinance" vs "equicast") — the backend deliberately
+ * drops it before returning (see equicast_core.client's `_without_source`)
+ * even though the underlying Parquet still has it; provenance like that is
+ * documented per ingestion pipeline (e.g. packages/stock/README.md), not
+ * something this API surfaces.
+ *
  * @typedef {Object} MarketProfile
  * @property {string} ticker
  * @property {string} name
@@ -124,7 +131,6 @@ export function searchTickers(
  * @property {{name: string, role: string}[]} ceos
  * @property {string|null} ipo_date
  * @property {string} last_updated
- * @property {string} source
  */
 
 /**
@@ -190,7 +196,6 @@ export async function getProfile(api, assetClass, symbol) {
  *   150.0 for 150%), not a fraction.
  * @property {number|null} [free_cash_flow_per_share]
  * @property {string} last_updated
- * @property {string} source
  */
 
 /**
@@ -236,10 +241,8 @@ export async function getMetrics(api, assetClass, symbol) {
  * @property {"paid"|"declared"|"estimated"} status - `"paid"`: an
  *   already-happened payout. `"declared"`: a real, yfinance-confirmed
  *   upcoming payout (0 or 1 of these ever exist for a ticker at a time).
- *   `"estimated"`: a computed projection from historical cadence/growth,
- *   `source: "equicast"` rather than `"yfinance"`.
+ *   `"estimated"`: a computed projection from historical cadence/growth.
  * @property {string} last_updated
- * @property {string} source
  */
 
 /**
@@ -318,7 +321,6 @@ export const DEFAULT_PRICE_RANGE = "max";
  * @property {string} ticker
  * @property {string|null} currency
  * @property {string|null} last_updated
- * @property {string|null} source
  * @property {PriceBar[]} prices - ascending/oldest-first. Daily bars for
  *   `range` "6m" or shorter; weekly ("1y"/"2y") or monthly ("3y" and up)
  *   OHLC bars otherwise — see equicast_core.client.get_prices.

@@ -46,7 +46,7 @@ transactions-per-holding cap — see `infra/variables.tf`'s
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of
   `fx`/`stock`/`etf`/`benchmark`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — `{ticker, currency,
-  last_updated, source, prices: [{date, open, high, low, close}, ...]}`.
+  last_updated, prices: [{date, open, high, low, close}, ...]}`.
   Optional `?range=` (one of `1d`/`5d`/`1m`/`6m`/`ytd`/`1y`/`2y`/`3y`/`5y`/
   `10y`/`max`, default `max` — see `equicast_core.client.PRICE_RANGES`);
   `1y`/`2y` aggregate to weekly bars and `3y`/`5y`/`10y`/`max` to monthly

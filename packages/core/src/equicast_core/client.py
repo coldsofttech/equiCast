@@ -123,6 +123,19 @@ def _aggregate_prices(rows: list[dict[str, Any]], bucket: str) -> list[dict[str,
     ]
 
 
+def _without_source(row: dict[str, Any]) -> dict[str, Any]:
+    """`row` with its `source` field dropped, if it has one — `source`
+    ("yfinance" vs. "equicast", see e.g. `equicast_metrics.MetricsClient.
+    metrics()`'s own docstring) is provenance meant for a parquet
+    file/ingestion pipeline's own docs, not something any of this client's
+    API-facing return values (`get_profile`/`get_metrics`/`get_dividends`/
+    `get_prices`) expose — the raw Parquet these are read from still has
+    it, untouched; only what this client hands back to a caller doesn't.
+    A plain filtered copy rather than `row.pop("source", None)`, so this
+    never mutates whatever object `_read_parquet` returned."""
+    return {k: v for k, v in row.items() if k != "source"}
+
+
 class MarketDataClient:
     """Reads profile/price/catalog Parquet/JSON objects from one S3
     bucket."""
@@ -155,6 +168,14 @@ class MarketDataClient:
         touched when present and still a string — etf/fx profiles have no
         `ceos` field at all, and a value that's already a list (e.g. from a
         test fixture) is left as-is rather than re-decoded.
+
+        Drops the raw row's `source` field (see `_without_source`) —
+        whether a given ingestion pipeline resolved this record directly
+        from yfinance or had to fall back to an equicast-computed value is
+        provenance for that pipeline's own docs/parquet output, not
+        something an API caller needs to branch on; see each pipeline's own
+        README (e.g. `packages/stock/README.md`) for what `source` means
+        there.
         """
         key = f"{asset_class.lower()}={symbol.upper()}/profile.parquet"
         rows = self._read_parquet(key)
@@ -163,7 +184,7 @@ class MarketDataClient:
         profile = rows[0]
         if isinstance(profile.get("ceos"), str):
             profile = {**profile, "ceos": json.loads(profile["ceos"])}
-        return profile
+        return _without_source(profile)
 
     def get_metrics(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single metrics record for `symbol`, or `None` if this
@@ -177,12 +198,15 @@ class MarketDataClient:
         ingestion pipeline's own CLI before writing (etf/fx have no
         fundamentals, so their `metrics.parquet` only ever has the generic
         fields).
+
+        Drops the raw row's `source` field — see `get_profile`'s docstring
+        for why.
         """
         key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
         rows = self._read_parquet(key)
         if not rows:
             return None
-        return rows[0]
+        return _without_source(rows[0])
 
     def get_dividends(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return `{ticker, currency, last_updated, dividends}` for `symbol`,
@@ -215,6 +239,9 @@ class MarketDataClient:
         overlapping estimate" (e.g. a holding page's upcoming-dividends
         cards) apply that themselves, the same way callers of `get_prices`
         pick their own display range rather than this client guessing one.
+
+        Each entry drops the raw row's `source` field — see `get_profile`'s
+        docstring for why.
         """
         prefix = f"{asset_class.lower()}={symbol.upper()}"
         paid_rows = (self._read_parquet(f"{prefix}/dividend/history.parquet") or []) + (
@@ -235,7 +262,6 @@ class MarketDataClient:
                     "price": row["price"],
                     "status": "paid",
                     "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in paid_rows
             ),
@@ -248,7 +274,6 @@ class MarketDataClient:
                     "price": row["price"],
                     "status": "declared",
                     "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in declared_rows
             ),
@@ -261,7 +286,6 @@ class MarketDataClient:
                     "price": row["price"],
                     "status": "estimated",
                     "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in estimated_rows
             ),
@@ -278,7 +302,7 @@ class MarketDataClient:
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE
     ) -> dict[str, Any]:
-        """Return `{ticker, currency, last_updated, source, prices}` for
+        """Return `{ticker, currency, last_updated, prices}` for
         `symbol`, where `prices` is ascending-by-date `{date, open, high,
         low, close}` bars trimmed to `price_range` (one of PRICE_RANGES;
         default "max" = this ticker's entire published history). Ranges past
@@ -301,13 +325,15 @@ class MarketDataClient:
         currency doesn't change day to day) — `None` for an asset class
         whose price rows carry no `currency` field at all (fx: a pair
         converts *between* two currencies rather than being priced *in*
-        one, see `equicast_fx.writer`); `last_updated`/`source` reflect
-        whichever matched daily row was written most recently (same "max of
-        the parts" pattern as equicast_stock.cli's combined `last_updated`)
-        — `history.parquet`/`current.parquet` are written independently
-        (see equicast_stock.writer), so their own `last_updated`/`source`
-        can differ. Both are read before aggregation, since an aggregated
-        bucket no longer carries per-row metadata.
+        one, see `equicast_fx.writer`); `last_updated` reflects whichever
+        matched daily row was written most recently (same "max of the
+        parts" pattern as equicast_stock.cli's combined `last_updated`) —
+        `history.parquet`/`current.parquet` are written independently (see
+        equicast_stock.writer), so their own `last_updated` can differ.
+        Read before aggregation, since an aggregated bucket no longer
+        carries per-row metadata. The matched rows' own `source` is read
+        the same way internally, but dropped from what's actually
+        returned — see `get_profile`'s docstring for why.
 
         Returns all-`None`/empty `prices` when nothing is published for this
         symbol/range yet — the same "not configured" signal `get_prices`
@@ -362,7 +388,6 @@ class MarketDataClient:
                 "ticker": symbol.upper(),
                 "currency": None,
                 "last_updated": None,
-                "source": None,
                 "prices": [],
             }
 
@@ -382,7 +407,6 @@ class MarketDataClient:
             "ticker": symbol.upper(),
             "currency": rows[0].get("currency"),
             "last_updated": freshest["last_updated"],
-            "source": freshest["source"],
             "prices": prices,
         }
 

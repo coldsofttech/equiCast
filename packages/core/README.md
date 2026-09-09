@@ -23,9 +23,17 @@ client.get_profile("stock", "AAPL")
 # {"ticker": "AAPL", "name": "Apple Inc.", ...} or None if not configured
 
 client.get_prices("etf", "VOO", price_range="1y")
-# {"ticker": "VOO", "currency": "USD", "last_updated": "...", "source": "...",
+# {"ticker": "VOO", "currency": "USD", "last_updated": "...",
 #  "prices": [{"date": "2026-01-02", "open": ..., "high": ..., "low": ..., "close": ...}, ...]}
 ```
+
+`get_profile()`/`get_metrics()`/`get_dividends()`/`get_prices()` all drop
+the raw Parquet row's own `source` field ("yfinance" vs "equicast" — see
+each ingestion pipeline's own README, e.g.
+[packages/stock/README.md](../stock/README.md)) before returning —
+provenance for that pipeline's docs/parquet output, not something this
+client's callers (ultimately the Django backend's `/api/market/...`
+responses) need to see.
 
 `get_profile()` returns `None` (not an exception) when the requested
 ticker/pair has no `profile.parquet` in the bucket — a real "this symbol
@@ -54,9 +62,8 @@ trading day) OHLC bars rather than returned at daily resolution, so a
 long-history response stays a few hundred rows instead of several thousand
 — this client's typical caller (the Django backend) runs as a Lambda
 behind API Gateway, and a chart is unreadable at daily resolution over a
-decade anyway. `currency`/`last_updated`/`source` reflect the matched rows
-before aggregation (an aggregated bucket has no per-row metadata of its
-own).
+decade anyway. `currency`/`last_updated` reflect the matched rows before
+aggregation (an aggregated bucket has no per-row metadata of its own).
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
