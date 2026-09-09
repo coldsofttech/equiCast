@@ -1,4 +1,5 @@
 import { dividendsCacheKey, readCachedDividends, writeCachedDividends } from "../utils/dividendsCache.js";
+import { eventsCacheKey, readCachedEvents, writeCachedEvents } from "../utils/eventsCache.js";
 import { metricsCacheKey, readCachedMetrics, writeCachedMetrics } from "../utils/metricsCache.js";
 import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
 import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils/profileCache.js";
@@ -279,6 +280,80 @@ export async function getDividends(api, assetClass, symbol) {
     await api(`/market/${assetClass}/${symbol}/dividends/`)
   );
   writeCachedDividends(cacheKey, result);
+  return result;
+}
+
+/**
+ * One corporate event — earnings report, analyst rating change, or stock
+ * split, tagged by `event_type`; only that type's own fields are ever
+ * set, the rest are `null` (see equicast_events.EventsClient's own
+ * docstring, which this mirrors exactly).
+ *
+ * @typedef {Object} EventRecord
+ * @property {string} ticker
+ * @property {"earnings"|"rating"|"split"} event_type
+ * @property {string} date
+ * @property {number|null} eps_estimate - `"earnings"` only.
+ * @property {number|null} reported_eps - `"earnings"` only; `null` for a
+ *   still-upcoming (estimated) report date.
+ * @property {number|null} surprise_pct - `"earnings"` only, percentage
+ *   points (e.g. `-3.5` for -3.5%), not a 0-1 fraction; `null` alongside
+ *   `reported_eps` for an upcoming date.
+ * @property {string|null} firm - `"rating"` only.
+ * @property {string|null} from_grade - `"rating"` only; `null` for a
+ *   coverage initiation (yfinance reports an empty string there, not a
+ *   grade).
+ * @property {string|null} to_grade - `"rating"` only.
+ * @property {string|null} action - `"rating"` only (e.g. `"up"`/`"down"`/
+ *   `"init"`/`"main"`).
+ * @property {string|null} price_target_action - `"rating"` only (e.g.
+ *   `"raises"`/`"lowers"`/`"maintains"`).
+ * @property {number|null} current_price_target - `"rating"` only, in this
+ *   ticker's own native trading currency.
+ * @property {number|null} prior_price_target - `"rating"` only, same
+ *   currency as `current_price_target`; `null` when not applicable (e.g. a
+ *   coverage initiation has no *prior* target to report).
+ * @property {number|null} ratio - `"split"` only (e.g. `4.0` for a 4-for-1
+ *   split, `0.5` for a 1-for-2 reverse split).
+ * @property {string} last_updated
+ * @property {string} source
+ */
+
+/**
+ * @typedef {Object} EventsResponse
+ * @property {string} ticker
+ * @property {string} last_updated
+ * @property {EventRecord[]} events - chronological (ascending `date`),
+ *   unfiltered by date — see backend/market_data/views.py's EventsView
+ *   docstring.
+ */
+
+/**
+ * GET /api/market/<asset_class>/<symbol>/events/ — see
+ * backend/market_data/views.py's EventsView. Throws an ApiError with
+ * status 404 when no event data is published yet for this symbol —
+ * callers should catch that and degrade gracefully, same as
+ * getProfile/getMetrics/getDividends.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/eventsCache.js), same rationale
+ * as getProfile/getMetrics/getDividends/getPrices.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} assetClass
+ * @param {string} symbol
+ * @returns {Promise<EventsResponse>}
+ */
+export async function getEvents(api, assetClass, symbol) {
+  const cacheKey = eventsCacheKey(assetClass, symbol);
+
+  const cached = await readCachedEvents(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {EventsResponse} */ (
+    await api(`/market/${assetClass}/${symbol}/events/`)
+  );
+  writeCachedEvents(cacheKey, result);
   return result;
 }
 

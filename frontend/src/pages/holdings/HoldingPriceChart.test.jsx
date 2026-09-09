@@ -1,11 +1,12 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
-import { getMetrics, getPrices, searchTickers } from "../../api/market.js";
+import { getEvents, getMetrics, getPrices, searchTickers } from "../../api/market.js";
 import HoldingPriceChart from "./HoldingPriceChart.jsx";
 
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
 vi.mock("../../api/market.js", () => ({
+  getEvents: vi.fn(),
   getMetrics: vi.fn(),
   getPrices: vi.fn(),
   searchTickers: vi.fn(),
@@ -122,5 +123,103 @@ describe("HoldingPriceChart", () => {
     // covered by HoldingBenchmarkRating.test.jsx, this just checks the wiring.
     expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL");
     expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500");
+  });
+
+  it("fetches events only once the Key events toggle is switched on", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+    vi.mocked(getEvents).mockResolvedValue({ ticker: "AAPL", last_updated: null, events: [] });
+
+    render(<HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />);
+
+    expect(getEvents).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText("Key events"));
+
+    await waitFor(() =>
+      expect(getEvents).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL")
+    );
+  });
+
+  it("plots a marker for an in-range event and shows its details on hover", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+    vi.mocked(getEvents).mockResolvedValue({
+      ticker: "AAPL",
+      last_updated: "2024-01-02T00:00:00Z",
+      events: [
+        {
+          ticker: "AAPL",
+          event_type: "earnings",
+          date: "2024-01-02",
+          eps_estimate: 1.5,
+          reported_eps: 1.6,
+          surprise_pct: 6.67,
+          firm: null,
+          from_grade: null,
+          to_grade: null,
+          action: null,
+          price_target_action: null,
+          current_price_target: null,
+          prior_price_target: null,
+          ratio: null,
+          last_updated: "2024-01-02T00:00:00Z",
+          source: "yfinance",
+        },
+      ],
+    });
+
+    const { container } = render(
+      <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
+    );
+    fireEvent.click(screen.getByLabelText("Key events"));
+
+    const dot = await waitFor(() => {
+      const el = container.querySelector(".ec-pchart-event-dot--earnings");
+      expect(el).not.toBeNull();
+      return el;
+    });
+
+    fireEvent.mouseEnter(dot);
+
+    expect(await screen.findByText("Earnings")).toBeInTheDocument();
+    expect(screen.getByText("6.67%")).toBeInTheDocument();
+  });
+
+  it("drops an event dated outside the chart's visible range", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+    vi.mocked(getEvents).mockResolvedValue({
+      ticker: "AAPL",
+      last_updated: "2020-01-01T00:00:00Z",
+      events: [
+        {
+          ticker: "AAPL",
+          event_type: "split",
+          date: "2020-01-01", // well before MAIN_BARS' own earliest date
+          eps_estimate: null,
+          reported_eps: null,
+          surprise_pct: null,
+          firm: null,
+          from_grade: null,
+          to_grade: null,
+          action: null,
+          price_target_action: null,
+          current_price_target: null,
+          prior_price_target: null,
+          ratio: 4.0,
+          last_updated: "2020-01-01T00:00:00Z",
+          source: "yfinance",
+        },
+      ],
+    });
+
+    const { container } = render(
+      <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
+    );
+    fireEvent.click(screen.getByLabelText("Key events"));
+
+    await waitFor(() => expect(getEvents).toHaveBeenCalled());
+    expect(container.querySelector(".ec-pchart-event-dot--split")).toBeNull();
   });
 });

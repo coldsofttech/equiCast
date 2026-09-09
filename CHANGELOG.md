@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `/holdings/:ticker`'s price chart gains a "Key events" toggle (off by
+  default, matching Yahoo Finance's own), overlaying real earnings/
+  analyst-rating/stock-split markers — hovering one shows a floating
+  tooltip with that event's details (EPS estimate/actual/surprise for
+  earnings; analyst/rating action/rating/price-target change for a rating;
+  the split ratio for a split). A full vertical slice, since nothing
+  previously read the events data the ingestion pipelines already wrote:
+  new `equicast_core.client.MarketDataClient.get_events()` (combines
+  `events/history.parquet`/`events/current.parquet`, mirroring
+  `get_dividends()`'s shape), a new `GET /api/market/<asset_class>/
+  <symbol>/events/` endpoint, and `frontend/src/api/market.js`'s
+  `getEvents()` (same same-day IndexedDB caching as
+  getProfile/getMetrics/getDividends/getPrices — see the new
+  `utils/eventsCache.js`).
+
+  Also extends `equicast_events.EventsClient`'s `"rating"` records with
+  `price_target_action`/`current_price_target`/`prior_price_target` —
+  already present in the `upgrades_downgrades` data every rating record
+  was already built from (yfinance's `priceTargetAction`/
+  `currentPriceTarget`/`priorPriceTarget` columns), just not previously
+  read. `0` (yfinance's sentinel for "not applicable", e.g. a coverage
+  initiation has no *prior* target) is treated as `None`, same as
+  `from_grade`'s own empty-string sentinel. `packages/stock`'s and
+  `packages/etf`'s `events.parquet` schemas gain the three matching
+  columns.
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over

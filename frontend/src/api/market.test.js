@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getDividends, getMetrics, getPrices, getProfile, searchTickers } from "./market.js";
+import { getDividends, getEvents, getMetrics, getPrices, getProfile, searchTickers } from "./market.js";
 
 describe("market api", () => {
   it("searches tickers by query with default page/page size", async () => {
@@ -100,6 +100,14 @@ describe("market api", () => {
     await getDividends(api, "stock", "AAPL");
 
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/dividends/");
+  });
+
+  it("fetches a symbol's events", async () => {
+    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", last_updated: null, events: [] });
+
+    await getEvents(api, "stock", "AAPL");
+
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/events/");
   });
 
   it("defaults to the max range when none is given", async () => {

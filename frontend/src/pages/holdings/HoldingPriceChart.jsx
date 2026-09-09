@@ -1,12 +1,44 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
-import { getPrices } from "../../api/market.js";
+import { getEvents, getPrices } from "../../api/market.js";
 import { formatPrice } from "./holdingFinancials.js";
 import HoldingBenchmarkRating from "./HoldingBenchmarkRating.jsx";
 import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
 import "./HoldingPriceChart.css";
+
+/** Label/CSS-modifier per `EventRecord.event_type` (see market.js) — one
+ * mapping so the toggle's dots/legend and the hover tooltip's own heading
+ * agree on what each type is called. */
+const EVENT_TYPE_META = {
+  earnings: { label: "Earnings" },
+  rating: { label: "Analyst Rating" },
+  split: { label: "Stock Split" },
+};
+
+/** The bar index whose own trading day an event's `date` falls on or most
+ * recently follows (binary search over `bars`, sorted ascending by
+ * `date`) — `-1` if `date` is before every bar (e.g. a very old event on a
+ * ticker whose price history doesn't reach back that far in the current
+ * range). An event dated on a weekend/holiday lands on the prior trading
+ * day's bar, the same "nearest day on or before" rule
+ * `equicast_core.client.get_price_on_date` uses server-side. */
+function barIndexForDate(bars, targetDate) {
+  let lo = 0;
+  let hi = bars.length - 1;
+  let result = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (bars[mid].date <= targetDate) {
+      result = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return result;
+}
 
 /** Every range this picker offers (see market.js's PRICE_RANGES for the
  * full set the backend accepts) — "1d" is deliberately omitted: only
@@ -36,6 +68,14 @@ function formatAxisDate(dateStr, rangeId) {
   if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
   if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+/** `equicast_events.EventsClient`'s raw split `ratio` (e.g. `4.0` for a
+ * 4-for-1 split, `0.5` for a 1-for-2 reverse split — see its own
+ * docstring) as the "X-for-Y" form a split is normally described in,
+ * whichever side of 1 it lands on. */
+function formatSplitRatio(ratio) {
+  return ratio >= 1 ? `${ratio}-for-1` : `1-for-${1 / ratio}`;
 }
 
 /** Y-axis tick label: a signed percentage in comparison (pctMode) charts,
@@ -148,6 +188,18 @@ const X_AXIS_MAX_TICKS = 6;
  * permanently flattened into one solid dash by it. See compareClipRectRef's
  * effect below.
  *
+ * A "Key events" toggle (off by default, matching Yahoo Finance's own)
+ * overlays real earnings/analyst-rating/stock-split markers from
+ * `GET .../events/` — fetched lazily, only once switched on. Each event
+ * pins to its nearest trading day's own bar (see `barIndexForDate`) and
+ * draws a fixed offset above that bar's y value, so markers track the
+ * curve's shape in both plain-price and comparison (log-growth) mode;
+ * an event outside the chart's currently visible date range is dropped
+ * rather than clamped to an edge. Hovering a marker shows its details in
+ * a small floating tooltip — see `positionedEvents` below for the
+ * layout math, and the tooltip's own JSX for what's shown per
+ * `event_type`.
+ *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
 function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, currentPrice = null }) {
@@ -216,6 +268,36 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const bars = useMemo(() => series?.prices ?? [], [series]);
   const hasData = bars.length > 0;
   const seriesCurrency = series?.currency ?? currency ?? null;
+
+  // Off by default (matches Yahoo Finance's own "Key events" toggle) and
+  // fetched lazily — only once switched on — rather than alongside `series`
+  // above, so a viewer who never touches the toggle never pays for the
+  // extra request. `events` stays `null` (not yet fetched) until the first
+  // successful/failed fetch resolves; a 404 (nothing published for this
+  // ticker yet) and any other failure both collapse to `[]` — same
+  // "degrade to nothing shown, not an error message" forgiving treatment
+  // HoldingTickerPage.jsx already gives getDividends. Re-fetches every time
+  // the toggle flips back on rather than caching "already tried" in a ref —
+  // cheap given getEvents' own same-day IndexedDB cache (see
+  // utils/eventsCache.js), and simpler than tracking that separately.
+  const [showEvents, setShowEvents] = useState(false);
+  const [events, setEvents] = useState(null);
+  const [hoveredEvent, setHoveredEvent] = useState(null);
+
+  useEffect(() => {
+    if (!showEvents) return undefined;
+    let cancelled = false;
+    getEvents(api, assetClass, ticker)
+      .then((result) => {
+        if (!cancelled) setEvents(result.events);
+      })
+      .catch(() => {
+        if (!cancelled) setEvents([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, assetClass, ticker, showEvents]);
 
   // Fetches the selected comparison's (a ticker or a benchmark, both carry
   // a real ticker/assetClass — see HoldingComparePicker) own real prices
@@ -384,6 +466,36 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   });
   const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
 
+  // Each event is pinned to its nearest bar's x position and drawn a fixed
+  // offset above that bar's own y value (its log-growth ratio in pctMode,
+  // its close price otherwise — the same value/scale `yFor` already maps
+  // everything else on this chart through), so a marker tracks the curve's
+  // shape rather than sitting on a flat row. Events off the visible
+  // range (before the first bar, or after the last — a future-dated
+  // estimated earnings date beyond "today") are dropped outright rather
+  // than clamped to an edge bar, which would place them at a date they
+  // didn't happen on. Multiple events landing on the same bar stack
+  // upward from that bar's own offset rather than overlapping.
+  const positionedEvents = [];
+  if (showEvents && events && bars.length > 0) {
+    const firstDate = bars[0].date;
+    const lastDate = bars[bars.length - 1].date;
+    const stackCountByIndex = new Map();
+    for (const event of events) {
+      if (event.date < firstDate || event.date > lastDate) continue;
+      const index = barIndexForDate(bars, event.date);
+      if (index === -1) continue;
+      const stack = stackCountByIndex.get(index) ?? 0;
+      stackCountByIndex.set(index, stack + 1);
+      const baseValue = pctMode ? mainLog[index] : bars[index].close;
+      positionedEvents.push({
+        event,
+        x: xFor(index),
+        y: yFor(baseValue) - 14 - stack * 14,
+      });
+    }
+  }
+
   // "Draws" the main line across the plot on every new revision (a range
   // switch, a ticker change, or the initial load) via the classic
   // stroke-dasharray/dashoffset reveal — set the offset back to the path's
@@ -437,6 +549,19 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
+        <label className="ec-pchart-events-toggle">
+          <input
+            type="checkbox"
+            checked={showEvents}
+            onChange={(event) => {
+              setShowEvents(event.target.checked);
+              if (!event.target.checked) setHoveredEvent(null);
+            }}
+          />
+          <span className="ec-pchart-events-toggle-track" aria-hidden="true" />
+          Key events
+        </label>
+
         {!pctMode && (
           <div className="ec-chart-toggle" role="group" aria-label="Chart type">
             {["line", "area", "candle"].map((type) => (
@@ -517,6 +642,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
             )}
           </div>
 
+          <div className="ec-pchart-svg-wrap">
           <svg
             ref={svgRef}
             className="ec-chart-svg"
@@ -672,7 +798,108 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                 className="ec-chart-crosshair"
               />
             )}
+
+            {positionedEvents.map(({ event, x, y }, i) => (
+              <circle
+                key={`${event.event_type}-${event.date}-${i}`}
+                cx={x}
+                cy={y}
+                r={5}
+                className={`ec-pchart-event-dot ec-pchart-event-dot--${event.event_type}`}
+                onMouseEnter={() => setHoveredEvent({ event, x, y })}
+                onMouseLeave={() =>
+                  setHoveredEvent((current) => (current?.event === event ? null : current))
+                }
+              />
+            ))}
           </svg>
+
+          {hoveredEvent && (
+            <div
+              className="ec-pchart-event-tooltip"
+              style={
+                hoveredEvent.x > width / 2
+                  ? { right: width - hoveredEvent.x + 10, top: Math.max(hoveredEvent.y - 8, 0) }
+                  : { left: hoveredEvent.x + 10, top: Math.max(hoveredEvent.y - 8, 0) }
+              }
+            >
+              <span className="ec-pchart-event-tooltip-title">
+                <span
+                  className={`ec-pchart-event-dot ec-pchart-event-dot--${hoveredEvent.event.event_type}`}
+                  aria-hidden="true"
+                />
+                {EVENT_TYPE_META[hoveredEvent.event.event_type]?.label ?? hoveredEvent.event.event_type}
+              </span>
+              <span className="ec-pchart-event-tooltip-row">
+                <span>Date</span>
+                <span>{formatAxisDate(hoveredEvent.event.date, rangeId)}</span>
+              </span>
+              {hoveredEvent.event.event_type === "earnings" && (
+                <>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>EPS Estimate</span>
+                    <span>{hoveredEvent.event.eps_estimate ?? "—"}</span>
+                  </span>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>EPS Actual</span>
+                    <span>{hoveredEvent.event.reported_eps ?? "—"}</span>
+                  </span>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>EPS Surprise</span>
+                    <span>
+                      {hoveredEvent.event.surprise_pct != null
+                        ? `${hoveredEvent.event.surprise_pct.toFixed(2)}%`
+                        : "—"}
+                    </span>
+                  </span>
+                </>
+              )}
+              {hoveredEvent.event.event_type === "rating" && (
+                <>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>Analyst</span>
+                    <span>{hoveredEvent.event.firm ?? "—"}</span>
+                  </span>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>Rating Action</span>
+                    <span>{hoveredEvent.event.action ?? "—"}</span>
+                  </span>
+                  <span className="ec-pchart-event-tooltip-row">
+                    <span>Rating</span>
+                    <span>{hoveredEvent.event.to_grade ?? "—"}</span>
+                  </span>
+                  {hoveredEvent.event.price_target_action != null && (
+                    <span className="ec-pchart-event-tooltip-row">
+                      <span>Price Action</span>
+                      <span>{hoveredEvent.event.price_target_action}</span>
+                    </span>
+                  )}
+                  {(hoveredEvent.event.current_price_target != null ||
+                    hoveredEvent.event.prior_price_target != null) && (
+                    <span className="ec-pchart-event-tooltip-row">
+                      <span>Price Target</span>
+                      <span>
+                        {hoveredEvent.event.prior_price_target != null
+                          ? formatPrice(hoveredEvent.event.prior_price_target, seriesCurrency)
+                          : "—"}
+                        {" -> "}
+                        {hoveredEvent.event.current_price_target != null
+                          ? formatPrice(hoveredEvent.event.current_price_target, seriesCurrency)
+                          : "—"}
+                      </span>
+                    </span>
+                  )}
+                </>
+              )}
+              {hoveredEvent.event.event_type === "split" && (
+                <span className="ec-pchart-event-tooltip-row">
+                  <span>Ratio</span>
+                  <span>{formatSplitRatio(hoveredEvent.event.ratio)}</span>
+                </span>
+              )}
+            </div>
+          )}
+          </div>
 
           {hovered && (
             <div className="ec-chart-tooltip">

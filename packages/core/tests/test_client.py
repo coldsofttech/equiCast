@@ -295,6 +295,116 @@ def test_get_dividends_declared_row_with_no_payment_date_yet(s3_client) -> None:
     assert result["dividends"][0]["payment_date"] is None
 
 
+def _event_row(
+    event_type: str,
+    date: str,
+    *,
+    ticker: str = "AAPL",
+    last_updated: str | None = None,
+    source: str = "yfinance",
+    **fields,
+) -> dict:
+    row = {
+        "ticker": ticker,
+        "event_type": event_type,
+        "date": date,
+        "eps_estimate": None,
+        "reported_eps": None,
+        "surprise_pct": None,
+        "firm": None,
+        "from_grade": None,
+        "to_grade": None,
+        "action": None,
+        "price_target_action": None,
+        "current_price_target": None,
+        "prior_price_target": None,
+        "ratio": None,
+        "last_updated": last_updated or f"{date}T21:00:00+00:00",
+        "source": source,
+    }
+    row.update(fields)
+    return row
+
+
+def test_get_events_returns_none_when_nothing_published(s3_client) -> None:
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+    assert client.get_events("stock", "AAPL") is None
+
+
+def test_get_events_combines_history_and_current(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/events/history.parquet",
+        Body=_parquet_bytes(
+            [
+                _event_row(
+                    "earnings",
+                    "2025-01-30",
+                    reported_eps=2.1,
+                    last_updated="2026-08-30T09:00:00+00:00",
+                )
+            ]
+        ),
+    )
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/events/current.parquet",
+        Body=_parquet_bytes(
+            [
+                _event_row(
+                    "rating",
+                    "2026-03-01",
+                    firm="Morgan Stanley",
+                    action="up",
+                    price_target_action="raises",
+                    current_price_target=275.0,
+                    prior_price_target=250.0,
+                    last_updated="2026-08-30T09:00:01+00:00",
+                )
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_events("stock", "aapl")
+
+    assert result["ticker"] == "AAPL"
+    assert result["last_updated"] == "2026-08-30T09:00:01+00:00"
+    assert [e["event_type"] for e in result["events"]] == ["earnings", "rating"]
+    assert result["events"][1]["current_price_target"] == 275.0
+
+
+def test_get_events_sorted_chronologically(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/events/current.parquet",
+        Body=_parquet_bytes(
+            [
+                _event_row("split", "2026-06-09", ratio=4.0),
+                _event_row("earnings", "2026-01-30"),
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_events("stock", "AAPL")
+
+    assert [e["date"] for e in result["events"]] == ["2026-01-30", "2026-06-09"]
+
+
+def test_get_events_history_only_no_current(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/events/history.parquet",
+        Body=_parquet_bytes([_event_row("earnings", "2024-01-30")]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_events("stock", "AAPL")
+
+    assert len(result["events"]) == 1
+
+
 class TestGetPrices:
     def test_price_ranges_are_exactly(self) -> None:
         assert PRICE_RANGES == ("1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max")

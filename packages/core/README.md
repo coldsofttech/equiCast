@@ -58,6 +58,15 @@ decade anyway. `currency`/`last_updated`/`source` reflect the matched rows
 before aggregation (an aggregated bucket has no per-row metadata of its
 own).
 
+`get_events(asset_class, symbol)` returns `{ticker, last_updated, events}`,
+combining `events/history.parquet` and `events/current.parquet` into one
+chronological list — each entry exactly what
+`equicast_events.EventsClient.events()` produces (earnings/rating/split
+records, `event_type`-tagged, only that type's own fields set — see that
+package's README), passed through untouched. `None` if neither file exists
+yet for this ticker/pair, the same "not configured" signal `get_profile()`
+returns.
+
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
 — a small, pre-built `{ticker, name, type, current_price}` row per
