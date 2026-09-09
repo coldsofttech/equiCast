@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
+  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
+  — those are the same across every row for one symbol, so they're now
+  surfaced once at the top level only (`last_updated` there is still the
+  *latest* of every contributing row's own, same as before). Each
+  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
+  `price`/`status` (GitHub issue #57). `equicast_core.client.
+  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
+  `DividendRecord` typedef updated to match; no frontend call site actually
+  read the removed per-record fields, so this needed no other UI changes.
+
 ### Added
 
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
