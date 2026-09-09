@@ -41,6 +41,11 @@ the holdings-per-account/pie/watchlist caps — see `infra/variables.tf`'s
 Set `MAX_TRANSACTIONS_FOR_HOLDING` (default `500`) the same way to tune the
 transactions-per-holding cap — see `infra/variables.tf`'s
 `max_transactions_for_holding`.
+Set `MARKET_DATA_CACHE_TTL_SECONDS` (default `21600`, 6 hours) the same way
+to tune `MarketDataClient`'s in-process S3 parquet cache TTL — see
+`infra/variables.tf`'s `market_data_cache_ttl_seconds`; `0` disables caching
+outright. See [equicast-core's README](../packages/core/README.md#caching)
+for how the cache itself works.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of

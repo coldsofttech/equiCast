@@ -16,8 +16,16 @@ DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 
 #: One shared client for the process — cheap to construct, but no reason to
-#: rebuild it (and its boto3 client) on every request.
-_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+#: rebuild it (and its boto3 client) on every request. Also the instance
+#: `lambda_handler.py` calls `warm_fx_cache()` on at Lambda cold start —
+#: harmless that it's this module's own client rather than a dedicated
+#: one, since `_read_parquet`'s cache is shared process-wide (see
+#: equicast_core.client), not per-instance.
+_client = MarketDataClient(
+    settings.MARKET_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
+)
 
 
 def _parse_market_cap(raw: str | None) -> float | None:
