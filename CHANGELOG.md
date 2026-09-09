@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
+  gains `retryAfterSeconds`, parsed from the response's `Retry-After`
+  header — `null` for any other status, or a 429 with no parseable header.
+  DRF's own throttled `detail` text (see `backend/identity/throttling.py`)
+  already reads fine as a plain displayable string, so every existing
+  `err.message`/`<Alert>` call site already showed something sensible for
+  a 429 with no changes needed there; `retryAfterSeconds` is for a caller
+  that wants to act on the wait itself (disable a button, show a
+  countdown) rather than just display text. Needed a backend-side fix to
+  actually work once deployed: `Retry-After` isn't one of the handful of
+  response headers a browser exposes to a cross-origin `fetch()` by
+  default, so `backend/equicast_api/settings.py` now sets
+  `CORS_EXPOSE_HEADERS = ["Retry-After"]` — invisible locally (same-origin
+  via Vite's dev proxy), which is why this could otherwise go unnoticed
+  until a real deployment.
+
 - Two-layer rate limiting for the API, neither previously present at all.
   Layer 1 (infra): the API Gateway HTTP API's `$default` stage now sets
   `throttling_rate_limit`/`throttling_burst_limit` (defaults 25 req/s
