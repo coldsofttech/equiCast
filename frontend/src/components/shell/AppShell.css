@@ -65,34 +65,27 @@
   display: none;
 }
 
-/* No fill — plain, centered, large, light text on the page background
-   (Claude.ai's own new-chat greeting is the reference), with a small
-   time-matched icon (sunrise/sun/sunset/moon, see greeting.js) carrying
-   the only color. `color` uses the theme text token rather than a fixed
-   white now that there's no background band to sit on. */
+/* Left-aligned, stacked title + subtitle: a bold brand-accent title
+   ("Good evening, {name}", see greeting.js) with a smaller muted subtitle
+   underneath, no icon. */
 .ec-page-greeting {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--ec-s-12);
+  flex-direction: column;
+  gap: var(--ec-s-4);
   width: 100%;
   margin-bottom: var(--ec-s-24);
-  font-size: var(--ec-fs-32);
-  font-weight: 300;
-  color: var(--ec-text);
   animation: ec-greeting-in 0.4s ease;
 }
 
-.ec-page-greeting-icon {
+.ec-page-greeting-title {
   font-size: var(--ec-fs-24);
+  font-weight: 600;
+  color: var(--ec-accent);
 }
 
-.ec-page-greeting-icon--warning {
-  color: var(--ec-warning);
-}
-
-.ec-page-greeting-icon--purple {
-  color: var(--ec-purple);
+.ec-page-greeting-subtitle {
+  font-size: var(--ec-fs-16);
+  color: var(--ec-text-muted);
 }
 
 @keyframes ec-greeting-in {
