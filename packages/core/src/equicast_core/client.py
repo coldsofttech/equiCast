@@ -283,12 +283,13 @@ class MarketDataClient:
 
         Always carries the generic risk/performance fields
         (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
-        see `equicast_metrics.MetricsClient.metrics()`); a stock's record
-        additionally carries the valuation/fundamental fields
-        (`trailing_pe`, etc. — see `.fundamentals()`), merged in by each
-        ingestion pipeline's own CLI before writing (etf/fx have no
-        fundamentals, so their `metrics.parquet` only ever has the generic
-        fields).
+        see `equicast_metrics.MetricsClient.metrics()`); a stock or etf's
+        record additionally carries `buyers_pct`/`sellers_pct` (see
+        `.buy_sell_pressure()`), and a stock's record further carries the
+        valuation/fundamental fields (`trailing_pe`, etc. — see
+        `.fundamentals()`) — all merged in by each ingestion pipeline's own
+        CLI before writing (benchmark/fx have neither, so their
+        `metrics.parquet` only ever has the generic fields).
         """
         key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
         rows = self._read_parquet(key)
@@ -301,6 +302,16 @@ class MarketDataClient:
         combining every dividend Parquet an ingestion pipeline writes into
         one chronological list, or `None` if none of them exist for this
         ticker/pair yet.
+
+        `ticker`/`currency` are the same across every contributing row (one
+        symbol), so they're surfaced once at the top level rather than
+        repeated on each `dividends` entry — same for `last_updated`, which
+        here is the *latest* of every contributing row's own last_updated
+        (each Parquet this combines is refreshed independently, moments
+        apart, by its own ingestion pipeline run). Each entry in `dividends`
+        itself only carries what actually varies per payout:
+        `ex_dividend_date`/`payment_date`/`price`/`status` — no per-row
+        `ticker`/`currency`/`last_updated`/`source` (see GitHub issue #57).
 
         Each entry in `dividends` is tagged by a `status`:
           - `"paid"` — an already-happened payout, from `dividend/
@@ -334,46 +345,35 @@ class MarketDataClient:
         )
         declared_rows = self._read_parquet(f"{prefix}/dividend/future.parquet") or []
         estimated_rows = self._read_parquet(f"{prefix}/forecasting/dividends.parquet") or []
-        if not (paid_rows or declared_rows or estimated_rows):
+        all_rows = paid_rows + declared_rows + estimated_rows
+        if not all_rows:
             return None
 
         dividends = [
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": None,
                     "price": row["price"],
                     "status": "paid",
-                    "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in paid_rows
             ),
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": row.get("payment_date"),
                     "price": row["price"],
                     "status": "declared",
-                    "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in declared_rows
             ),
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": None,
                     "price": row["price"],
                     "status": "estimated",
-                    "last_updated": row["last_updated"],
-                    "source": row["source"],
                 }
                 for row in estimated_rows
             ),
@@ -381,9 +381,9 @@ class MarketDataClient:
         dividends.sort(key=lambda record: record["ex_dividend_date"])
 
         return {
-            "ticker": dividends[0]["ticker"],
-            "currency": dividends[0]["currency"],
-            "last_updated": max(record["last_updated"] for record in dividends),
+            "ticker": all_rows[0]["ticker"],
+            "currency": all_rows[0]["currency"],
+            "last_updated": max(row["last_updated"] for row in all_rows),
             "dividends": dividends,
         }
 

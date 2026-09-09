@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
+  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
+  — those are the same across every row for one symbol, so they're now
+  surfaced once at the top level only (`last_updated` there is still the
+  *latest* of every contributing row's own, same as before). Each
+  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
+  `price`/`status` (GitHub issue #57). `equicast_core.client.
+  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
+  `DividendRecord` typedef updated to match; no frontend call site actually
+  read the removed per-record fields, so this needed no other UI changes.
+
 ### Added
 
 - `MarketDataClient._read_parquet` (the single choke point every S3 read
@@ -34,6 +47,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   hitting S3 directly did before. See
   [equicast-core's README](packages/core/README.md#caching) for how it
   works.
+
+- Stock and ETF holdings get a new "Buy/Sell Rating" gauge on the holding
+  detail page (`/holdings/:ticker`), below the CAGR panel —
+  `HoldingBuySellGauge.jsx`, a single stacked bar split at `buyers_pct`
+  (green) / `sellers_pct` (red), both new fields on `GET .../metrics/`.
+  Computed by a new `equicast_metrics.calculations.buy_sell_volume_pressure`
+  (a Chaikin-Money-Flow-style technical proxy for order-flow sentiment,
+  derived from OHLCV price/volume history over the trailing year — not
+  literal buy/sell order counts) and exposed via a new
+  `MetricsClient.buy_sell_pressure()`, merged into `metrics.parquet` by
+  `equicast-stock`/`equicast-etf`'s own CLIs only (benchmark/fx have no
+  reliable volume data for this, so their `metrics.parquet` is unchanged).
+  Renders nothing for a holding with no recorded volume in the window (both
+  fields come back `None` together) or for a benchmark/fx holding (the
+  fields are simply absent there).
 
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
