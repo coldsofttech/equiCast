@@ -90,6 +90,31 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Per-user request budget DEFAULT_THROTTLE_RATES below applies globally —
+# overridable per environment via the API_RATE_LIMIT_PER_MINUTE GitHub
+# Environment variable (see infra/variables.tf's api_rate_limit_per_minute
+# and .github/workflows/terraform.yml), same convention as the MAX_* caps
+# further down.
+API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", 120))
+
+# Django's cache framework backs DRF throttling below (every count/window
+# it tracks lives here). Explicit rather than relying on Django's own
+# implicit LocMemCache default, so the choice — and its one real
+# limitation — is documented rather than accidental: LocMemCache is a
+# plain in-process dict, scoped to *one* Lambda execution environment, not
+# shared across the several that can run concurrently under real traffic.
+# Each warm container therefore counts a given user's requests
+# independently, so the effective per-user rate can multiply by however
+# many containers happen to be warm at once — an accepted, explicit
+# tradeoff for now (see identity.throttling's module docstring) rather
+# than standing up a new always-on/shared store this app's actual traffic
+# doesn't yet justify.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     # Only *identifies* a caller when a valid Bearer token is present — it
@@ -97,11 +122,29 @@ REST_FRAMEWORK = {
     # declare their own `permission_classes = [IsAuthenticated]` (see
     # identity/views.py, market_data/views.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["identity.authentication.Auth0JWTAuthentication"],
+    # Applies to every DRF view by default (no per-view opt-out needed,
+    # since every real endpoint requires IsAuthenticated already) — see
+    # identity.throttling.Auth0UserRateThrottle for why this isn't DRF's
+    # own UserRateThrottle (Auth0User has no `.pk`).
+    "DEFAULT_THROTTLE_CLASSES": ["identity.throttling.Auth0UserRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"user": f"{API_RATE_LIMIT_PER_MINUTE}/min"},
 }
 
 CORS_ALLOWED_ORIGINS = [
     o for o in os.environ.get("DJANGO_CORS_ORIGINS", "http://localhost:5173").split(",") if o
 ]
+
+# Retry-After isn't one of the handful of response headers a browser
+# exposes to a cross-origin fetch() by default (the CORS-safelisted set —
+# Cache-Control/Content-Language/Content-Length/Content-Type/Expires/
+# Last-Modified/Pragma) — without this, DRF's own Retry-After header on a
+# 429 (see rest_framework's exception_handler, set from
+# identity.throttling.Auth0UserRateThrottle) would be present on the wire
+# but silently unreadable via response.headers.get("Retry-After") in the
+# frontend's apiFetch (client.js), which only ever hits this cross-origin
+# in a real deployment — same-origin locally, via Vite's dev proxy, is why
+# this could otherwise go unnoticed in local testing.
+CORS_EXPOSE_HEADERS = ["Retry-After"]
 
 # No default: there's no sane bucket to fall back to, so an unset value
 # should fail loudly rather than silently pointing at nothing.
@@ -138,3 +181,10 @@ MAX_HOLDINGS_FOR_ACCOUNT = int(os.environ.get("MAX_HOLDINGS_FOR_ACCOUNT", 100))
 MAX_HOLDINGS_FOR_PIE = int(os.environ.get("MAX_HOLDINGS_FOR_PIE", 50))
 MAX_HOLDINGS_FOR_WATCHLIST = int(os.environ.get("MAX_HOLDINGS_FOR_WATCHLIST", 20))
 MAX_TRANSACTIONS_FOR_HOLDING = int(os.environ.get("MAX_TRANSACTIONS_FOR_HOLDING", 500))
+
+# TTL (seconds) for MarketDataClient's in-process S3 parquet cache — same
+# overridable-per-environment convention as the MAX_* caps above (see
+# infra/variables.tf's market_data_cache_ttl_seconds and
+# .github/workflows/terraform.yml), default matching equicast_core's own
+# DEFAULT_CACHE_TTL_SECONDS for local/unset use.
+MARKET_DATA_CACHE_TTL_SECONDS = int(os.environ.get("MARKET_DATA_CACHE_TTL_SECONDS", 6 * 60 * 60))

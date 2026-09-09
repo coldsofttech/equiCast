@@ -24,6 +24,11 @@ const STICKY_TITLE_ROOT_MARGIN = "-52px 0px 0px 0px";
  * below the subtitle (e.g. HoldingTickerPage's Exchange/Quote type
  * Badges).
  *
+ * `greeting`, when given, renders as its own centered row above the whole
+ * page-head — title *and* `actions` (e.g. DashboardPage's "View all
+ * accounts" button) — rather than being scoped to the title column
+ * (DashboardPage's random time-of-day welcome message).
+ *
  * `stickyTitle`, when true, watches the real `<h1>` with an
  * IntersectionObserver and fades/slides in a fixed bar under Topbar
  * showing `title` once the real one scrolls out of view (and back out
@@ -34,6 +39,7 @@ const STICKY_TITLE_ROOT_MARGIN = "-52px 0px 0px 0px";
  * with no real destinations beyond the logo-linked Dashboard) is gone.
  */
 function AppShell({
+  greeting,
   eyebrow,
   title,
   subtitle,
@@ -67,6 +73,7 @@ function AppShell({
         </div>
       )}
       <main className="ec-page">
+        {greeting && <div className="ec-page-greeting">{greeting}</div>}
         <div className="ec-page-head">
           <div className="ec-page-head-main">
             {titleIcon && <div className="ec-page-title-icon">{titleIcon}</div>}

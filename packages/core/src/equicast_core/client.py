@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import calendar
 import json
+import threading
+import time
 from datetime import UTC, date, datetime
 from typing import Any
 
@@ -136,24 +138,134 @@ def _without_source(row: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k != "source"}
 
 
+#: Default TTL (seconds) for `MarketDataClient`'s in-process parquet cache
+#: (see `_cache`/`_read_parquet`), used when a caller doesn't pass its own
+#: `cache_ttl_seconds`. Overridable per deployment via the
+#: `MARKET_DATA_CACHE_TTL_SECONDS` env var (see backend's settings.py and
+#: infra/variables.tf's `market_data_cache_ttl_seconds`), not a code
+#: change. Every asset class's ingestion pipeline refreshes at most once a
+#: day, on weekdays only (see the `*-ingestion.yml` workflows) — several
+#: hours of staleness is always safe regardless of how long a Lambda
+#: execution environment happens to stay warm.
+DEFAULT_CACHE_TTL_SECONDS = 6 * 60 * 60  # 6 hours
+
+#: `{s3_key: (expires_at, value)}` — a process-wide cache for
+#: `_read_parquet`, deliberately module-level rather than kept on `self`.
+#: `backend/{accounts,holdings,market_data,pies,transactions}/views.py`
+#: each construct their *own* independent `MarketDataClient` at import
+#: time; a per-instance cache would mean `warm_fx_cache()` (below) only
+#: ever benefited whichever one instance happened to call it, instead of
+#: every request path in the process. `value` is whatever `_read_parquet`
+#: returns — a row list, or `None` for a confirmed-missing key, cached the
+#: same way so a ticker with nothing published yet (e.g. no dividends)
+#: isn't re-checked against S3 on every call within the TTL window.
+#: `expires_at` is a `time.monotonic()` reading, immune to wall-clock
+#: adjustments during a container's lifetime.
+#:
+#: Not shared *across* Lambda execution environments — each cold-started
+#: container gets its own independent (initially empty) cache; that would
+#: need a new AWS resource (e.g. ElastiCache) to change, which this
+#: deliberately avoids. A cold-started container just pays the S3 read
+#: cost again, the same as every request did before this cache existed.
+_cache: dict[str, tuple[float, Any]] = {}
+_cache_lock = threading.Lock()
+
+
+def clear_cache() -> None:
+    """Drop every cached parquet read. Test-only; not part of the public
+    API — without this, a fresh moto-backed `MarketDataClient` in one test
+    could silently "hit" a value a differently-seeded earlier test left
+    behind, since `_cache` is module-level rather than per-instance (see
+    its own docstring for why)."""
+    with _cache_lock:
+        _cache.clear()
+
+
 class MarketDataClient:
     """Reads profile/price/catalog Parquet/JSON objects from one S3
     bucket."""
 
-    def __init__(self, bucket: str, s3_client: Any = None, region_name: str | None = None) -> None:
+    def __init__(
+        self,
+        bucket: str,
+        s3_client: Any = None,
+        region_name: str | None = None,
+        cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+    ) -> None:
         self._bucket = bucket
         self._s3 = s3_client or boto3.client("s3", region_name=region_name)
+        self._cache_ttl_seconds = cache_ttl_seconds
 
     def _read_parquet(self, key: str) -> list[dict[str, Any]] | None:
         """Return every row of the Parquet object at `key`, or `None` if it
-        doesn't exist. Any other S3 error propagates as-is."""
+        doesn't exist. Any other S3 error propagates as-is — and is never
+        cached, since a transient failure shouldn't be remembered as "this
+        key is missing" for the rest of the TTL window.
+
+        Cached in-process for `self._cache_ttl_seconds` (default
+        `DEFAULT_CACHE_TTL_SECONDS`) in a cache shared by every
+        `MarketDataClient` instance in this process, not just this one —
+        see the module-level `_cache`'s docstring for why. A cache hit
+        skips S3 entirely. `cache_ttl_seconds <= 0` disables caching
+        outright — every call reads through to S3, the same behavior this
+        method always had before caching existed.
+        """
+        with _cache_lock:
+            cached = _cache.get(key)
+        if cached is not None and time.monotonic() < cached[0]:
+            return cached[1]
+
         try:
             response = self._s3.get_object(Bucket=self._bucket, Key=key)
         except self._s3.exceptions.NoSuchKey:
-            return None
-        body = response["Body"].read()
-        table = pq.read_table(BufferReader(body))
-        return table.to_pylist()
+            result = None
+        else:
+            body = response["Body"].read()
+            table = pq.read_table(BufferReader(body))
+            result = table.to_pylist()
+
+        if self._cache_ttl_seconds > 0:
+            with _cache_lock:
+                _cache[key] = (time.monotonic() + self._cache_ttl_seconds, result)
+        return result
+
+    def warm_fx_cache(self) -> None:
+        """Prefetch `catalog/fx.parquet` and every configured fx pair's
+        `price/current.parquet` into `_read_parquet`'s shared cache — meant
+        to be called once, at Lambda cold start (see
+        `backend/equicast_api/lambda_handler.py`), since fx conversion
+        (`get_fx_rate_on_date`, via `resolve_converted_amounts`) sits on
+        the request path of nearly every write (a transaction create/
+        update in any non-default currency) and every holdings/pies/
+        accounts read (`enrich_holdings`) — the one piece of market data
+        genuinely needed by "any operation," unlike a single stock/etf/
+        benchmark profile a request may never touch.
+
+        Deliberately narrow: only `price/current.parquet` (this calendar
+        year), not `price/history.parquet` — covers `get_fx_rate_on_date`
+        for any current-year transaction, the overwhelming common case. A
+        transaction backdated into an earlier year still resolves
+        correctly; it just falls back to a normal (now cached-after-first-
+        use) `price/history.parquet` read instead of being pre-warmed.
+
+        Never raises — a transient S3/network error here would otherwise
+        take down the whole Lambda at cold start before it ever serves a
+        request, which is strictly worse than just not having pre-warmed
+        the cache (every request still works, falling back to the same
+        lazy, cached-after-first-use reads every other asset class already
+        gets)."""
+        try:
+            fx_catalog = self.get_catalog("fx")
+        except Exception:
+            return
+        for row in fx_catalog:
+            ticker = row.get("ticker")
+            if not ticker:
+                continue
+            try:
+                self._read_parquet(f"fx={ticker.upper()}/price/current.parquet")
+            except Exception:
+                continue
 
     def get_profile(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single profile record for `symbol`, or `None` if this
@@ -192,12 +304,13 @@ class MarketDataClient:
 
         Always carries the generic risk/performance fields
         (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
-        see `equicast_metrics.MetricsClient.metrics()`); a stock's record
-        additionally carries the valuation/fundamental fields
-        (`trailing_pe`, etc. — see `.fundamentals()`), merged in by each
-        ingestion pipeline's own CLI before writing (etf/fx have no
-        fundamentals, so their `metrics.parquet` only ever has the generic
-        fields).
+        see `equicast_metrics.MetricsClient.metrics()`); a stock or etf's
+        record additionally carries `buyers_pct`/`sellers_pct` (see
+        `.buy_sell_pressure()`), and a stock's record further carries the
+        valuation/fundamental fields (`trailing_pe`, etc. — see
+        `.fundamentals()`) — all merged in by each ingestion pipeline's own
+        CLI before writing (benchmark/fx have neither, so their
+        `metrics.parquet` only ever has the generic fields).
 
         Drops the raw row's `source` field — see `get_profile`'s docstring
         for why.
@@ -213,6 +326,16 @@ class MarketDataClient:
         combining every dividend Parquet an ingestion pipeline writes into
         one chronological list, or `None` if none of them exist for this
         ticker/pair yet.
+
+        `ticker`/`currency` are the same across every contributing row (one
+        symbol), so they're surfaced once at the top level rather than
+        repeated on each `dividends` entry — same for `last_updated`, which
+        here is the *latest* of every contributing row's own last_updated
+        (each Parquet this combines is refreshed independently, moments
+        apart, by its own ingestion pipeline run). Each entry in `dividends`
+        itself only carries what actually varies per payout:
+        `ex_dividend_date`/`payment_date`/`price`/`status` — no per-row
+        `ticker`/`currency`/`last_updated`/`source` (see GitHub issue #57).
 
         Each entry in `dividends` is tagged by a `status`:
           - `"paid"` — an already-happened payout, from `dividend/
@@ -239,9 +362,6 @@ class MarketDataClient:
         overlapping estimate" (e.g. a holding page's upcoming-dividends
         cards) apply that themselves, the same way callers of `get_prices`
         pick their own display range rather than this client guessing one.
-
-        Each entry drops the raw row's `source` field — see `get_profile`'s
-        docstring for why.
         """
         prefix = f"{asset_class.lower()}={symbol.upper()}"
         paid_rows = (self._read_parquet(f"{prefix}/dividend/history.parquet") or []) + (
@@ -249,43 +369,35 @@ class MarketDataClient:
         )
         declared_rows = self._read_parquet(f"{prefix}/dividend/future.parquet") or []
         estimated_rows = self._read_parquet(f"{prefix}/forecasting/dividends.parquet") or []
-        if not (paid_rows or declared_rows or estimated_rows):
+        all_rows = paid_rows + declared_rows + estimated_rows
+        if not all_rows:
             return None
 
         dividends = [
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": None,
                     "price": row["price"],
                     "status": "paid",
-                    "last_updated": row["last_updated"],
                 }
                 for row in paid_rows
             ),
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": row.get("payment_date"),
                     "price": row["price"],
                     "status": "declared",
-                    "last_updated": row["last_updated"],
                 }
                 for row in declared_rows
             ),
             *(
                 {
-                    "ticker": row["ticker"],
-                    "currency": row["currency"],
                     "ex_dividend_date": row["ex_dividend_date"],
                     "payment_date": None,
                     "price": row["price"],
                     "status": "estimated",
-                    "last_updated": row["last_updated"],
                 }
                 for row in estimated_rows
             ),
@@ -293,9 +405,9 @@ class MarketDataClient:
         dividends.sort(key=lambda record: record["ex_dividend_date"])
 
         return {
-            "ticker": dividends[0]["ticker"],
-            "currency": dividends[0]["currency"],
-            "last_updated": max(record["last_updated"] for record in dividends),
+            "ticker": all_rows[0]["ticker"],
+            "currency": all_rows[0]["currency"],
+            "last_updated": max(row["last_updated"] for row in all_rows),
             "dividends": dividends,
         }
 

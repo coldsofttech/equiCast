@@ -104,6 +104,58 @@ pipeline hasn't published a catalog yet, the same "not configured" shape
 ingestion run that built the catalog — same staleness model as
 `get_profile()`/`get_prices()`, nothing here is live market data.
 
+### Caching
+
+Every S3 read `MarketDataClient` makes funnels through one method,
+`_read_parquet` — cached in-process, in a plain module-level dict shared by
+every `MarketDataClient` instance in the process (not kept on `self`),
+keyed by S3 key, for `cache_ttl_seconds` (a constructor arg, default
+`DEFAULT_CACHE_TTL_SECONDS` — 6 hours):
+
+```python
+client = MarketDataClient(bucket="equicast-market-data-dev", cache_ttl_seconds=3600)
+client.get_profile("stock", "AAPL")  # reads S3, caches the result
+client.get_profile("stock", "AAPL")  # cache hit, no S3 read — within the TTL
+
+MarketDataClient(bucket="...", cache_ttl_seconds=0).get_profile("stock", "AAPL")
+# 0 disables caching outright — every call reads through to S3
+```
+
+The Django backend runs this as a Lambda; a shared, module-level cache
+(rather than per-instance) is what lets `warm_fx_cache()` (below) actually
+help every one of the five independent `MarketDataClient` instances
+`backend/{accounts,holdings,market_data,pies,transactions}/views.py` each
+construct at import time, not just whichever one happens to call it. The
+cache lives only for a warm Lambda execution environment's lifetime — a
+cold-started container starts with an empty cache and just pays the S3
+read cost again, the same as every request did before this existed; there's
+no cross-container/cross-process sharing, and no new AWS resource (e.g.
+ElastiCache) backing it. A confirmed-missing key (`_read_parquet` returning
+`None`) is cached too, so a ticker with nothing published yet isn't
+re-checked against S3 on every call within the TTL; a real S3 error is
+never cached, since a transient failure shouldn't be remembered as
+"missing" for the rest of the window.
+
+`warm_fx_cache()` prefetches `catalog/fx.parquet` and every configured fx
+pair's `price/current.parquet` — meant to be called once, at Lambda cold
+start (see `backend/equicast_api/lambda_handler.py`), since fx conversion
+sits on the request path of nearly every write (a transaction in a
+non-default currency) and every holdings/pies/accounts read
+(`enrich_holdings`), unlike a single stock/etf/benchmark profile a given
+request may never touch. Deliberately narrow (current-year prices only,
+not the full `price/history.parquet`) to keep cold-start work minimal — a
+transaction backdated into an earlier year still resolves correctly, just
+via a normal (now cached-after-first-use) lazy read instead of a
+pre-warmed one. Never raises: a transient S3/network failure here would
+otherwise take down the whole Lambda before it ever serves a request,
+strictly worse than simply not having pre-warmed the cache.
+
+`cache_ttl_seconds` is sourced from the `MARKET_DATA_CACHE_TTL_SECONDS` env
+var by the Django backend (default `21600`, 6 hours — see
+`infra/variables.tf`'s `market_data_cache_ttl_seconds`), safe at that
+length since every asset class's ingestion pipeline refreshes at most once
+a day, on weekdays only.
+
 ## `equicast_core.catalog` — building the search catalog (ingestion side)
 
 The write side of the `catalog/<asset_class>.parquet` contract
