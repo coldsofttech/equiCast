@@ -16,12 +16,13 @@ packages/etf/config/etfs.prod.yaml  (production: the tickers to extract)
 equicast-etf CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
         │              ├────▶  equicast-dividends (ex-div date + amount)
         │              ├────▶  equicast-events (earnings/ratings/splits)
-        │              └────▶  equicast-metrics (volatility/Sharpe/drawdown/CAGR)
+        │              ├────▶  equicast-metrics (volatility/Sharpe/drawdown/CAGR)
+        │              └────▶  equicast-news (trailing-month news headlines)
         │                              │
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet, metrics.parquet)
+Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet, metrics.parquet, news.parquet)
         │
         ▼
 GitHub Actions (etf-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -37,30 +38,31 @@ relies on that default — it resolves `dev`/`prod` itself and always passes
 `--tickers-json` explicitly.
 
 **`profile()`, `prices()`, dividends (via `equicast-dividends`'
-`DividendsClient`), events (via `equicast-events`' `EventsClient`), and
-risk/performance metrics (via `equicast-metrics`' `MetricsClient.metrics()`)
-are all implemented.** `DividendsClient`, `EventsClient`, and
-`MetricsClient` are all generic, symbol-keyed clients (not
-`equicast-stock`-specific), already consumed by `equicast-stock` —
-`equicast-etf` reuses the same ones rather than duplicating logic.
-Deliberately **not** `MetricsClient.fundamentals()` — its valuation ratios
-are stock-only and mostly `None`/unreliable for ETFs; see
-[packages/etf/README.md](../packages/etf/README.md#on-metricsparquet) for
-what was actually checked before deciding that. `EventsClient` still
+`DividendsClient`), events (via `equicast-events`' `EventsClient`),
+risk/performance metrics (via `equicast-metrics`' `MetricsClient.metrics()`),
+and news (via `equicast-news`' `NewsClient`) are all implemented.**
+`DividendsClient`, `EventsClient`, `MetricsClient`, and `NewsClient` are all
+generic, symbol-keyed clients (not `equicast-stock`-specific), already
+consumed by `equicast-stock` — `equicast-etf` reuses the same ones rather
+than duplicating logic. Deliberately **not** `MetricsClient.fundamentals()`
+— its valuation ratios are stock-only and mostly `None`/unreliable for
+ETFs; see [packages/etf/README.md](../packages/etf/README.md#on-metricsparquet)
+for what was actually checked before deciding that. `EventsClient` still
 fetches earnings dates and analyst ratings for an ETF ticker, but yfinance
 has neither for a fund, so `events.parquet` in practice only ever has
 `"split"` rows — checked live for all 5 configured tickers, see
 [packages/etf/README.md](../packages/etf/README.md#on-eventsparquet).
 
-Expect four `WARNING` lines near the top of every run's logs — a one-time
+Expect five `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed`/`ETFClient` (data via
 yfinance, educational use only), one from `equicast-dividends` (dividend
 data via yfinance), one from `equicast-events` (earnings/rating/split data
-via yfinance), and one from `equicast-metrics` (metrics calculated by
-equicast, not independently verified). Each uses distinct message text, so
-none get deduped away by another having already fired earlier in the same
-process. See the [README's disclaimer section](../README.md#disclaimer) for
-the full text; this is expected, not an error.
+via yfinance), one from `equicast-metrics` (metrics calculated by equicast,
+not independently verified), and one from `equicast-news` (news headlines
+via yfinance). Each uses distinct message text, so none get deduped away by
+another having already fired earlier in the same process. See the
+[README's disclaimer section](../README.md#disclaimer) for the full text;
+this is expected, not an error.
 
 ## Running the CLI locally
 
@@ -96,6 +98,11 @@ For each ticker this writes:
 - `etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
   risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
   CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
+- `etf=<TICKER>/news.parquet` — one row per news article published in the
+  trailing month (no historical archive), newest first: ticker, id, title,
+  summary, publisher, url, thumbnail_url, published_at, last updated,
+  source. Not written for a ticker with no news in that window — see
+  [packages/news/README.md](../packages/news/README.md)
 - `etf=<TICKER>/forecasting/dividends.parquet` — one row per projected
   future ex-dividend date, up to `--years` (default 10) years out, via
   `equicast-forecasting` (see
@@ -126,11 +133,11 @@ earnings dates can be future-dated). It does not affect
 uv run equicast-etf --config config/etfs.dev.yaml --out ./output --full-load
 ```
 
-Profile, prices, dividends, events, and metrics are fetched as independent
-concurrent tasks per ticker (shared across one rate-limited
+Profile, prices, dividends, events, metrics, and news are fetched as
+independent concurrent tasks per ticker (shared across one rate-limited
 `DatafeedClient`), tune with:
 
-- `--max-workers` — profile/price/dividend/events/metrics fetches run concurrently, up to this many at once (default: 1)
+- `--max-workers` — profile/price/dividend/events/metrics/news fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -318,6 +325,7 @@ s3://equicast-market-data-<env>/
     ├── events/
     │   ├── history.parquet   (every year before 2026, e.g. VOO's 2013 split — see below)
     │   └── current.parquet   (2026 onward, rewritten by every run)
+    ├── news.parquet   (trailing month only, rewritten wholesale by every run; omitted with no news)
     └── forecasting/
         └── dividends.parquet   (rewritten wholesale by every run, not history/current-split)
 ```

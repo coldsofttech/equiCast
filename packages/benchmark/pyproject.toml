@@ -7,6 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "equicast-datafeed",
     "equicast-metrics",
+    "equicast-news",
     "pandas>=2.2",
     "pyarrow>=17.0",
     "pyyaml>=6.0",
@@ -28,6 +29,7 @@ equicast-benchmark-plan = "equicast_benchmark.plan:main"
 [tool.uv.sources]
 equicast-datafeed = { workspace = true }
 equicast-metrics = { workspace = true }
+equicast-news = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

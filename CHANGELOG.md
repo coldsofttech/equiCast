@@ -9,6 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Recent news headlines, via a new `equicast-news` package (`NewsClient`,
+  built on `equicast-datafeed` like `equicast-events`/`equicast-dividends`)
+  wrapping yfinance's `get_news`. Trimmed to the trailing month by design
+  (no historical archive), newest first. The stock, etf, and benchmark
+  ingestion pipelines each write it to a flat `news.parquet` per ticker
+  (not split into history/current like price/dividend/events, since there's
+  no history to separate out); the fx pipeline does not, by design (no fx
+  news). `MarketDataClient.get_news`/`GET /api/market/<asset_class>/
+  <symbol>/news/` (`market_data.views.NewsView`) expose it, 404 for a
+  ticker/pair with none published. On `/holdings/:ticker`, a new
+  `HoldingNewsSection` shows it as a card grid (3-4 per row) right after the
+  CAGR panel, capped with a "See all" Drawer for the rest; each card opens
+  the article in a new tab on click. Cached client-side the same-day
+  IndexedDB way dividends/metrics/prices are (`utils/newsCache.js`).
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over

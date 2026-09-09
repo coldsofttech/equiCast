@@ -9,8 +9,10 @@ dividend/history.parquet too, but only on a --full-load run), a
 dividend/future.parquet when yfinance reports a still-upcoming dividend for
 this ticker (see `equicast_dividends.DividendsClient.future_dividends` -
 omitted entirely otherwise, not written empty), an events/current.parquet
-(and events/history.parquet on --full-load), and one metrics.parquet
-snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
+(and events/history.parquet on --full-load), one metrics.parquet
+snapshot (volatility, Sharpe ratio, max drawdown, CAGR), and a
+news.parquet of the ticker's news articles from the trailing month
+(omitted entirely when there's none - see equicast-news).
 metrics.parquet only carries MetricsClient.metrics() - not
 .fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
 events.parquet in practice only ever has "split" rows for an ETF ticker -
@@ -18,8 +20,8 @@ earnings/analyst-rating events are always empty, since yfinance has no
 earnings or analyst coverage for a fund - but splits are real (e.g. QQQ's
 2000 2-for-1, VTI's 2008 2-for-1). Profile and dividends are fetched
 together as one task (both need the same dividend history - see
-`_profile_and_dividends_task`); prices, events, and metrics are three
-further independent tasks - all four for a given ticker submitted to the
+`_profile_and_dividends_task`); prices, events, metrics, and news are four
+further independent tasks - all five for a given ticker submitted to the
 same worker pool, so they run concurrently rather than one after the other.
 """
 
@@ -37,6 +39,7 @@ from equicast_datafeed import DatafeedClient
 from equicast_dividends import DividendsClient, dividend_frequency
 from equicast_events import EventsClient
 from equicast_metrics import MetricsClient
+from equicast_news import NewsClient
 
 from equicast_etf.client import ETFClient
 from equicast_etf.config import ETFTicker, load_etf_tickers, parse_etf_tickers_json
@@ -45,6 +48,7 @@ from equicast_etf.writer import (
     write_events_parquet,
     write_future_dividend_parquet,
     write_metrics_parquet,
+    write_news_parquet,
     write_price_parquet,
     write_profile_parquet,
 )
@@ -157,6 +161,11 @@ def _metrics_task(metrics_client: MetricsClient, output_dir: Path, key: str) -> 
     return [write_metrics_parquet(metrics_client.metrics(), metrics_client.symbol, output_dir)]
 
 
+def _news_task(news_client: NewsClient, output_dir: Path, key: str) -> list[Path]:
+    logger.info("Fetching news for %s", key)
+    return write_news_parquet(news_client.news(), output_dir)
+
+
 def run(
     config: Path | None,
     output_dir: Path,
@@ -172,17 +181,18 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One ETFClient/DividendsClient/EventsClient/MetricsClient per ticker,
-    # shared by that ticker's profile+dividends, prices, events, and metrics
-    # tasks — all four only read immutable state and delegate to the
-    # (thread-safe) shared datafeed, so calling them concurrently on one
-    # instance is safe.
+    # One ETFClient/DividendsClient/EventsClient/MetricsClient/NewsClient
+    # per ticker, shared by that ticker's profile+dividends, prices, events,
+    # metrics, and news tasks — all five only read immutable state and
+    # delegate to the (thread-safe) shared datafeed, so calling them
+    # concurrently on one instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for ticker in tickers:
         client = ETFClient(ticker.ticker, datafeed=datafeed)
         dividends_client = DividendsClient(client.symbol, datafeed=datafeed)
         events_client = EventsClient(client.symbol, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
+        news_client = NewsClient(client.symbol, datafeed=datafeed)
         tasks.append(
             partial(
                 _profile_and_dividends_task,
@@ -196,6 +206,7 @@ def run(
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
         tasks.append(partial(_events_task, events_client, output_dir, ticker.key, full_load))
         tasks.append(partial(_metrics_task, metrics_client, output_dir, ticker.key))
+        tasks.append(partial(_news_task, news_client, output_dir, ticker.key))
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

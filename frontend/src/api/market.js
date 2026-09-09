@@ -1,5 +1,6 @@
 import { dividendsCacheKey, readCachedDividends, writeCachedDividends } from "../utils/dividendsCache.js";
 import { metricsCacheKey, readCachedMetrics, writeCachedMetrics } from "../utils/metricsCache.js";
+import { newsCacheKey, readCachedNews, writeCachedNews } from "../utils/newsCache.js";
 import { priceCacheKey, readCachedPrices, writeCachedPrices } from "../utils/priceCache.js";
 import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils/profileCache.js";
 
@@ -279,6 +280,59 @@ export async function getDividends(api, assetClass, symbol) {
     await api(`/market/${assetClass}/${symbol}/dividends/`)
   );
   writeCachedDividends(cacheKey, result);
+  return result;
+}
+
+/**
+ * @typedef {Object} NewsArticle
+ * @property {string} ticker
+ * @property {string} id
+ * @property {string|null} title
+ * @property {string|null} summary
+ * @property {string|null} publisher
+ * @property {string} url - opens in a new tab on click; prefers the
+ *   article's clickThroughUrl, falling back to canonicalUrl (see
+ *   equicast_news.NewsClient).
+ * @property {string|null} thumbnail_url
+ * @property {string} published_at
+ * @property {string} last_updated
+ * @property {string} source
+ */
+
+/**
+ * @typedef {Object} NewsResponse
+ * @property {string} ticker
+ * @property {string} last_updated
+ * @property {NewsArticle[]} news - newest first (descending `published_at`),
+ *   already trimmed server-side to the trailing month — see
+ *   equicast_core.client.MarketDataClient.get_news.
+ */
+
+/**
+ * GET /api/market/<asset_class>/<symbol>/news/ — see
+ * backend/market_data/views.py's NewsView. Throws an ApiError with status
+ * 404 when no news is published yet for this symbol (including every fx
+ * ticker — the fx ingestion pipeline never writes news.parquet) — callers
+ * should catch that and degrade gracefully, same as getProfile/getMetrics/
+ * getDividends.
+ *
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/newsCache.js), same rationale as
+ * getProfile/getMetrics/getDividends/getPrices.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} assetClass
+ * @param {string} symbol
+ * @returns {Promise<NewsResponse>}
+ */
+export async function getNews(api, assetClass, symbol) {
+  const cacheKey = newsCacheKey(assetClass, symbol);
+
+  const cached = await readCachedNews(cacheKey);
+  if (cached) return cached;
+
+  const result = /** @type {NewsResponse} */ (await api(`/market/${assetClass}/${symbol}/news/`));
+  writeCachedNews(cacheKey, result);
   return result;
 }
 

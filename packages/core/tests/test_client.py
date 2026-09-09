@@ -133,6 +133,90 @@ def test_get_metrics_returns_none_when_key_missing(s3_client) -> None:
     assert client.get_metrics("stock", "MISSING") is None
 
 
+def _news_row(
+    id_: str, published_at: str, *, ticker: str = "AAPL", last_updated: str | None = None
+) -> dict:
+    return {
+        "ticker": ticker,
+        "id": id_,
+        "title": f"Headline {id_}",
+        "summary": "Some summary",
+        "publisher": "Reuters",
+        "url": f"https://example.com/{id_}",
+        "thumbnail_url": "https://example.com/thumb.jpg",
+        "published_at": published_at,
+        "last_updated": last_updated or "2026-08-30T09:05:00+00:00",
+        "source": "yfinance",
+    }
+
+
+def test_get_news_returns_none_when_key_missing(s3_client) -> None:
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_news("stock", "MISSING") is None
+
+
+def test_get_news_returns_ticker_last_updated_and_articles(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/news.parquet",
+        Body=_parquet_bytes(
+            [
+                _news_row("older", "2026-08-29T09:00:00+00:00"),
+                _news_row("newer", "2026-08-30T09:00:00+00:00"),
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_news("stock", "aapl")
+
+    assert result["ticker"] == "AAPL"
+    assert result["last_updated"] == "2026-08-30T09:05:00+00:00"
+    assert [row["id"] for row in result["news"]] == ["newer", "older"]
+
+
+def test_get_news_uses_requested_symbol_not_a_ticker_field_on_the_rows(s3_client) -> None:
+    """A benchmark's news.parquet rows carry the underlying yfinance symbol
+    (e.g. "^GSPC") in `ticker`, not the benchmark key ("SP500") this is
+    called with - `ticker` in the response must echo the request, same
+    convention get_prices already uses, not whatever the rows happen to
+    carry."""
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="benchmark=SP500/news.parquet",
+        Body=_parquet_bytes([_news_row("abc", "2026-08-30T09:00:00+00:00", ticker="^GSPC")]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_news("benchmark", "SP500")
+
+    assert result["ticker"] == "SP500"
+    assert result["news"][0]["ticker"] == "^GSPC"
+
+
+def test_get_news_last_updated_is_the_freshest_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/news.parquet",
+        Body=_parquet_bytes(
+            [
+                _news_row(
+                    "a", "2026-08-29T09:00:00+00:00", last_updated="2026-08-29T09:05:00+00:00"
+                ),
+                _news_row(
+                    "b", "2026-08-30T09:00:00+00:00", last_updated="2026-08-30T09:05:00+00:00"
+                ),
+            ]
+        ),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    result = client.get_news("stock", "AAPL")
+
+    assert result["last_updated"] == "2026-08-30T09:05:00+00:00"
+
+
 def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
     """A stock profile's `ceos` is written as a JSON string column (see
     equicast_stock.writer.write_profile_parquet's docstring) — get_profile

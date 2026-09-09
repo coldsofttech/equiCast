@@ -9,6 +9,7 @@ dependencies = [
     "equicast-metrics",
     "equicast-dividends",
     "equicast-events",
+    "equicast-news",
     "pandas>=2.2",
     "pyarrow>=17.0",
     "pyyaml>=6.0",
@@ -32,6 +33,7 @@ equicast-datafeed = { workspace = true }
 equicast-metrics = { workspace = true }
 equicast-dividends = { workspace = true }
 equicast-events = { workspace = true }
+equicast-news = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

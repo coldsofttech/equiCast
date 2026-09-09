@@ -81,6 +81,28 @@ class DividendsView(APIView):
         return Response(dividends)
 
 
+class NewsView(APIView):
+    """`news` is every article published in the trailing month for this
+    ticker/pair, newest first (see
+    `equicast_core.client.MarketDataClient.get_news`). Not published for
+    every asset class - fx tickers have no `news.parquet` at all (the fx
+    ingestion pipeline never writes one), so this 404s the same as any
+    other unpublished ticker rather than needing a separate asset-class
+    check here."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        news = _client.get_news(asset_class, symbol)
+        if news is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(news)
+
+
 class PricesView(APIView):
     """`prices` is trimmed/aggregated to the requested `range` query param
     (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see
