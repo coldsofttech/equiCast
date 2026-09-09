@@ -265,6 +265,7 @@ module "backend_lambda" {
     MAX_HOLDINGS_FOR_PIE          = tostring(var.max_holdings_for_pie)
     MAX_HOLDINGS_FOR_WATCHLIST    = tostring(var.max_holdings_for_watchlist)
     MAX_TRANSACTIONS_FOR_HOLDING  = tostring(var.max_transactions_for_holding)
+    API_RATE_LIMIT_PER_MINUTE     = tostring(var.api_rate_limit_per_minute)
     MARKET_DATA_CACHE_TTL_SECONDS = tostring(var.market_data_cache_ttl_seconds)
     # Previously unset here, silently falling back to settings.py's
     # DEBUG default of "true" for every deployed environment (dev and

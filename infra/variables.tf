@@ -84,6 +84,12 @@ variable "max_transactions_for_holding" {
   default     = 500
 }
 
+variable "api_rate_limit_per_minute" {
+  description = "Per-user requests/minute across every DRF endpoint (identity.throttling.Auth0UserRateThrottle's DEFAULT_THROTTLE_RATES)."
+  type        = number
+  default     = 120
+}
+
 variable "market_data_cache_ttl_seconds" {
   description = "TTL (seconds) for MarketDataClient's in-process S3 parquet cache — every asset class's ingestion pipeline refreshes at most once a day, so several hours is safe."
   type        = number

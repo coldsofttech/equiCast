@@ -22,6 +22,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Two-layer rate limiting for the API, neither previously present at all.
+  Layer 1 (infra): the API Gateway HTTP API's `$default` stage now sets
+  `throttling_rate_limit`/`throttling_burst_limit` (defaults 25 req/s
+  sustained / 50 burst, `infra/modules/api_gateway`'s new
+  `throttling_rate_limit`/`throttling_burst_limit` variables) — a single
+  aggregate ceiling across every caller combined (HTTP APIs have no
+  per-client usage-plan/API-key concept the way REST APIs do), rejecting
+  with `429` before Lambda is ever invoked. Layer 2 (app): a new
+  `identity.throttling.Auth0UserRateThrottle` (DRF's own `SimpleRateThrottle`,
+  keyed by the caller's Auth0 `sub` rather than DRF's `UserRateThrottle`'s
+  `request.user.pk`, which `Auth0User` doesn't have), wired in globally via
+  `DEFAULT_THROTTLE_CLASSES`/`DEFAULT_THROTTLE_RATES` so every DRF view
+  gets it without opting in individually — per-user budget, default
+  120/min, overridable via the new `API_RATE_LIMIT_PER_MINUTE` env var
+  (`infra/variables.tf`'s `api_rate_limit_per_minute`, same
+  GitHub-Environment-variable convention as `MAX_TRANSACTIONS_FOR_HOLDING`
+  and friends). Backed by Django's cache (`CACHES` now set explicitly to
+  `LocMemCache`, previously an implicit default) — correct only within one
+  warm Lambda execution environment, not shared across the several that
+  can run concurrently under real traffic, so the effective per-user rate
+  can multiply by however many containers happen to be warm at once; an
+  accepted tradeoff given this app's current traffic volume rather than
+  standing up a new always-on/shared store, with a DynamoDB-backed counter
+  (the same on-demand pattern `UserProfileClient` already uses) as the
+  documented upgrade path if that ever stops being good enough. New
+  `backend/conftest.py` clears the Django cache between every test — this
+  throttle otherwise shares one counter across every test authenticating
+  as the same fixture user, tripping unrelated tests' assertions once
+  enough of them ran in one session.
+
 - `MarketDataClient._read_parquet` (the single choke point every S3 read
   in `equicast_core.client` goes through) now caches in-process, in a
   module-level TTL cache shared by every `MarketDataClient` instance in
