@@ -169,6 +169,15 @@ export async function getProfile(api, assetClass, symbol) {
  * @property {number|null} cagr_3y
  * @property {number|null} cagr_5y
  * @property {number|null} cagr_10y
+ * @property {number|null} [buyers_pct] - stock/etf-only; absent for
+ *   benchmark/fx (see equicast_metrics.MetricsClient.buy_sell_pressure).
+ *   Fraction (e.g. 0.62 for 62%) of the trailing year's Chaikin-Money-Flow
+ *   buy/sell volume pressure attributed to buying; always
+ *   `1 - sellers_pct`. A technical proxy for order-flow sentiment, not
+ *   literal buy/sell order counts.
+ * @property {number|null} [sellers_pct] - counterpart of `buyers_pct`,
+ *   always `1 - buyers_pct`. Both are `null` together when there's no
+ *   meaningful split to compute (e.g. no recorded volume in the window).
  * @property {number|null} [pe_ratio] - stock-only; absent for etf/fx (see
  *   equicast_metrics.MetricsClient.fundamentals). Always the plain current
  *   price ÷ trailing EPS calculation — unlike `trailing_pe`, never
@@ -198,10 +207,11 @@ export async function getProfile(api, assetClass, symbol) {
  * backend/market_data/views.py's MetricsView. Throws an ApiError with
  * status 404 when no `metrics.parquet` is published yet for this symbol —
  * callers should catch that and degrade gracefully, same as getProfile.
- * etf/fx records only ever carry the generic risk/performance fields
- * (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_*`); a stock's record
- * additionally carries the valuation/fundamental fields (`trailing_pe`,
- * etc.) — see MarketMetrics.
+ * Every record carries the generic risk/performance fields
+ * (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_*`); a stock or etf's
+ * record additionally carries `buyers_pct`/`sellers_pct` (absent for
+ * benchmark/fx), and a stock's record further carries the
+ * valuation/fundamental fields (`trailing_pe`, etc.) — see MarketMetrics.
  *
  * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
  * browser's local calendar day (see utils/metricsCache.js), same rationale
@@ -226,20 +236,20 @@ export async function getMetrics(api, assetClass, symbol) {
 }
 
 /**
+ * `ticker`/`currency` (one instrument) and `last_updated` (the latest of
+ * every contributing row's own) are surfaced once on `DividendsResponse`
+ * rather than repeated on every record — a `DividendRecord` itself only
+ * ever carries what actually varies per payout (see GitHub issue #57).
+ *
  * @typedef {Object} DividendRecord
- * @property {string} ticker
- * @property {string} currency
  * @property {string} ex_dividend_date
  * @property {string|null} payment_date - only ever set for a `"declared"`
  *   record, and even then only when yfinance has reported one yet.
- * @property {number} price - per-share cash amount, in `currency`.
+ * @property {number} price - per-share cash amount, in `DividendsResponse.currency`.
  * @property {"paid"|"declared"|"estimated"} status - `"paid"`: an
  *   already-happened payout. `"declared"`: a real, yfinance-confirmed
  *   upcoming payout (0 or 1 of these ever exist for a ticker at a time).
- *   `"estimated"`: a computed projection from historical cadence/growth,
- *   `source: "equicast"` rather than `"yfinance"`.
- * @property {string} last_updated
- * @property {string} source
+ *   `"estimated"`: a computed projection from historical cadence/growth.
  */
 
 /**

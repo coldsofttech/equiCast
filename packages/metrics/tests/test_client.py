@@ -21,6 +21,14 @@ def _history(prices: list[float], start: str = "2015-01-01") -> pd.DataFrame:
     return pd.DataFrame({"Close": prices}, index=index)
 
 
+def _ohlcv_history(
+    high: list[float], low: list[float], close: list[float], volume: list[float],
+    start: str = "2015-01-01",
+) -> pd.DataFrame:
+    index = pd.date_range(start=start, periods=len(close), freq="D")
+    return pd.DataFrame({"High": high, "Low": low, "Close": close, "Volume": volume}, index=index)
+
+
 def _datafeed(info: dict, history: pd.DataFrame) -> MagicMock:
     datafeed = MagicMock()
     datafeed.get_info.return_value = info
@@ -187,3 +195,49 @@ def test_fundamentals_fetches_statements_at_most_once_each() -> None:
 def test_fundamentals_includes_last_updated() -> None:
     fundamentals = MetricsClient("AAPL", datafeed=_datafeed({}, pd.DataFrame())).fundamentals()
     assert fundamentals["last_updated"]
+
+
+def test_buy_sell_pressure_all_closes_at_high_is_all_buyers() -> None:
+    history = _ohlcv_history(
+        high=[100.0] * 30, low=[90.0] * 30, close=[100.0] * 30, volume=[1000] * 30
+    )
+    result = MetricsClient("AAPL", datafeed=_datafeed({}, history)).buy_sell_pressure()
+
+    assert result["buyers_pct"] == pytest.approx(1.0)
+    assert result["sellers_pct"] == pytest.approx(0.0)
+
+
+def test_buy_sell_pressure_handles_empty_history() -> None:
+    result = MetricsClient("AAPL", datafeed=_datafeed({}, pd.DataFrame())).buy_sell_pressure()
+
+    assert result["buyers_pct"] is None
+    assert result["sellers_pct"] is None
+
+
+def test_buy_sell_pressure_missing_volume_column_is_none() -> None:
+    history = _history([100.0, 101.0, 102.0])  # Close only, no High/Low/Volume
+    result = MetricsClient("AAPL", datafeed=_datafeed({}, history)).buy_sell_pressure()
+
+    assert result["buyers_pct"] is None
+    assert result["sellers_pct"] is None
+
+
+def test_buy_sell_pressure_ignores_trailing_nan_close() -> None:
+    high = [100.0] * 30 + [float("nan")]
+    low = [90.0] * 30 + [float("nan")]
+    close = [100.0] * 30 + [float("nan")]
+    volume = [1000] * 30 + [500]
+    history = _ohlcv_history(high=high, low=low, close=close, volume=volume)
+
+    result = MetricsClient("AAPL", datafeed=_datafeed({}, history)).buy_sell_pressure()
+
+    assert result["buyers_pct"] == pytest.approx(1.0)
+
+
+def test_buy_sell_pressure_has_no_last_updated_or_source() -> None:
+    history = _ohlcv_history(
+        high=[100.0] * 5, low=[90.0] * 5, close=[100.0] * 5, volume=[1000] * 5
+    )
+    result = MetricsClient("AAPL", datafeed=_datafeed({}, history)).buy_sell_pressure()
+
+    assert set(result.keys()) == {"buyers_pct", "sellers_pct"}

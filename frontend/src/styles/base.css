@@ -29,3 +29,13 @@ input {
   outline: none;
   box-shadow: var(--ec-shadow-focus);
 }
+
+/* Currency-denominated values (see components/core/Balance.jsx), blurred
+   app-wide by the Topbar's hide-balances toggle (HideBalancesToggle.jsx)
+   — percentages and other non-currency stats are never wrapped in this, so
+   they stay sharp regardless of this attribute. */
+:root[data-hide-balances="true"] .ec-balance {
+  filter: blur(6px);
+  user-select: none;
+  transition: filter 0.15s ease;
+}

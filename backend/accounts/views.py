@@ -63,7 +63,11 @@ _transactions_client = TransactionsClient(
 #: name/sector/industry/website/market_cap) in via `enrich_holdings` —
 #: pies/views.py holds the client instance actually used to validate a
 #: ticker has market data before it's added to a pie.
-_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+_market_data_client = MarketDataClient(
+    settings.MARKET_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
+)
 #: Needed only to read the user's default_currency, so `enrich_holdings`
 #: converts current_price the same way transactions/views.py converts
 #: average_price/invested/dividends (see resolve_converted_amounts there) —
