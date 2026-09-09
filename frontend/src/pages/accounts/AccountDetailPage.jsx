@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import IconBadge from "../../components/core/IconBadge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -258,17 +259,29 @@ function AccountDetailPage() {
       <div className="ec-stat-grid">
         <StatTile
           label="Value"
-          value={formatCurrency(totals.currentValue, currency)}
-          hint={`Invested ${formatCurrency(totals.invested, currency)}`}
+          value={<Balance>{formatCurrency(totals.currentValue, currency)}</Balance>}
+          hint={
+            <>
+              Invested <Balance>{formatCurrency(totals.invested, currency)}</Balance>
+            </>
+          }
         />
         <StatTile
           label="Profit / loss"
-          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
+          value={
+            <Balance>
+              {totals.plValue >= 0 ? "+" : "-"}
+              {formatCurrency(Math.abs(totals.plValue), currency)}
+            </Balance>
+          }
           tone={totalsTone}
           hint={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
           hintTone={totalsTone}
         />
-        <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
+        <StatTile
+          label="Dividends so far"
+          value={<Balance>{formatCurrency(totals.dividends, currency)}</Balance>}
+        />
       </div>
 
       <PiePriceChart
@@ -332,12 +345,15 @@ function AccountDetailPage() {
                       </div>
                     </div>
                     <div className="ec-detail-row-value">
-                      <span className="ec-detail-row-current">
+                      <Balance as="span" className="ec-detail-row-current">
                         {formatCurrency(pieTotals.currentValue, currency)}
-                      </span>
+                      </Balance>
                       <span className={`ec-detail-row-pl ${tone}`}>
-                        {plSign}
-                        {formatCurrency(Math.abs(pieTotals.plValue), currency)} ({plSign}
+                        <Balance>
+                          {plSign}
+                          {formatCurrency(Math.abs(pieTotals.plValue), currency)}
+                        </Balance>{" "}
+                        ({plSign}
                         {Math.abs(pieTotals.plPct).toFixed(1)}%)
                       </span>
                     </div>
@@ -401,12 +417,15 @@ function AccountDetailPage() {
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(valuation.currentValue, currency)}
+                        <Balance>{formatCurrency(valuation.currentValue, currency)}</Balance>
                         {!valuation.hasLivePrice && " (cost basis)"}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
-                        {plSign}
-                        {formatCurrency(Math.abs(valuation.plValue), currency)} ({plSign}
+                        <Balance>
+                          {plSign}
+                          {formatCurrency(Math.abs(valuation.plValue), currency)}
+                        </Balance>{" "}
+                        ({plSign}
                         {Math.abs(valuation.plPct).toFixed(1)}%)
                       </span>
                     </div>

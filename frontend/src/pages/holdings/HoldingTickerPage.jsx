@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Button from "../../components/core/Button.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
@@ -553,32 +554,57 @@ function HoldingTickerPage() {
                   <StatTile
                     label="Value"
                     value={
-                      totalsLoading
-                        ? "…"
-                        : currentValueDefault != null
-                          ? formatMoney(currentValueDefault, totalsCurrency)
-                          : "—"
+                      totalsLoading ? (
+                        "…"
+                      ) : currentValueDefault != null ? (
+                        <Balance>{formatMoney(currentValueDefault, totalsCurrency)}</Balance>
+                      ) : (
+                        "—"
+                      )
                     }
                     hint={
-                      totalsLoading
-                        ? "…"
-                        : `Invested ${investedDefault != null ? formatMoney(investedDefault, totalsCurrency) : "—"}`
+                      totalsLoading ? (
+                        "…"
+                      ) : (
+                        <>
+                          Invested{" "}
+                          {investedDefault != null ? (
+                            <Balance>{formatMoney(investedDefault, totalsCurrency)}</Balance>
+                          ) : (
+                            "—"
+                          )}
+                        </>
+                      )
                     }
                     tone={totalsTone}
                   />
                   <StatTile
                     label="Shares"
                     value={totals.shares}
-                    hint={`Avg price ${avgPriceNative != null ? formatMoney(avgPriceNative, nativeCurrency) : "—"}`}
+                    hint={
+                      <>
+                        Avg price{" "}
+                        {avgPriceNative != null ? (
+                          <Balance>{formatMoney(avgPriceNative, nativeCurrency)}</Balance>
+                        ) : (
+                          "—"
+                        )}
+                      </>
+                    }
                   />
                   <StatTile
                     label="Profit / loss"
                     value={
-                      totalsLoading
-                        ? "…"
-                        : plValueDefault != null
-                          ? `${plValueDefault >= 0 ? "+" : "-"}${formatMoney(Math.abs(plValueDefault), totalsCurrency)}`
-                          : "—"
+                      totalsLoading ? (
+                        "…"
+                      ) : plValueDefault != null ? (
+                        <Balance>
+                          {plValueDefault >= 0 ? "+" : "-"}
+                          {formatMoney(Math.abs(plValueDefault), totalsCurrency)}
+                        </Balance>
+                      ) : (
+                        "—"
+                      )
                     }
                     hint={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
                     tone={totalsTone}
@@ -587,11 +613,13 @@ function HoldingTickerPage() {
                   <StatTile
                     label="Dividends"
                     value={
-                      totalsLoading
-                        ? "…"
-                        : dividendsDefault != null
-                          ? formatMoney(dividendsDefault, totalsCurrency)
-                          : "—"
+                      totalsLoading ? (
+                        "…"
+                      ) : dividendsDefault != null ? (
+                        <Balance>{formatMoney(dividendsDefault, totalsCurrency)}</Balance>
+                      ) : (
+                        "—"
+                      )
                     }
                   />
                 </div>
