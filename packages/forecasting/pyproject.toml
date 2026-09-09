@@ -8,6 +8,7 @@ dependencies = [
     "arch>=6.3",
     "equicast-datafeed",
     "equicast-dividends",
+    "equicast-metrics",
     "numpy<2.3",
     "pandas>=2.2",
     "pyarrow>=17.0",
@@ -29,6 +30,7 @@ equicast-forecasting = "equicast_forecasting.cli:main"
 [tool.uv.sources]
 equicast-datafeed = { workspace = true }
 equicast-dividends = { workspace = true }
+equicast-metrics = { workspace = true }
 
 [build-system]
 requires = ["hatchling"]

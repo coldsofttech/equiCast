@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Sector-based stock price-band forecasting (GitHub issue #66):
+  `equicast_forecasting.stock_price_bands()` routes a stock to one of 16
+  sector/sub-sector schemas (a full Morningstar-style taxonomy —
+  Technology; Financial Services split into Banks/Insurance/Asset
+  Management; Healthcare split into Pharma-Devices/Biotech; Consumer
+  Defensive; Consumer Cyclical; Communication Services; Utilities; Real
+  Estate split into REIT-equity/REIT-mortgage/Non-REIT; Energy; Basic
+  Materials; Industrials — see `sector_schemas.yaml`), raising
+  `UnroutableSectorError` for anything that doesn't match ("fail loudly,"
+  per the issue — no generic fallback schema). One Monte Carlo simulation
+  (new `monte_carlo.py`, a generic block-bootstrap engine) spans the whole
+  horizon: volatility rescaled to a real GARCH-with-EWMA-fallback estimate
+  throughout, no directional drift through the 6m-2y medium horizon (per
+  the issue's own notes), and a valuation-reversion bias for 3y-10y from a
+  real starting-multiple z-score (`fundamentals_signals.py` — PE/price-
+  to-book/tangible-book-value, reconstructed from real financial-statement
+  history) wherever equicast has the data (9 of 16 sectors today) — 0.0
+  drift otherwise. Also derives real `revenue_cagr`/`profit_margin_trend`/
+  `rd_to_revenue`/`short_interest_ratio` signals per ticker. The day-
+  boundary/drift-taper machinery (`regimes.py`) was extracted out of FX
+  forecasting's own code so both share it unchanged. Wired into
+  `equicast-forecasting`'s CLI via a new required `--forecast-kind`
+  flag (`dividends` | `price-bands` — the pre-existing dividend forecast
+  now needs it passed explicitly; `stock-ingestion.yml`/`etf-ingestion.yml`
+  updated accordingly), writing `stock=<TICKER>/forecasting/
+  price_bands.parquet`. Not yet wired into any scheduled workflow.
+
 - FX price-band forecasting (GitHub issue #65): `equicast_forecasting.
   fx_price_bands()` projects daily 10th/50th/90th-percentile probability
   bands per FX pair, out to `--years` (default 10), across three horizon

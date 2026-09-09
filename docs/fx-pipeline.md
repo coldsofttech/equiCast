@@ -275,7 +275,7 @@ by hand:
 
 ```bash
 cd packages/forecasting
-uv run equicast-forecasting --asset-class fx --config ../fx/config/fx_pairs.dev.yaml --out ./output
+uv run equicast-forecasting --asset-class fx --forecast-kind price-bands --config ../fx/config/fx_pairs.dev.yaml --out ./output
 ```
 
 Writes `fx=<FROM><TO>/forecasting/price_bands.parquet` per pair — daily

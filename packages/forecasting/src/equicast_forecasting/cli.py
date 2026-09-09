@@ -1,23 +1,43 @@
-"""CLI: forecast future dividend payouts (stock/etf) or daily FX price
-probability bands (fx) for every configured ticker/pair.
+"""CLI: forecast future dividend payouts (stock/etf), daily FX price
+probability bands (fx), or daily sector-routed stock price probability
+bands (stock) for every configured ticker/pair.
 
-Dividend forecasting: for each ticker, fetches its full dividend history
-via `DividendsClient`, projects it forward with `equicast_forecasting.
-dividends()`, and writes `<asset_class>=<TICKER>/forecasting/
-dividends.parquet` — nothing at all for a ticker with no dependable cadence
-to forecast (an "irregular"/"not_applicable" payer).
+`--forecast-kind` selects which model runs, since "stock" can mean either
+kind of forecast:
 
-FX price-band forecasting: for each pair, fetches its full price history
-directly via `DatafeedClient.get_history` (not `equicast-fx`'s `FXClient` —
-this package deliberately doesn't depend on any asset-class-specific
-package, same reasoning `config.py`'s docstring gives for its own
-standalone config loaders), projects it forward with `equicast_forecasting.
-fx_forecast.fx_price_bands()`, and writes `fx=<FROM><TO>/forecasting/
+Dividend forecasting (`--forecast-kind dividends`, stock/etf only): for
+each ticker, fetches its full dividend history via `DividendsClient`,
+projects it forward with `equicast_forecasting.dividends()`, and writes
+`<asset_class>=<TICKER>/forecasting/dividends.parquet` — nothing at all
+for a ticker with no dependable cadence to forecast (an "irregular"/
+"not_applicable" payer).
+
+FX price-band forecasting (`--forecast-kind price-bands`, fx only): for
+each pair, fetches its full price history directly via `DatafeedClient.
+get_history` (not `equicast-fx`'s `FXClient` — this package deliberately
+doesn't depend on any asset-class-specific package, same reasoning
+`config.py`'s docstring gives for its own standalone config loaders),
+projects it forward with `equicast_forecasting.fx_forecast.
+fx_price_bands()`, and writes `fx=<FROM><TO>/forecasting/
 price_bands.parquet`.
 
+Stock price-band forecasting (`--forecast-kind price-bands`, stock only,
+GitHub issue #66): for each ticker, fetches its full price history plus
+`sector`/`industry` (again straight off `DatafeedClient`, not
+`equicast-stock`), routes it to one of 16 sector/sub-sector schemas (see
+sector_registry.py) and projects it forward with `equicast_forecasting.
+stock_forecast.stock_price_bands()`, writing `stock=<TICKER>/forecasting/
+price_bands.parquet`. Per the issue, an unroutable sector/industry "fails
+loudly" — `_stock_forecast_task` logs and skips just that ticker (so one
+unmapped stock doesn't abort every other ticker in the batch), but `run()`
+re-raises a summary `ForecastBatchError` once every ticker has had its
+turn, so the overall CLI invocation (and, once scheduled, the GitHub
+Actions job running it) still exits non-zero and fails visibly — the
+already-forecasted tickers' Parquet files are still written either way.
+
 Either way, each ticker's/pair's fetch-and-forecast is an independent task
-submitted to the same worker pool, so they run concurrently rather than one
-after the other.
+submitted to the same worker pool, so they run concurrently rather than
+one after the other.
 """
 
 from __future__ import annotations
@@ -41,33 +61,52 @@ from equicast_forecasting.config import (
 )
 from equicast_forecasting.forecast import dividends
 from equicast_forecasting.fx_forecast import fx_price_bands
+from equicast_forecasting.monte_carlo import DEFAULT_NUM_PATHS
+from equicast_forecasting.sector_registry import UnroutableSectorError
+from equicast_forecasting.stock_forecast import stock_price_bands
 from equicast_forecasting.writer import (
     write_dividend_forecast_parquet,
     write_fx_price_bands_parquet,
+    write_stock_price_bands_parquet,
 )
 
 logger = logging.getLogger(__name__)
 
 #: Full-history period passed to `DatafeedClient.get_history` when fetching
-#: an FX pair's price series to forecast from — as much real volatility
-#: history as yfinance has, not just the current year, since a longer
-#: series makes for a materially more reliable GARCH(1,1) fit (see
-#: volatility.py's `GARCH_MIN_OBSERVATIONS`).
-FX_HISTORY_PERIOD = "max"
+#: an FX pair's or stock's price series to forecast from — as much real
+#: volatility history as yfinance has, not just the current year, since a
+#: longer series makes for a materially more reliable GARCH(1,1) fit (see
+#: volatility.py's `GARCH_MIN_OBSERVATIONS`) and Monte Carlo bootstrap.
+FULL_HISTORY_PERIOD = "max"
+
+
+class ForecastBatchError(RuntimeError):
+    """Raised by `run()` when one or more tickers failed to route to a
+    stock forecasting schema (see sector_registry.UnroutableSectorError) —
+    every other ticker in the batch still ran and had its Parquet written;
+    this only ensures the overall CLI invocation still exits non-zero, per
+    issue #66's "fail loudly" requirement, rather than silently reporting
+    success."""
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Forecast each configured ticker's future dividend payouts (stock/etf) or "
-        "each configured pair's daily FX price probability bands (fx), writing one Parquet "
-        "file per ticker/pair."
+        "each configured ticker's/pair's daily price probability bands (stock/fx), writing one "
+        "Parquet file per ticker/pair."
     )
     parser.add_argument(
         "--asset-class",
         required=True,
         choices=["stock", "etf", "fx"],
-        help="Determines both the forecast kind (dividends for stock/etf, price bands for fx) "
-        "and the S3 key prefix written to.",
+        help="Determines both which tickers/pairs this can run against and the S3 key prefix "
+        "written to.",
+    )
+    parser.add_argument(
+        "--forecast-kind",
+        required=True,
+        choices=["dividends", "price-bands"],
+        help='"dividends" is stock/etf only; "price-bands" is stock/fx only.',
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
@@ -91,6 +130,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=10,
         help="Forecast horizon in years (default: 10).",
+    )
+    parser.add_argument(
+        "--num-paths",
+        type=int,
+        default=DEFAULT_NUM_PATHS,
+        help="Monte Carlo simulated paths per stock forecast (default: "
+        f"{DEFAULT_NUM_PATHS}). Ignored for dividends/fx forecasting.",
     )
     parser.add_argument(
         "--max-workers",
@@ -123,6 +169,17 @@ def _validate_source_for_asset_class(
         raise ValueError("--pairs-json is fx only; use --tickers-json (or --config) for stock/etf.")
 
 
+def _validate_forecast_kind(asset_class: str, forecast_kind: str) -> None:
+    if forecast_kind == "dividends" and asset_class not in ("stock", "etf"):
+        raise ValueError(
+            f"--forecast-kind dividends is stock/etf only, got --asset-class {asset_class!r}."
+        )
+    if forecast_kind == "price-bands" and asset_class not in ("stock", "fx"):
+        raise ValueError(
+            f"--forecast-kind price-bands is stock/fx only, got --asset-class {asset_class!r}."
+        )
+
+
 def _load_tickers(config: Path | None, tickers_json: str | None) -> list[str]:
     if tickers_json is not None:
         return parse_tickers_json(tickers_json)
@@ -137,7 +194,7 @@ def _load_fx_pairs(config: Path | None, pairs_json: str | None) -> list[FxPairRe
     return load_fx_pairs(config)
 
 
-def _forecast_task(
+def _dividend_forecast_task(
     ticker: str, datafeed: DatafeedClient, output_dir: Path, asset_class: str, years: int
 ) -> Path | None:
     logger.info("Forecasting dividends for %s", ticker)
@@ -147,11 +204,12 @@ def _forecast_task(
     return write_dividend_forecast_parquet(forecast, output_dir, asset_class)
 
 
-def _fx_price_records(datafeed: DatafeedClient, symbol: str) -> list[dict[str, float | str]]:
-    """The minimal `{date, close}` records `fx_price_bands()` needs, read
-    straight off `DatafeedClient.get_history` — no `equicast-fx` dependency
-    (see this module's own docstring for why)."""
-    history = datafeed.get_history(symbol, period=FX_HISTORY_PERIOD)
+def _price_records(datafeed: DatafeedClient, symbol: str) -> list[dict[str, float | str]]:
+    """The minimal `{date, close}` records `fx_price_bands()`/
+    `stock_price_bands()` need, read straight off `DatafeedClient.
+    get_history` — no `equicast-fx`/`equicast-stock` dependency (see this
+    module's own docstring for why)."""
+    history = datafeed.get_history(symbol, period=FULL_HISTORY_PERIOD)
     return [
         {"date": index.date().isoformat(), "close": float(row["Close"])}
         for index, row in history.iterrows()
@@ -163,38 +221,84 @@ def _fx_forecast_task(
 ) -> Path | None:
     logger.info("Forecasting FX price bands for %s%s", pair.from_currency, pair.to_currency)
     symbol = f"{pair.from_currency}{pair.to_currency}=X"
-    prices = _fx_price_records(datafeed, symbol)
+    prices = _price_records(datafeed, symbol)
     forecast = fx_price_bands(
         prices, pair.from_currency, pair.to_currency, datafeed=datafeed, years=years
     )
     return write_fx_price_bands_parquet(forecast, output_dir)
 
 
+def _stock_forecast_task(
+    ticker: str,
+    datafeed: DatafeedClient,
+    output_dir: Path,
+    years: int,
+    num_paths: int,
+    routing_failures: list[tuple[str, UnroutableSectorError]],
+) -> Path | None:
+    logger.info("Forecasting stock price bands for %s", ticker)
+    info = datafeed.get_info(ticker)
+    prices = _price_records(datafeed, ticker)
+    try:
+        forecast = stock_price_bands(
+            prices,
+            ticker,
+            info.get("sector"),
+            info.get("industry"),
+            datafeed=datafeed,
+            years=years,
+            num_paths=num_paths,
+        )
+    except UnroutableSectorError as error:
+        logger.error("Skipping %s: %s", ticker, error)
+        routing_failures.append((ticker, error))
+        return None
+    return write_stock_price_bands_parquet(forecast, output_dir)
+
+
 def run(
     asset_class: str,
+    forecast_kind: str,
     config: Path | None,
     output_dir: Path,
     tickers_json: str | None = None,
     pairs_json: str | None = None,
     years: int = 10,
+    num_paths: int = DEFAULT_NUM_PATHS,
     max_workers: int = 1,
     max_calls: int = 1,
     period_seconds: float = 1.0,
 ) -> list[Path]:
+    _validate_forecast_kind(asset_class, forecast_kind)
     _validate_source_for_asset_class(asset_class, tickers_json, pairs_json)
 
     # One DatafeedClient (and its rate limiter) shared across every worker, so
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
+    routing_failures: list[tuple[str, UnroutableSectorError]] = []
     tasks: list[Callable[[], Path | None]]
-    if asset_class == "fx":
+    if forecast_kind == "price-bands" and asset_class == "fx":
         pairs = _load_fx_pairs(config, pairs_json)
         tasks = [partial(_fx_forecast_task, pair, datafeed, output_dir, years) for pair in pairs]
-    else:
+    elif forecast_kind == "price-bands":  # stock
         tickers = _load_tickers(config, tickers_json)
         tasks = [
-            partial(_forecast_task, ticker, datafeed, output_dir, asset_class, years)
+            partial(
+                _stock_forecast_task,
+                ticker,
+                datafeed,
+                output_dir,
+                years,
+                num_paths,
+                routing_failures,
+            )
+            for ticker in tickers
+        ]
+    else:  # dividends, stock/etf
+        tickers = _load_tickers(config, tickers_json)
+        tasks = [
+            partial(_dividend_forecast_task, ticker, datafeed, output_dir, asset_class, years)
             for ticker in tickers
         ]
 
@@ -205,23 +309,32 @@ def run(
             path = future.result()
             if path is not None:
                 written.append(path)
+
+    if routing_failures:
+        summary = "; ".join(f"{ticker} ({error})" for ticker, error in routing_failures)
+        raise ForecastBatchError(
+            f"{len(routing_failures)} ticker(s) failed to route to a forecasting schema: {summary}"
+        )
     return written
 
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     args = build_arg_parser().parse_args()
-    for path in run(
+    written = run(
         args.asset_class,
+        args.forecast_kind,
         args.config,
         args.out,
         tickers_json=args.tickers_json,
         pairs_json=args.pairs_json,
         years=args.years,
+        num_paths=args.num_paths,
         max_workers=args.max_workers,
         max_calls=args.max_calls,
         period_seconds=args.period_seconds,
-    ):
+    )
+    for path in written:
         print(path)
 
 

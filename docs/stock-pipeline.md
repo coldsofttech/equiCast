@@ -319,3 +319,39 @@ s3://equicast-market-data-<env>/
     └── forecasting/
         └── dividends.parquet   (rewritten wholesale by every run, not history/current-split)
 ```
+
+## Forecasting
+
+`equicast-forecasting` now runs two independent kinds of forecast against
+`equicast-stock`'s tickers, selected via its `--forecast-kind` flag
+(**required** as of GitHub issue #66 — any existing invocation missing it
+will fail):
+
+- **`--forecast-kind dividends`** — the pre-existing dividend payout
+  projection this doc's own "Running the scheduled ingestion" section
+  above describes (the Saturday `equicast-forecasting` run in
+  `stock-ingestion.yml`), writing `forecasting/dividends.parquet`. That
+  workflow step now passes `--forecast-kind dividends` explicitly.
+- **`--forecast-kind price-bands`** (GitHub issue #66) — daily 10th/50th/
+  90th-percentile price probability bands, routed through one of 16
+  sector/sub-sector schemas (GARCH+EWMA-fallback short horizon, Monte
+  Carlo bootstrap medium/long, with a real valuation-reversion bias for
+  most sectors at the long horizon), writing `forecasting/
+  price_bands.parquet`. See
+  [packages/forecasting/README.md](../packages/forecasting/README.md#stock-price-band-forecasting)
+  for the full model. **Not yet wired into `stock-ingestion.yml` or any
+  scheduled workflow** — run it by hand for now:
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class stock --forecast-kind price-bands --config ../stock/config/stocks.dev.yaml --out ./output
+```
+
+Per the issue's "fail loudly" requirement, a ticker whose sector/industry
+matches none of the 16 schemas raises `UnroutableSectorError` — the CLI
+catches it per-ticker (so the rest of the batch still runs and writes
+normally) but re-raises a summary `ForecastBatchError` once every ticker
+has had its turn, so the CLI process still exits non-zero rather than
+silently reporting success with a gap. Today's 9 configured tickers
+(AAPL, MSFT, GOOGL, AMZN, NVDA, META, TSLA, QCOM, AVGO) all route
+successfully (Technology, Consumer Cyclical, or Communication Services).

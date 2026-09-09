@@ -321,3 +321,14 @@ s3://equicast-market-data-<env>/
     └── forecasting/
         └── dividends.parquet   (rewritten wholesale by every run, not history/current-split)
 ```
+
+## Forecasting
+
+`equicast-forecasting`'s `--forecast-kind` flag is **required** as of
+GitHub issue #66 (it added a second forecast kind, price-bands, for
+stock/fx only — ETF only ever runs `--forecast-kind dividends`, the
+pre-existing projection described above); the Saturday
+`equicast-forecasting` step in `etf-ingestion.yml` now passes it
+explicitly. See
+[packages/forecasting/README.md](../packages/forecasting/README.md) for
+the full model.

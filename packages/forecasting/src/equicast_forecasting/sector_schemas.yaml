@@ -1,0 +1,188 @@
+# Sector/sub-sector forecasting schema registry for stock_forecast.py
+# (GitHub issue #66) - "a sector_schema_registry config ... so adding a new
+# industry later is a config entry, not new code."
+#
+# Each entry routes a yfinance `sector` (+ `industry` substring match, for
+# the three sectors split into sub-sectors) to:
+#   - `valuation_multiple`: which multiple family (see
+#     fundamentals_signals.py) drives the long-horizon (3y-10y)
+#     valuation-reversion bias, via a starting-multiple z-score vs its own
+#     historical series - `null` when this sector has no real multiple
+#     equicast can compute today (its long-horizon regime then falls back
+#     to 0.0 drift, a continued Monte Carlo random walk with no valuation
+#     tilt - same graceful degrade FX forecasting's unavailable macro
+#     inputs already use).
+#   - `parameters`: the full short/medium/long parameter names from the
+#     issue's table, kept here purely as documentation of the target
+#     signal set - most of these have no real data source in equicast
+#     today (no calendar/options/regulatory/pipeline data feed exists at
+#     all); only whichever of them equicast_forecasting.fundamentals_
+#     signals actually computes (see that module and this package's
+#     README) feed into anything live. Declaring the rest here anyway is
+#     the point of a schema *registry*: the target shape is real and
+#     versioned even before every field behind it is.
+#
+# `industry_contains` entries are yfinance `industry` substrings (checked
+# case-insensitively) - a sector with none is a single, unsplit schema
+# (there's exactly one entry for that `sector` value). Financial Services,
+# Healthcare, and Real Estate are each split into sub-sector entries with
+# no plain top-level entry for the bare sector - per the issue, "no generic
+# 'stock' fallback schema" applies at the sub-sector level for these three
+# too, not just across sectors: a Financial Services stock whose industry
+# matches none of the three FS sub-schemas is unroutable, same as any
+# other unmapped stock (see sector_registry.py's UnroutableSectorError).
+
+sectors:
+  - key: technology
+    label: Technology
+    sector: Technology
+    valuation_multiple: pe
+    parameters:
+      short: [iv, options_skew, earnings_date_proximity, short_interest]
+      medium: [eps_revision_trend, peg, rd_to_revenue, forward_pe_vs_sector]
+      long: [starting_pe_vs_history, revenue_cagr, margin_trend, tam_saturation_risk]
+
+  - key: financial_services_banks
+    label: "Financial Services — Banks"
+    sector: Financial Services
+    industry_contains: ["Bank", "Mortgage Finance"]
+    valuation_multiple: pe_tangible_book
+    parameters:
+      short: [iv, rate_decision_calendar, credit_spread_delta]
+      medium: [nim_trend, loan_growth, npl_ratio, pe_vs_tangible_book]
+      long: [pe_vs_tangible_book_longrun, roe_trend, capital_ratio_trend, credit_cycle_position]
+
+  - key: financial_services_insurance
+    label: "Financial Services — Insurance"
+    sector: Financial Services
+    industry_contains: ["Insurance"]
+    valuation_multiple: price_to_book
+    parameters:
+      short: [iv, catastrophe_event_calendar, credit_spread_delta]
+      medium: [combined_ratio_trend, premium_growth, pe_vs_book_value]
+      long: [pe_vs_book_value_longrun, roe_trend, reserve_adequacy_trend, underwriting_cycle_position]
+
+  - key: financial_services_asset_management
+    label: "Financial Services — Asset Mgmt/Capital Markets"
+    sector: Financial Services
+    industry_contains: ["Asset Management", "Capital Markets", "Financial Data", "Credit Services"]
+    valuation_multiple: pe
+    parameters:
+      short: [iv, market_vol_correlation]
+      medium: [aum_flow_trend, fee_rate_trend, pe_vs_sector]
+      long: [aum_cagr, fee_compression_trend, pe_vs_history]
+
+  - key: healthcare_pharma_devices
+    label: "Healthcare — Pharma/Devices"
+    sector: Healthcare
+    industry_contains: ["Drug Manufacturers", "Medical Devices", "Diagnostics"]
+    valuation_multiple: null
+    parameters:
+      short: [iv, fda_trial_calendar, patent_cliff_dates]
+      medium: [eps_growth_ex_oneoffs, pipeline_value, pe_vs_sector]
+      long: [peg, patent_expiry_schedule, pipeline_depth, demographic_exposure]
+
+  - key: healthcare_biotech
+    label: "Healthcare — Biotech"
+    sector: Healthcare
+    industry_contains: ["Biotechnology"]
+    valuation_multiple: null
+    parameters:
+      short: [iv_elevated, trial_readout_calendar, short_interest]
+      medium: [cash_runway_months, pipeline_stage_value, dilution_risk]
+      long: [pipeline_derisking_trajectory, cash_runway_vs_burn, partnership_or_ma_optionality]
+
+  - key: consumer_defensive
+    label: Consumer Defensive
+    sector: Consumer Defensive
+    valuation_multiple: pe
+    parameters:
+      short: [iv_baseline, input_cost_news_flag]
+      medium: [eps_stability, gross_margin_trend, pe_vs_historical_range]
+      long: [dividend_growth_rate, volume_vs_pricing_growth, pe_meanreversion_band]
+
+  - key: consumer_cyclical
+    label: Consumer Cyclical
+    sector: Consumer Cyclical
+    valuation_multiple: pe
+    parameters:
+      short: [iv, consumer_confidence_correlation, earnings_date_proximity]
+      medium: [same_store_sales_trend, inventory_turnover, pe_vs_sector]
+      long: [discretionary_spend_cycle_position, margin_trend, pe_vs_history]
+
+  - key: communication_services
+    label: Communication Services
+    sector: Communication Services
+    valuation_multiple: pe
+    parameters:
+      short: [iv, subscriber_metrics_calendar]
+      medium: [subscriber_growth_trend, arpu_trend, pe_vs_sector]
+      long: [content_or_network_capex_trend, market_share_trend, pe_vs_history]
+
+  - key: utilities
+    label: Utilities
+    sector: Utilities
+    valuation_multiple: price_to_book
+    parameters:
+      short: [rate_sensitivity_shortend]
+      medium: [rate_case_outcomes, capex_trajectory, pe_vs_asset_base]
+      long: [dividend_yield_growth, capex_ratebase_growth, regulatory_stability]
+
+  - key: real_estate_reit_equity
+    label: "Real Estate — REIT (equity)"
+    sector: Real Estate
+    industry_contains: ["REIT"]
+    industry_excludes: ["Mortgage"]
+    valuation_multiple: null
+    parameters:
+      short: [iv, rate_decision_sensitivity]
+      medium: [ffo_growth, affo_growth, occupancy_trend, ffo_payout_ratio]
+      long: [ffo_multiple_vs_history, same_store_noi_growth, debt_maturity_wall, cap_rate_spread_vs_treasury]
+
+  - key: real_estate_reit_mortgage
+    label: "Real Estate — REIT (mortgage)"
+    sector: Real Estate
+    industry_contains: ["REIT - Mortgage", "Mortgage"]
+    valuation_multiple: book_value
+    parameters:
+      short: [iv, rate_decision_sensitivity_high]
+      medium: [book_value_trend, net_interest_margin_reit, leverage_ratio]
+      long: [book_value_vs_history, credit_spread_cycle, dividend_sustainability]
+
+  - key: real_estate_non_reit
+    label: "Real Estate — Non-REIT"
+    sector: Real Estate
+    industry_contains: ["Real Estate - Development", "Real Estate - Diversified", "Real Estate Services", "Real Estate"]
+    industry_excludes: ["REIT"]
+    valuation_multiple: pe
+    parameters:
+      short: [iv, transaction_volume_trend]
+      medium: [pipeline_value, pre_sales_trend, pe_vs_sector]
+      long: [land_bank_value, development_cycle_position, pe_vs_history]
+
+  - key: energy
+    label: Energy
+    sector: Energy
+    valuation_multiple: null
+    parameters:
+      short: [iv, commodity_price_correlation, opec_calendar]
+      medium: [production_growth, reserve_replacement_ratio, pe_vs_commodity_cycle]
+      long: [reserve_life_index, capex_discipline_trend, commodity_cycle_position]
+
+  - key: basic_materials
+    label: Basic Materials
+    sector: Basic Materials
+    valuation_multiple: pe
+    parameters:
+      short: [iv, commodity_price_correlation]
+      medium: [input_output_price_spread, capacity_utilization, pe_vs_sector]
+      long: [commodity_cycle_position, capex_trend, pe_vs_history]
+
+  - key: industrials
+    label: Industrials
+    sector: Industrials
+    valuation_multiple: pe
+    parameters:
+      short: [iv, order_backlog_calendar]
+      medium: [order_backlog_trend, book_to_bill_ratio, pe_vs_sector]
+      long: [capex_cycle_position, margin_trend, pe_vs_history]

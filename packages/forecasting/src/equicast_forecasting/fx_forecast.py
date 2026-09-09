@@ -25,12 +25,13 @@ Horizon regimes, matching the issue's table:
 Each regime's drift tapers linearly into the next over `REGIME_TAPER_DAYS`
 rather than jumping discontinuously at the boundary - cosmetic only (keeps
 the median path's slope from kinking sharply), it doesn't change either
-regime's own eventual drift level.
+regime's own eventual drift level. The day-boundary/tapering machinery
+itself lives in regimes.py - generic enough that stock_forecast.py (issue
+#66) reuses it unchanged for a completely different drift model.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
@@ -38,65 +39,22 @@ from equicast_datafeed import DatafeedClient, round_value
 
 from equicast_forecasting.bands import price_bands
 from equicast_forecasting.fx_rates import long_term_rate_diff
+from equicast_forecasting.regimes import (
+    DAYS_PER_YEAR,
+    MEDIUM_REGIME_END_DAYS,
+    SHORT_REGIME_END_DAYS,
+    drift_schedule,
+    regime_for_day,
+)
 from equicast_forecasting.volatility import estimate_daily_volatility
 
-#: End of the short (pure random-walk) regime, in calendar days - the
-#: issue's "1w-1m" horizon, rounded up to a clean month.
-SHORT_REGIME_END_DAYS = 30
-
-#: End of the medium (interest-rate-parity) regime - the issue's "6m-2y"
-#: horizon's upper bound.
-MEDIUM_REGIME_END_DAYS = 730
-
-#: Days over which one regime's drift linearly tapers into the next,
-#: straddling each boundary above.
-REGIME_TAPER_DAYS = 90
-
-#: Trading/calendar convention used to convert an annualized rate
-#: differential or reversion rate into a daily one - act/365, matching how
-#: the underlying treasury yields themselves are already annualized.
-DAYS_PER_YEAR = 365
-
-
-def regime_for_day(day: int) -> str:
-    """Which horizon regime `day` (1-indexed calendar days out from the
-    last known price) falls into - `"short"`/`"medium"`/`"long"`, matching
-    the module docstring's horizon table."""
-    if day <= SHORT_REGIME_END_DAYS:
-        return "short"
-    if day <= MEDIUM_REGIME_END_DAYS:
-        return "medium"
-    return "long"
-
-
-def _taper(day: int, start: int, end: int, from_value: float, to_value: float) -> float:
-    if day <= start:
-        return from_value
-    if day >= end:
-        return to_value
-    weight = (day - start) / (end - start)
-    return from_value + weight * (to_value - from_value)
-
-
-def _drift_schedule(medium_drift: float, long_drift: float) -> Callable[[int], float]:
-    """A day-indexed drift function stepping (with a linear taper at each
-    boundary) from 0.0 (short regime) to `medium_drift` to `long_drift` -
-    see the module docstring for what each regime's drift represents."""
-    medium_taper_end = SHORT_REGIME_END_DAYS + REGIME_TAPER_DAYS
-    long_taper_end = MEDIUM_REGIME_END_DAYS + REGIME_TAPER_DAYS
-
-    def daily_drift(day: int) -> float:
-        if day <= SHORT_REGIME_END_DAYS:
-            return 0.0
-        if day <= medium_taper_end:
-            return _taper(day, SHORT_REGIME_END_DAYS, medium_taper_end, 0.0, medium_drift)
-        if day <= MEDIUM_REGIME_END_DAYS:
-            return medium_drift
-        if day <= long_taper_end:
-            return _taper(day, MEDIUM_REGIME_END_DAYS, long_taper_end, medium_drift, long_drift)
-        return long_drift
-
-    return daily_drift
+__all__ = [
+    "DAYS_PER_YEAR",
+    "MEDIUM_REGIME_END_DAYS",
+    "SHORT_REGIME_END_DAYS",
+    "fx_price_bands",
+    "regime_for_day",
+]
 
 
 def _medium_drift(rate_diff: float | None) -> float:
@@ -185,7 +143,7 @@ def fx_price_bands(
     reversion_years = (num_days - MEDIUM_REGIME_END_DAYS) / DAYS_PER_YEAR
     long_drift = _long_drift(reer_deviation, reversion_years)
 
-    daily_drift = _drift_schedule(medium_drift, long_drift)
+    daily_drift = drift_schedule(medium_drift, long_drift)
     bands = price_bands(last_price, volatility_estimate.daily_volatility, num_days, daily_drift)
 
     fetched_at = datetime.now(UTC).isoformat()

@@ -204,6 +204,7 @@ jobs:
             -v "${PWD}/output:/output" \
             ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest \
             --asset-class etf \
+            --forecast-kind dividends \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             --years "${{ github.event.inputs.forecast_years || '10' }}" \
