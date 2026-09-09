@@ -118,14 +118,10 @@ class DividendsViewTests(TestCase):
             "last_updated": "2026-08-30T09:00:00+00:00",
             "dividends": [
                 {
-                    "ticker": "AAPL",
-                    "currency": "USD",
                     "ex_dividend_date": "2026-09-10",
                     "payment_date": "2026-09-20",
                     "price": 0.26,
                     "status": "declared",
-                    "last_updated": "2026-08-30T09:00:00+00:00",
-                    "source": "yfinance",
                 }
             ],
         }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import HoldingDividendBarChart from "./HoldingDividendBarChart.jsx";
@@ -34,7 +35,9 @@ function DividendCard({ card }) {
       <Badge tone={card.status === "declared" ? "success" : "info"}>
         {card.status === "declared" ? "Declared" : "Estimated"}
       </Badge>
-      <span className="ec-dividend-amount">{formatPrice(card.price, card.currency)}</span>
+      <Balance as="span" className="ec-dividend-amount">
+        {formatPrice(card.price, card.currency)}
+      </Balance>
       <div className="ec-dividend-fields-row">
         <div className="ec-dividend-field">
           <span className="ec-dividend-field-label">Ex-dividend date</span>
