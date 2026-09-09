@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- FX price-band forecasting (GitHub issue #65): `equicast_forecasting.
+  fx_price_bands()` projects daily 10th/50th/90th-percentile probability
+  bands per FX pair, out to `--years` (default 10), across three horizon
+  regimes — short (1w-1m, GARCH-with-EWMA-fallback volatility, no
+  directional drift, a pure random walk), medium (6m-2y, interest-rate-
+  parity drift, real for USD-involving pairs via new yfinance-yield-ticker
+  lookups in `fx_rates.py`, 0.0 elsewhere), and long (3y-10y, PPP
+  reversion — currently always 0.0 drift, since no real macro data source
+  for `reer_deviation` exists yet). The volatility/band engine
+  (`volatility.py`/`bands.py`) is asset-class-agnostic by design, so a
+  future stock/etf price forecast can reuse it with its own drift model.
+  Wired into `equicast-forecasting`'s CLI (`--asset-class fx`, `--config`/
+  `--pairs-json`), writing `fx=<FROM><TO>/forecasting/price_bands.parquet`.
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over

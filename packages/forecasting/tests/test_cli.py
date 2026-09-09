@@ -2,6 +2,8 @@ from datetime import date
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
+import pytest
 from equicast_forecasting.cli import run
 
 
@@ -125,5 +127,84 @@ def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
         ),
     ):
         run("stock", config, out_dir, max_workers=2, max_calls=5, period_seconds=2.0)
+
+    datafeed_cls.assert_called_once_with(max_calls=5, period_seconds=2.0)
+
+
+def _fx_history(num_days: int = 30, start: float = 1.30) -> pd.DataFrame:
+    dates = pd.date_range(end=pd.Timestamp.today(), periods=num_days, freq="D")
+    closes = [start + 0.001 * i for i in range(num_days)]
+    return pd.DataFrame({"Close": closes}, index=dates)
+
+
+def _fake_fx_get_history(price_by_symbol: dict[str, pd.DataFrame]):
+    def get_history(symbol: str, period: str = "1y", interval: str = "1d") -> pd.DataFrame:
+        return price_by_symbol.get(symbol, pd.DataFrame())
+
+    return get_history
+
+
+def test_run_writes_fx_price_bands_per_pair(tmp_path: Path) -> None:
+    config = tmp_path / "fx_pairs.yaml"
+    config.write_text("pairs:\n  - from: GBP\n    to: USD\n  - from: EUR\n    to: GBP\n")
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        datafeed_cls.return_value.get_history.side_effect = _fake_fx_get_history(
+            {"GBPUSD=X": _fx_history(), "EURGBP=X": _fx_history(start=0.85)}
+        )
+        written = run("fx", config, out_dir, years=1)
+
+    assert set(written) == {
+        out_dir / "fx=GBPUSD" / "forecasting" / "price_bands.parquet",
+        out_dir / "fx=EURGBP" / "forecasting" / "price_bands.parquet",
+    }
+
+
+def test_run_accepts_pairs_json_instead_of_config(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        datafeed_cls.return_value.get_history.side_effect = _fake_fx_get_history(
+            {"GBPUSD=X": _fx_history()}
+        )
+        written = run("fx", None, out_dir, pairs_json='[{"from": "gbp", "to": "usd"}]', years=1)
+
+    assert written == [out_dir / "fx=GBPUSD" / "forecasting" / "price_bands.parquet"]
+
+
+def test_run_writes_nothing_for_a_pair_with_insufficient_price_history(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        datafeed_cls.return_value.get_history.side_effect = _fake_fx_get_history(
+            {"GBPUSD=X": _fx_history(num_days=1)}
+        )
+        written = run("fx", None, out_dir, pairs_json='[{"from": "gbp", "to": "usd"}]', years=1)
+
+    assert written == []
+    assert not (out_dir / "fx=GBPUSD").exists()
+
+
+def test_run_rejects_tickers_json_with_fx_asset_class(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="--tickers-json is stock/etf only"):
+        run("fx", None, tmp_path / "out", tickers_json='["AAPL"]')
+
+
+def test_run_rejects_pairs_json_with_non_fx_asset_class(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="--pairs-json is fx only"):
+        run("stock", None, tmp_path / "out", pairs_json='[{"from": "gbp", "to": "usd"}]')
+
+
+def test_run_shares_one_datafeed_client_across_fx_workers(tmp_path: Path) -> None:
+    config = tmp_path / "fx_pairs.yaml"
+    config.write_text("pairs:\n  - from: GBP\n    to: USD\n  - from: EUR\n    to: GBP\n")
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        datafeed_cls.return_value.get_history.side_effect = _fake_fx_get_history(
+            {"GBPUSD=X": _fx_history(), "EURGBP=X": _fx_history(start=0.85)}
+        )
+        run("fx", config, out_dir, max_workers=2, max_calls=5, period_seconds=2.0)
 
     datafeed_cls.assert_called_once_with(max_calls=5, period_seconds=2.0)

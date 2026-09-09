@@ -1,9 +1,14 @@
 # equicast-forecasting
 
 Projects a symbol's future dividend payouts from its actual dividend
-history, built on [equicast-dividends](../dividends/README.md).
+history, built on [equicast-dividends](../dividends/README.md), and (see
+[FX price-band forecasting](#fx-price-band-forecasting) below) daily FX
+price probability bands from actual price history plus whatever real
+interest-rate data is available.
 
-## Usage
+## Dividend forecasting
+
+### Usage
 
 ```python
 from equicast_dividends import DividendsClient
@@ -72,6 +77,122 @@ future dividend announcements — treat it as "if this ticker's recent cadence
 and growth trend continue unchanged," not as authoritative. It will be
 visibly wrong around any real dividend cut, suspension, or cadence change,
 same as any trend extrapolation.
+
+## FX price-band forecasting
+
+Implements [GitHub issue #65](https://github.com/coldsofttech/equiCast/issues/65):
+one daily probability band (10th/50th/90th percentile — not a point
+forecast) per FX pair, out to `years` years, built from three horizon
+regimes:
+
+| Horizon | Model | Drift source |
+|---|---|---|
+| 1w–1m ("short") | GARCH/EWMA volatility, no directional drift | none — a pure random walk, on purpose (see below) |
+| 6m–2y ("medium") | Interest-rate parity | a real `rate_diff` when available (see [Data coverage](#data-coverage)), else 0.0 |
+| 3y–10y ("long") | PPP mean-reversion | `reer_deviation`, if a caller supplies one — always `None` today, see [Data coverage](#data-coverage) |
+
+Each regime's drift tapers linearly into the next over 90 days rather than
+jumping discontinuously at the boundary — cosmetic only, it doesn't change
+either regime's own eventual drift level.
+
+### Usage
+
+```python
+from equicast_forecasting import fx_price_bands
+
+# `prices` needs at least `date`/`close` keys per record — the shape
+# equicast_fx.FXClient.prices() already returns.
+fx_price_bands(prices, "GBP", "USD", years=10)
+# [{"from_currency": "GBP", "to_currency": "USD", "date": "2026-09-10",
+#   "p10": 1.24, "p50": 1.32, "p90": 1.41, "regime": "short",
+#   "volatility_model": "garch", "last_updated": "2026-09-09T09:00:00+00:00",
+#   "source": "equicast"}, ...]
+```
+
+One row per *calendar* day (not just trading days, unlike real price
+history) — this is a smooth theoretical band meant to extend a price chart
+forward, not observed data, so there's no reason to gap it over weekends.
+`volatility_model` (`"garch"`/`"ewma"` — see below) is the same for every
+row, since volatility is estimated once from the whole history, not
+per-day; `regime` varies by day, naming which of the three rows above
+produced that day's drift.
+
+### Why a pure random walk at the short horizon
+
+The issue is explicit that GARCH/EWMA is a *volatility* forecast, paired
+with a random walk for the actual price range — "not a directional return
+forecast." So the short regime's median (`p50`) stays flat at the last
+known price; only the band width grows (with `sqrt(days)`, the standard
+i.i.d.-daily-returns assumption), via [`bands.price_bands()`](src/equicast_forecasting/bands.py).
+
+### Volatility: GARCH(1,1) with an EWMA fallback
+
+[`volatility.estimate_daily_volatility()`](src/equicast_forecasting/volatility.py)
+tries a real zero-mean GARCH(1,1) fit (via the [`arch`](https://arch.readthedocs.io/)
+package) first, falling back to a RiskMetrics-style EWMA estimate
+(λ=0.94) when there's too little history (under 250 daily returns) or the
+fit doesn't converge — GARCH fitting is numerically finicky on short or
+unusually quiet series, and this package never raises for that, only
+degrades.
+
+### Data coverage
+
+The issue's medium/long-horizon models call for macro inputs equicast has
+no real data source for today: `inflation_diff`, `current_account_balance`,
+`reer_deviation`, `productivity_diff`, `terms_of_trade_trend`,
+`sovereign_debt_trend`. Rather than skip the medium/long regimes entirely,
+[`fx_forecast.py`](src/equicast_forecasting/fx_forecast.py) accepts them as
+optional parameters (only `reer_deviation` today — the rest have no
+plugging-in point yet since nothing computes them) that default to `None`
+and degrade to 0.0 drift (a continued random walk) when unavailable — the
+math is ready for whenever a real source (FRED is the natural choice —
+free, global coverage) is added in a follow-up.
+
+One exception: `rate_diff` (the medium-horizon interest-rate-parity input)
+*is* wired up to real data today, via
+[`fx_rates.py`](src/equicast_forecasting/fx_rates.py) — but only for USD.
+Checked live: US Treasury yields (`^IRX` 13-week, `^TNX` 10-year) resolve
+cleanly via yfinance; every UK gilt/German bund/ECB-rate ticker tried
+(`GB10Y=X`, `DE10Y=X`, `^BUND`, `FGBL=F`, `^GDBR10`, `EURIBOR3M=X`) 404s or
+returns empty history. So `rate_diff` still resolves to `None` for any pair
+that doesn't involve USD — with today's configured pairs (GBP/USD/EUR;
+see `packages/fx/config/`), that's every pair currently configured, since
+none of them has USD on *both* legs. The mapping is a plain dict
+(`SHORT_TERM_YIELD_TICKERS`/`LONG_TERM_YIELD_TICKERS`), so adding a
+currency once a reliable ticker is found is a one-line change.
+
+### Generic vs. FX-specific
+
+Split deliberately so the volatility/band engine can be reused by a future
+stock/etf price forecast, not just FX's own interest-rate-parity/PPP model:
+
+- **Generic** (no FX-specific knowledge at all): [`volatility.py`](src/equicast_forecasting/volatility.py)
+  (GARCH/EWMA daily volatility from any chronological close-price list) and
+  [`bands.py`](src/equicast_forecasting/bands.py) (the lognormal random-walk
+  band construction, taking a starting price, a daily volatility, and an
+  optional day-indexed drift function — reusable with a completely
+  different drift model for a different asset class).
+- **FX-specific**: [`fx_rates.py`](src/equicast_forecasting/fx_rates.py)
+  (the yfinance yield-ticker lookups above) and
+  [`fx_forecast.py`](src/equicast_forecasting/fx_forecast.py) (the
+  interest-rate-parity/PPP drift schedule and top-level `fx_price_bands()`
+  orchestration — currency pairs are inherently what IRP/PPP are about, so
+  this part doesn't generalize the way the vol/band engine does).
+
+### CLI
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class fx --config ../fx/config/fx_pairs.dev.yaml --out ./output
+uv run equicast-forecasting --asset-class fx --pairs-json '[{"from":"GBP","to":"USD"}]' --out ./output
+```
+
+Writes `fx=<FROM><TO>/forecasting/price_bands.parquet` per pair — nothing
+for a pair with fewer than 2 published price records. Price history is
+fetched directly via `equicast-datafeed`'s `DatafeedClient.get_history`
+(not `equicast-fx`'s `FXClient`) — this package deliberately depends on no
+asset-class-specific package, the same reasoning `config.py`'s standalone
+tickers/pairs loaders already follow for dividend forecasting.
 
 ## Development
 

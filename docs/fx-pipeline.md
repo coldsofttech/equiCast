@@ -264,3 +264,23 @@ s3://equicast-market-data-<env>/
         ├── history.parquet   (2003-2025, written once by a --full-load run)
         └── current.parquet   (2026, rewritten by every run)
 ```
+
+## Forecasting
+
+Unlike `stock`/`etf` (which get a dedicated Saturday forecasting run — see
+[stock-pipeline.md](stock-pipeline.md#running-the-scheduled-ingestion)), FX
+forecasting isn't wired into `fx-ingestion.yml` or any scheduled workflow
+yet — it exists today as an `equicast-forecasting` CLI capability only, run
+by hand:
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class fx --config ../fx/config/fx_pairs.dev.yaml --out ./output
+```
+
+Writes `fx=<FROM><TO>/forecasting/price_bands.parquet` per pair — daily
+10th/50th/90th-percentile price bands out to 10 years, not the dividend
+projection `stock`/`etf` forecasting produces (FX pairs pay no dividends).
+See [packages/forecasting/README.md](../packages/forecasting/README.md#fx-price-band-forecasting)
+for the full model (GARCH/EWMA volatility short-horizon, interest-rate
+parity medium, PPP reversion long) and its current data-coverage limits.
