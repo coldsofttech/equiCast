@@ -13,11 +13,14 @@
     -->
     <link rel="icon" type="image/svg+xml" href="/brand/equicast-mark.svg" />
     <!--
-      Runs synchronously, before any stylesheet paints, so `data-theme` is
-      already correct on first frame — same reasoning as Resource Planner's
-      theme-init.min.js. tokens.css only defines `:root` (light) and
-      `[data-theme="dark"]`, no `prefers-color-scheme` fallback, because
-      this script guarantees the attribute is never absent.
+      Runs synchronously, before any stylesheet paints, so `data-theme` and
+      `data-hide-balances` are already correct on first frame — same
+      reasoning as Resource Planner's theme-init.min.js. tokens.css only
+      defines `:root` (light) and `[data-theme="dark"]`, no
+      `prefers-color-scheme` fallback, because this script guarantees the
+      attribute is never absent. `data-hide-balances` defaults to "false"
+      (no matching browser preference the way theme has) unless the user
+      previously hid balances via the Topbar's HideBalancesToggle.
     -->
     <script>
       (function () {
@@ -29,6 +32,14 @@
           document.documentElement.setAttribute("data-theme", theme);
         } catch (err) {
           document.documentElement.setAttribute("data-theme", "light");
+        }
+        try {
+          document.documentElement.setAttribute(
+            "data-hide-balances",
+            localStorage.getItem("ec-hide-balances") === "true" ? "true" : "false"
+          );
+        } catch (err) {
+          document.documentElement.setAttribute("data-hide-balances", "false");
         }
       })();
     </script>
