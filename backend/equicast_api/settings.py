@@ -90,6 +90,31 @@ USE_TZ = True
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
+# Per-user request budget DEFAULT_THROTTLE_RATES below applies globally —
+# overridable per environment via the API_RATE_LIMIT_PER_MINUTE GitHub
+# Environment variable (see infra/variables.tf's api_rate_limit_per_minute
+# and .github/workflows/terraform.yml), same convention as the MAX_* caps
+# further down.
+API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", 120))
+
+# Django's cache framework backs DRF throttling below (every count/window
+# it tracks lives here). Explicit rather than relying on Django's own
+# implicit LocMemCache default, so the choice — and its one real
+# limitation — is documented rather than accidental: LocMemCache is a
+# plain in-process dict, scoped to *one* Lambda execution environment, not
+# shared across the several that can run concurrently under real traffic.
+# Each warm container therefore counts a given user's requests
+# independently, so the effective per-user rate can multiply by however
+# many containers happen to be warm at once — an accepted, explicit
+# tradeoff for now (see identity.throttling's module docstring) rather
+# than standing up a new always-on/shared store this app's actual traffic
+# doesn't yet justify.
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+    }
+}
+
 REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     # Only *identifies* a caller when a valid Bearer token is present — it
@@ -97,6 +122,12 @@ REST_FRAMEWORK = {
     # declare their own `permission_classes = [IsAuthenticated]` (see
     # identity/views.py, market_data/views.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["identity.authentication.Auth0JWTAuthentication"],
+    # Applies to every DRF view by default (no per-view opt-out needed,
+    # since every real endpoint requires IsAuthenticated already) — see
+    # identity.throttling.Auth0UserRateThrottle for why this isn't DRF's
+    # own UserRateThrottle (Auth0User has no `.pk`).
+    "DEFAULT_THROTTLE_CLASSES": ["identity.throttling.Auth0UserRateThrottle"],
+    "DEFAULT_THROTTLE_RATES": {"user": f"{API_RATE_LIMIT_PER_MINUTE}/min"},
 }
 
 CORS_ALLOWED_ORIGINS = [

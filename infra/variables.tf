@@ -83,3 +83,9 @@ variable "max_transactions_for_holding" {
   type        = number
   default     = 500
 }
+
+variable "api_rate_limit_per_minute" {
+  description = "Per-user requests/minute across every DRF endpoint (identity.throttling.Auth0UserRateThrottle's DEFAULT_THROTTLE_RATES)."
+  type        = number
+  default     = 120
+}
