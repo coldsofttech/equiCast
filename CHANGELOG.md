@@ -26,6 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--asset-class` choices gained it too; no change to
   `backend/holdings/views.py`'s own (narrower) holdable-asset-class set.
 
+- `/search`'s Type filter gained a "Futures" option (`SearchFilters.jsx`),
+  alongside Stocks/ETFs/FX — unlike Benchmark, which stays deliberately
+  unlisted there (only reachable via `HoldingComparePicker`'s own explicit
+  search), a future is now something a user can search for directly. No
+  backend change needed — `SearchView`/`MarketDataClient.search` already
+  accepted an explicit `asset_class=future` from the futures pipeline work
+  above; this just exposes it in the UI. `AssetTypeBadge` gained a
+  "Futures" label/tone for a future search result's row badge. Market
+  cap/Sector/Industry still silently exclude every future row when
+  applied (it has none of those concepts, same as a benchmark) — only
+  Exchange meaningfully narrows one.
+
 - A watchlists panel on `/dashboard` (`WatchlistsPanel`, below the accounts
   grid), tabbed across five system-default watchlists (Global Markets, Top
   Winners, Top Losers, Top Winners/Losers within your accounts — always

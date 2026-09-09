@@ -7,22 +7,28 @@ import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils
  * @typedef {Object} SearchResult
  * @property {string} ticker
  * @property {string} name
- * @property {"stock"|"etf"|"fx"|"benchmark"} type
+ * @property {"stock"|"etf"|"fx"|"benchmark"|"future"} type
  * @property {number|null} current_price
  * @property {string|null} currency
  * @property {string|null} website
  * @property {number|null} market_cap - a stock's real market cap, an
  *   etf's total assets (fund AUM, the closest comparable "size" figure a
- *   fund has), or `null` for fx, which has neither.
- * @property {string|null} exchange - stock/etf's raw exchange code (e.g.
- *   "NMS"/"PCX"), `null` for fx, which isn't traded on one.
- * @property {string|null} region - stock/etf's short country code (e.g.
- *   "us"/"gb"), `null` for fx, which isn't domiciled anywhere.
+ *   fund has), or `null` for fx/benchmark/future, none of which has a size
+ *   concept at all.
+ * @property {string|null} exchange - stock/etf/benchmark/future's raw
+ *   exchange code (e.g. "NMS"/"PCX"/"SNP"/"CMX"), `null` for fx, which
+ *   isn't traded on one.
+ * @property {string|null} region - stock/etf/benchmark's short country
+ *   code (e.g. "us"/"gb"), `null` for fx (not domiciled anywhere) and
+ *   usually `null` for future too (yfinance rarely populates one for a
+ *   futures contract).
  * @property {string|null} sector - a stock's own sector (e.g.
- *   "Technology"), `null` for etf (yfinance never populates this for a
- *   fund) and fx (no such concept for a currency pair).
+ *   "Technology"), `null` for etf/benchmark/future (yfinance never
+ *   populates this for any of the three) and fx (no such concept for a
+ *   currency pair).
  * @property {string|null} industry - a stock's own industry (e.g.
- *   "Semiconductors"), `null` for etf and fx for the same reason as `sector`.
+ *   "Semiconductors"), `null` for etf/benchmark/future/fx for the same
+ *   reason as `sector`.
  */
 
 /**
@@ -37,32 +43,36 @@ import { profileCacheKey, readCachedProfile, writeCachedProfile } from "../utils
 /**
  * GET /api/market/search/?q=... — see backend/market_data/views.py's
  * SearchView. Ticker/name search across the published catalog (stock/etf/
- * fx, plus benchmark when explicitly asked for — see below). Used by
- * TickerSearchField (a portfolio/account holdings picker, triggered
+ * fx/future, plus benchmark when explicitly asked for — see below). Used
+ * by TickerSearchField (a portfolio/account holdings picker, triggered
  * explicitly on Enter/a Search click, not on every keystroke — see
  * TickerSearchField.jsx), by SearchPage (the full results page, with
- * `assetClass`/`page` for its Type filter and "Load more"), by
- * HoldingComparePicker (`assetClass: "benchmark"`, alongside "stock"/"etf"
- * — see HoldingComparePicker.jsx), and for resolving a currency-pair
- * ticker for FX conversion (`assetClass: "fx"` — see
- * holdings/holdingFinancials.js's resolveFxRate). `assetClass` omitted
- * searches `fx`/`stock`/`etf` only — `benchmark` is opt-in-only, never
- * part of an unfiltered search (see `equicast_core.client.
- * DEFAULT_SEARCH_ASSET_CLASSES`), so TopbarSearch/SearchPage's "All types"
- * never surfaces one. `minMarketCap`/`maxMarketCap` (SearchFilters' Market
- * cap range slider), `exchange`, `region`, `sector`, and `industry`
+ * `assetClass`/`page` for its Type filter, including "Futures" — see
+ * SearchFilters.jsx — and "Load more"), by HoldingComparePicker
+ * (`assetClass: "benchmark"`, alongside "stock"/"etf" — see
+ * HoldingComparePicker.jsx), and for resolving a currency-pair ticker for
+ * FX conversion (`assetClass: "fx"` — see holdings/holdingFinancials.js's
+ * resolveFxRate). `assetClass` omitted searches `fx`/`stock`/`etf` only —
+ * `benchmark` is opt-in-only, never part of an unfiltered search (see
+ * `equicast_core.client.DEFAULT_SEARCH_ASSET_CLASSES`), so TopbarSearch's
+ * quick-search and SearchPage's "All types" never surface one; `future`
+ * is opt-in the same way for an *unfiltered* search, but — unlike
+ * `benchmark` — SearchPage's own Type filter offers it explicitly (see
+ * SearchFilters.jsx), so a user can reach it deliberately even though it
+ * never appears unasked. `minMarketCap`/`maxMarketCap` (SearchFilters'
+ * Market cap range slider), `exchange`, `region`, `sector`, and `industry`
  * (SearchFilters' Exchange/Region/Sector/Industry dropdowns — see
  * pages/search/searchFilterOptions.js for the static option lists) filter
  * stock/etf rows by `market_cap`/`exchange`/`region` and stock rows by
  * `sector`/`industry` respectively; fx rows always match every one of
- * these regardless, and a benchmark row always matches `market_cap`
- * (having no such concept, like fx) but is filtered by
- * `exchange`/`region` like stock/etf (see `MarketDataClient.search`'s
- * docstring for why).
+ * these regardless, while a benchmark/future row is *excluded* whenever
+ * `market_cap`/`sector`/`industry` is given (neither has any of those
+ * concepts) but still filtered by `exchange`/`region` like stock/etf (see
+ * `MarketDataClient.search`'s docstring for why).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} query
- * @param {{ assetClass?: "stock"|"etf"|"fx"|"benchmark", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
+ * @param {{ assetClass?: "stock"|"etf"|"fx"|"benchmark"|"future", page?: number, pageSize?: number, minMarketCap?: number, maxMarketCap?: number, exchange?: string, region?: string, sector?: string, industry?: string }} [options]
  * @returns {Promise<SearchResponse>}
  */
 export function searchTickers(

@@ -21,6 +21,7 @@ const TYPES = [
   { value: "stock", label: "Stocks" },
   { value: "etf", label: "ETFs" },
   { value: "fx", label: "FX" },
+  { value: "future", label: "Futures" },
 ];
 
 /**
@@ -35,7 +36,16 @@ const TYPES = [
  * and Sector/Industry only stock rows — fx always matches every one of
  * them regardless (see MarketDataClient.search's docstring) — but none of
  * the controls call that out per-row; a fx-heavy result set simply won't
- * visibly shrink as they tighten.
+ * visibly shrink as they tighten. "Futures" (`type: "future"`, added
+ * alongside Stocks/ETFs/FX — unlike "Benchmark", which is deliberately
+ * never offered here, only reachable via HoldingComparePicker's own
+ * explicit search) behaves differently from fx: a future row has none of
+ * Market cap/Region/Sector/Industry's concepts (always `None` in its
+ * catalog row), so it's *excluded* whenever any of those is applied,
+ * rather than always matching like fx — only Exchange narrows it
+ * meaningfully, since yfinance does report one for a futures contract.
+ * Leaving Market cap/Region/Sector/Industry at their defaults is what
+ * keeps a Type: Futures search populated.
  *
  * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange`/
  * `sector`/`industry` are the currently-applied filters (from the URL —
