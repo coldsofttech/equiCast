@@ -131,6 +131,17 @@ def test_get_profile_returns_none_when_key_missing(s3_client) -> None:
     assert client.get_profile("stock", "MISSING") is None
 
 
+def test_get_profile_drops_source_from_the_raw_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/profile.parquet",
+        Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc.", "source": "yfinance"}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_profile("stock", "AAPL") == {"ticker": "AAPL", "name": "Apple Inc."}
+
+
 def test_get_metrics_returns_the_single_row(s3_client) -> None:
     s3_client.put_object(
         Bucket=BUCKET,
@@ -146,6 +157,17 @@ def test_get_metrics_returns_none_when_key_missing(s3_client) -> None:
     client = MarketDataClient(BUCKET, s3_client=s3_client)
 
     assert client.get_metrics("stock", "MISSING") is None
+
+
+def test_get_metrics_drops_source_from_the_raw_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/metrics.parquet",
+        Body=_parquet_bytes([{"volatility": 0.23, "source": "equicast"}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_metrics("stock", "AAPL") == {"volatility": 0.23}
 
 
 def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
@@ -348,7 +370,7 @@ class TestGetPrices:
         assert result["ticker"] == "VOO"
         assert result["currency"] == "USD"
         assert result["last_updated"] == rows[-1]["last_updated"]
-        assert result["source"] == "yfinance"
+        assert "source" not in result
         assert result["prices"] == [
             {
                 "date": r["date"],
@@ -367,7 +389,6 @@ class TestGetPrices:
             "ticker": "MISSING",
             "currency": None,
             "last_updated": None,
-            "source": None,
             "prices": [],
         }
 

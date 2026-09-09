@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
+  longer return a `source` field ("yfinance" vs "equicast" — which fields
+  on that record came directly from yfinance versus needed an
+  equicast-computed fallback). New `equicast_core.client._without_source`
+  strips it from every one of these three methods' return values (`.../
+  dividends/` already lost its own `source` field via the separate
+  reshape below); the underlying Parquet files ingestion writes are
+  untouched — `source` is still there, still documented per pipeline
+  (e.g. [packages/stock/README.md](packages/stock/README.md)), just no
+  longer part of what the API hands back to a caller. No frontend change
+  needed — nothing read `.source` off any of these responses; the
+  `MarketProfile`/`MarketMetrics`/`PriceSeries` JSDoc typedefs
+  (`frontend/src/api/market.js`) are updated to match.
+
 - `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
   `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
   — those are the same across every row for one symbol, so they're now
