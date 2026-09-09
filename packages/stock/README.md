@@ -135,8 +135,9 @@ prices, dividends, events, and metrics for each, and writes:
   none of the three this year or later)
 - `<out>/stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
-  max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, margins,
-  returns, leverage, FCF/share)
+  max drawdown, CAGR), its buy/sell volume-pressure gauge
+  (`buyers_pct`/`sellers_pct`), and its stock-only fundamentals (PE, EPS,
+  margins, returns, leverage, FCF/share)
 
 ```bash
 uv run equicast-stock --config config/stocks.dev.yaml --out ./output
@@ -212,7 +213,7 @@ three in a given period simply produces no `events/current.parquet` (or
 
 ### On `metrics.parquet`
 
-Built from two independent `equicast-metrics` calls on one `MetricsClient`,
+Built from three independent `equicast-metrics` calls on one `MetricsClient`,
 merged into a single row:
 
 - `MetricsClient.metrics()` — generic risk/performance metrics, works the
@@ -224,11 +225,18 @@ merged into a single row:
   equity/assets, debt-to-equity, free cash flow per share). See
   [equicast-metrics's README](../metrics/README.md#fundamentals--valuation-and-fundamental-metrics-stock-only)
   for exactly how each field is sourced/derived.
+- `MetricsClient.buy_sell_pressure()` — a `buyers_pct`/`sellers_pct`
+  buy/sell volume-pressure gauge, stock/etf only. See
+  [equicast-metrics's README](../metrics/README.md#buy_sell_pressure--buysell-volume-pressure-gauge-stocketf-only)
+  for the methodology.
 
-Both calls compute their own `last_updated`/`source` independently (a moment
-apart); the merge keeps the later `last_updated` and reports `source` as
-`"equicast"` if either call needed to compute anything, `"yfinance"` only if
-every field in both came directly from yfinance's `.info`.
+`metrics()`/`fundamentals()` compute their own `last_updated`/`source`
+independently (a moment apart); the merge keeps the later `last_updated` and
+reports `source` as `"equicast"` if either call needed to compute anything,
+`"yfinance"` only if every field in both came directly from yfinance's
+`.info`. `buy_sell_pressure()` has no yfinance-reported equivalent to ever
+prefer, so it contributes no `last_updated`/`source` of its own to reconcile
+— just `buyers_pct`/`sellers_pct` alongside whatever the other two settled on.
 
 ## Configuration
 

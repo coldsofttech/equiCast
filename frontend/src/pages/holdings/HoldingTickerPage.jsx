@@ -15,6 +15,7 @@ import HoldingPriceChart from "./HoldingPriceChart.jsx";
 import HoldingInstancesTable from "./HoldingInstancesTable.jsx";
 import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingCagrSection from "./HoldingCagrSection.jsx";
+import HoldingBuySellGauge from "./HoldingBuySellGauge.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
 import HoldingTransactionsSection from "./HoldingTransactionsSection.jsx";
@@ -631,6 +632,8 @@ function HoldingTickerPage() {
           })()}
 
           <HoldingCagrSection marketMetrics={marketMetrics} />
+
+          <HoldingBuySellGauge marketMetrics={marketMetrics} />
 
           <div className="ec-account-columns">
             <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
