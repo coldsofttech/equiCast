@@ -1,0 +1,66 @@
+.ec-cookiepolicy {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ec-bg);
+}
+
+.ec-cookiepolicy-head {
+  padding: var(--ec-s-24) var(--ec-s-24) 0;
+}
+
+.ec-cookiepolicy-logo-link {
+  display: inline-flex;
+  text-decoration: none;
+}
+
+.ec-cookiepolicy-body {
+  flex: 1;
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: var(--ec-s-32) var(--ec-s-24) var(--ec-s-40);
+}
+
+.ec-cookiepolicy-body h1 {
+  font-size: var(--ec-fs-32);
+  font-weight: 600;
+  color: var(--ec-text);
+  margin: 0 0 var(--ec-s-4);
+}
+
+.ec-cookiepolicy-updated {
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-subtle);
+  margin: 0 0 var(--ec-s-24);
+}
+
+.ec-cookiepolicy-body h2 {
+  font-size: var(--ec-fs-20);
+  font-weight: 600;
+  color: var(--ec-text);
+  margin: var(--ec-s-32) 0 var(--ec-s-8);
+}
+
+.ec-cookiepolicy-body p {
+  font-size: var(--ec-fs-15);
+  color: var(--ec-text-muted);
+  line-height: 1.65;
+  margin: 0 0 var(--ec-s-16);
+}
+
+.ec-cookiepolicy-body a {
+  color: var(--ec-accent);
+}
+
+.ec-cookiepolicy-body code {
+  font-family: var(--ec-font-mono);
+  font-size: 0.9em;
+  background: var(--ec-surface-2);
+  border-radius: var(--ec-r-4);
+  padding: 1px 5px;
+}
+
+.ec-cookiepolicy-manage {
+  margin: var(--ec-s-24) 0;
+}

@@ -29,4 +29,26 @@ describe("App routing", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/auth0 isn't configured/i);
   });
+
+  it("shows the cookie banner alongside the routed content", () => {
+    localStorage.clear();
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("dialog", { name: "Cookie notice" })).toBeInTheDocument();
+  });
+
+  it("serves /cookie-policy publicly, without the auth gate", () => {
+    render(
+      <MemoryRouter initialEntries={["/cookie-policy"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("heading", { name: "Cookie Policy" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

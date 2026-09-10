@@ -36,6 +36,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A cookie consent banner (`components/cookies/CookieBanner.jsx`) and a
+  public `/cookie-policy` page, mounted app-wide (outside `RequireAuth`,
+  so it shows on the logged-out sign-in screen too, before any consent
+  choice can matter). Accept all / Reject non-essential / Manage
+  preferences, with three real categories: Strictly necessary and
+  Functional are always on (Auth0's own sign-in session; theme/hide-
+  balances preference plus the app's session/local/IndexedDB performance
+  caches — none of it involves cross-site tracking, so there's nothing
+  meaningful to opt out of), and Analytics is the one real, savable
+  toggle — off by default, since equiCast has no analytics integration
+  today; `utils/cookieConsent.js`'s new `hasAnalyticsConsent()` is what a
+  future one should check before running. The policy page's own content
+  is grounded in what equiCast's code actually stores (verified against
+  `Auth0ProviderWithNavigate.jsx`'s `cacheLocation="localstorage"` and
+  every existing `*Cache.js`/toggle file), not generic legal boilerplate —
+  still a plain-language summary, not a substitute for legal review.
+  `SiteFooter` gains a "Cookie Policy" link; a "Manage your cookie
+  preferences" button on the policy page reopens the same preferences
+  panel afterward via a small custom-event helper
+  (`openCookiePreferences()`), since the banner mounted at the app root
+  is the only thing that owns that panel's state.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

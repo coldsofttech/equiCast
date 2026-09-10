@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Logo from "../brand/Logo.jsx";
 import "./SiteFooter.css";
 
@@ -12,7 +13,10 @@ function SiteFooter() {
     <>
       <footer className="ec-landing-foot">
         <Logo compact />
-        <span>© {new Date().getFullYear()} equiCast</span>
+        <span className="ec-landing-foot-links">
+          <span>© {new Date().getFullYear()} equiCast</span>
+          <Link to="/cookie-policy">Cookie Policy</Link>
+        </span>
       </footer>
 
       <section className="ec-disclaimer">
