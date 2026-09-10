@@ -6,6 +6,12 @@ import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
 import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
+/** Same fallback `AccountDetailPage.jsx` uses before `useCurrentUser()`
+ * resolves — an account has no `currency` of its own (removed — GitHub
+ * issues #98/#115), so there's no per-account value to fall back to
+ * instead. */
+const FALLBACK_CURRENCY = "USD";
+
 /**
  * One account's summary card — used by DashboardPage's landing overview
  * (AccountsListPage renders its own table rows, not this card). Current
@@ -13,9 +19,8 @@ import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
  * holdingValuation.js's `computeHoldingValuation`, same one AccountDetailPage
  * uses) rather than sample data, summed across direct and pie-nested
  * holdings alike — same "invested" fallback when a ticker has no live
- * price. `defaultCurrency` is the user's profile currency, since that's
- * what `current_price` is already converted to server-side — not
- * necessarily this account's own `currency`.
+ * price. `defaultCurrency` is the user's own profile currency, since
+ * that's what `current_price` is already converted to server-side.
  */
 function AccountCard({ account, onClick, defaultCurrency }) {
   const pies = account.pies ?? [];
@@ -24,7 +29,7 @@ function AccountCard({ account, onClick, defaultCurrency }) {
   const holdingsCount = allHoldings.length;
   const valuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, valuations);
-  const currency = defaultCurrency ?? account.currency;
+  const currency = defaultCurrency ?? FALLBACK_CURRENCY;
   const tone = plTone(totals.plPct);
   const plSign = totals.plValue >= 0 ? "+" : "-";
 
