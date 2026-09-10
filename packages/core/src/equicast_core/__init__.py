@@ -16,6 +16,14 @@ from equicast_core.client import (
     MarketDataClient,
     clear_cache,
 )
+from equicast_core.goals import (
+    MAX_GOALS,
+    PURPOSE_CHOICES,
+    GoalLimitExceededError,
+    GoalMappingConflictError,
+    GoalNotFoundError,
+    GoalsClient,
+)
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
     MAX_HOLDINGS_FOR_PIE,
@@ -67,6 +75,12 @@ __all__ = [
     "WatchlistLimitExceededError",
     "WatchlistNotFoundError",
     "WatchlistsClient",
+    "MAX_GOALS",
+    "PURPOSE_CHOICES",
+    "GoalLimitExceededError",
+    "GoalMappingConflictError",
+    "GoalNotFoundError",
+    "GoalsClient",
     "MAX_HOLDINGS_FOR_ACCOUNT",
     "MAX_HOLDINGS_FOR_PIE",
     "MAX_HOLDINGS_FOR_WATCHLIST",

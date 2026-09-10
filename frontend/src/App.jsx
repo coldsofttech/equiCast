@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes } from "react-router-dom";
 import RequireAuth from "./auth/RequireAuth.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import AccountsListPage from "./pages/accounts/AccountsListPage.jsx";
+import GoalsListPage from "./pages/goals/GoalsListPage.jsx";
 import AccountDetailPage from "./pages/accounts/AccountDetailPage.jsx";
 import PieDetailPage from "./pages/pies/PieDetailPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
@@ -22,6 +23,7 @@ function App() {
         <Route path="/accounts" element={<AccountsListPage />} />
         <Route path="/accounts/:accountId" element={<AccountDetailPage />} />
         <Route path="/accounts/:accountId/pies/:pieId" element={<PieDetailPage />} />
+        <Route path="/goals" element={<GoalsListPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/holdings/:ticker" element={<HoldingTickerPage />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />

@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "watchlists",
     "holdings",
     "transactions",
+    "goals",
 ]
 
 MIDDLEWARE = [
@@ -177,6 +178,7 @@ USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")
 MAX_ACCOUNTS = int(os.environ.get("MAX_ACCOUNTS", 5))
 MAX_PIES = int(os.environ.get("MAX_PIES", 20))
 MAX_WATCHLISTS = int(os.environ.get("MAX_WATCHLISTS", 5))
+MAX_GOALS = int(os.environ.get("MAX_GOALS", 10))
 MAX_HOLDINGS_FOR_ACCOUNT = int(os.environ.get("MAX_HOLDINGS_FOR_ACCOUNT", 100))
 MAX_HOLDINGS_FOR_PIE = int(os.environ.get("MAX_HOLDINGS_FOR_PIE", 50))
 MAX_HOLDINGS_FOR_WATCHLIST = int(os.environ.get("MAX_HOLDINGS_FOR_WATCHLIST", 20))

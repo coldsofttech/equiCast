@@ -4,6 +4,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import SettingsModal from "./SettingsModal.jsx";
 import { clearCachedProfile } from "../../api/useCurrentUser.js";
 import { clearCachedAccounts } from "../../api/useAccounts.js";
+import { clearCachedGoals } from "../../api/useGoals.js";
 import { clearCachedGreeting } from "../../utils/greeting.js";
 import "./UserMenu.css";
 
@@ -18,8 +19,8 @@ function initialsFor(name, email) {
 /**
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
- * `user` — no extra API round trip), "Accounts" (its only nav entry point
- * now that MenuBar is gone), "Settings" (opens SettingsModal), and
+ * `user` — no extra API round trip), "Accounts"/"Goals" (its only nav entry
+ * points now that MenuBar is gone), "Settings" (opens SettingsModal), and
  * the sign-out action. Only rendered inside AppShell, which only mounts
  * once RequireAuth has already confirmed `isAuthenticated`, so `user` is
  * always populated here.
@@ -74,6 +75,7 @@ function UserMenu({ profile, onProfileUpdate }) {
     // accounts/greeting cache for whoever signs in next.
     clearCachedProfile();
     clearCachedAccounts();
+    clearCachedGoals();
     clearCachedGreeting();
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
@@ -131,6 +133,18 @@ function UserMenu({ profile, onProfileUpdate }) {
           >
             <i className="bi bi-wallet2" aria-hidden="true" />
             Accounts
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              navigate("/goals");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-flag" aria-hidden="true" />
+            Goals
           </button>
           <button
             type="button"

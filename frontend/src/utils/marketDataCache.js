@@ -27,6 +27,10 @@
  *    page, and `deleteTransactionsForHolding` drops every page cached for
  *    one holding (via a key-range delete over that prefix) so a
  *    create/update/delete against it can't leave a stale page behind.
+ *  - "goals" — the signed-in user's goals list (see goalsCache.js). Same
+ *    "mutated directly by the user, not calendar-expired" model as
+ *    "accounts" — `readGoalsValue`/`writeGoalsValue`/`deleteGoalsValue`
+ *    store/return the raw value, undated.
  *
  * Every read/write here is best-effort: IndexedDB can be unavailable (a
  * test environment, a browser/private-mode without it) or a call can fail
@@ -36,10 +40,11 @@
  */
 
 const DB_NAME = "equicast-cache";
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 const HOLDINGS_STORE_NAME = "holdings";
 const ACCOUNTS_STORE_NAME = "accounts";
 const TRANSACTIONS_STORE_NAME = "transactions";
+const GOALS_STORE_NAME = "goals";
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -49,6 +54,7 @@ function openDb() {
       if (!db.objectStoreNames.contains(HOLDINGS_STORE_NAME)) db.createObjectStore(HOLDINGS_STORE_NAME);
       if (!db.objectStoreNames.contains(ACCOUNTS_STORE_NAME)) db.createObjectStore(ACCOUNTS_STORE_NAME);
       if (!db.objectStoreNames.contains(TRANSACTIONS_STORE_NAME)) db.createObjectStore(TRANSACTIONS_STORE_NAME);
+      if (!db.objectStoreNames.contains(GOALS_STORE_NAME)) db.createObjectStore(GOALS_STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -153,6 +159,64 @@ export async function deleteAccountsValue(key) {
     await new Promise((resolve, reject) => {
       const tx = db.transaction(ACCOUNTS_STORE_NAME, "readwrite");
       tx.objectStore(ACCOUNTS_STORE_NAME).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
+ * @param {string} key
+ * @returns {Promise<unknown|null>} `null` on a cache miss or any failure.
+ */
+export async function readGoalsValue(key) {
+  try {
+    const db = await openDb();
+    const value = await new Promise((resolve, reject) => {
+      const request = db.transaction(GOALS_STORE_NAME, "readonly").objectStore(GOALS_STORE_NAME).get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return value;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} key
+ * @param {unknown} value
+ * @returns {Promise<void>}
+ */
+export async function writeGoalsValue(key, value) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(GOALS_STORE_NAME, "readwrite");
+      tx.objectStore(GOALS_STORE_NAME).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
+ * @param {string} key
+ * @returns {Promise<void>}
+ */
+export async function deleteGoalsValue(key) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(GOALS_STORE_NAME, "readwrite");
+      tx.objectStore(GOALS_STORE_NAME).delete(key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
