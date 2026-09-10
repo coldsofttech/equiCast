@@ -5,7 +5,10 @@ Generic risk/performance metrics for any yfinance symbol — an FX pair
 needs a daily close-price history, regardless of asset class. Also offers
 stock-only valuation/fundamental metrics (PE, EPS, margins, returns,
 leverage) via `fundamentals()` — FX pairs have no earnings or balance sheet,
-so that method rejects them.
+so that method rejects them — and a `buyers_pct`/`sellers_pct` buy/sell
+volume-pressure gauge via `buy_sell_pressure()`, used by `equicast-stock`/
+`equicast-etf` only (see that method's docstring for why this isn't enforced
+by `MetricsClient` itself the way `fundamentals()`'s FX rejection is).
 
 ## Disclaimer
 
@@ -44,6 +47,9 @@ MetricsClient("AAPL").fundamentals()
 #  "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"}
 
 MetricsClient("GBPUSD=X").fundamentals()  # raises UnsupportedSymbolError
+
+MetricsClient("AAPL").buy_sell_pressure()
+# {"buyers_pct": 0.62, "sellers_pct": 0.38}
 ```
 
 ## What each field means
@@ -119,6 +125,39 @@ every field from `.info` alone):
 
 Any field can come back `None` if yfinance doesn't have it and none of the
 fallbacks apply (e.g. a newly-listed company with no prior-year financials).
+
+## `buy_sell_pressure()` — buy/sell volume-pressure gauge (stock/etf only)
+
+`{"buyers_pct": ..., "sellers_pct": ...}`, always summing to 1 (e.g.
+`0.62`/`0.38`) — a Chaikin-Money-Flow-style technical proxy for order-flow
+sentiment over the trailing year, derived purely from OHLCV price/volume
+history, **not** literal buy/sell order counts (yfinance/Yahoo has no real
+order-book data).
+
+For each daily bar, a money-flow multiplier locates where that bar's close
+landed within its own high-low range: `+1` if it closed at the high (all
+buying pressure), `-1` at the low (all selling pressure), `0` mid-range (a
+flat bar, where high equals low, also contributes `0` rather than dividing
+by zero). Multiplying by that bar's volume gives its "money flow volume";
+summing the positive flows across the window gives total buying volume, the
+negative flows (negated) give total selling volume, and each side's share of
+the combined total is its `_pct`.
+
+Both fields come back `None` together when there's nothing meaningful to
+compute a split from — an empty window, or every bar's buying/selling volume
+landing at exactly 0 (e.g. no recorded volume at all).
+
+Unlike `metrics()`/`fundamentals()`, this method contributes no
+`last_updated`/`source` of its own — there's no yfinance-reported figure to
+ever prefer over the equicast-computed value, so a caller merging this into
+a `metrics()` record just keeps that record's own `last_updated`/`source`
+as-is (see `equicast_stock.cli._metrics_task`/`equicast_etf.cli._metrics_task`).
+
+Not self-restricted by asset class the way `fundamentals()` rejects an FX
+symbol: it's only ever called from `equicast-stock`/`equicast-etf`'s own
+CLIs (`equicast-benchmark`/`equicast-fx` never call it), since unlike an FX
+pair's `"=X"` suffix, there's no comparably self-evident "this symbol isn't
+a real tradeable instrument" signal to gate on for a benchmark.
 
 ## Development
 

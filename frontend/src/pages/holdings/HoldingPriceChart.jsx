@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
@@ -506,13 +507,13 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
             {avgPrice != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
-                Avg buy price: {formatPrice(avgPrice, seriesCurrency)}
+                Avg buy price: <Balance>{formatPrice(avgPrice, seriesCurrency)}</Balance>
               </span>
             )}
             {currentPrice != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
-                Current price: {formatPrice(currentPrice, seriesCurrency)}
+                Current price: <Balance>{formatPrice(currentPrice, seriesCurrency)}</Balance>
               </span>
             )}
           </div>
@@ -539,7 +540,11 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                   y2={y}
                   className="ec-chart-gridline"
                 />
-                <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
+                <text
+                  x={PADDING_LEFT - 8}
+                  y={y}
+                  className={`ec-chart-axis-label ec-chart-yaxis-label${pctMode ? "" : " ec-balance"}`}
+                >
                   {pctMode
                     ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, seriesCurrency)
                     : formatYAxisLabel(value, false, seriesCurrency)}
@@ -677,10 +682,18 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
           {hovered && (
             <div className="ec-chart-tooltip">
               <span className="ec-chart-tooltip-date">{hoveredLabel}</span>
-              <span>O {formatPrice(hovered.open, seriesCurrency)}</span>
-              <span>H {formatPrice(hovered.high, seriesCurrency)}</span>
-              <span>L {formatPrice(hovered.low, seriesCurrency)}</span>
-              <span>C {formatPrice(hovered.close, seriesCurrency)}</span>
+              <span>
+                O <Balance>{formatPrice(hovered.open, seriesCurrency)}</Balance>
+              </span>
+              <span>
+                H <Balance>{formatPrice(hovered.high, seriesCurrency)}</Balance>
+              </span>
+              <span>
+                L <Balance>{formatPrice(hovered.low, seriesCurrency)}</Balance>
+              </span>
+              <span>
+                C <Balance>{formatPrice(hovered.close, seriesCurrency)}</Balance>
+              </span>
             </div>
           )}
 

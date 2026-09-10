@@ -1,12 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { apiFetch, ApiError } from "./client.js";
 
-function jsonResponse(body, status = 200) {
+function jsonResponse(body, status = 200, headers = {}) {
   return {
     ok: status >= 200 && status < 300,
     status,
     statusText: "",
     json: async () => body,
+    headers: new Headers(headers),
   };
 }
 
@@ -110,5 +111,41 @@ describe("apiFetch", () => {
     } catch (err) {
       expect(err).toBeInstanceOf(ApiError);
     }
+  });
+
+  it("parses Retry-After into retryAfterSeconds on a 429", async () => {
+    fetch.mockResolvedValueOnce(
+      jsonResponse(
+        { detail: "Request was throttled. Expected available in 46 seconds." },
+        429,
+        { "Retry-After": "46" }
+      )
+    );
+
+    await expect(apiFetch("/identity/me/")).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: 46,
+    });
+  });
+
+  it("leaves retryAfterSeconds null when a 429 has no Retry-After header", async () => {
+    fetch.mockResolvedValueOnce(jsonResponse({ detail: "throttled" }, 429));
+
+    await expect(apiFetch("/identity/me/")).rejects.toMatchObject({
+      status: 429,
+      retryAfterSeconds: null,
+    });
+  });
+
+  it("ignores a Retry-After header on a non-429 error", async () => {
+    // A Retry-After header outside a 429 isn't the "you're rate limited"
+    // signal this field means, so it's deliberately not parsed even if a
+    // server happened to send one for some other status.
+    fetch.mockResolvedValueOnce(jsonResponse({ detail: "nope" }, 400, { "Retry-After": "46" }));
+
+    await expect(apiFetch("/accounts/")).rejects.toMatchObject({
+      status: 400,
+      retryAfterSeconds: null,
+    });
   });
 });
