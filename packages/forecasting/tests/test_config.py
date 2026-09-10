@@ -2,11 +2,14 @@ from pathlib import Path
 
 from equicast_forecasting.config import (
     BenchmarkRef,
+    FutureRef,
     FxPairRef,
     load_benchmarks,
+    load_futures,
     load_fx_pairs,
     load_tickers,
     parse_benchmarks_json,
+    parse_futures_json,
     parse_fx_pairs_json,
     parse_tickers_json,
 )
@@ -80,4 +83,31 @@ def test_parse_benchmarks_json() -> None:
     assert parse_benchmarks_json(payload) == [
         BenchmarkRef(key="SP500", symbol="^GSPC"),
         BenchmarkRef(key="FTSE100", symbol="^FTSE"),
+    ]
+
+
+def test_load_futures(tmp_path: Path) -> None:
+    config = tmp_path / "futures.yaml"
+    config.write_text(
+        """
+        futures:
+          - key: gold
+            symbol: "GC=F"
+          - key: silver
+            symbol: "SI=F"
+        """
+    )
+
+    assert load_futures(config) == [
+        FutureRef(key="GOLD", symbol="GC=F"),
+        FutureRef(key="SILVER", symbol="SI=F"),
+    ]
+
+
+def test_parse_futures_json() -> None:
+    payload = '[{"key": "gold", "symbol": "GC=F"}, {"key": "silver", "symbol": "SI=F"}]'
+
+    assert parse_futures_json(payload) == [
+        FutureRef(key="GOLD", symbol="GC=F"),
+        FutureRef(key="SILVER", symbol="SI=F"),
     ]

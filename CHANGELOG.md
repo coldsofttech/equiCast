@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Futures price-band forecasting (GitHub issue #143):
+  `equicast_forecasting.future_price_bands()` extends the same GARCH/EWMA-
+  calibrated Monte Carlo bootstrap engine to futures contracts, routed to
+  one of 5 commodity-class schemas (Precious Metals, Energy, Industrial
+  Metals, Grains, Softs — `commodity_class_schemas.yaml`, matching the
+  issue's own table verbatim, sharing no field names with the stock/ETF
+  schemas per the issue's explicit "needs to be its own branch" note),
+  raising `UnroutableCommodityError` for anything unmapped ("fail loudly,"
+  same as issues #66/#67/#68 — no generic fallback, every configured
+  future needs explicit class membership). No future gets a real
+  valuation-reversion bias today: `basis_vs_cost_of_carry` (the issue's
+  own required reversion-anchor field, deliberately not a stock-style
+  valuation multiple) defaults to `None`, since the underlying data —
+  USDA WASDE, EIA inventory, CFTC COT reports, spot/storage/financing
+  costs — isn't available via yfinance, an explicitly-flagged gap in the
+  issue itself; kept as a real parameter rather than a hardcoded 0.0,
+  same shape FX forecasting's own unwired `reer_deviation` already uses.
+  Also verified and documented (per the issue's own instruction) a
+  continuous-contract-construction caveat: 2-year daily returns for
+  GC=F/CL=F/NG=F show natural gas moving >5% on ~19% of trading days —
+  more consistent with genuine commodity volatility than a systematic
+  roll artifact (jump dates don't cluster on a fixed day-of-month), but
+  yfinance's own construction methodology isn't publicly documented, so
+  this is flagged as an open, unresolved caveat rather than silently
+  assumed safe. Wired into `equicast-forecasting`'s CLI —
+  `--asset-class future --forecast-kind price-bands`, with a new
+  `--futures-json` source flag — writing
+  `future=<KEY>/forecasting/price_bands.parquet`. Not yet wired into any
+  scheduled workflow.
+
 - Benchmark (market index) price-band forecasting (GitHub issue #68):
   `equicast_forecasting.benchmark_price_bands()` extends the same
   GARCH/EWMA-calibrated Monte Carlo bootstrap engine to market indices,

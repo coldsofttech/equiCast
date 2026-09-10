@@ -1,7 +1,7 @@
 """CLI: forecast future dividend payouts (stock/etf), daily FX price
-probability bands (fx), or daily sector-routed stock/ETF/benchmark price
-probability bands (stock/etf/benchmark) for every configured ticker/pair/
-benchmark.
+probability bands (fx), or daily sector-routed stock/ETF/benchmark/future
+price probability bands (stock/etf/benchmark/future) for every configured
+ticker/pair/benchmark/future.
 
 `--forecast-kind` selects which model runs, since "stock" can mean either
 kind of forecast:
@@ -45,9 +45,9 @@ schemas (see etf_type_registry.py) and projects it forward with
 "fails loudly" the same way an unroutable stock sector/industry does —
 `_etf_forecast_task` logs and skips just that ticker, contributing to the
 same `ForecastBatchError` summary `run()` re-raises once the batch
-completes (shared across both stock and etf routing failures when both
-happen to run in the same invocation, though in practice each runs as its
-own separate `--asset-class` invocation).
+completes (shared across stock/etf/benchmark/future routing failures when
+more than one happen to run in the same invocation, though in practice
+each runs as its own separate `--asset-class` invocation).
 
 Benchmark (market index) price-band forecasting (`--forecast-kind
 price-bands`, benchmark only, GitHub issue #68): for each configured
@@ -63,8 +63,22 @@ benchmark_forecast.benchmark_price_bands()`, writing
 category does — `_benchmark_forecast_task` logs and skips just that
 benchmark, contributing to the same `ForecastBatchError` summary.
 
-Either way, each ticker's/pair's/benchmark's fetch-and-forecast is an
-independent task submitted to the same worker pool, so they run
+Futures price-band forecasting (`--forecast-kind price-bands`, future
+only, GitHub issue #143): for each configured future, fetches its full
+price history straight off `DatafeedClient` (the future's own `key`/
+`symbol` come from config, same shape `equicast-future`'s own config
+uses — see config.py's `FutureRef`), routes `key` to one of 5 commodity-
+class schemas (see commodity_registry.py — **no generic fallback**, every
+configured future needs its own explicit class membership) and projects
+it forward with `equicast_forecasting.future_forecast.
+future_price_bands()`, writing `future=<KEY>/forecasting/
+price_bands.parquet`. An unroutable key "fails loudly" the same way an
+unroutable stock sector/industry, ETF category, or benchmark key does —
+`_future_forecast_task` logs and skips just that future, contributing to
+the same `ForecastBatchError` summary.
+
+Either way, each ticker's/pair's/benchmark's/future's fetch-and-forecast
+is an independent task submitted to the same worker pool, so they run
 concurrently rather than one after the other.
 """
 
@@ -82,19 +96,24 @@ from equicast_dividends import DividendsClient
 
 from equicast_forecasting.benchmark_forecast import benchmark_price_bands
 from equicast_forecasting.benchmark_registry import UnroutableBenchmarkError
+from equicast_forecasting.commodity_registry import UnroutableCommodityError
 from equicast_forecasting.config import (
     BenchmarkRef,
+    FutureRef,
     FxPairRef,
     load_benchmarks,
+    load_futures,
     load_fx_pairs,
     load_tickers,
     parse_benchmarks_json,
+    parse_futures_json,
     parse_fx_pairs_json,
     parse_tickers_json,
 )
 from equicast_forecasting.etf_forecast import etf_price_bands
 from equicast_forecasting.etf_type_registry import UnroutableEtfTypeError
 from equicast_forecasting.forecast import dividends
+from equicast_forecasting.future_forecast import future_price_bands
 from equicast_forecasting.fx_forecast import fx_price_bands
 from equicast_forecasting.monte_carlo import DEFAULT_NUM_PATHS
 from equicast_forecasting.sector_registry import UnroutableSectorError
@@ -103,6 +122,7 @@ from equicast_forecasting.writer import (
     write_benchmark_price_bands_parquet,
     write_dividend_forecast_parquet,
     write_etf_price_bands_parquet,
+    write_future_price_bands_parquet,
     write_fx_price_bands_parquet,
     write_stock_price_bands_parquet,
 )
@@ -118,41 +138,43 @@ FULL_HISTORY_PERIOD = "max"
 
 
 class ForecastBatchError(RuntimeError):
-    """Raised by `run()` when one or more tickers/benchmarks failed to
-    route to a stock, ETF, or benchmark forecasting schema (see
-    sector_registry.UnroutableSectorError / etf_type_registry.
-    UnroutableEtfTypeError / benchmark_registry.UnroutableBenchmarkError)
-    — every other ticker/benchmark in the batch still ran and had its
-    Parquet written; this only ensures the overall CLI invocation still
-    exits non-zero, per issue #66/#67/#68's "fail loudly" requirement,
-    rather than silently reporting success."""
+    """Raised by `run()` when one or more tickers/benchmarks/futures
+    failed to route to a stock, ETF, benchmark, or future forecasting
+    schema (see sector_registry.UnroutableSectorError / etf_type_registry.
+    UnroutableEtfTypeError / benchmark_registry.UnroutableBenchmarkError /
+    commodity_registry.UnroutableCommodityError) — every other ticker/
+    benchmark/future in the batch still ran and had its Parquet written;
+    this only ensures the overall CLI invocation still exits non-zero, per
+    issue #66/#67/#68/#143's "fail loudly" requirement, rather than
+    silently reporting success."""
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Forecast each configured ticker's future dividend payouts (stock/etf) or "
-        "each configured ticker's/pair's/benchmark's daily price probability bands "
-        "(stock/etf/fx/benchmark), writing one Parquet file per ticker/pair/benchmark."
+        "each configured ticker's/pair's/benchmark's/future's daily price probability bands "
+        "(stock/etf/fx/benchmark/future), writing one Parquet file per ticker/pair/"
+        "benchmark/future."
     )
     parser.add_argument(
         "--asset-class",
         required=True,
-        choices=["stock", "etf", "fx", "benchmark"],
-        help="Determines both which tickers/pairs/benchmarks this can run against and the S3 "
-        "key prefix written to.",
+        choices=["stock", "etf", "fx", "benchmark", "future"],
+        help="Determines both which tickers/pairs/benchmarks/futures this can run against and "
+        "the S3 key prefix written to.",
     )
     parser.add_argument(
         "--forecast-kind",
         required=True,
         choices=["dividends", "price-bands"],
-        help='"dividends" is stock/etf only; "price-bands" is stock/etf/fx/benchmark.',
+        help='"dividends" is stock/etf only; "price-bands" is stock/etf/fx/benchmark/future.',
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
         "--config",
         type=Path,
-        help="Path to a tickers YAML config (stock/etf), an FX pairs YAML config (fx), or a "
-        "benchmarks YAML config (benchmark).",
+        help="Path to a tickers YAML config (stock/etf), an FX pairs YAML config (fx), a "
+        "benchmarks YAML config (benchmark), or a futures YAML config (future).",
     )
     source.add_argument(
         "--tickers-json",
@@ -165,6 +187,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     source.add_argument(
         "--benchmarks-json",
         help='JSON array of {"key": ..., "symbol": ...} objects (benchmark only; e.g. one '
+        "matrix chunk).",
+    )
+    source.add_argument(
+        "--futures-json",
+        help='JSON array of {"key": ..., "symbol": ...} objects (future only; e.g. one '
         "matrix chunk).",
     )
     parser.add_argument(
@@ -210,6 +237,7 @@ def _validate_source_for_asset_class(
     tickers_json: str | None,
     pairs_json: str | None,
     benchmarks_json: str | None,
+    futures_json: str | None,
 ) -> None:
     if asset_class not in ("stock", "etf") and tickers_json is not None:
         raise ValueError(
@@ -221,6 +249,10 @@ def _validate_source_for_asset_class(
         raise ValueError(
             "--benchmarks-json is benchmark only; use the right source flag (or --config)."
         )
+    if asset_class != "future" and futures_json is not None:
+        raise ValueError(
+            "--futures-json is future only; use the right source flag (or --config)."
+        )
 
 
 def _validate_forecast_kind(asset_class: str, forecast_kind: str) -> None:
@@ -228,9 +260,15 @@ def _validate_forecast_kind(asset_class: str, forecast_kind: str) -> None:
         raise ValueError(
             f"--forecast-kind dividends is stock/etf only, got --asset-class {asset_class!r}."
         )
-    if forecast_kind == "price-bands" and asset_class not in ("stock", "etf", "fx", "benchmark"):
+    if forecast_kind == "price-bands" and asset_class not in (
+        "stock",
+        "etf",
+        "fx",
+        "benchmark",
+        "future",
+    ):
         raise ValueError(
-            "--forecast-kind price-bands is stock/etf/fx/benchmark only, got "
+            "--forecast-kind price-bands is stock/etf/fx/benchmark/future only, got "
             f"--asset-class {asset_class!r}."
         )
 
@@ -254,6 +292,13 @@ def _load_benchmarks(config: Path | None, benchmarks_json: str | None) -> list[B
         return parse_benchmarks_json(benchmarks_json)
     assert config is not None  # enforced by the mutually-exclusive required group
     return load_benchmarks(config)
+
+
+def _load_futures(config: Path | None, futures_json: str | None) -> list[FutureRef]:
+    if futures_json is not None:
+        return parse_futures_json(futures_json)
+    assert config is not None  # enforced by the mutually-exclusive required group
+    return load_futures(config)
 
 
 def _dividend_forecast_task(
@@ -364,6 +409,25 @@ def _benchmark_forecast_task(
     return write_benchmark_price_bands_parquet(forecast, output_dir)
 
 
+def _future_forecast_task(
+    future_ref: FutureRef,
+    datafeed: DatafeedClient,
+    output_dir: Path,
+    years: int,
+    num_paths: int,
+    routing_failures: list[tuple[str, Exception]],
+) -> Path | None:
+    logger.info("Forecasting future price bands for %s", future_ref.key)
+    prices = _price_records(datafeed, future_ref.symbol)
+    try:
+        forecast = future_price_bands(prices, future_ref.key, years=years, num_paths=num_paths)
+    except UnroutableCommodityError as error:
+        logger.error("Skipping %s: %s", future_ref.key, error)
+        routing_failures.append((future_ref.key, error))
+        return None
+    return write_future_price_bands_parquet(forecast, output_dir)
+
+
 def run(
     asset_class: str,
     forecast_kind: str,
@@ -372,6 +436,7 @@ def run(
     tickers_json: str | None = None,
     pairs_json: str | None = None,
     benchmarks_json: str | None = None,
+    futures_json: str | None = None,
     years: int = 10,
     num_paths: int = DEFAULT_NUM_PATHS,
     max_workers: int = 1,
@@ -379,7 +444,9 @@ def run(
     period_seconds: float = 1.0,
 ) -> list[Path]:
     _validate_forecast_kind(asset_class, forecast_kind)
-    _validate_source_for_asset_class(asset_class, tickers_json, pairs_json, benchmarks_json)
+    _validate_source_for_asset_class(
+        asset_class, tickers_json, pairs_json, benchmarks_json, futures_json
+    )
 
     # One DatafeedClient (and its rate limiter) shared across every worker, so
     # the configured request rate is a real ceiling regardless of concurrency.
@@ -390,6 +457,20 @@ def run(
     if forecast_kind == "price-bands" and asset_class == "fx":
         pairs = _load_fx_pairs(config, pairs_json)
         tasks = [partial(_fx_forecast_task, pair, datafeed, output_dir, years) for pair in pairs]
+    elif forecast_kind == "price-bands" and asset_class == "future":
+        future_refs = _load_futures(config, futures_json)
+        tasks = [
+            partial(
+                _future_forecast_task,
+                future_ref,
+                datafeed,
+                output_dir,
+                years,
+                num_paths,
+                routing_failures,
+            )
+            for future_ref in future_refs
+        ]
     elif forecast_kind == "price-bands" and asset_class == "benchmark":
         benchmarks = _load_benchmarks(config, benchmarks_json)
         tasks = [
@@ -466,6 +547,7 @@ def main() -> None:
         tickers_json=args.tickers_json,
         pairs_json=args.pairs_json,
         benchmarks_json=args.benchmarks_json,
+        futures_json=args.futures_json,
         years=args.years,
         num_paths=args.num_paths,
         max_workers=args.max_workers,

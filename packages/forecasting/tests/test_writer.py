@@ -5,6 +5,7 @@ from equicast_forecasting.writer import (
     write_benchmark_price_bands_parquet,
     write_dividend_forecast_parquet,
     write_etf_price_bands_parquet,
+    write_future_price_bands_parquet,
     write_fx_price_bands_parquet,
     write_stock_price_bands_parquet,
 )
@@ -184,3 +185,35 @@ def test_write_benchmark_price_bands_parquet_writes_key_prefixed_path(tmp_path: 
 
 def test_write_benchmark_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_benchmark_price_bands_parquet([], tmp_path) is None
+
+
+def _future_band_record(date: str, **overrides: object) -> dict:
+    record = {
+        "key": "GOLD",
+        "commodity_class": "Precious Metals",
+        "date": date,
+        "p10": 1850.0,
+        "p50": 1900.0,
+        "p90": 1950.0,
+        "regime": "short",
+        "volatility_model": "garch",
+        "basis_vs_cost_of_carry": None,
+        "last_updated": "2026-08-30T09:00:02+00:00",
+        "source": "equicast",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_future_price_bands_parquet_writes_key_prefixed_path(tmp_path: Path) -> None:
+    records = [_future_band_record("2026-09-01"), _future_band_record("2026-09-02")]
+
+    path = write_future_price_bands_parquet(records, tmp_path)
+
+    assert path == tmp_path / "future=GOLD" / "forecasting" / "price_bands.parquet"
+    result = pd.read_parquet(path)
+    assert result.to_dict(orient="records") == records
+
+
+def test_write_future_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_future_price_bands_parquet([], tmp_path) is None

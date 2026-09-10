@@ -108,6 +108,32 @@ def write_benchmark_price_bands_parquet(
     return path
 
 
+def write_future_price_bands_parquet(
+    records: list[dict[str, Any]], output_dir: Path
+) -> Path | None:
+    """Write `records` (as returned by `equicast_forecasting.
+    future_forecast.future_price_bands()`) to
+    `<output_dir>/future=<KEY>/forecasting/price_bands.parquet` — same
+    `future=<KEY>` partition convention `equicast_future.writer` uses.
+
+    Returns `None` (writes nothing) for `records == []` — `future_price_
+    bands()` already returns `[]` for a future with too little price
+    history to forecast from. Rewritten wholesale on every run, same as
+    every other forecasting writer — a full recomputation from that run's
+    freshly-fetched price history, not an accumulating history.
+    """
+    if not records:
+        return None
+
+    key = records[0]["key"]
+    directory = output_dir / f"future={key}" / "forecasting"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "price_bands.parquet"
+    pd.DataFrame(records).to_parquet(path, index=False)
+    return path
+
+
 def write_fx_price_bands_parquet(records: list[dict[str, Any]], output_dir: Path) -> Path | None:
     """Write `records` (as returned by `equicast_forecasting.fx_forecast.
     fx_price_bands()`) to `<output_dir>/fx=<FROM><TO>/forecasting/

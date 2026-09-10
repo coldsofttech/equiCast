@@ -8,10 +8,13 @@ interest-rate data is available (see
 sector-routed stock price probability bands from actual price/fundamentals
 data (see [Stock price-band forecasting](#stock-price-band-forecasting));
 daily, ETF-type-routed price probability bands from actual price/fund
-data (see [ETF price-band forecasting](#etf-price-band-forecasting)); and
+data (see [ETF price-band forecasting](#etf-price-band-forecasting));
 daily, per-index-routed price probability bands for market benchmarks
 from actual index price history (see
-[Benchmark price-band forecasting](#benchmark-price-band-forecasting)).
+[Benchmark price-band forecasting](#benchmark-price-band-forecasting));
+and daily, commodity-class-routed price probability bands for futures
+contracts from actual futures price history (see
+[Futures price-band forecasting](#futures-price-band-forecasting)).
 
 ## Dividend forecasting
 
@@ -348,10 +351,11 @@ uv run equicast-forecasting --asset-class stock --forecast-kind price-bands --ti
 Writes `stock=<TICKER>/forecasting/price_bands.parquet` per ticker —
 nothing for a ticker with too little price history to forecast from.
 `--forecast-kind dividends` (stock/etf) is the pre-existing dividend
-forecast; `--forecast-kind price-bands` is stock/etf/fx/benchmark (see
-[ETF](#etf-price-band-forecasting)/[Benchmark](#benchmark-price-band-forecasting)
-price-band forecasting below for the etf/benchmark cases, added by issues
-#67/#68). **Per the issue's "fail loudly" requirement**, a
+forecast; `--forecast-kind price-bands` is stock/etf/fx/benchmark/future
+(see [ETF](#etf-price-band-forecasting)/[Benchmark](#benchmark-price-band-forecasting)/
+[Futures](#futures-price-band-forecasting) price-band forecasting below
+for the etf/benchmark/future cases, added by issues #67/#68/#143). **Per
+the issue's "fail loudly" requirement**, a
 ticker that fails to route raises `UnroutableSectorError`, caught per-
 ticker so the rest of the batch still completes and writes normally, but
 `run()` re-raises a summary `ForecastBatchError` once every ticker has had
@@ -578,6 +582,115 @@ Same "fail loudly" `UnroutableBenchmarkError`/`ForecastBatchError`
 handling as stock's/ETF's own CLI wiring above. Not yet wired into any
 scheduled GitHub Actions workflow — see
 [docs/benchmark-pipeline.md](../../docs/benchmark-pipeline.md#forecasting).
+
+## Futures price-band forecasting
+
+Implements [GitHub issue #143](https://github.com/coldsofttech/equiCast/issues/143):
+the same "one daily probability band per calendar day" shape as
+[Stock](#stock-price-band-forecasting)/[ETF](#etf-price-band-forecasting)/
+[Benchmark](#benchmark-price-band-forecasting) price-band forecasting,
+applied to futures contracts. Routed through one of **5 commodity-class
+schemas** (Precious Metals, Energy, Industrial Metals, Grains, Softs — see
+[`commodity_class_schemas.yaml`](src/equicast_forecasting/commodity_class_schemas.yaml)),
+each declaring an explicit list of the futures (by their
+`equicast_future` S3 partition key, e.g. `"GOLD"`) that belong to it,
+matching the issue's own table exactly.
+
+### Usage
+
+```python
+from equicast_forecasting import future_price_bands
+
+# `prices` needs at least `date`/`close` keys per record - the shape
+# equicast_future.FutureClient.prices() already returns.
+future_price_bands(prices, "GOLD", years=10)
+# [{"key": "GOLD", "commodity_class": "Precious Metals",
+#   "date": "2026-09-10", "p10": 2180.4, "p50": 2312.6, "p90": 2448.9,
+#   "regime": "short", "volatility_model": "garch",
+#   "basis_vs_cost_of_carry": None,
+#   "last_updated": "2026-09-09T17:34:19+00:00", "source": "equicast"}, ...]
+```
+
+Raises `UnroutableCommodityError` if `key` matches none of the 5 classes'
+`symbols` lists — same "fail loudly, no generic fallback" requirement
+issues #66/#67/#68 already established: **every future configured in
+[`packages/future/config/`](../future/config/) needs its own explicit
+class membership** — there's no shared fallback bucket, same choice
+benchmark forecasting made over ETF's "Other" catch-all.
+
+### Its own schema branch, not stock/ETF with nulled-out fields
+
+Per the issue: "Futures don't have PE/EPS/FFO — no earnings, no balance
+sheet. Forecasting here is driven by supply/demand fundamentals, curve
+structure (contango/backwardation), and storage/carry economics, not
+valuation multiples. Schema needs to be its own branch, not a reuse of
+the stock/ETF schema with nulled-out fields." Every parameter name in
+`commodity_class_schemas.yaml` (`cot_positioning`, `opec_meeting_calendar`,
+`stocks_to_use_ratio`, `curve_structure`, ...) is lifted verbatim from the
+issue's own table and shares no field names with `sector_schemas.yaml`/
+`etf_type_schemas.yaml`/`benchmark_schemas.yaml`.
+
+### Same Monte Carlo engine as stock/ETF/benchmark, but its own reversion anchor
+
+Same regime split (short: GARCH/EWMA-calibrated volatility, no drift;
+medium: bootstrap, no bias; long: bootstrap + a reversion bias) — but per
+the issue's own explicit instruction, the long-horizon anchor is **not** a
+valuation multiple: "the long-horizon reversion target is curve-implied
+fair value / cost-of-carry... the schema needs its own reversion-anchor
+field (e.g. `basis_vs_cost_of_carry`)." `future_forecast.py`'s
+`_long_drift` uses exactly that field — the same z-score-reverts-toward-
+its-mean formula shape stock's/benchmark's own `_long_drift` use, just
+anchored to a curve-implied fair-value gap instead of a valuation
+multiple's historical average.
+
+**No future gets a real bias today.** Per the issue's own explicitly-
+flagged data gap: "USDA WASDE, EIA inventory, and CFTC COT reports are
+not available via yfinance — yfinance gives OHLC futures price history
+only. This issue should ship with those fields defaulting to
+None/unavailable... with a follow-up issue for wiring real data
+sources." The same is true of the spot-price/storage/financing-cost data
+a real cost-of-carry fair value would need — `equicast_future.
+FutureClient.profile()` mirrors `BenchmarkClient`'s shape exactly, no
+fundamentals field at all. `basis_vs_cost_of_carry` is kept as a real,
+explicit parameter (defaulting to `None`, degrading the long horizon to a
+plain unbiased bootstrap) rather than inlined as a hardcoded constant —
+exactly how FX forecasting's own `reer_deviation` (also always `None`
+today) is wired.
+
+### Continuous-contract-construction caveat (verified, not resolved)
+
+Per the issue's own instruction — "Continuous contract construction...
+should be verified/documented before backtesting — an unadjusted roll can
+inject artificial jumps that corrupt the GARCH fit and the historical
+bootstrap sample alike" — this was checked live before shipping: 2-year
+daily return distributions for `GC=F`/`CL=F`/`NG=F`. Gold is comparatively
+clean (4 of 504 trading days moved >5%); WTI crude had 35 such days;
+natural gas had 97 (~19% of trading days), with a single-day move as large
+as 47%. The jump dates don't cluster on a fixed day-of-month across
+contracts the way a purely mechanical, un-back-adjusted monthly roll would
+— more consistent with genuine commodity event-driven volatility (natural
+gas is a famously volatile market) than a systematic roll artifact, but
+yfinance doesn't publicly document its `"=F"` continuous-contract
+construction methodology (back-adjusted vs. raw-spliced), so this can't be
+fully ruled out. **Flagged here, unresolved** — the GARCH/EWMA volatility
+estimate and Monte Carlo bootstrap both use this same price history as-is,
+so if roll jumps ever turn out to be a real, still-present contributor,
+they're currently feeding directly into both.
+
+### CLI
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class future --forecast-kind price-bands --config ../future/config/futures.dev.yaml --out ./output
+uv run equicast-forecasting --asset-class future --forecast-kind price-bands --futures-json '[{"key":"GOLD","symbol":"GC=F"}]' --out ./output --years 10 --num-paths 2000
+```
+
+Writes `future=<KEY>/forecasting/price_bands.parquet` per future —
+nothing for a future with too little price history to forecast from. Same
+"fail loudly" `UnroutableCommodityError`/`ForecastBatchError` handling as
+stock's/ETF's/benchmark's own CLI wiring above. Not yet wired into any
+scheduled GitHub Actions workflow — see
+[docs/future-pipeline.md](../../docs/future-pipeline.md#forecasting).
 
 ## Development
 

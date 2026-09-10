@@ -1,0 +1,63 @@
+# Commodity-class forecasting schema registry for future_forecast.py
+# (GitHub issue #143) - same registry idea as benchmark_schemas.yaml
+# (issue #68), but routes a future's own `key`
+# (packages/future/config/futures.*.yaml, e.g. "GOLD") to one of 5
+# commodity-class schemas rather than a per-benchmark entry, matching the
+# issue's own table (organized by class, not by individual symbol).
+#
+# Per the issue: "Futures don't have PE/EPS/FFO - no earnings, no balance
+# sheet. Forecasting here is driven by supply/demand fundamentals, curve
+# structure (contango/backwardation), and storage/carry economics, not
+# valuation multiples. Schema needs to be its own branch, not a reuse of
+# the stock/ETF schema with nulled-out fields." - `parameters` below are
+# this class's own short/medium/long field names verbatim from the
+# issue's table, sharing no field names with sector_schemas.yaml/
+# etf_type_schemas.yaml/benchmark_schemas.yaml.
+#
+# No generic fallback - every future configured in
+# packages/future/config/futures.*.yaml needs its own explicit `symbols`
+# entry here (see commodity_registry.py's UnroutableCommodityError), same
+# "fail loudly" requirement issues #66/#67/#68 already established -
+# extended here to routing by commodity class too, not just by individual
+# ticker.
+
+commodity_classes:
+  - key: precious_metals
+    label: "Precious Metals"
+    symbols: [GOLD, SILVER, PLATINUM, PALLADIUM]
+    parameters:
+      short: [iv, cot_positioning, real_yield_correlation, dollar_index_correlation]
+      medium: [central_bank_purchase_trend, etf_holdings_flow, mine_supply_growth]
+      long: [real_rate_cycle_position, above_ground_stock_trend, industrial_vs_investment_demand_mix]
+
+  - key: energy
+    label: "Energy"
+    symbols: [CRUDE_OIL_WTI, BRENT_CRUDE, NATURAL_GAS, HEATING_OIL]
+    parameters:
+      short: [iv, opec_meeting_calendar, eia_inventory_release_calendar, curve_structure]
+      medium: [rig_count_trend, inventory_vs_5yr_avg, refinery_utilization]
+      long: [capex_discipline_trend, demand_growth_trend, spare_capacity_trend]
+
+  - key: industrial_metals
+    label: "Industrial Metals"
+    symbols: [COPPER, ALUMINUM]
+    parameters:
+      short: [iv, cot_positioning, exchange_inventory_levels]
+      medium: [manufacturing_pmi_correlation, china_demand_proxy, mine_supply_growth]
+      long: [electrification_green_transition_demand_trend, capex_cycle_position, above_ground_stock_trend]
+
+  - key: grains
+    label: "Grains"
+    symbols: [WHEAT, CORN, SOYBEANS]
+    parameters:
+      short: [iv, usda_wasde_report_calendar, weather_forecast_flag]
+      medium: [planting_intentions_trend, stocks_to_use_ratio, export_demand_trend]
+      long: [yield_trend_technology_adjusted, global_stocks_to_use_longrun, biofuel_demand_trend]
+
+  - key: softs
+    label: "Softs"
+    symbols: [COFFEE, COTTON, SUGAR]
+    parameters:
+      short: [iv, weather_forecast_flag, cot_positioning]
+      medium: [crop_yield_estimate_trend, stocks_to_use_ratio, export_demand_trend]
+      long: [planted_area_trend, climate_pattern_exposure, substitution_demand_trend]

@@ -1,12 +1,13 @@
-"""Load the configured list of tickers (dividend forecasting), FX pairs, or
-benchmarks (price-band forecasting) to run against.
+"""Load the configured list of tickers (dividend forecasting), FX pairs,
+benchmarks, or futures (price-band forecasting) to run against.
 
 Minimal, standalone loaders for the same YAML shapes `equicast-stock`/
-`equicast-etf`/`equicast-fx`/`equicast-benchmark` each already have their
-own copy of, kept separate here (not imported from any of them) so
-`equicast-forecasting` doesn't depend on an asset-class-specific package —
-it's handed `--config packages/stock/config/stocks.dev.yaml` (or the
-ETF/FX/benchmark equivalent) directly, same file, no copy needed.
+`equicast-etf`/`equicast-fx`/`equicast-benchmark`/`equicast-future` each
+already have their own copy of, kept separate here (not imported from any
+of them) so `equicast-forecasting` doesn't depend on an asset-class-
+specific package — it's handed `--config
+packages/stock/config/stocks.dev.yaml` (or the ETF/FX/benchmark/future
+equivalent) directly, same file, no copy needed.
 """
 
 from __future__ import annotations
@@ -100,3 +101,37 @@ def parse_benchmarks_json(payload: str) -> list[BenchmarkRef]:
     file into the container.
     """
     return _benchmarks_from_raw(json.loads(payload))
+
+
+@dataclass(frozen=True)
+class FutureRef:
+    #: The S3 partition key this future lands under (future=<KEY>/...) -
+    #: same field equicast_future.config.Future carries, and the same
+    #: routing key commodity_registry.py's schemas' `symbols` are keyed by.
+    key: str
+    #: The exact yfinance ticker to fetch, e.g. "GC=F" - used as-is, not
+    #: upper/lower-cased, same reasoning equicast_future.config.Future's
+    #: own `symbol` field docstring gives.
+    symbol: str
+
+
+def _futures_from_raw(raw: list[dict[str, Any]]) -> list[FutureRef]:
+    return [FutureRef(key=future["key"].upper(), symbol=future["symbol"]) for future in raw]
+
+
+def load_futures(path: Path) -> list[FutureRef]:
+    """Parse a YAML file of `{futures: [{key, symbol}, ...]}` (the same
+    shape `equicast-future`'s own config uses) into `FutureRef` entries."""
+    data = yaml.safe_load(path.read_text())
+    return _futures_from_raw(data["futures"])
+
+
+def parse_futures_json(payload: str) -> list[FutureRef]:
+    """Parse a JSON array of `{"key": ..., "symbol": ...}` objects into
+    `FutureRef` entries.
+
+    Used to hand one chunk of a larger futures list straight to the CLI
+    (e.g. from a GitHub Actions matrix value) without mounting a config
+    file into the container.
+    """
+    return _futures_from_raw(json.loads(payload))

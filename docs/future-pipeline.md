@@ -155,10 +155,12 @@ automatically on changes to `packages/datafeed/` or `packages/future/` on
 `etf-ingestion.yml`, see
 [fx-pipeline.md](fx-pipeline.md#running-the-scheduled-ingestion)), so none
 of the five ever overlap. Like `benchmark-ingestion.yml`, there's no
-Saturday entry — `equicast-future` has no forecasting step (futures pay no
-dividends), so there's nothing for a weekly run to do here. Can also be
-triggered manually (Actions tab → *Future Ingestion* → *Run workflow*, any
-day) with these inputs:
+Saturday entry — `equicast-future` has no *dividend* forecasting step
+(futures pay no dividends), so there was nothing for a weekly run to do
+here. Issue #143 (see [Forecasting](#forecasting) below) added
+*price-band* forecasting, but it's not yet wired into this workflow
+either. Can also be triggered manually (Actions tab → *Future Ingestion*
+→ *Run workflow*, any day) with these inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -199,3 +201,15 @@ s3://equicast-market-data-<env>/
         ├── history.parquet   (written once by a --full-load run)
         └── current.parquet   (rewritten by every run)
 ```
+
+## Forecasting
+
+GitHub issue #143 added `equicast-forecasting` support for futures —
+`--asset-class future --forecast-kind price-bands` — routing each
+configured future's own `key` (e.g. `GOLD`) to one of 5 commodity-class
+schemas (Precious Metals, Energy, Industrial Metals, Grains, Softs) and
+writing `future=<KEY>/forecasting/price_bands.parquet`. Not wired into
+this workflow's scheduled runs; see
+[packages/forecasting/README.md](../packages/forecasting/README.md#futures-price-band-forecasting)
+for the full model. `--forecast-kind dividends` still doesn't apply here —
+futures pay no dividends.
