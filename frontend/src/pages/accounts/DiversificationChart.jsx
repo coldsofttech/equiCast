@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import "./DiversificationChart.css";
@@ -27,21 +27,19 @@ function scoreInfoFor(score) {
  * Bars grow in from zero on load rather than appearing at full width.
  * `data` is rebuilt (new array identity) on every render of the caller —
  * including ones unrelated to this chart, like an unrelated modal opening —
- * so re-running the reveal on identity change alone would replay it far
- * too often. Instead a content signature (label:pct pairs) is compared
- * against the previous one; the reveal only re-fires when that actually
- * differs, e.g. navigating to a different account/pie, or the Sector
- * chart's onRowClick filtering the Industry chart's rows.
+ * so the reveal is keyed off a content signature (label:pct pairs) rather
+ * than `data` itself: since `signature` is a plain string, React's own
+ * dependency comparison already skips the effect whenever it's unchanged,
+ * with no extra bookkeeping needed. The reveal only re-fires when the
+ * signature actually differs, e.g. navigating to a different account/pie,
+ * or the Sector chart's onRowClick filtering the Industry chart's rows.
  */
 function DiversificationChart({ title, caption, data, score, onRowClick, activeLabel }) {
   const scoreInfo = typeof score === "number" ? scoreInfoFor(score) : null;
   const signature = data.map((entry) => `${entry.label}:${entry.pct}`).join("|");
-  const prevSignatureRef = useRef(null);
   const [revealed, setRevealed] = useState(false);
 
   useEffect(() => {
-    if (prevSignatureRef.current === signature) return undefined;
-    prevSignatureRef.current = signature;
     setRevealed(false);
     const frame = requestAnimationFrame(() => setRevealed(true));
     return () => cancelAnimationFrame(frame);
