@@ -36,6 +36,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Custom error pages with animated icons: `NotFoundPage` (404, replacing
+  the previous silent redirect-to-dashboard for an unmatched route),
+  `AppErrorPage` (an unexpected render crash, rendered by a new
+  `ErrorBoundary` wrapping the whole routed app in `App.jsx`),
+  `OfflinePage` (rendered app-wide by a new `useOnlineStatus` hook
+  whenever `navigator.onLine` goes false, recovering automatically once
+  back online), and `ServiceUnavailablePage` (a network failure or
+  genuine 5xx on a page's own initial load, as opposed to a normal 4xx —
+  see the new `isServiceUnavailableError.js`; wired into `DashboardPage`
+  as the reference implementation via `useAccounts`'s new `errorStatus`
+  field). Each has its own hand-drawn, CSS-animated SVG icon
+  (`components/errors/*Icon.jsx`) built from equiCast's own candlestick/
+  price-line visual language — a trailing, searching chart line for 404;
+  a pulsing row of greyed candles for 503; a cracked, briefly-shaking
+  candle for the app-crash page; still, "trying" signal bars built as
+  candlestick bodies for offline — rather than generic icon-font/clip-art
+  imagery, all respecting `prefers-reduced-motion`. Every page reuses the
+  same standalone `ErrorPage` layout (just the brand mark + icon + plain-
+  language title/message/action), deliberately not wrapped in `AppShell`
+  since its own Topbar fetch is exactly the kind of call that can be
+  what's failing. No API Gateway/infra changes — these are frontend-only,
+  reused for API-level failures the same way DashboardPage's wiring shows.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

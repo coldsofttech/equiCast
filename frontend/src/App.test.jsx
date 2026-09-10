@@ -29,4 +29,19 @@ describe("App routing", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/auth0 isn't configured/i);
   });
+
+  it("shows OfflinePage instead of the routed app while offline", () => {
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("heading", { name: "You're offline" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+  });
 });
