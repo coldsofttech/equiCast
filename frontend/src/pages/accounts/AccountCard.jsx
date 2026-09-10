@@ -1,5 +1,6 @@
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import IconBadge from "../../components/core/IconBadge.jsx";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { computeHoldingValuation, summarizeHoldingValuations } from "../holdingValuation.js";
@@ -49,12 +50,15 @@ function AccountCard({ account, onClick, defaultCurrency }) {
       </div>
       <p className="ec-account-card-desc">{account.description}</p>
       <div className="ec-account-card-value">
-        <span className="ec-account-card-current">
+        <Balance className="ec-account-card-current">
           {formatCurrency(totals.currentValue, currency)}
-        </span>
+        </Balance>
         <span className={`ec-account-card-pl ${tone}`}>
-          {plSign}
-          {formatCurrency(Math.abs(totals.plValue), currency)} ({plSign}
+          <Balance>
+            {plSign}
+            {formatCurrency(Math.abs(totals.plValue), currency)}
+          </Balance>{" "}
+          ({plSign}
           {Math.abs(totals.plPct).toFixed(1)}%)
         </span>
       </div>

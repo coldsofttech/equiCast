@@ -10,9 +10,11 @@ from equicast_core.accounts import (
 )
 from equicast_core.client import (
     ASSET_CLASSES,
+    DEFAULT_CACHE_TTL_SECONDS,
     DEFAULT_PRICE_RANGE,
     PRICE_RANGES,
     MarketDataClient,
+    clear_cache,
 )
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
@@ -83,8 +85,10 @@ __all__ = [
     "TransactionsClient",
     "compute_holding_rollup",
     "ASSET_CLASSES",
+    "DEFAULT_CACHE_TTL_SECONDS",
     "DEFAULT_PRICE_RANGE",
     "PRICE_RANGES",
     "MarketDataClient",
     "UserProfileClient",
+    "clear_cache",
 ]

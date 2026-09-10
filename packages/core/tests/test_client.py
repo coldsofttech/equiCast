@@ -1,16 +1,31 @@
 import json
+import time
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from unittest.mock import MagicMock
 
 import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 from equicast_core.catalog import CATALOG_SCHEMA, upload_catalog
-from equicast_core.client import PRICE_RANGES, MarketDataClient
+from equicast_core.client import PRICE_RANGES, MarketDataClient, clear_cache
 from moto import mock_aws
 
 BUCKET = "equicast-market-data-test"
+
+
+@pytest.fixture(autouse=True)
+def _clear_market_data_cache():
+    """`_read_parquet`'s cache (see client.py) is module-level, shared by
+    every `MarketDataClient` instance in the process — without this, a
+    fresh moto-backed client in one test could silently "hit" a value a
+    differently-seeded earlier test left behind under the same S3 key
+    (e.g. two tests both writing "stock=AAPL/profile.parquet" with
+    different contents)."""
+    clear_cache()
+    yield
+    clear_cache()
 
 
 def _parquet_bytes(rows: list[dict]) -> bytes:
@@ -116,6 +131,17 @@ def test_get_profile_returns_none_when_key_missing(s3_client) -> None:
     assert client.get_profile("stock", "MISSING") is None
 
 
+def test_get_profile_drops_source_from_the_raw_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/profile.parquet",
+        Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc.", "source": "yfinance"}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_profile("stock", "AAPL") == {"ticker": "AAPL", "name": "Apple Inc."}
+
+
 def test_get_metrics_returns_the_single_row(s3_client) -> None:
     s3_client.put_object(
         Bucket=BUCKET,
@@ -131,6 +157,17 @@ def test_get_metrics_returns_none_when_key_missing(s3_client) -> None:
     client = MarketDataClient(BUCKET, s3_client=s3_client)
 
     assert client.get_metrics("stock", "MISSING") is None
+
+
+def test_get_metrics_drops_source_from_the_raw_row(s3_client) -> None:
+    s3_client.put_object(
+        Bucket=BUCKET,
+        Key="stock=AAPL/metrics.parquet",
+        Body=_parquet_bytes([{"volatility": 0.23, "source": "equicast"}]),
+    )
+    client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+    assert client.get_metrics("stock", "AAPL") == {"volatility": 0.23}
 
 
 def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
@@ -239,44 +276,28 @@ def test_get_dividends_combines_paid_declared_and_estimated_rows(s3_client) -> N
         "last_updated": "2026-08-30T09:00:03+00:00",
         "dividends": [
             {
-                "ticker": "AAPL",
-                "currency": "USD",
                 "ex_dividend_date": "2025-02-10",
                 "payment_date": None,
                 "price": 0.26,
                 "status": "paid",
-                "last_updated": "2026-08-30T09:00:00+00:00",
-                "source": "yfinance",
             },
             {
-                "ticker": "AAPL",
-                "currency": "USD",
                 "ex_dividend_date": "2026-02-10",
                 "payment_date": None,
                 "price": 0.26,
                 "status": "paid",
-                "last_updated": "2026-08-30T09:00:01+00:00",
-                "source": "yfinance",
             },
             {
-                "ticker": "AAPL",
-                "currency": "USD",
                 "ex_dividend_date": "2026-09-10",
                 "payment_date": "2026-09-20",
                 "price": 0.26,
                 "status": "declared",
-                "last_updated": "2026-08-30T09:00:02+00:00",
-                "source": "yfinance",
             },
             {
-                "ticker": "AAPL",
-                "currency": "USD",
                 "ex_dividend_date": "2026-12-10",
                 "payment_date": None,
                 "price": 0.26,
                 "status": "estimated",
-                "last_updated": "2026-08-30T09:00:03+00:00",
-                "source": "equicast",
             },
         ],
     }
@@ -459,7 +480,7 @@ class TestGetPrices:
         assert result["ticker"] == "VOO"
         assert result["currency"] == "USD"
         assert result["last_updated"] == rows[-1]["last_updated"]
-        assert result["source"] == "yfinance"
+        assert "source" not in result
         assert result["prices"] == [
             {
                 "date": r["date"],
@@ -478,7 +499,6 @@ class TestGetPrices:
             "ticker": "MISSING",
             "currency": None,
             "last_updated": None,
-            "source": None,
             "prices": [],
         }
 
@@ -1187,3 +1207,138 @@ class TestSearch:
         result = client.search("a", sector="Technology", industry="Semiconductors")
 
         assert {r["ticker"] for r in result} == {"NVDA"}
+
+
+class TestParquetCache:
+    def test_second_read_within_ttl_does_not_hit_s3_again(self, s3_client) -> None:
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc."}]),
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        first = client.get_profile("stock", "AAPL")
+
+        # Overwritten with different content — a cache hit should still
+        # return the first read's value, not this one.
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Something else entirely"}]),
+        )
+
+        assert client.get_profile("stock", "AAPL") == first
+
+    def test_cache_ttl_zero_disables_caching(self, s3_client) -> None:
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc."}]),
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client, cache_ttl_seconds=0)
+        client.get_profile("stock", "AAPL")
+
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Something else entirely"}]),
+        )
+
+        assert client.get_profile("stock", "AAPL")["name"] == "Something else entirely"
+
+    def test_cache_expires_after_its_ttl(self, s3_client) -> None:
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc."}]),
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client, cache_ttl_seconds=0.05)
+        client.get_profile("stock", "AAPL")
+
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Something else entirely"}]),
+        )
+        time.sleep(0.1)
+
+        assert client.get_profile("stock", "AAPL")["name"] == "Something else entirely"
+
+    def test_cache_is_shared_across_client_instances(self, s3_client) -> None:
+        # backend/*/views.py each construct their own independent
+        # MarketDataClient at import time — the cache has to be shared
+        # module-wide for warm_fx_cache() to actually benefit all of them.
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Apple Inc."}]),
+        )
+        first_client = MarketDataClient(BUCKET, s3_client=s3_client)
+        first = first_client.get_profile("stock", "AAPL")
+
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=AAPL/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "AAPL", "name": "Something else entirely"}]),
+        )
+        second_client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert second_client.get_profile("stock", "AAPL") == first
+
+    def test_a_confirmed_missing_key_is_cached_too(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        assert client.get_profile("stock", "MISSING") is None
+
+        # Published after the first (cached) miss — still None within the TTL.
+        s3_client.put_object(
+            Bucket=BUCKET,
+            Key="stock=MISSING/profile.parquet",
+            Body=_parquet_bytes([{"ticker": "MISSING", "name": "Now it exists"}]),
+        )
+
+        assert client.get_profile("stock", "MISSING") is None
+
+
+class TestWarmFxCache:
+    def test_prefetches_catalog_and_every_pairs_current_price(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "fx",
+            [
+                {"ticker": "GBPUSD", "name": "GBP/USD"},
+                {"ticker": "USDGBP", "name": "USD/GBP"},
+            ],
+        )
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "fx", "GBPUSD", year, [_fx_row(f"{year}-01-02", close=1.25)])
+        _put_year(s3_client, "fx", "USDGBP", year, [_fx_row(f"{year}-01-02", close=0.8)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        client.warm_fx_cache()
+
+        # Delete every underlying object — a cache miss would now come
+        # back empty/None, so a correct read here proves it came from the
+        # cache warm_fx_cache() populated, not a fresh S3 read.
+        s3_client.delete_object(Bucket=BUCKET, Key="catalog/fx.parquet")
+        s3_client.delete_object(Bucket=BUCKET, Key="fx=GBPUSD/price/current.parquet")
+        s3_client.delete_object(Bucket=BUCKET, Key="fx=USDGBP/price/current.parquet")
+
+        assert client.get_catalog("fx") != []
+        assert client.get_fx_rate_on_date("GBP", "USD", f"{year}-01-02") == 1.25
+
+    def test_never_raises_when_s3_fails(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        client._s3 = MagicMock()
+        client._s3.get_object.side_effect = RuntimeError("boom")
+        client._s3.exceptions.NoSuchKey = type("NoSuchKey", (Exception,), {})
+
+        client.warm_fx_cache()  # must not raise
+
+    def test_never_raises_when_a_pairs_price_fetch_fails(self, s3_client) -> None:
+        _put_catalog(s3_client, "fx", [{"ticker": "GBPUSD", "name": "GBP/USD"}])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        # No price/current.parquet published for GBPUSD at all — a
+        # confirmed-missing key, not an error, but exercises the same
+        # per-pair try/except path.
+
+        client.warm_fx_cache()  # must not raise

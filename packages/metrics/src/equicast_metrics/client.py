@@ -11,6 +11,7 @@ from equicast_datafeed import DatafeedClient, DatafeedError, round_value, warn_o
 
 from equicast_metrics.calculations import (
     annualized_volatility,
+    buy_sell_volume_pressure,
     cagr,
     max_drawdown,
     sharpe_ratio,
@@ -54,7 +55,11 @@ class MetricsClient:
 
     Works for any yfinance symbol - an FX pair (e.g. "GBPUSD=X") or a stock
     ticker (e.g. "AAPL") - since the underlying computation only needs a
-    daily close-price history, regardless of asset class.
+    daily close-price history, regardless of asset class. `fundamentals()`
+    is stock-only (raises for an FX pair) and `buy_sell_pressure()` is
+    stock/etf-only in practice (see its own docstring for why that's
+    enforced by which CLIs call it, not by this class) - `metrics()` alone
+    is the one method every asset class actually uses.
     """
 
     def __init__(self, symbol: str, datafeed: DatafeedClient | None = None) -> None:
@@ -132,3 +137,38 @@ class MetricsClient:
             "last_updated": datetime.now(UTC).isoformat(),
             "source": "equicast" if used_fallback else "yfinance",
         }
+
+    def buy_sell_pressure(self) -> dict[str, Any]:
+        """`{buyers_pct, sellers_pct}` — a Chaikin-Money-Flow-style buy/sell
+        volume-pressure gauge (see `equicast_metrics.calculations.
+        buy_sell_volume_pressure`) over the trailing `METRICS_WINDOW_YEARS`.
+
+        Unlike `fundamentals()`, this doesn't self-restrict via
+        `_is_fx_symbol` - it's only ever called from `equicast-stock`/
+        `equicast-etf`'s own CLIs (`equicast-benchmark`/`equicast-fx` never
+        call it), the same way `equicast-etf`'s CLI already skips
+        `fundamentals()` for being stock-only, without this class needing to
+        know that itself. There's no comparably self-evident "this symbol
+        isn't a real tradeable instrument" signal to gate on here the way an
+        FX pair's `"=X"` suffix is - a benchmark's symbol looks like any
+        other ticker.
+
+        No `last_updated`/`source` - unlike `metrics()`/`fundamentals()`,
+        this has no yfinance-reported equivalent to ever prefer over the
+        equicast-computed value, so a caller merging this into a
+        `metrics()` record can just take that record's own last_updated/
+        source as-is (see e.g. `equicast_stock.cli._metrics_task`)."""
+        history = self._datafeed.get_history(self.symbol, period="max")
+        if not {"High", "Low", "Close", "Volume"}.issubset(history.columns):
+            return {"buyers_pct": None, "sellers_pct": None}
+
+        # Same still-forming-trading-day guard as metrics() - a NaN close
+        # would otherwise poison the whole window via a NaN money-flow
+        # multiplier.
+        history = history.dropna(subset=["Close"])
+        window = trailing_window(history, METRICS_WINDOW_YEARS)
+
+        buyers_pct, sellers_pct = buy_sell_volume_pressure(
+            window["High"], window["Low"], window["Close"], window["Volume"]
+        )
+        return {"buyers_pct": buyers_pct, "sellers_pct": sellers_pct}

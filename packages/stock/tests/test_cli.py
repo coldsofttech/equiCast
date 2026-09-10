@@ -159,6 +159,10 @@ def _fake_metrics_client_factory(created: list[MagicMock] | None = None):
             "last_updated": "2026-08-30T09:00:01+00:00",
             "source": "yfinance",
         }
+        client.buy_sell_pressure.return_value = {
+            "buyers_pct": 0.62,
+            "sellers_pct": 0.38,
+        }
         if created is not None:
             created.append(client)
         return client
@@ -345,6 +349,7 @@ def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> No
     assert len(metrics_created) == 1
     metrics_created[0].metrics.assert_called_once_with()  # full_load doesn't affect metrics
     metrics_created[0].fundamentals.assert_called_once_with()
+    metrics_created[0].buy_sell_pressure.assert_called_once_with()
 
     # dividends() is always called with full_load=True regardless of run()'s own
     # full_load flag - see _profile_and_dividends_task's docstring for why (it
@@ -387,6 +392,8 @@ def test_run_combines_risk_metrics_and_fundamentals_into_one_metrics_parquet(
     assert metrics["ticker"] == "AAPL"
     assert metrics["volatility"] == 0.24  # from metrics()
     assert metrics["trailing_pe"] == 30.1  # from fundamentals()
+    assert metrics["buyers_pct"] == 0.62  # from buy_sell_pressure()
+    assert metrics["sellers_pct"] == 0.38
     # fundamentals() was fetched a moment after metrics(), so its
     # last_updated wins the merge; source stays "equicast" since metrics()
     # always reports that (see MetricsClient.metrics()'s docstring).

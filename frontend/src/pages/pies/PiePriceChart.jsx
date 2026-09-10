@@ -1,4 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
@@ -551,13 +552,13 @@ function PiePriceChart({
             {investedTotal != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
-                Total invested: {formatPrice(investedTotal, currency)}
+                Total invested: <Balance>{formatPrice(investedTotal, currency)}</Balance>
               </span>
             )}
             {currentValueTotal != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
-                Current value: {formatPrice(currentValueTotal, currency)}
+                Current value: <Balance>{formatPrice(currentValueTotal, currency)}</Balance>
               </span>
             )}
           </div>
@@ -584,7 +585,11 @@ function PiePriceChart({
                   y2={y}
                   className="ec-chart-gridline"
                 />
-                <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
+                <text
+                  x={PADDING_LEFT - 8}
+                  y={y}
+                  className={`ec-chart-axis-label ec-chart-yaxis-label${pctMode ? "" : " ec-balance"}`}
+                >
                   {pctMode
                     ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, currency)
                     : formatYAxisLabel(value, false, currency)}
@@ -697,10 +702,18 @@ function PiePriceChart({
           {hovered && (
             <div className="ec-chart-tooltip">
               <span className="ec-chart-tooltip-date">{hoveredLabel}</span>
-              <span>O {formatPrice(hovered.open, currency)}</span>
-              <span>H {formatPrice(hovered.high, currency)}</span>
-              <span>L {formatPrice(hovered.low, currency)}</span>
-              <span>C {formatPrice(hovered.close, currency)}</span>
+              <span>
+                O <Balance>{formatPrice(hovered.open, currency)}</Balance>
+              </span>
+              <span>
+                H <Balance>{formatPrice(hovered.high, currency)}</Balance>
+              </span>
+              <span>
+                L <Balance>{formatPrice(hovered.low, currency)}</Balance>
+              </span>
+              <span>
+                C <Balance>{formatPrice(hovered.close, currency)}</Balance>
+              </span>
             </div>
           )}
 
