@@ -58,6 +58,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`openCookiePreferences()`), since the banner mounted at the app root
   is the only thing that owns that panel's state.
 
+- Google Analytics (GA4), wired to the cookie banner's Analytics toggle
+  above via `hasAnalyticsConsent()`: a new `frontend/src/utils/
+  analytics.js` (`gaMeasurementId`/`isGaConfigured`, mirroring
+  `auth0Config.js`'s env-var pattern) dynamically loads GA's `gtag.js`
+  only once analytics consent is granted, and never at all if
+  `VITE_GA_MEASUREMENT_ID` is unset (see `frontend/.env.example`).
+  `cookieConsent.js`'s `setCookieConsent` now broadcasts a
+  `CONSENT_CHANGED_EVENT` (`ec:consent-changed`) on every choice, which
+  `analytics.js` listens for to flip Google's own `ga-disable-*` opt-out
+  flag live — switching Analytics off in preferences stops tracking
+  immediately, same session, no reload, and switching it back on resumes
+  it without re-injecting the script. `App.jsx` fires a pageview
+  (`trackPageview`) on every client-side route change (GA's own
+  automatic pageview is disabled via `send_page_view: false`, since it
+  assumes full page loads an SPA never does past the first one); five
+  custom events are fired at their real success points: `login`
+  (`Auth0ProviderWithNavigate.jsx`'s `onRedirectCallback` — fires only
+  once per real interactive sign-in, never on a restored cached session),
+  `search` (`SearchPage.jsx`), `account_created`
+  (`AccountsListPage.jsx`/`DashboardPage.jsx`, both places an account can
+  be created), `pie_created` (`CreatePortfolioDrawer.jsx`), and
+  `transaction_recorded` (`HoldingTickerPage.jsx`'s
+  `handleCreateTransaction`, covering BUY/SELL/DIVIDEND). The cookie
+  policy page and banner copy are updated to describe this instead of
+  the "equiCast doesn't use analytics today" placeholder text they had.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

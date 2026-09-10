@@ -71,11 +71,12 @@ function CookiePolicyPage() {
 
         <h2>Analytics — off by default</h2>
         <p>
-          equiCast doesn't use analytics or advertising cookies today — there's no tracking
-          pixel, no third-party analytics script, nothing measuring how you use the app beyond
-          equiCast's own servers logging the requests your browser already has to make it work.
-          The "Analytics" toggle in your preferences exists for if that ever changes; until it
-          does, turning it on or off has no effect, and it defaults to off either way.
+          equiCast uses <a href="https://policies.google.com/privacy">Google Analytics</a> to
+          understand how the app is used — page views as you navigate, plus a handful of specific
+          actions (signing in, searching, and creating an account, portfolio or transaction). It
+          only runs while the "Analytics" toggle in your preferences is on, defaults to off, and
+          stops immediately — within the same visit, no refresh needed — the moment you turn it
+          back off.
         </p>
 
         <h2>Changing your mind</h2>

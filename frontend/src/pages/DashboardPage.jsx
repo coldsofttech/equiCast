@@ -14,6 +14,7 @@ import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
 import { createAccount } from "../api/accounts.js";
 import { getSessionGreeting } from "../utils/greeting.js";
+import { trackEvent } from "../utils/analytics.js";
 import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleton.jsx";
 
 /**
@@ -55,6 +56,7 @@ function DashboardPage() {
       .then((account) => {
         setAccounts((current) => [...current, account]);
         closeCreate();
+        trackEvent("account_created", { account_type: account.account_type });
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't create the account."))
       .finally(() => setIsSaving(false));

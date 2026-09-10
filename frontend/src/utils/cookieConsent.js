@@ -1,5 +1,12 @@
 const STORAGE_KEY = "ec-cookie-consent";
 
+/** Broadcast whenever the visitor's consent choice changes, so anything
+ * already running in this tab (e.g. analytics.js) can react live instead
+ * of waiting for the next page load. Payload-less, same as CookieBanner's
+ * own `ec:open-cookie-preferences` — listeners re-read the new value via
+ * getCookieConsent()/hasAnalyticsConsent() rather than a `detail`. */
+export const CONSENT_CHANGED_EVENT = "ec:consent-changed";
+
 /**
  * The only real choice the cookie banner/preferences panel offers today —
  * see CookieBanner.jsx's own `CATEGORIES` and CookiePolicyPage.jsx for the
@@ -45,11 +52,11 @@ export function setCookieConsent(consent) {
     // choice just won't persist past this page load; CookieBanner will
     // simply ask again next time.
   }
+  window.dispatchEvent(new Event(CONSENT_CHANGED_EVENT));
 }
 
-/** Whether analytics-category storage is currently allowed — not wired to
- * anything yet (equiCast has no analytics integration today), but this is
- * what a future one should check before running. */
+/** Whether analytics-category storage is currently allowed — this is what
+ * analytics.js checks before loading/running Google Analytics. */
 export function hasAnalyticsConsent() {
   return getCookieConsent()?.analytics === true;
 }

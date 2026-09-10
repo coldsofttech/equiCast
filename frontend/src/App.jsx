@@ -1,4 +1,5 @@
-import { Navigate, Outlet, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import RequireAuth from "./auth/RequireAuth.jsx";
 import CookieBanner from "./components/cookies/CookieBanner.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
@@ -8,8 +9,19 @@ import PieDetailPage from "./pages/pies/PieDetailPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
 import HoldingTickerPage from "./pages/holdings/HoldingTickerPage.jsx";
 import CookiePolicyPage from "./pages/CookiePolicyPage.jsx";
+import { initAnalytics, trackPageview } from "./utils/analytics.js";
 
 function App() {
+  const location = useLocation();
+
+  useEffect(() => {
+    initAnalytics();
+  }, []);
+
+  useEffect(() => {
+    trackPageview(location.pathname + location.search);
+  }, [location]);
+
   return (
     <>
       <Routes>

@@ -1,6 +1,7 @@
 import { Auth0Provider } from "@auth0/auth0-react";
 import { useNavigate } from "react-router-dom";
 import { auth0Audience, auth0ClientId, auth0Domain, isAuth0Configured } from "./auth0Config.js";
+import { trackEvent } from "../utils/analytics.js";
 
 /**
  * Must render inside <BrowserRouter> (it calls useNavigate) and wrap
@@ -29,6 +30,7 @@ function Auth0ProviderWithNavigate({ children }) {
   }
 
   const onRedirectCallback = (appState) => {
+    trackEvent("login", { method: "auth0" });
     navigate(appState?.returnTo ?? window.location.pathname, { replace: true });
   };
 

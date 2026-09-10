@@ -3,6 +3,7 @@ import Drawer from "../../components/core/Drawer.jsx";
 import PieForm from "../pies/PieForm.jsx";
 import { useApi } from "../../api/useApi.js";
 import { createPie } from "../../api/pies.js";
+import { trackEvent } from "../../utils/analytics.js";
 
 /**
  * "New portfolio" drawer, opened from AccountDetailPage just before the
@@ -28,6 +29,7 @@ function CreatePortfolioDrawer({ open, accountId, onClose, onCreated }) {
       .then((created) => {
         onCreated(created);
         handleClose();
+        trackEvent("pie_created");
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't create the portfolio."))
       .finally(() => setIsSaving(false));

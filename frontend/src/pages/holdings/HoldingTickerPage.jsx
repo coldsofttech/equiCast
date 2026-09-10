@@ -46,6 +46,7 @@ import {
 import { formatCurrency, plTone } from "../sampleFinancials.js";
 import { formatSyncedDate } from "../holdingValuation.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import { trackEvent } from "../../utils/analytics.js";
 import "./HoldingTickerPage.css";
 
 /** Page size for every listTransactions call this page makes — matches
@@ -360,7 +361,10 @@ function HoldingTickerPage() {
 
   const handleCreateTransaction = (holdingId, fields) =>
     createTransaction(api, { holding_id: holdingId, ...fields }).then((transaction) =>
-      refreshHoldingAfterMutation(holdingId).then(() => transaction)
+      refreshHoldingAfterMutation(holdingId).then(() => {
+        trackEvent("transaction_recorded", { type: fields.type });
+        return transaction;
+      })
     );
 
   const handleUpdateTransaction = (holdingId, transactionId, fields) =>
