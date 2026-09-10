@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `packages/etf`'s `events.parquet` schemas gain the three matching
   columns.
 
+  The toggle is disabled for 1Y and every longer range (1Y/2Y/3Y/5Y/10Y/
+  MAX) — a full history's worth of events still all lands somewhere
+  on-screen regardless of range, but the number of distinct bars they can
+  spread across shrinks as the range grows, piling them into dense,
+  unreadable columns beyond 6M/YTD. Switching to a disabled range while
+  events are on turns them back off automatically.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

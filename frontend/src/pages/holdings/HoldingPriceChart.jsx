@@ -64,6 +64,15 @@ const RANGES = [
 const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
 const VERY_LONG_RANGES = new Set(["10y", "max"]);
 
+/** Ranges "Key events" is disabled for — a bar's own event count doesn't
+ * shrink as the range grows (a full trading history's worth of quarterly
+ * earnings/analyst-rating actions all still fall somewhere on-screen), but
+ * the number of *bars* they can spread across does, since every range
+ * renders the same fixed plot width. Beyond 6M/YTD, events land on so few
+ * distinct bars that `positionedEvents`' same-bar stacking piles them into
+ * dense, unreadable columns rather than a scattering of individual dots. */
+const EVENTS_DISABLED_RANGES = new Set(["1y", "2y", "3y", "5y", "10y", "max"]);
+
 function formatAxisDate(dateStr, rangeId) {
   const d = new Date(dateStr);
   if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
@@ -201,6 +210,14 @@ const X_AXIS_MAX_TICKS = 6;
  * layout math, and the tooltip's own JSX for what's shown per
  * `event_type`.
  *
+ * Disabled (see `EVENTS_DISABLED_RANGES`) for 1Y and every longer range —
+ * a full trading history's worth of events still all lands somewhere
+ * on-screen no matter the range, but the number of distinct bars they can
+ * spread across shrinks as the range grows, so beyond 6M/YTD they pile
+ * into dense, unreadable columns rather than scattering into individual
+ * dots. Switching to a disabled range while events are on turns them back
+ * off automatically.
+ *
  * @param {{ assetClass: string, ticker: string, currency: string|null, avgPrice?: number|null, currentPrice?: number|null }} props
  */
 function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, currentPrice = null }) {
@@ -284,6 +301,18 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [showEvents, setShowEvents] = useState(false);
   const [events, setEvents] = useState(null);
   const [hoveredEvent, setHoveredEvent] = useState(null);
+  const eventsAllowed = !EVENTS_DISABLED_RANGES.has(rangeId);
+
+  // Switching to a range Key events is disabled for turns it back off
+  // (rather than just hiding the already-on toggle's dots) so flipping
+  // back to an allowed range later starts from its normal off-by-default
+  // state, not a stale "on" the viewer never actually chose there.
+  useEffect(() => {
+    if (!eventsAllowed && showEvents) {
+      setShowEvents(false);
+      setHoveredEvent(null);
+    }
+  }, [eventsAllowed, showEvents]);
 
   useEffect(() => {
     if (!showEvents) return undefined;
@@ -550,10 +579,14 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
-        <label className="ec-pchart-events-toggle">
+        <label
+          className={`ec-pchart-events-toggle${eventsAllowed ? "" : " is-disabled"}`}
+          title={eventsAllowed ? undefined : "Key events are only shown for 6M, YTD, 1M and 1W ranges"}
+        >
           <input
             type="checkbox"
             checked={showEvents}
+            disabled={!eventsAllowed}
             onChange={(event) => {
               setShowEvents(event.target.checked);
               if (!event.target.checked) setHoveredEvent(null);

@@ -134,11 +134,38 @@ describe("HoldingPriceChart", () => {
 
     expect(getEvents).not.toHaveBeenCalled();
 
+    // Key events is disabled on the default "max" range (see
+    // EVENTS_DISABLED_RANGES) — switch to an allowed one first.
+    fireEvent.click(screen.getByRole("button", { name: "6M" }));
     fireEvent.click(screen.getByLabelText("Key events"));
 
     await waitFor(() =>
       expect(getEvents).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL")
     );
+  });
+
+  it("disables the Key events toggle on long ranges and turns it back off when switching to one", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+    vi.mocked(getEvents).mockResolvedValue({ ticker: "AAPL", last_updated: null, events: [] });
+
+    render(<HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />);
+
+    // Default range is "max" — disabled.
+    expect(screen.getByLabelText("Key events")).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "6M" }));
+    expect(screen.getByLabelText("Key events")).toBeEnabled();
+
+    fireEvent.click(screen.getByLabelText("Key events"));
+    await waitFor(() => expect(getEvents).toHaveBeenCalled());
+    expect(screen.getByLabelText("Key events")).toBeChecked();
+
+    // Switching to a disabled range (1Y) turns events back off rather than
+    // leaving the now-inaccessible toggle stuck checked.
+    fireEvent.click(screen.getByRole("button", { name: "1Y" }));
+    expect(screen.getByLabelText("Key events")).toBeDisabled();
+    expect(screen.getByLabelText("Key events")).not.toBeChecked();
   });
 
   it("plots a marker for an in-range event and shows its details on hover", async () => {
@@ -172,6 +199,7 @@ describe("HoldingPriceChart", () => {
     const { container } = render(
       <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
     );
+    fireEvent.click(screen.getByRole("button", { name: "6M" }));
     fireEvent.click(screen.getByLabelText("Key events"));
 
     const dot = await waitFor(() => {
@@ -217,6 +245,7 @@ describe("HoldingPriceChart", () => {
     const { container } = render(
       <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
     );
+    fireEvent.click(screen.getByRole("button", { name: "6M" }));
     fireEvent.click(screen.getByLabelText("Key events"));
 
     await waitFor(() => expect(getEvents).toHaveBeenCalled());

@@ -120,6 +120,15 @@
   user-select: none;
 }
 
+.ec-pchart-events-toggle.is-disabled {
+  color: var(--ec-text-subtle);
+  cursor: not-allowed;
+}
+
+.ec-pchart-events-toggle.is-disabled .ec-pchart-events-toggle-track {
+  opacity: 0.5;
+}
+
 .ec-pchart-events-toggle input {
   position: absolute;
   width: 1px;
