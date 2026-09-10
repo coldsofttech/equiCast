@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
@@ -211,7 +211,18 @@ async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
  * dashed / accent info dashed respectively) the same way HoldingPriceChart
  * treats avg buy price/current price — including in pctMode, log-scaled via
  * their own ratio to the first bar's close, so they stay meaningful and
- * on-screen even while comparing.
+ * on-screen even while comparing. They get the same continuously-flowing
+ * dash animation too (ec-chart-avg-line/ec-chart-current-line,
+ * HoldingPriceChart.css — already imported here, so no extra CSS needed).
+ *
+ * A range switch doesn't blank the view while the new bars load, the main
+ * line draws in left-to-right, the area fill fades+rises in, and the
+ * compare/benchmark overlay gets its own clip-path draw-in — all identical
+ * to HoldingPriceChart.jsx's own animation (see that component's docstring
+ * for the full reasoning); this just ports the same mainLineRef/revision/
+ * compareClipRectRef mechanics since PiePriceChart has its own separate
+ * fetch effect and JSX, not anything HoldingPriceChart's CSS import alone
+ * could cover. No candle-reveal case, since this chart has no Candles type.
  *
  * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, entityLabel?: string, compareItems?: { id: string, name: string }[], compareItemType?: "pie"|"account", fetchCompareHoldings: (refId: string) => Promise<import("../../api/accounts.js").Holding[]>, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
  */
@@ -231,6 +242,9 @@ function PiePriceChart({
   const [rangeId, setRangeId] = useState("max");
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+  const mainLineRef = useRef(null);
+  const compareClipId = useId();
+  const compareClipRectRef = useRef(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
 
   useLayoutEffect(() => {
@@ -247,6 +261,12 @@ function PiePriceChart({
   const [bars, setBars] = useState([]);
   const [status, setStatus] = useState("loading");
 
+  // Bumped each time a fetch actually lands new bars — mirrors
+  // HoldingPriceChart's own `revision`, driving the reveal animations
+  // (mainLineRef's effect and ec-chart-reveal below) so they only replay
+  // once there's really a new curve to draw.
+  const [revision, setRevision] = useState(0);
+
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
@@ -255,11 +275,17 @@ function PiePriceChart({
       if (cancelled) return;
       setBars(aggregated);
       setStatus(aggregated.length > 0 ? "ok" : "empty");
+      setRevision((r) => r + 1);
     });
     return () => {
       cancelled = true;
     };
   }, [api, holdings, rangeId, currency]);
+
+  // Nothing above clears `bars` while a range switch is in flight, so this
+  // keeps reading the previous range's chart right up until the new one
+  // lands — see the "is-refreshing" wrapper below.
+  const hasData = bars.length > 0;
 
   const [compare, setCompare] = useState({ id: "", type: null, refId: null, label: null });
   const [compareBars, setCompareBars] = useState(null);
@@ -415,6 +441,44 @@ function PiePriceChart({
   });
   const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
 
+  // "Draws" the main line across the plot on every new revision — see
+  // HoldingPriceChart.jsx's identical effect for the full reasoning
+  // (stroke-dasharray/dashoffset, handed off to CSS's `transition:
+  // stroke-dashoffset` on .ec-chart-line, styles/chart.css).
+  useLayoutEffect(() => {
+    const el = mainLineRef.current;
+    if (!el || typeof el.getTotalLength !== "function") return;
+    let length;
+    try {
+      length = el.getTotalLength();
+    } catch {
+      return;
+    }
+    if (!length) return;
+    el.style.transitionProperty = "none";
+    el.style.strokeDasharray = `${length}`;
+    el.style.strokeDashoffset = `${length}`;
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.style.strokeDashoffset = "0";
+  }, [revision]);
+
+  // Same left-to-right draw-in for the compare/benchmark overlay as
+  // HoldingPriceChart.jsx's own compareClipRectRef effect — a growing
+  // clip-path rect rather than mainLineRef's stroke-dasharray trick, since
+  // this line keeps a real dasharray (.ec-pchart-compare-line,
+  // accounts/PriceChart.css) that trick would otherwise flatten.
+  useLayoutEffect(() => {
+    const el = compareClipRectRef.current;
+    if (!el) return;
+    el.style.transitionProperty = "none";
+    el.setAttribute("width", "0");
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.setAttribute("width", String(Math.max(plotWidth, 0)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparePctPath]);
+
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
@@ -456,7 +520,7 @@ function PiePriceChart({
         ))}
       </div>
 
-      {status === "loading" && <p className="ec-loading">Loading price history…</p>}
+      {status === "loading" && !hasData && <p className="ec-loading">Loading price history…</p>}
       {status === "empty" && (
         <p className="ec-chart-caption">
           No price history to chart yet — this needs at least one holding with shares and published
@@ -464,8 +528,8 @@ function PiePriceChart({
         </p>
       )}
 
-      {status === "ok" && (
-        <>
+      {(status === "ok" || (status === "loading" && hasData)) && (
+        <div className={`ec-pchart-chart${status === "loading" ? " is-refreshing" : ""}`}>
           <div className="ec-pchart-legend">
             <span className="ec-pchart-legend-item">
               <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
@@ -553,8 +617,29 @@ function PiePriceChart({
                   y2={yFor(0)}
                   className="ec-chart-zero-line"
                 />
-                <path d={pctLinePath} className="ec-chart-line" fill="none" />
-                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                <path ref={mainLineRef} d={pctLinePath} className="ec-chart-line" fill="none" />
+                {comparePctPath && (
+                  <>
+                    <defs>
+                      <clipPath id={compareClipId}>
+                        <rect
+                          ref={compareClipRectRef}
+                          className="ec-chart-compare-clip"
+                          x={PADDING_LEFT}
+                          y={PADDING_TOP}
+                          width={plotWidth}
+                          height={plotHeight}
+                        />
+                      </clipPath>
+                    </defs>
+                    <path
+                      d={comparePctPath}
+                      className="ec-pchart-compare-line"
+                      fill="none"
+                      clipPath={`url(#${compareClipId})`}
+                    />
+                  </>
+                )}
                 {investedLog != null && (
                   <line
                     x1={PADDING_LEFT}
@@ -576,8 +661,12 @@ function PiePriceChart({
               </>
             ) : (
               <>
-                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
-                <path d={linePath} className="ec-chart-line" fill="none" />
+                {chartType === "area" && (
+                  <g className="ec-chart-reveal" key={revision}>
+                    <path d={areaPath} className="ec-pchart-area" />
+                  </g>
+                )}
+                <path ref={mainLineRef} d={linePath} className="ec-chart-line" fill="none" />
                 {investedTotal != null && (
                   <line
                     x1={PADDING_LEFT}
@@ -644,7 +733,7 @@ function PiePriceChart({
               label={entityLabel}
             />
           )}
-        </>
+        </div>
       )}
     </Card>
   );
