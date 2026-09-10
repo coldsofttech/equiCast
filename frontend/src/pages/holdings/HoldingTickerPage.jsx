@@ -216,7 +216,11 @@ function HoldingTickerPage() {
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
-    const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
+    // fx has no dividends concept (see api/market.js's getDividends jsdoc) —
+    // skip the request entirely rather than hitting the endpoint just to
+    // discard the result.
+    const dividendsPromise =
+      assetClass === "fx" ? Promise.resolve(null) : getDividends(api, assetClass, ticker).catch(() => null);
 
     // Page 1 (50 items, most-recent-date-first — see backend/transactions/
     // views.py's TransactionListView.get) per instance, IndexedDB-cached so
