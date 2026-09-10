@@ -1,0 +1,50 @@
+.ec-watchlist-section {
+  margin-top: var(--ec-s-24);
+}
+
+.ec-card.ec-watchlist-panel {
+  padding: 0;
+  overflow: hidden;
+}
+
+.ec-watchlist-panel .ec-tabs {
+  padding: 0 var(--ec-s-16);
+}
+
+.ec-watchlist-tab-content {
+  padding: var(--ec-s-16);
+}
+
+.ec-watchlist-tab-actions {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--ec-s-12);
+  margin-bottom: var(--ec-s-16);
+}
+
+.ec-watchlist-tab-desc {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  margin: 0;
+}
+
+.ec-watchlist-tab-buttons {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-4);
+  margin-left: auto;
+}
+
+.ec-watchlist-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-12);
+  flex-shrink: 0;
+}
+
+.ec-watchlist-holding-hint {
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-13);
+  margin: 0 0 var(--ec-s-16);
+}

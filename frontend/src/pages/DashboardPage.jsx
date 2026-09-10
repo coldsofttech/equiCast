@@ -8,6 +8,7 @@ import EmptyState from "../components/core/EmptyState.jsx";
 import Drawer from "../components/core/Drawer.jsx";
 import AccountCard from "./accounts/AccountCard.jsx";
 import AccountForm from "./accounts/AccountForm.jsx";
+import WatchlistsPanel from "./watchlists/WatchlistsPanel.jsx";
 import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
@@ -91,6 +92,8 @@ function DashboardPage() {
           ))}
         </div>
       )}
+
+      <WatchlistsPanel />
 
       <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
         <AccountForm

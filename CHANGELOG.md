@@ -122,6 +122,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `AccountDetailPage`'s title, `AccountsListPage`'s table rows, and
   `AccountCard`'s dashboard cards.
 
+- A fifth ingestion pipeline, `equicast-future` (`packages/future`), for
+  futures contracts (Gold, Silver, Platinum, Palladium, WTI/Brent Crude,
+  Natural Gas, Heating Oil, Copper, Aluminum, Wheat, Corn, Soybeans,
+  Coffee, Cotton, Sugar — 16 total, same list in both dev and prod
+  configs) — mirrors `equicast-benchmark` exactly (a future is a single
+  yfinance symbol, no dividends/fundamentals), landing as `future=<KEY>/
+  {profile,metrics,price}.parquet` in the shared market-data bucket and a
+  `catalog/future.parquet` search catalog. `future-ingestion.yml` runs
+  once daily on weekdays at 23:15 UTC, 15 minutes after
+  `benchmark-ingestion.yml` (`fx > etf > stock > benchmark > future`, none
+  ever overlap). Like a benchmark, a future isn't directly holdable in a
+  pie/account/watchlist — `equicast_core.client.ASSET_CLASSES` gained
+  `"future"` as an opt-in-only search class (not part of
+  `DEFAULT_SEARCH_ASSET_CLASSES`), and `equicast_core.catalog`'s
+  `--asset-class` choices gained it too; no change to
+  `backend/holdings/views.py`'s own (narrower) holdable-asset-class set.
+
+- A watchlists panel on `/dashboard` (`WatchlistsPanel`, below the accounts
+  grid), tabbed across five system-default watchlists (Global Markets, Top
+  Winners, Top Losers, Top Winners/Losers within your accounts — always
+  present, always first, holdings empty for now; how each actually gets
+  populated is deliberately separate, not-yet-built work) followed by the
+  caller's own custom watchlists. Custom watchlists reuse the
+  already-existing `WatchlistsClient`/`backend/watchlists` CRUD (capped at
+  `MAX_WATCHLISTS`, 5) — `GET /api/watchlists/` now returns one merged list
+  (system + custom, each tagged `type`), with every custom watchlist's
+  holdings nested and enriched the same way `PieListView.get` nests a pie's.
+  Adding/removing a custom watchlist's holdings goes through the existing
+  `POST`/`DELETE /api/holdings/` with `watchlist_id` (already supported
+  server-side, just not previously used from the frontend) rather than any
+  new endpoint. New generic `Tabs` component (`components/core/Tabs.jsx`).
+  Per-watchlist holding caps (`MAX_HOLDINGS_FOR_WATCHLIST`, already a
+  GitHub Environment variable wired into terraform) aren't yet set to
+  different dev/prod values — that's a config change, not code.
+
 - The holding page's benchmark comparison now also shows a real 0-100
   "Rating vs <benchmark>" score (`HoldingBenchmarkRating`, rendered by
   `HoldingPriceChart` whenever `HoldingComparePicker`'s selection is a
