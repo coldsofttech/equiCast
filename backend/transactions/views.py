@@ -60,17 +60,19 @@ _DIVIDEND_FIELDS = {
     },
 }
 
-#: Fields a caller may PATCH — again, native values only; the converted
-#: counterpart is recomputed server-side whenever a native value or `date`
+#: Fields a caller may PATCH — native values plus `fx_rate` (GitHub issue
+#: #149 — the only non-native field a caller may ever submit, since it's
+#: an override, not a computed value); the converted counterpart is
+#: recomputed server-side whenever a native value, `date`, or `fx_rate`
 #: changes (see `TransactionDetailView.patch`).
-UPDATABLE_FIELDS = {"no_of_shares", "average_price_native", "date", "amount_native"}
+UPDATABLE_FIELDS = {"no_of_shares", "average_price_native", "date", "amount_native", "fx_rate"}
 
 #: Monetary/quantity fields that must always be stored (and returned) as a
 #: JSON number, never whatever type the caller's request body happened to
 #: carry (a controlled `<input type="number">` posts its value as a string)
 #: — coerced via `_coerce_numeric_fields` right after `build_transaction_fields`/
 #: `TransactionDetailView.patch` accept the raw payload.
-_NUMERIC_FIELDS = {"no_of_shares", "average_price_native", "price_native", "amount_native"}
+_NUMERIC_FIELDS = {"no_of_shares", "average_price_native", "price_native", "amount_native", "fx_rate"}
 
 
 def _coerce_numeric_fields(fields: dict[str, Any]) -> dict[str, Any]:
@@ -174,7 +176,13 @@ def build_transaction_fields(
 
     `type` must be `"BUY"` (either mode), `"SELL"` (`TRANSACTION` mode
     only), or `"DIVIDEND"` (either mode, same field shape regardless of
-    mode — see `_DIVIDEND_FIELDS`)."""
+    mode — see `_DIVIDEND_FIELDS`).
+
+    `fx_rate` (GitHub issue #149) is accepted for every type/mode
+    combination, always optional — unlike `average_price`/`price`/`amount`
+    it's never in a shape's `disallowed` set, since it's a real caller-
+    supplied override, not a server-computed value; see
+    `resolve_converted_amounts`."""
     allowed_types = {"BUY", "DIVIDEND"} if mode == "AVERAGE" else TRANSACTION_ACTIONS
     if data.get("type") not in allowed_types:
         return None, f"Invalid type '{data.get('type')}' for {mode} mode."
@@ -193,6 +201,7 @@ def build_transaction_fields(
             "average_price_native": data.get("average_price_native"),
             "price_native": data.get("price_native"),
             "amount_native": data.get("amount_native"),
+            "fx_rate": data.get("fx_rate"),
             "date": data.get("date"),
             "type": data.get("type"),
         }
@@ -202,29 +211,40 @@ def build_transaction_fields(
 def resolve_converted_amounts(
     holding: dict[str, Any], default_currency: str, fields: dict[str, Any]
 ) -> dict[str, Any]:
-    """Return `fields` with its converted counterpart(s)
+    """Return `fields` with `fx_rate` and its converted counterpart(s)
     (`average_price`/`price`/`amount`) filled in from whichever native
     value(s) (`average_price_native`/`price_native`/`amount_native`) it
-    carries and `fields["date"]`, using the historical FX rate between the
-    holding's own native currency (its market profile's `currency`) and
-    `default_currency` on that date (`MarketDataClient.get_fx_rate_on_date`).
+    carries.
 
-    A converted value is `None` whenever it can't be resolved — no market
+    If `fields` already carries an `fx_rate` (GitHub issue #149 — the
+    caller overriding the rate themselves), that value is used directly
+    and no FX lookup happens at all. Otherwise the rate is auto-resolved
+    from the historical FX rate between the holding's own native currency
+    (its market profile's `currency`) and `default_currency`, on
+    `fields["date"]` (`MarketDataClient.get_fx_rate_on_date`). Either way,
+    the *effective* rate used lands in `result["fx_rate"]` — `None` when
+    neither an override nor an auto-resolve produced one (no market
     profile for this holding's ticker, no `date` given, or no FX rate
-    published for that currency combination on or before that date. The
-    transaction is still recorded in that case, just without a converted
-    figure (see equicast_core.transactions module docstring) — this never
-    raises."""
-    market_profile = _market_data_client.get_profile(holding["asset_class"], holding["ticker"])
-    native_currency = market_profile.get("currency") if market_profile else None
+    published for that currency combination on or before that date).
 
-    rate = None
-    if native_currency and fields.get("date"):
-        rate = _market_data_client.get_fx_rate_on_date(
-            native_currency, default_currency, fields["date"]
-        )
+    A converted value is `None` whenever `fx_rate` couldn't be resolved.
+    The transaction is still recorded in that case, just without a
+    converted figure (see equicast_core.transactions module docstring) —
+    this never raises."""
+    override = fields.get("fx_rate")
+    if override is not None:
+        rate = float(override)
+    else:
+        market_profile = _market_data_client.get_profile(holding["asset_class"], holding["ticker"])
+        native_currency = market_profile.get("currency") if market_profile else None
+        rate = None
+        if native_currency and fields.get("date"):
+            rate = _market_data_client.get_fx_rate_on_date(
+                native_currency, default_currency, fields["date"]
+            )
 
     result = dict(fields)
+    result["fx_rate"] = rate
     for native_key, converted_key in (
         ("average_price_native", "average_price"),
         ("price_native", "price"),
@@ -308,9 +328,9 @@ class TransactionListView(APIView):
         except TransactionAmountError:
             return Response(
                 {
-                    "detail": "no_of_shares/average_price_native/price_native/amount_native "
-                    "must be positive numbers, date is required, and type must be valid for "
-                    "this mode."
+                    "detail": "no_of_shares/average_price_native/price_native/amount_native/"
+                    "fx_rate must be positive numbers, date is required, and type must be "
+                    "valid for this mode."
                 },
                 status=400,
             )
@@ -368,11 +388,17 @@ class TransactionDetailView(APIView):
             {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
         )
 
-        # A native value or the date changing both mean the converted
-        # figure needs recomputing — merge onto the existing record first
-        # so e.g. a date-only patch still recomputes using the record's
-        # already-recorded native value, not a missing one.
-        if fields.keys() & {"date", "average_price_native", "amount_native"}:
+        # A native value, the date, or fx_rate changing all mean the
+        # converted figure needs recomputing — merge onto the existing
+        # record first so e.g. a date-only patch still recomputes using
+        # the record's already-recorded native value, not a missing one.
+        # `fx_rate` is deliberately *not* carried forward from the
+        # existing record when this patch doesn't touch it — an earlier
+        # override was a one-time decision for that save; changing the
+        # date/native value without resubmitting fx_rate re-auto-resolves
+        # fresh rather than silently reapplying a stale override to a
+        # different date (see equicast_core.transactions module docstring).
+        if fields.keys() & {"date", "average_price_native", "amount_native", "fx_rate"}:
             try:
                 existing = _client.get_transaction(user_id, holding_id, transaction_id)
             except TransactionNotFoundError:
@@ -387,8 +413,11 @@ class TransactionDetailView(APIView):
                 "date": fields.get("date", existing["date"]),
                 native_key: fields.get(native_key, existing.get(native_key)),
             }
+            if "fx_rate" in fields:
+                merged["fx_rate"] = fields["fx_rate"]
             resolved = resolve_converted_amounts(holding, profile["default_currency"], merged)
             fields[converted_key] = resolved[converted_key]
+            fields["fx_rate"] = resolved["fx_rate"]
 
         try:
             transaction = _client.update_transaction(
@@ -399,8 +428,8 @@ class TransactionDetailView(APIView):
         except TransactionAmountError:
             return Response(
                 {
-                    "detail": "no_of_shares/average_price_native/amount_native must be "
-                    "positive numbers."
+                    "detail": "no_of_shares/average_price_native/amount_native/fx_rate must "
+                    "be positive numbers."
                 },
                 status=400,
             )

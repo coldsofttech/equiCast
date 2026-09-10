@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppShell from "../components/shell/AppShell.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
@@ -12,6 +12,7 @@ import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
 import { createAccount } from "../api/accounts.js";
+import { warmFxRates } from "../utils/fxWarmup.js";
 
 /**
  * The landing page once signed in (App.jsx redirects "/" and unknown
@@ -22,12 +23,22 @@ import { createAccount } from "../api/accounts.js";
  * which owns viewing/editing/deleting a specific account — but the empty state's
  * "Create an account" opens the same drawer AccountsListPage uses right
  * here, instead of a redirect + a second button click over there.
+ *
+ * Also the trigger point for the login-time FX warm-up (GitHub issue #149,
+ * see utils/fxWarmup.js) — this is the first page every signed-in user
+ * lands on, and by the time `profile` has loaded here the warm-up can run
+ * silently in the background well before the user ever reaches a
+ * transaction form.
  */
 function DashboardPage() {
   const api = useApi();
   const navigate = useNavigate();
   const { profile } = useCurrentUser();
   const { accounts, isLoading, error: loadError, setAccounts } = useAccounts();
+
+  useEffect(() => {
+    if (profile) warmFxRates(api, profile);
+  }, [api, profile]);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);

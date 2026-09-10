@@ -58,25 +58,31 @@ Every monetary field comes in a native/converted pair: `average_price_native`/
 holding's own native currency — an instrument's trading currency, or a
 DIVIDEND's payout currency, same thing); `average_price`/`price`/`amount`
 are that same figure converted to the user's `default_currency` (see
-`UserProfileClient`) as of the transaction's `date`, using the historical
-FX rate for that date. Resolving *that* conversion — the user's
-`default_currency`, the holding's native currency, and the FX lookup
-itself (`MarketDataClient.get_fx_rate_on_date`) — is entirely the caller's
-job (`backend/transactions/views.py`), the same way `mode` resolution is;
-`TransactionsClient` only ever stores whatever converted value it's given,
-`None` when the caller couldn't resolve one (e.g. no FX pair published for
-that currency combination on that date) — a transaction is still recorded
-in that case, just without a converted figure.
+`UserProfileClient`) as of the transaction's `date`, using `fx_rate` — the
+historical FX rate for that date and currency pair by default, or a
+caller-supplied override (GitHub issue #149: the user can see and correct
+the rate a transaction actually used). Resolving *that* conversion — the
+user's `default_currency`, the holding's native currency, whether to
+auto-resolve via `MarketDataClient.get_fx_rate_on_date` or use an
+override, and the FX lookup itself — is entirely the caller's job
+(`backend/transactions/views.py`), the same way `mode` resolution is;
+`TransactionsClient` only ever stores whatever `fx_rate`/converted value
+it's given, unconditionally (every type, not just BUY/SELL — see
+`create_transaction`), `None` when the caller couldn't resolve one (e.g.
+no FX pair published for that currency combination on that date) — a
+transaction is still recorded in that case, just without a converted
+figure.
 
-Every record has the same stable shape regardless of mode/type (all ten of
-`no_of_shares`/`average_price_native`/`average_price`/`price_native`/
-`price`/`amount_native`/`amount`/`date`/`type` are always present, `None`
-where not applicable) — the same "stable shape rather than sometimes-
-absent keys" reasoning `HoldingsClient` uses for its three parent-id
-fields. `date` is mandatory on every record now — a legacy `AVERAGE`-mode
-record predating this may still have `date: None`; treated as "no date on
-record" rather than backfilled. `list_transactions`'s `year`/`date_from`/
-`date_to` filters skip any record whose `date` is `None`.
+Every record has the same stable shape regardless of mode/type (all
+eleven of `no_of_shares`/`average_price_native`/`average_price`/
+`price_native`/`price`/`amount_native`/`amount`/`fx_rate`/`date`/`type`
+are always present, `None` where not applicable) — the same "stable shape
+rather than sometimes-absent keys" reasoning `HoldingsClient` uses for its
+three parent-id fields. `date` is mandatory on every record now — a
+legacy `AVERAGE`-mode record predating this may still have `date: None`;
+treated as "no date on record" rather than backfilled. `list_transactions`'s
+`year`/`date_from`/`date_to` filters skip any record whose `date` is
+`None`.
 """
 
 from __future__ import annotations
@@ -167,6 +173,7 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     transaction.setdefault("average_price_native", None)
     transaction.setdefault("price_native", None)
     transaction.setdefault("amount_native", None)
+    transaction.setdefault("fx_rate", None)
     return transaction
 
 
@@ -460,6 +467,7 @@ class TransactionsClient:
         price: Any = None,
         amount_native: Any = None,
         amount: Any = None,
+        fx_rate: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -472,7 +480,11 @@ class TransactionsClient:
         `price_native`/`amount_native` — already resolved by the caller
         (see module docstring); passed straight through as given, `None`
         included, with no validation here beyond what the `_native` value
-        already got.
+        already got. `fx_rate` is the effective rate the caller used to
+        resolve that conversion (auto-resolved or user-overridden — the
+        caller's call, see module docstring) — stored unconditionally,
+        regardless of `type`, unlike the other monetary fields above which
+        are `None`'d out for the types they don't apply to.
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
@@ -491,6 +503,8 @@ class TransactionsClient:
             raise TransactionAmountError(f"Invalid type '{type}' for {mode} mode.")
         if not date:
             raise TransactionAmountError("date is required.")
+        if fx_rate is not None:
+            _validate_positive_amount(fx_rate, "fx_rate")
 
         for _ in range(_MAX_CONFLICT_RETRIES):
             existing, etag = self._load(user_id, holding_id)
@@ -547,6 +561,7 @@ class TransactionsClient:
                 "price": price if is_transaction_trade else None,
                 "amount_native": amount_native if type == "DIVIDEND" else None,
                 "amount": amount if type == "DIVIDEND" else None,
+                "fx_rate": fx_rate,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -575,13 +590,14 @@ class TransactionsClient:
         apply to the record's type.
 
         Mutable records are an AVERAGE-mode `BUY` (position entry —
-        `no_of_shares`/`average_price_native`/`average_price`/`date`) or
-        any `DIVIDEND` entry in either mode (`amount_native`/`amount`/
-        `date`) — see module docstring for why a dividend is mutable
-        regardless of mode, and for the native/converted split (`average_price`/
-        `amount` here are the already-resolved converted figures — the
-        caller recomputes them from the patched native value/date and
-        passes both in together, the same as `create_transaction`)."""
+        `no_of_shares`/`average_price_native`/`average_price`/`fx_rate`/
+        `date`) or any `DIVIDEND` entry in either mode
+        (`amount_native`/`amount`/`fx_rate`/`date`) — see module docstring
+        for why a dividend is mutable regardless of mode, and for the
+        native/converted split (`average_price`/`amount` here are the
+        already-resolved converted figures — the caller recomputes them
+        from the patched native value/date/`fx_rate` and passes them all
+        in together, the same as `create_transaction`)."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             transactions, etag = self._load(user_id, holding_id)
             index = next((i for i, t in enumerate(transactions) if t["id"] == transaction_id), None)
@@ -591,9 +607,9 @@ class TransactionsClient:
                 )
             record_type = transactions[index]["type"]
             if record_type == "DIVIDEND":
-                allowed = {"date", "amount_native", "amount"}
+                allowed = {"date", "amount_native", "amount", "fx_rate"}
             elif mode == "AVERAGE" and record_type in ("BUY", None):
-                allowed = {"date", "no_of_shares", "average_price_native", "average_price"}
+                allowed = {"date", "no_of_shares", "average_price_native", "average_price", "fx_rate"}
             else:
                 raise ValueError(
                     f"Transaction '{transaction_id}' is a TRANSACTION-mode BUY/SELL record — "
@@ -610,6 +626,8 @@ class TransactionsClient:
                 _validate_positive_amount(fields["average_price_native"], "average_price_native")
             if "amount_native" in fields:
                 _validate_positive_amount(fields["amount_native"], "amount_native")
+            if fields.get("fx_rate") is not None:
+                _validate_positive_amount(fields["fx_rate"], "fx_rate")
 
             updated = {
                 **transactions[index],

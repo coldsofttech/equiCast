@@ -251,6 +251,57 @@ class PricesViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class FxRateViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.get(reverse("fx-rate", args=["USD", "GBP"]))
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_the_rate_for_the_given_date(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_fx_rate_on_date.return_value = 0.79
+
+        response = self.client.get(
+            reverse("fx-rate", args=["usd", "gbp"]), {"date": "2026-01-15"}, **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"from_currency": "USD", "to_currency": "GBP", "date": "2026-01-15", "rate": 0.79},
+        )
+        mock_client.get_fx_rate_on_date.assert_called_once_with("USD", "GBP", "2026-01-15")
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_404_when_no_rate_published(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_fx_rate_on_date.return_value = None
+
+        response = self.client.get(
+            reverse("fx-rate", args=["usd", "gbp"]), {"date": "2026-01-15"}, **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_date_is_missing(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(reverse("fx-rate", args=["usd", "gbp"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 400)
+
+
 class SearchViewTests(TestCase):
     def test_returns_401_when_unauthenticated(self) -> None:
         response = self.client.get(reverse("search"), {"q": "v"})

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Badge from "../../components/core/Badge.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
@@ -6,6 +6,8 @@ import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import { TextField, SelectField } from "../../components/core/Field.jsx";
+import { useApi } from "../../api/useApi.js";
+import { getFxRateOnDate } from "../../api/market.js";
 import {
   MAX_RECENT_TRANSACTIONS,
   formatPrice,
@@ -35,24 +37,44 @@ function averageTypeMeta(type) {
   return AVERAGE_TYPE_META[type] ?? AVERAGE_TYPE_META.BUY;
 }
 
-/** Date/no_of_shares/{average_price_native,price_native}/amount_native form
- * shared by "Add Buy", "Add Sell", "Add Dividend", and editing an existing
- * (mutable) entry — `type` picks which fields show, `mode` picks whether an
- * account/portfolio selector shows (only relevant when creating: editing an
- * existing entry never moves it to a different holding) and whether this
- * calls `onSubmit(holdingId, { type, ...fields })` (create) or
- * `onSubmit(holdingId, fields)` (edit, no `type` — immutable once created).
- * Only ever sends the *native*-currency value the user typed — the backend
- * resolves/stores the converted (default-currency) figure itself (see
- * equicast_core.transactions module docstring), so there's nothing for this
- * form to compute or display for that.
+/** Date/no_of_shares/{average_price_native,price_native}/amount_native/
+ * fx_rate form shared by "Add Buy", "Add Sell", "Add Dividend", and
+ * editing an existing (mutable) entry — `type` picks which fields show,
+ * `mode` picks whether an account/portfolio selector shows (only relevant
+ * when creating: editing an existing entry never moves it to a different
+ * holding) and whether this calls `onSubmit(holdingId, { type, ...fields })`
+ * (create) or `onSubmit(holdingId, fields)` (edit, no `type` — immutable
+ * once created). Sends the *native*-currency value the user typed, plus an
+ * optional `fx_rate` (GitHub issue #149) — the backend resolves/stores the
+ * converted (default-currency) figure itself either way (see
+ * equicast_core.transactions module docstring), so this form never
+ * computes or displays a converted value, only the rate used to get there.
  *
  * `transactionType` (the user's global AVERAGE/TRANSACTION setting) only
  * matters for a BUY: an AVERAGE-mode BUY is the holding's one
  * average_price_native position entry, a TRANSACTION-mode BUY is a
  * price_native trade record. A SELL is always TRANSACTION-mode (AVERAGE
- * mode has no SELL type at all) and shares that same price_native shape. */
-function TransactionForm({ type, transactionType = "AVERAGE", mode, instances, initialValues, onSubmit, onCancel }) {
+ * mode has no SELL type at all) and shares that same price_native shape.
+ *
+ * `nativeCurrency`/`defaultCurrency` gate the FX rate field: shown only
+ * when both are known and differ (a same-currency holding has nothing to
+ * convert). Once shown, it auto-fills from `getFxRateOnDate` for whichever
+ * `date` is entered — the same historical rate the backend would otherwise
+ * auto-resolve — letting the user preview and override it before saving;
+ * `fxRateTouched` stops that auto-fill from clobbering a manual edit once
+ * the user has actually typed into the field themselves. */
+function TransactionForm({
+  type,
+  transactionType = "AVERAGE",
+  mode,
+  instances,
+  initialValues,
+  nativeCurrency,
+  defaultCurrency,
+  onSubmit,
+  onCancel,
+}) {
+  const api = useApi();
   const [holdingId, setHoldingId] = useState(
     initialValues?.holdingId ?? instances[0]?.holding.id ?? ""
   );
@@ -62,17 +84,39 @@ function TransactionForm({ type, transactionType = "AVERAGE", mode, instances, i
   const priceFieldKey = isAverageBuy ? "average_price_native" : "price_native";
   const [price, setPrice] = useState(initialValues?.[priceFieldKey] ?? "");
   const [amount, setAmount] = useState(initialValues?.amount_native ?? "");
+  const [fxRate, setFxRate] = useState(initialValues?.fx_rate ?? "");
+  const [fxRateTouched, setFxRateTouched] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  const showFxField = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
+
+  useEffect(() => {
+    if (!showFxField || !date || fxRateTouched) return undefined;
+    let cancelled = false;
+    getFxRateOnDate(api, nativeCurrency, defaultCurrency, date)
+      .then((result) => {
+        if (!cancelled) setFxRate(String(result.rate));
+      })
+      .catch(() => {
+        // No rate published for this pair/date — leave the field blank;
+        // the backend still auto-resolves its own attempt on submit if
+        // the user doesn't type one in themselves.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, showFxField, date, nativeCurrency, defaultCurrency, fxRateTouched]);
 
   const handleSubmit = (event) => {
     event.preventDefault();
     setIsSaving(true);
     setError(null);
+    const fxFields = fxRate !== "" ? { fx_rate: fxRate } : {};
     const fields =
       type === "DIVIDEND"
-        ? { date, amount_native: amount }
-        : { date, no_of_shares: shares, [priceFieldKey]: price };
+        ? { date, amount_native: amount, ...fxFields }
+        : { date, no_of_shares: shares, [priceFieldKey]: price, ...fxFields };
     const payload = mode === "create" ? { type, ...fields } : fields;
     onSubmit(holdingId, payload)
       .catch((err) => setError(err.message ?? "Couldn't save this transaction."))
@@ -140,6 +184,21 @@ function TransactionForm({ type, transactionType = "AVERAGE", mode, instances, i
             onChange={(event) => setPrice(event.target.value)}
           />
         </>
+      )}
+      {showFxField && (
+        <TextField
+          id="transaction-fx-rate"
+          label={`FX rate (${nativeCurrency} → ${defaultCurrency})`}
+          type="number"
+          min="0.000001"
+          step="any"
+          value={fxRate}
+          onChange={(event) => {
+            setFxRate(event.target.value);
+            setFxRateTouched(true);
+          }}
+          hint="Defaults to the historical rate for this date — override if needed."
+        />
       )}
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSaving}>
@@ -271,6 +330,7 @@ function TradeCard({ transaction, nativeCurrency, location, onDelete }) {
  *   transactionsByHolding: Record<string, { transactions: import("../../api/transactions.js").Transaction[], error: boolean }>,
  *   transactionType: "AVERAGE"|"TRANSACTION",
  *   nativeCurrency: string|null,
+ *   defaultCurrency: string|null,
  *   onCreateTransaction: (holdingId: string, fields: object) => Promise<unknown>,
  *   onUpdateTransaction: (holdingId: string, transactionId: string, fields: object) => Promise<unknown>,
  *   onDeleteTransaction: (holdingId: string, transactionId: string) => Promise<unknown>,
@@ -281,6 +341,7 @@ function HoldingTransactionsSection({
   transactionsByHolding,
   transactionType,
   nativeCurrency,
+  defaultCurrency,
   onCreateTransaction,
   onUpdateTransaction,
   onDeleteTransaction,
@@ -383,6 +444,8 @@ function HoldingTransactionsSection({
               type="BUY"
               mode="create"
               instances={buyEligibleInstances}
+              nativeCurrency={nativeCurrency}
+              defaultCurrency={defaultCurrency}
               onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
               onCancel={closeDrawer}
             />
@@ -399,6 +462,8 @@ function HoldingTransactionsSection({
             type="DIVIDEND"
             mode="create"
             instances={validInstances}
+            nativeCurrency={nativeCurrency}
+            defaultCurrency={defaultCurrency}
             onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
             onCancel={closeDrawer}
           />
@@ -415,6 +480,8 @@ function HoldingTransactionsSection({
               mode="edit"
               instances={[]}
               initialValues={drawer.transaction}
+              nativeCurrency={nativeCurrency}
+              defaultCurrency={defaultCurrency}
               onSubmit={(holdingId, fields) =>
                 onUpdateTransaction(drawer.holdingId, drawer.transaction.id, fields).then(closeDrawer)
               }
@@ -562,6 +629,8 @@ function HoldingTransactionsSection({
           transactionType="TRANSACTION"
           mode="create"
           instances={validInstances}
+          nativeCurrency={nativeCurrency}
+          defaultCurrency={defaultCurrency}
           onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
           onCancel={closeDrawer}
         />
@@ -574,6 +643,8 @@ function HoldingTransactionsSection({
             transactionType="TRANSACTION"
             mode="create"
             instances={sellEligibleInstances}
+            nativeCurrency={nativeCurrency}
+            defaultCurrency={defaultCurrency}
             onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
             onCancel={closeDrawer}
           />

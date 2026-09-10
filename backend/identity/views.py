@@ -48,9 +48,17 @@ class MeView(APIView):
         return Response(profile)
 
     def patch(self, request: Request) -> Response:
-        if "default_currency" not in request.data and "transaction_type" not in request.data:
+        if (
+            "default_currency" not in request.data
+            and "transaction_type" not in request.data
+            and "fx_warmup_currencies" not in request.data
+        ):
             return Response(
-                {"detail": "Missing field: default_currency or transaction_type."}, status=400
+                {
+                    "detail": "Missing field: default_currency, transaction_type, or "
+                    "fx_warmup_currencies."
+                },
+                status=400,
             )
 
         user_id = request.user.user_id
@@ -62,6 +70,15 @@ class MeView(APIView):
                     {"detail": f"Unknown default_currency '{default_currency}'."}, status=400
                 )
             profile = _client.update_default_currency(user_id, default_currency)
+
+        if "fx_warmup_currencies" in request.data:
+            fx_warmup_currencies = request.data["fx_warmup_currencies"]
+            unknown = [c for c in fx_warmup_currencies if c not in SUPPORTED_CURRENCIES]
+            if unknown:
+                return Response(
+                    {"detail": f"Unknown fx_warmup_currencies: {', '.join(unknown)}."}, status=400
+                )
+            profile = _client.update_fx_warmup_currencies(user_id, fx_warmup_currencies)
 
         if "transaction_type" in request.data:
             transaction_type = request.data["transaction_type"]

@@ -645,6 +645,7 @@ function HoldingTickerPage() {
               transactionsByHolding={transactionsByHolding}
               transactionType={userProfile?.transaction_type ?? "AVERAGE"}
               nativeCurrency={marketProfile?.currency ?? null}
+              defaultCurrency={userProfile?.default_currency ?? null}
               onCreateTransaction={handleCreateTransaction}
               onUpdateTransaction={handleUpdateTransaction}
               onDeleteTransaction={handleDeleteTransaction}

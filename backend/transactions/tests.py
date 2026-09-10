@@ -321,13 +321,14 @@ class TransactionListViewTests(TestCase):
             "AVERAGE",
             no_of_shares=10.0,
             average_price_native=152.5,
-            average_price=None,
             price_native=None,
-            price=None,
             amount_native=None,
-            amount=None,
+            fx_rate=None,
             date="2026-01-15",
             type="BUY",
+            average_price=None,
+            price=None,
+            amount=None,
         )
 
     @patch("transactions.views._profile_client")
@@ -426,6 +427,64 @@ class TransactionListViewTests(TestCase):
             price=None,
             amount_native=None,
             amount=None,
+            fx_rate=None,
+            date="2026-01-15",
+            type="BUY",
+        )
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_with_fx_rate_override_skips_auto_resolve(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        """An explicit fx_rate in the request is used directly — the
+        holding's market profile is never even looked up, since
+        resolve_converted_amounts skips get_fx_rate_on_date entirely once
+        an override is present (GitHub issue #149)."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_client.create_transaction.return_value = AVERAGE_TRANSACTION
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "average_price_native": 152.5,
+                "fx_rate": 0.8,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_market_data_client.get_profile.assert_not_called()
+        mock_market_data_client.get_fx_rate_on_date.assert_not_called()
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "AVERAGE",
+            no_of_shares=10.0,
+            average_price_native=152.5,
+            average_price=122.0,
+            price_native=None,
+            price=None,
+            amount_native=None,
+            amount=None,
+            fx_rate=0.8,
             date="2026-01-15",
             type="BUY",
         )
@@ -559,6 +618,7 @@ class TransactionListViewTests(TestCase):
             price=None,
             amount_native=None,
             amount=None,
+            fx_rate=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -675,6 +735,42 @@ class TransactionListViewTests(TestCase):
     @patch("transactions.views._holdings_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
+    def test_post_returns_400_for_non_positive_fx_rate(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_client.create_transaction.side_effect = TransactionAmountError("bad")
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "average_price_native": 152.5,
+                "fx_rate": 0,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
     def test_post_creates_a_dividend_transaction_in_average_mode(
         self,
         mock_jwks_client,
@@ -715,6 +811,7 @@ class TransactionListViewTests(TestCase):
             price=None,
             amount_native=42.10,
             amount=None,
+            fx_rate=None,
             date="2026-03-01",
             type="DIVIDEND",
         )
@@ -765,6 +862,7 @@ class TransactionListViewTests(TestCase):
             price=None,
             amount_native=42.10,
             amount=None,
+            fx_rate=None,
             date="2026-03-01",
             type="DIVIDEND",
         )
@@ -868,6 +966,45 @@ class TransactionDetailViewTests(TestCase):
         self.assertEqual(response.json(), updated)
         mock_client.update_transaction.assert_called_once_with(
             "auth0|abc123", "h-1", "t-1", "AVERAGE", no_of_shares=15
+        )
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_fx_rate_only_recomputes_the_converted_value(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        """Patching just fx_rate (no date/native change) still triggers a
+        recompute — and the override means get_fx_rate_on_date is never
+        called (GitHub issue #149)."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_client.get_transaction.return_value = AVERAGE_TRANSACTION
+        updated = {**AVERAGE_TRANSACTION, "fx_rate": 0.82, "average_price": 125.05}
+        mock_client.update_transaction.return_value = updated
+
+        response = self.client.patch(
+            reverse("transactions-detail", args=["h-1", "t-1"]),
+            data={"fx_rate": 0.82},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), updated)
+        mock_market_data_client.get_fx_rate_on_date.assert_not_called()
+        mock_client.update_transaction.assert_called_once_with(
+            "auth0|abc123", "h-1", "t-1", "AVERAGE", fx_rate=0.82, average_price=125.05
         )
 
     @patch("transactions.views._profile_client")
@@ -990,7 +1127,7 @@ class TransactionDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_transaction.assert_called_once_with(
-            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount_native=50.0, amount=None
+            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount_native=50.0, amount=None, fx_rate=None
         )
 
     @patch("transactions.views._profile_client")

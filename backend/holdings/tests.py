@@ -430,6 +430,7 @@ class HoldingListViewTests(TestCase):
             price=None,
             amount_native=None,
             amount=None,
+            fx_rate=None,
             date="2026-01-15",
             type="BUY",
         )

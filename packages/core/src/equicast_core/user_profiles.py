@@ -23,6 +23,16 @@ DEFAULT_CURRENCY = "GBP"
 #: user can't end up with holdings in different modes across accounts.
 DEFAULT_TRANSACTION_TYPE = "AVERAGE"
 
+#: Applied to a brand-new profile on first login. Currencies the frontend's
+#: login-time FX warm-up pairs against `default_currency` (GitHub issue
+#: #149) — pre-reads each pair's parquet file into MarketDataClient's
+#: process-wide cache before the user reaches a transaction form, so its
+#: own historical-rate lookup (get_fx_rate_on_date) is fast. User-editable
+#: via Settings, not derived from the user's actual holdings — a holding
+#: has no currency field of its own (only Account.currency, the account's
+#: own wrapper currency, not a ticker's real native/trading currency).
+DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"]
+
 
 class UserProfileClient:
     """Reads and upserts items in one DynamoDB user-profiles table."""
@@ -46,9 +56,12 @@ class UserProfileClient:
     def get_or_create_profile(self, user_id: str) -> dict[str, Any]:
         """Return the profile item for `user_id`, creating it with
         `default_currency=DEFAULT_CURRENCY`/`transaction_type=
-        DEFAULT_TRANSACTION_TYPE` if this is their first login — or, for an
-        existing profile that predates `transaction_type` (introduced after
-        `default_currency`), backfilling just that one attribute onto it.
+        DEFAULT_TRANSACTION_TYPE`/`fx_warmup_currencies=
+        DEFAULT_FX_WARMUP_CURRENCIES` if this is their first login — or,
+        for an existing profile that predates one or more of
+        `transaction_type`/`fx_warmup_currencies` (each introduced after
+        `default_currency`), backfilling just the missing attribute(s)
+        onto it.
 
         The create is a conditional put (`attribute_not_exists(user_id)`) so
         a concurrent first login can't clobber a profile the user has
@@ -57,11 +70,19 @@ class UserProfileClient:
         response = self._table.get_item(Key={"user_id": user_id})
         item = response.get("Item")
         if item is not None:
-            if "transaction_type" not in item:
+            backfill = {
+                attr: default
+                for attr, default in (
+                    ("transaction_type", DEFAULT_TRANSACTION_TYPE),
+                    ("fx_warmup_currencies", DEFAULT_FX_WARMUP_CURRENCIES),
+                )
+                if attr not in item
+            }
+            if backfill:
                 response = self._table.update_item(
                     Key={"user_id": user_id},
-                    UpdateExpression="SET transaction_type = :t",
-                    ExpressionAttributeValues={":t": DEFAULT_TRANSACTION_TYPE},
+                    UpdateExpression="SET " + ", ".join(f"{attr} = :{attr}" for attr in backfill),
+                    ExpressionAttributeValues={f":{attr}": value for attr, value in backfill.items()},
                     ReturnValues="ALL_NEW",
                 )
                 return dict(response["Attributes"])
@@ -71,6 +92,7 @@ class UserProfileClient:
             "user_id": user_id,
             "default_currency": DEFAULT_CURRENCY,
             "transaction_type": DEFAULT_TRANSACTION_TYPE,
+            "fx_warmup_currencies": DEFAULT_FX_WARMUP_CURRENCIES,
         }
         try:
             self._table.put_item(
@@ -109,6 +131,26 @@ class UserProfileClient:
             Key={"user_id": user_id},
             UpdateExpression="SET transaction_type = :t",
             ExpressionAttributeValues={":t": transaction_type},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])
+
+    def update_fx_warmup_currencies(
+        self, user_id: str, fx_warmup_currencies: list[str]
+    ) -> dict[str, Any]:
+        """Set `user_id`'s fx_warmup_currencies (GitHub issue #149 — the
+        currencies the frontend's login-time FX warm-up pairs against
+        `default_currency`), creating their profile first
+        (get_or_create_profile) if this is called before their first
+        login. Whether each entry is a supported currency code is the
+        caller's job to check first — this client only knows about
+        profiles, the same way `update_transaction_type` leaves the
+        transaction_type/holding-eligibility check to its caller."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET fx_warmup_currencies = :c",
+            ExpressionAttributeValues={":c": fx_warmup_currencies},
             ReturnValues="ALL_NEW",
         )
         return dict(response["Attributes"])
