@@ -36,6 +36,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A public `/terms-and-conditions` page (`frontend/src/pages/TermsAndConditionsPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as `/privacy-policy`/a future `/cookie-policy` would
+  be) since a visitor has to be able to read it before ever signing in.
+  Grounded in what equiCast actually is — an open-source (MIT, see the
+  repo's `LICENSE`), self-hosted-style project with no registered company
+  behind it — and the same no-advice/data-source disclaimer `SiteFooter`
+  already carries, rather than generic legal boilerplate (no invented
+  governing-law/arbitration clauses this project has no real
+  jurisdiction/entity to back up). `SiteFooter` gains a "Terms and
+  Conditions" link, which needs Router context — fixed three existing
+  `RequireAuth` tests that rendered `SignInScreen` (and so `SiteFooter`)
+  without a `MemoryRouter` to keep passing.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

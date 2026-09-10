@@ -6,10 +6,12 @@ import AccountDetailPage from "./pages/accounts/AccountDetailPage.jsx";
 import PieDetailPage from "./pages/pies/PieDetailPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
 import HoldingTickerPage from "./pages/holdings/HoldingTickerPage.jsx";
+import TermsAndConditionsPage from "./pages/TermsAndConditionsPage.jsx";
 
 function App() {
   return (
     <Routes>
+      <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
       <Route
         element={
           <RequireAuth>

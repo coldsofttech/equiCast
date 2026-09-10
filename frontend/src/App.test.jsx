@@ -29,4 +29,15 @@ describe("App routing", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/auth0 isn't configured/i);
   });
+
+  it("serves /terms-and-conditions publicly, without the auth gate", () => {
+    render(
+      <MemoryRouter initialEntries={["/terms-and-conditions"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("heading", { name: "Terms and Conditions" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
