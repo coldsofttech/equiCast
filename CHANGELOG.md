@@ -62,12 +62,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `packages/etf`'s `events.parquet` schemas gain the three matching
   columns.
 
-  The toggle is disabled for 1Y and every longer range (1Y/2Y/3Y/5Y/10Y/
+  The toggle is disabled for 2Y and every longer range (2Y/3Y/5Y/10Y/
   MAX) — a full history's worth of events still all lands somewhere
   on-screen regardless of range, but the number of distinct bars they can
   spread across shrinks as the range grows, piling them into dense,
-  unreadable columns beyond 6M/YTD. Switching to a disabled range while
+  unreadable columns beyond 1Y. Switching to a disabled range while
   events are on turns them back off automatically.
+
+  Events sharing the same date and `event_type` (e.g. several analysts
+  revising ratings the same day) now collapse into a single dot instead
+  of stacking one dot per event — matching Yahoo Finance's own rendering,
+  which never shows more than one marker per day. A single-event dot's
+  hover tooltip is unchanged; a merged dot's hover instead shows a
+  lightweight summary (type, date, event count) with the full per-event
+  details (unchanged fields) behind a click, opening a modal (reusing
+  `frontend/src/components/core/Modal.jsx`) with one table row per grouped
+  event and one column per `event_type`-specific field, so several
+  same-day events can be compared side by side.
+  The merged tooltip's "Click for details" is a real button rather than
+  inert text — closing on a short delay instead of immediately on the
+  dot's own mouseleave, so the cursor has time to reach it before it
+  unmounts.
 
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`

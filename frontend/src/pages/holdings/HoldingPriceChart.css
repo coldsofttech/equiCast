@@ -176,6 +176,14 @@
   outline-offset: 2px;
 }
 
+/** Pushes the toggle to the far right of the shared `.ec-chart-tooltip`
+ * OHLC readout row (chart.css) it now lives in, without touching that
+ * class's own layout for the other charts that render it without a
+ * trailing toggle. */
+.ec-chart-tooltip .ec-pchart-events-toggle {
+  margin-left: auto;
+}
+
 /** Positions the floating event tooltip (below) relative to the SVG's own
  * box, not the wider card — the SVG's viewBox units already equal real
  * CSS pixels 1:1 (see HoldingPriceChart.jsx's DEFAULT_WIDTH comment), so
@@ -252,4 +260,66 @@
   color: var(--ec-text);
   font-weight: 600;
   text-align: right;
+}
+
+/** The lightweight variant shown for a dot merging >1 event (see
+ * `hoveredEventGroup` in HoldingPriceChart.jsx) — same box, plus a real
+ * "Click for details" button below the summary rows. Needs its own
+ * `pointer-events` (the base `.ec-pchart-event-tooltip` above is `none`,
+ * so a single-event tooltip never steals hover from the dot it floats
+ * beside) so that button is actually clickable. */
+.ec-pchart-event-tooltip--light {
+  pointer-events: auto;
+}
+
+.ec-pchart-event-tooltip-hint {
+  margin-top: var(--ec-s-4);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ec-accent);
+  font: inherit;
+  font-style: italic;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ec-pchart-event-tooltip-hint:hover {
+  text-decoration: underline;
+}
+
+/** The merged-events modal's table — one row per event, one column per
+ * `event_type`-specific field (see `EVENT_TABLE_COLUMNS`), so several
+ * same-day events can be compared side by side. Its own small table
+ * styling rather than the shared `.ec-table` (styles/table.css): that
+ * one's rows are hover-highlighted and cursor:pointer for navigation,
+ * neither of which applies to this plain read-only listing. */
+.ec-pchart-event-modal {
+  overflow-x: auto;
+}
+
+.ec-pchart-event-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ec-fs-13);
+}
+
+.ec-pchart-event-table th,
+.ec-pchart-event-table td {
+  padding: var(--ec-s-8) var(--ec-s-12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ec-pchart-event-table th {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-pchart-event-table tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--ec-divider);
 }

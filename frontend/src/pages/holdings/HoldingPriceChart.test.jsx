@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
 import { getEvents, getMetrics, getPrices, searchTickers } from "../../api/market.js";
@@ -134,6 +134,10 @@ describe("HoldingPriceChart", () => {
 
     expect(getEvents).not.toHaveBeenCalled();
 
+    // Key events lives on the OHLC readout row, which only renders once
+    // price data has loaded — wait for it before interacting.
+    await screen.findByLabelText("Key events");
+
     // Key events is disabled on the default "max" range (see
     // EVENTS_DISABLED_RANGES) — switch to an allowed one first.
     fireEvent.click(screen.getByRole("button", { name: "6M" }));
@@ -151,8 +155,9 @@ describe("HoldingPriceChart", () => {
 
     render(<HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />);
 
-    // Default range is "max" — disabled.
-    expect(screen.getByLabelText("Key events")).toBeDisabled();
+    // Default range is "max" — disabled. The toggle lives on the OHLC
+    // readout row, which only renders once price data has loaded.
+    expect(await screen.findByLabelText("Key events")).toBeDisabled();
 
     fireEvent.click(screen.getByRole("button", { name: "6M" }));
     expect(screen.getByLabelText("Key events")).toBeEnabled();
@@ -161,9 +166,9 @@ describe("HoldingPriceChart", () => {
     await waitFor(() => expect(getEvents).toHaveBeenCalled());
     expect(screen.getByLabelText("Key events")).toBeChecked();
 
-    // Switching to a disabled range (1Y) turns events back off rather than
+    // Switching to a disabled range (2Y) turns events back off rather than
     // leaving the now-inaccessible toggle stuck checked.
-    fireEvent.click(screen.getByRole("button", { name: "1Y" }));
+    fireEvent.click(screen.getByRole("button", { name: "2Y" }));
     expect(screen.getByLabelText("Key events")).toBeDisabled();
     expect(screen.getByLabelText("Key events")).not.toBeChecked();
   });
@@ -199,6 +204,9 @@ describe("HoldingPriceChart", () => {
     const { container } = render(
       <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
     );
+    // Key events lives on the OHLC readout row, which only renders once
+    // price data has loaded — wait for it before interacting.
+    await screen.findByLabelText("Key events");
     fireEvent.click(screen.getByRole("button", { name: "6M" }));
     fireEvent.click(screen.getByLabelText("Key events"));
 
@@ -212,6 +220,67 @@ describe("HoldingPriceChart", () => {
 
     expect(await screen.findByText("Earnings")).toBeInTheDocument();
     expect(screen.getByText("6.67%")).toBeInTheDocument();
+  });
+
+  it("merges same-day same-type events into one dot with a details modal", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+    const ratingEvent = (firm, toGrade) => ({
+      ticker: "AAPL",
+      event_type: "rating",
+      date: "2024-01-02",
+      eps_estimate: null,
+      reported_eps: null,
+      surprise_pct: null,
+      firm,
+      from_grade: null,
+      to_grade: toGrade,
+      action: "main",
+      price_target_action: null,
+      current_price_target: null,
+      prior_price_target: null,
+      ratio: null,
+      last_updated: "2024-01-02T00:00:00Z",
+      source: "yfinance",
+    });
+    vi.mocked(getEvents).mockResolvedValue({
+      ticker: "AAPL",
+      last_updated: "2024-01-02T00:00:00Z",
+      events: [ratingEvent("Morgan Stanley", "Overweight"), ratingEvent("Barclays", "Equal-Weight")],
+    });
+
+    const { container } = render(
+      <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
+    );
+    // Key events lives on the OHLC readout row, which only renders once
+    // price data has loaded — wait for it before interacting.
+    await screen.findByLabelText("Key events");
+    fireEvent.click(screen.getByRole("button", { name: "6M" }));
+    fireEvent.click(screen.getByLabelText("Key events"));
+
+    const dots = await waitFor(() => {
+      const els = container.querySelectorAll(".ec-pchart-event-dot--rating");
+      expect(els.length).toBe(1);
+      return els;
+    });
+
+    fireEvent.mouseEnter(dots[0]);
+    const detailsButton = await screen.findByRole("button", { name: "Click for details" });
+    expect(screen.getByText("2")).toBeInTheDocument();
+
+    // Regression: the cursor leaves the tiny dot before it ever reaches the
+    // tooltip's own button — the tooltip must survive that gap (a short
+    // close delay bridges it) rather than unmounting before the click.
+    fireEvent.mouseLeave(dots[0]);
+    fireEvent.click(detailsButton);
+
+    // One table row per grouped event, one column per rating field.
+    const table = await screen.findByRole("table");
+    expect(screen.getByRole("columnheader", { name: "Analyst" })).toBeInTheDocument();
+    const rows = within(table).getAllByRole("row");
+    expect(rows).toHaveLength(3); // header + 2 events
+    expect(within(rows[1]).getByText("Morgan Stanley")).toBeInTheDocument();
+    expect(within(rows[2]).getByText("Barclays")).toBeInTheDocument();
   });
 
   it("drops an event dated outside the chart's visible range", async () => {
@@ -245,6 +314,9 @@ describe("HoldingPriceChart", () => {
     const { container } = render(
       <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
     );
+    // Key events lives on the OHLC readout row, which only renders once
+    // price data has loaded — wait for it before interacting.
+    await screen.findByLabelText("Key events");
     fireEvent.click(screen.getByRole("button", { name: "6M" }));
     fireEvent.click(screen.getByLabelText("Key events"));
 
