@@ -1,0 +1,109 @@
+# ETF-type forecasting schema registry for etf_forecast.py (GitHub issue
+# #67) - same idea as sector_schemas.yaml (issue #66), but routes on a
+# single field, yfinance's `category` (a Morningstar category string, e.g.
+# "Large Blend", "Foreign Large Blend", "Technology"), into one of the
+# issue's three ETF types rather than stock's 16 sector/sub-sector schemas.
+#
+# `category_contains` entries are checked case-insensitively, most-specific
+# type first (see etf_type_registry.py's ROUTING_ORDER) - "Thematic/
+# Focused" before "FTSE/regional" before "Broad/S&P", since several of
+# Broad/S&P's own style-box substrings (e.g. "Large Blend") are themselves
+# substrings of a regional category ("Foreign Large Blend") and would
+# false-positive-match if checked first.
+#
+# Verified live against yfinance `.info["category"]` for a real basket of
+# ETFs before writing this registry (VOO/SPY/IVV/VTI/VUG/VOOG/IWM/IJH/VYM/
+# SCHD/VIG -> broad_sp; VXUS/VEA/VWO/EWU/EWJ/EWZ/EWG/EWC/FXI/KWEB/INDA/VT/
+# URTH/ACWI -> ftse_regional; XLK/XLF/XLV/XLE/XLU/SMH/SOXX/ARKG/ICLN/GDX/
+# JETS/VNQ/TQQQ/SQQQ -> thematic_focused) - unlike sector_schemas.yaml's 16
+# branches, category-string coverage this broad can't be exhaustively
+# enumerated, so an unmapped category still raises loudly (see
+# UnroutableEtfTypeError) rather than guessing.
+#
+# Known limitation: Morningstar's `category` reflects market-cap/style
+# characteristics, not fund *intent* - a pure style-box category (e.g.
+# "Mid-Cap Growth") routes to Broad/S&P even for an actively-managed
+# thematic/innovation fund whose real strategy is concentrated and
+# thematic (ARKK is the clearest real example: categorized "Mid-Cap
+# Growth", not any sector name, so it lands in Broad/S&P here even though
+# a human would call it thematic). No better routing signal is available
+# from yfinance's `.info` today.
+#
+# `parameters` are the short/medium/long field names from the issue's own
+# table, kept here as documentation of the target signal set only - see
+# this package's README and etf_signals.py for which of these (plus the
+# cross-cutting fields below) equicast_forecasting actually computes today
+# versus declares and leaves null, same "target shape is real and
+# versioned even before every field behind it is" reasoning
+# sector_schemas.yaml already documents.
+#
+# `cross_cutting` (the issue's own "all ETF types, all horizons" fields)
+# isn't per-type, so it's declared once here rather than repeated in every
+# entry below.
+
+cross_cutting: [nav_premium_discount, expense_ratio, tracking_error, concentration_ratio_top10]
+
+etf_types:
+  - key: broad_sp
+    label: "Broad/S&P"
+    category_contains:
+      - "Large Blend"
+      - "Large Growth"
+      - "Large Value"
+      - "Mid-Cap Blend"
+      - "Mid-Cap Growth"
+      - "Mid-Cap Value"
+      - "Small Blend"
+      - "Small Growth"
+      - "Small Value"
+    parameters:
+      short: [iv_vix_proxy, tracking_error, options_skew]
+      medium: [agg_forward_pe_vs_history, sector_weight_drift, earnings_revision_breadth]
+      long: [starting_agg_pe_cape_adj, expense_ratio_drag, dividend_buyback_yield]
+
+  - key: ftse_regional
+    label: "FTSE/regional"
+    category_contains:
+      - "Foreign Large"
+      - "Foreign Small"
+      - "Diversified Emerging Mkts"
+      - "Focused Region"
+      - "Japan Stock"
+      - "China Region"
+      - "India Equity"
+      - "Latin America"
+      - "Pacific/Asia"
+      - "Europe Stock"
+      - "Diversified Pacific"
+      - "Global Large-Stock"
+      - "World Stock"
+      - "Miscellaneous Region"
+    parameters:
+      short: [iv, fx_correlation]
+      medium: [sector_concentration, forward_pe_vs_regional_discount]
+      long: [starting_pe_vs_longrun_discount, dividend_yield, currency_drag_benefit]
+
+  - key: thematic_focused
+    label: "Thematic/Focused"
+    category_contains:
+      - "Technology"
+      - "Health"
+      - "Financial"
+      - "Real Estate"
+      - "Utilities"
+      - "Communications"
+      - "Consumer Cyclical"
+      - "Consumer Defensive"
+      - "Industrials"
+      - "Equity Energy"
+      - "Equity Precious Metals"
+      - "Natural Resources"
+      - "Miscellaneous Sector"
+      - "Trading--Leveraged"
+      - "Trading--Inverse"
+      - "Trading--Miscellaneous"
+      - "Long-Short Equity"
+    parameters:
+      short: [iv_elevated, concentration_risk, flow_aum_momentum]
+      medium: [top5_holding_weight, subsector_earnings_revisions, pe_vs_broad_premium]
+      long: [theme_durability_risk, concentration_decay, starting_premium_pe]

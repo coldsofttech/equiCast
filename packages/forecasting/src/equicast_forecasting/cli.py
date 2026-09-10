@@ -35,6 +35,19 @@ turn, so the overall CLI invocation (and, once scheduled, the GitHub
 Actions job running it) still exits non-zero and fails visibly — the
 already-forecasted tickers' Parquet files are still written either way.
 
+ETF price-band forecasting (`--forecast-kind price-bands`, etf only,
+GitHub issue #67): the same shape as stock's, but routes each ticker's
+`category` (again straight off `DatafeedClient`) to one of three ETF-type
+schemas (see etf_type_registry.py) and projects it forward with
+`equicast_forecasting.etf_forecast.etf_price_bands()`, writing
+`etf=<TICKER>/forecasting/price_bands.parquet`. An unroutable category
+"fails loudly" the same way an unroutable stock sector/industry does —
+`_etf_forecast_task` logs and skips just that ticker, contributing to the
+same `ForecastBatchError` summary `run()` re-raises once the batch
+completes (shared across both stock and etf routing failures when both
+happen to run in the same invocation, though in practice each runs as its
+own separate `--asset-class` invocation).
+
 Either way, each ticker's/pair's fetch-and-forecast is an independent task
 submitted to the same worker pool, so they run concurrently rather than
 one after the other.
@@ -59,6 +72,8 @@ from equicast_forecasting.config import (
     parse_fx_pairs_json,
     parse_tickers_json,
 )
+from equicast_forecasting.etf_forecast import etf_price_bands
+from equicast_forecasting.etf_type_registry import UnroutableEtfTypeError
 from equicast_forecasting.forecast import dividends
 from equicast_forecasting.fx_forecast import fx_price_bands
 from equicast_forecasting.monte_carlo import DEFAULT_NUM_PATHS
@@ -66,6 +81,7 @@ from equicast_forecasting.sector_registry import UnroutableSectorError
 from equicast_forecasting.stock_forecast import stock_price_bands
 from equicast_forecasting.writer import (
     write_dividend_forecast_parquet,
+    write_etf_price_bands_parquet,
     write_fx_price_bands_parquet,
     write_stock_price_bands_parquet,
 )
@@ -82,18 +98,19 @@ FULL_HISTORY_PERIOD = "max"
 
 class ForecastBatchError(RuntimeError):
     """Raised by `run()` when one or more tickers failed to route to a
-    stock forecasting schema (see sector_registry.UnroutableSectorError) —
+    stock or ETF forecasting schema (see sector_registry.
+    UnroutableSectorError / etf_type_registry.UnroutableEtfTypeError) —
     every other ticker in the batch still ran and had its Parquet written;
     this only ensures the overall CLI invocation still exits non-zero, per
-    issue #66's "fail loudly" requirement, rather than silently reporting
-    success."""
+    issue #66/#67's "fail loudly" requirement, rather than silently
+    reporting success."""
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Forecast each configured ticker's future dividend payouts (stock/etf) or "
-        "each configured ticker's/pair's daily price probability bands (stock/fx), writing one "
-        "Parquet file per ticker/pair."
+        "each configured ticker's/pair's daily price probability bands (stock/etf/fx), writing "
+        "one Parquet file per ticker/pair."
     )
     parser.add_argument(
         "--asset-class",
@@ -106,7 +123,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
         "--forecast-kind",
         required=True,
         choices=["dividends", "price-bands"],
-        help='"dividends" is stock/etf only; "price-bands" is stock/fx only.',
+        help='"dividends" is stock/etf only; "price-bands" is stock/etf/fx.',
     )
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument(
@@ -174,9 +191,9 @@ def _validate_forecast_kind(asset_class: str, forecast_kind: str) -> None:
         raise ValueError(
             f"--forecast-kind dividends is stock/etf only, got --asset-class {asset_class!r}."
         )
-    if forecast_kind == "price-bands" and asset_class not in ("stock", "fx"):
+    if forecast_kind == "price-bands" and asset_class not in ("stock", "etf", "fx"):
         raise ValueError(
-            f"--forecast-kind price-bands is stock/fx only, got --asset-class {asset_class!r}."
+            f"--forecast-kind price-bands is stock/etf/fx only, got --asset-class {asset_class!r}."
         )
 
 
@@ -234,7 +251,7 @@ def _stock_forecast_task(
     output_dir: Path,
     years: int,
     num_paths: int,
-    routing_failures: list[tuple[str, UnroutableSectorError]],
+    routing_failures: list[tuple[str, Exception]],
 ) -> Path | None:
     logger.info("Forecasting stock price bands for %s", ticker)
     info = datafeed.get_info(ticker)
@@ -254,6 +271,33 @@ def _stock_forecast_task(
         routing_failures.append((ticker, error))
         return None
     return write_stock_price_bands_parquet(forecast, output_dir)
+
+
+def _etf_forecast_task(
+    ticker: str,
+    datafeed: DatafeedClient,
+    output_dir: Path,
+    years: int,
+    num_paths: int,
+    routing_failures: list[tuple[str, Exception]],
+) -> Path | None:
+    logger.info("Forecasting ETF price bands for %s", ticker)
+    info = datafeed.get_info(ticker)
+    prices = _price_records(datafeed, ticker)
+    try:
+        forecast = etf_price_bands(
+            prices,
+            ticker,
+            info.get("category"),
+            datafeed=datafeed,
+            years=years,
+            num_paths=num_paths,
+        )
+    except UnroutableEtfTypeError as error:
+        logger.error("Skipping %s: %s", ticker, error)
+        routing_failures.append((ticker, error))
+        return None
+    return write_etf_price_bands_parquet(forecast, output_dir)
 
 
 def run(
@@ -276,11 +320,25 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    routing_failures: list[tuple[str, UnroutableSectorError]] = []
+    routing_failures: list[tuple[str, Exception]] = []
     tasks: list[Callable[[], Path | None]]
     if forecast_kind == "price-bands" and asset_class == "fx":
         pairs = _load_fx_pairs(config, pairs_json)
         tasks = [partial(_fx_forecast_task, pair, datafeed, output_dir, years) for pair in pairs]
+    elif forecast_kind == "price-bands" and asset_class == "etf":
+        tickers = _load_tickers(config, tickers_json)
+        tasks = [
+            partial(
+                _etf_forecast_task,
+                ticker,
+                datafeed,
+                output_dir,
+                years,
+                num_paths,
+                routing_failures,
+            )
+            for ticker in tickers
+        ]
     elif forecast_kind == "price-bands":  # stock
         tickers = _load_tickers(config, tickers_json)
         tasks = [

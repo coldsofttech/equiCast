@@ -58,6 +58,30 @@ def write_stock_price_bands_parquet(records: list[dict[str, Any]], output_dir: P
     return path
 
 
+def write_etf_price_bands_parquet(records: list[dict[str, Any]], output_dir: Path) -> Path | None:
+    """Write `records` (as returned by `equicast_forecasting.etf_forecast.
+    etf_price_bands()`) to `<output_dir>/etf=<TICKER>/forecasting/
+    price_bands.parquet` — same layout convention as `write_stock_price_
+    bands_parquet`.
+
+    Returns `None` (writes nothing) for `records == []` — `etf_price_
+    bands()` already returns `[]` for a ticker with too little price
+    history to forecast from. Rewritten wholesale on every run, same as
+    every other forecasting writer — a full recomputation from that run's
+    freshly-fetched price/signal data, not an accumulating history.
+    """
+    if not records:
+        return None
+
+    ticker = records[0]["ticker"]
+    directory = output_dir / f"etf={ticker}" / "forecasting"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "price_bands.parquet"
+    pd.DataFrame(records).to_parquet(path, index=False)
+    return path
+
+
 def write_fx_price_bands_parquet(records: list[dict[str, Any]], output_dir: Path) -> Path | None:
     """Write `records` (as returned by `equicast_forecasting.fx_forecast.
     fx_price_bands()`) to `<output_dir>/fx=<FROM><TO>/forecasting/

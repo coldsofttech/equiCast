@@ -4,9 +4,11 @@ Projects a symbol's future dividend payouts from its actual dividend
 history, built on [equicast-dividends](../dividends/README.md); daily FX
 price probability bands from actual price history plus whatever real
 interest-rate data is available (see
-[FX price-band forecasting](#fx-price-band-forecasting)); and daily,
+[FX price-band forecasting](#fx-price-band-forecasting)); daily,
 sector-routed stock price probability bands from actual price/fundamentals
-data (see [Stock price-band forecasting](#stock-price-band-forecasting)).
+data (see [Stock price-band forecasting](#stock-price-band-forecasting));
+and daily, ETF-type-routed price probability bands from actual price/fund
+data (see [ETF price-band forecasting](#etf-price-band-forecasting)).
 
 ## Dividend forecasting
 
@@ -343,8 +345,9 @@ uv run equicast-forecasting --asset-class stock --forecast-kind price-bands --ti
 Writes `stock=<TICKER>/forecasting/price_bands.parquet` per ticker —
 nothing for a ticker with too little price history to forecast from.
 `--forecast-kind dividends` (stock/etf) is the pre-existing dividend
-forecast; `--forecast-kind price-bands` is fx/stock only (not etf — issue
-#66 is stock-specific). **Per the issue's "fail loudly" requirement**, a
+forecast; `--forecast-kind price-bands` is stock/etf/fx (see
+[ETF price-band forecasting](#etf-price-band-forecasting) below for the
+etf case, added by issue #67). **Per the issue's "fail loudly" requirement**, a
 ticker that fails to route raises `UnroutableSectorError`, caught per-
 ticker so the rest of the batch still completes and writes normally, but
 `run()` re-raises a summary `ForecastBatchError` once every ticker has had
@@ -352,6 +355,135 @@ its turn — the CLI process (and, once scheduled, the CI job running it)
 still exits non-zero, rather than silently reporting success with a gap.
 Not yet wired into any scheduled GitHub Actions workflow — see
 [docs/stock-pipeline.md](../../docs/stock-pipeline.md#forecasting).
+
+## ETF price-band forecasting
+
+Implements [GitHub issue #67](https://github.com/coldsofttech/equiCast/issues/67):
+the same "one daily probability band per calendar day" shape as
+[Stock price-band forecasting](#stock-price-band-forecasting), routed
+through one of **three ETF-type schemas** (Broad/S&P, FTSE/regional,
+Thematic/Focused — see
+[`etf_type_schemas.yaml`](src/equicast_forecasting/etf_type_schemas.yaml))
+rather than stock's 16 sector/sub-sector schemas — issue #67's own table
+names a much coarser taxonomy than issue #66's.
+
+### Usage
+
+```python
+from equicast_forecasting import etf_price_bands
+
+# `prices` needs at least `date`/`close` keys per record - the shape
+# equicast_etf.ETFClient.prices() already returns. `category` is
+# yfinance's own `.info["category"]` value (a Morningstar category
+# string, e.g. "Large Blend").
+etf_price_bands(prices, "VOO", "Large Blend", years=10)
+# [{"ticker": "VOO", "etf_type": "Broad/S&P", "etf_type_key": "broad_sp",
+#   "date": "2026-09-10", "p10": 478.2, "p50": 501.6, "p90": 524.9,
+#   "regime": "short", "volatility_model": "garch", "expense_ratio": 0.0003,
+#   "dividend_yield": 0.013, "nav_premium_discount": 0.0001,
+#   "aggregate_pe": 27.5, "last_updated": "2026-09-09T17:34:19+00:00",
+#   "source": "equicast"}, ...]
+```
+
+Raises `UnroutableEtfTypeError` if `category` matches none of the 3
+schemas — same "fail loudly, no generic fallback" requirement issue #66
+established for stock, applied here to `category` instead of
+`sector`/`industry`.
+
+### Routing: `category` only, not two-level like stock
+
+Unlike stock's `sector` + `industry` two-level match, an ETF routes on
+yfinance's single `category` field alone (see
+[`etf_type_registry.py`](src/equicast_forecasting/etf_type_registry.py)).
+The category-to-type mapping was verified live against yfinance for a real
+basket of ETFs (VOO/SPY/IVV/VTI/VUG/VOOG/IWM/IJH/VYM/SCHD/VIG →
+Broad/S&P; VXUS/VEA/VWO/EWU/EWJ/EWZ/EWG/EWC/FXI/KWEB/INDA/VT/URTH/ACWI →
+FTSE/regional; XLK/XLF/XLV/XLE/XLU/SMH/SOXX/ARKG/ICLN/GDX/JETS/VNQ/TQQQ/
+SQQQ → Thematic/Focused) before writing the registry — but unlike stock's
+16 exhaustively-enumerated sector/industry branches, ETF category strings
+can't be exhaustively covered this way, so a genuinely novel category
+still raises `UnroutableEtfTypeError` rather than guessing.
+
+**Known limitation**: Morningstar's `category` reflects market-cap/style
+characteristics, not fund *intent* — a pure style-box category (e.g. "Mid-
+Cap Growth") routes to Broad/S&P even for an actively-managed thematic
+fund whose real strategy is concentrated (ARKK is the clearest real
+example — categorized "Mid-Cap Growth," not any sector name, even though
+a human would call it thematic). No better routing signal is available
+from yfinance's `.info` today.
+
+### Same Monte Carlo engine as stock, but no valuation-reversion bias
+
+Same regime split and same one-Monte-Carlo-simulation-spans-the-whole-
+horizon approach as [stock price-band forecasting](#one-monte-carlo-simulation-spans-the-whole-horizon)
+(short: GARCH/EWMA-calibrated volatility, no drift; medium: bootstrap, no
+bias; long: bootstrap + a bias) — but the long-horizon bias isn't a
+valuation-reversion z-score. That needs a reconstructable *historical*
+multiple series (see
+[fundamentals_signals.py](src/equicast_forecasting/fundamentals_signals.py)),
+which funds can't supply — ETFs file no annual financial statements the
+way stocks do, so there's no way to build the coarse annual-resolution
+series stock's own z-score relies on. So **no ETF type gets a
+valuation-reversion bias**, unlike stock's 9-of-16 sectors.
+
+What every ETF genuinely does have instead is its own real **expense
+ratio** — a known, structural drag on total return, not a speculative
+signal. `etf_forecast.py`'s `_long_drift` turns that into a constant daily
+log-return drag (`-expense_ratio / DAYS_PER_YEAR`), active for as long as
+the long regime's drift schedule keeps it tapered in. Unlike stock's own
+`_long_drift` (which spreads a one-time valuation gap evenly over the
+years *remaining* — a multiple reverting toward its mean is a one-shot
+adjustment), this doesn't scale by a reversion window: a fee doesn't
+"revert," it just keeps applying at the same rate.
+
+### Real signals computed today
+
+Of issue #67's named per-type/cross-cutting fields, only four have a real
+data source in equicast today (see
+[`etf_signals.py`](src/equicast_forecasting/etf_signals.py)) — the same
+"declare the target shape, compute what's real, leave the rest null"
+approach `etf_type_schemas.yaml`/`sector_schemas.yaml` both take:
+
+- **`expense_ratio`** (cross-cutting) — real, `.info`'s `netExpenseRatio`,
+  the same field `equicast_etf.client.ETFClient.profile()` already
+  surfaces. Also what drives the long-horizon bias above.
+- **`dividend_yield`** (named directly under FTSE/regional's long
+  horizon) — real, `.info`'s own `yield` (trailing distribution yield).
+- **`nav_premium_discount`** (cross-cutting) — real, `(market_price -
+  nav) / nav` from `.info`'s `navPrice` vs current price — the one
+  genuinely ETF-specific *computed* signal (a stock has no separate NAV
+  to compare against).
+- **`aggregate_pe`** (the real-data half of Broad/S&P's `agg_forward_
+  pe_vs_history` / `starting_agg_pe_cape_adj`) — reuses
+  `equicast_metrics.fundamentals.compute_fundamentals`'s own
+  `trailing_pe` resolution unchanged: yfinance reports a look-through
+  aggregate P/E for many broad-market ETFs in the same `.info["trailingPE"]`
+  field a stock uses. Per the issue's own note, treat this as
+  lower-confidence/lower-availability than a single-stock trailing P/E —
+  and, per the point above, there's no historical series to z-score it
+  against, so it's reported as a snapshot only, with no valuation-tilt
+  effect on the bands themselves.
+
+Every other named field (`options_skew`, `iv_vix_proxy`, `top5_holding_
+weight`, `sector_weight_drift`, `tracking_error`, `theme_durability_risk`,
+`concentration_ratio_top10`, ...) needs options-market, per-holding, or
+benchmark-tracking data no equicast pipeline ingests today — declared in
+`etf_type_schemas.yaml` as the target shape, not computed.
+
+### CLI
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class etf --forecast-kind price-bands --config ../etf/config/etfs.dev.yaml --out ./output
+uv run equicast-forecasting --asset-class etf --forecast-kind price-bands --tickers-json '["VOO"]' --out ./output --years 10 --num-paths 2000
+```
+
+Writes `etf=<TICKER>/forecasting/price_bands.parquet` per ticker —
+nothing for a ticker with too little price history to forecast from.
+Same "fail loudly" `UnroutableEtfTypeError`/`ForecastBatchError` handling
+as stock's own CLI wiring above. Not yet wired into any scheduled GitHub
+Actions workflow — see
+[docs/etf-pipeline.md](../../docs/etf-pipeline.md#forecasting).
 
 ## Development
 

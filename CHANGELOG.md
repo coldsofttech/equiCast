@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ETF-type price-band forecasting (GitHub issue #67): `equicast_forecasting.
+  etf_price_bands()` extends issue #66's stock model to ETFs — same
+  GARCH/EWMA-calibrated Monte Carlo bootstrap engine, but routed to one of
+  three ETF-type schemas (Broad/S&P, FTSE/regional, Thematic/Focused — a
+  coarser taxonomy than stock's 16, matching the issue's own table; see
+  `etf_type_schemas.yaml`), keyed off yfinance's `category` field rather
+  than stock's `sector`+`industry`, and raising `UnroutableEtfTypeError`
+  for anything unmapped ("fail loudly," same as issue #66). Unlike stock,
+  no ETF type gets a valuation-reversion bias at the long horizon — funds
+  file no annual financial statements, so there's no historical multiple
+  series to z-score against. Instead, the long horizon (3y-10y) is biased
+  by the fund's own real expense ratio — a known, structural return drag,
+  spread as a constant daily log-return rate rather than a one-time
+  reversion. Also derives real `dividend_yield`/`nav_premium_discount`/
+  `aggregate_pe` (a look-through trailing P/E, where yfinance reports one)
+  per ticker. Wired into `equicast-forecasting`'s CLI —
+  `--asset-class etf --forecast-kind price-bands` — writing
+  `etf=<TICKER>/forecasting/price_bands.parquet`. Not yet wired into any
+  scheduled workflow.
+
 - Sector-based stock price-band forecasting (GitHub issue #66):
   `equicast_forecasting.stock_price_bands()` routes a stock to one of 16
   sector/sub-sector schemas (a full Morningstar-style taxonomy —

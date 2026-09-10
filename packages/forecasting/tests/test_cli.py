@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 from equicast_forecasting.cli import ForecastBatchError, run
+from equicast_forecasting.etf_type_registry import UnroutableEtfTypeError
 from equicast_forecasting.sector_registry import UnroutableSectorError
 
 
@@ -212,9 +213,13 @@ def test_run_rejects_dividends_forecast_kind_for_fx(tmp_path: Path) -> None:
         run("fx", "dividends", None, tmp_path / "out", pairs_json='[{"from": "gbp", "to": "usd"}]')
 
 
-def test_run_rejects_price_bands_forecast_kind_for_etf(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="--forecast-kind price-bands is stock/fx only"):
-        run("etf", "price-bands", None, tmp_path / "out", tickers_json='["VOO"]')
+def test_run_rejects_price_bands_forecast_kind_for_unsupported_asset_class(tmp_path: Path) -> None:
+    # "stock"/"etf"/"fx" are the only three --asset-class choices argparse
+    # itself allows, and price-bands now supports all three (issue #67
+    # added etf) - so this exercises _validate_forecast_kind's own guard
+    # directly with a class outside that set, rather than a real CLI input.
+    with pytest.raises(ValueError, match="--forecast-kind price-bands is stock/etf/fx only"):
+        run("crypto", "price-bands", None, tmp_path / "out", tickers_json='["VOO"]')
 
 
 def test_run_shares_one_datafeed_client_across_fx_workers(tmp_path: Path) -> None:
@@ -326,6 +331,92 @@ def test_stock_forecast_task_raises_unroutable_sector_error_is_caught(tmp_path: 
     failures: list[tuple[str, UnroutableSectorError]] = []
 
     result = _stock_forecast_task("ZZZZ", datafeed, tmp_path, 1, 50, failures)
+
+    assert result is None
+    assert len(failures) == 1
+    assert failures[0][0] == "ZZZZ"
+
+
+def _patch_etf_forecast(datafeed_cls, info_by_ticker, history_by_ticker):
+    datafeed_cls.return_value.get_info.side_effect = _fake_get_info(info_by_ticker)
+    datafeed_cls.return_value.get_history.side_effect = _fake_get_history(history_by_ticker)
+
+
+def test_run_writes_etf_price_bands_per_ticker(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        _patch_etf_forecast(
+            datafeed_cls,
+            {"VOO": {"category": "Large Blend"}},
+            {"VOO": _stock_history()},
+        )
+        written = run(
+            "etf", "price-bands", None, out_dir, tickers_json='["VOO"]', years=1, num_paths=50
+        )
+
+    assert written == [out_dir / "etf=VOO" / "forecasting" / "price_bands.parquet"]
+
+
+def test_run_raises_forecast_batch_error_for_unroutable_etf_category(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        _patch_etf_forecast(
+            datafeed_cls,
+            {"ZZZZ": {"category": "Not A Real Category"}},
+            {"ZZZZ": _stock_history()},
+        )
+        with pytest.raises(ForecastBatchError, match="ZZZZ"):
+            run(
+                "etf",
+                "price-bands",
+                None,
+                out_dir,
+                tickers_json='["ZZZZ"]',
+                years=1,
+                num_paths=50,
+            )
+
+
+def test_run_still_writes_routable_etfs_when_another_fails_to_route(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    with patch("equicast_forecasting.cli.DatafeedClient") as datafeed_cls:
+        _patch_etf_forecast(
+            datafeed_cls,
+            {
+                "VOO": {"category": "Large Blend"},
+                "ZZZZ": {"category": "Not A Real Category"},
+            },
+            {"VOO": _stock_history(), "ZZZZ": _stock_history()},
+        )
+        with pytest.raises(ForecastBatchError):
+            run(
+                "etf",
+                "price-bands",
+                None,
+                out_dir,
+                tickers_json='["VOO", "ZZZZ"]',
+                years=1,
+                num_paths=50,
+            )
+
+    # The ForecastBatchError is raised only after every ticker has run - VOO's
+    # file is written to disk regardless of ZZZZ's routing failure.
+    assert (out_dir / "etf=VOO" / "forecasting" / "price_bands.parquet").exists()
+    assert not (out_dir / "etf=ZZZZ").exists()
+
+
+def test_etf_forecast_task_raises_unroutable_etf_type_error_is_caught(tmp_path: Path) -> None:
+    from equicast_forecasting.cli import _etf_forecast_task
+
+    datafeed = MagicMock()
+    datafeed.get_info.return_value = {"category": "Not A Real Category"}
+    datafeed.get_history.return_value = _stock_history()
+    failures: list[tuple[str, UnroutableEtfTypeError]] = []
+
+    result = _etf_forecast_task("ZZZZ", datafeed, tmp_path, 1, 50, failures)
 
     assert result is None
     assert len(failures) == 1

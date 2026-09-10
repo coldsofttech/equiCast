@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 from equicast_forecasting.writer import (
     write_dividend_forecast_parquet,
+    write_etf_price_bands_parquet,
     write_fx_price_bands_parquet,
     write_stock_price_bands_parquet,
 )
@@ -112,4 +113,40 @@ def test_write_stock_price_bands_parquet_writes_ticker_prefixed_path(tmp_path: P
 
 def test_write_stock_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_stock_price_bands_parquet([], tmp_path) is None
+
+
+def _etf_band_record(date: str, **overrides: object) -> dict:
+    record = {
+        "ticker": "VOO",
+        "etf_type": "Broad/S&P",
+        "etf_type_key": "broad_sp",
+        "date": date,
+        "p10": 480.0,
+        "p50": 500.0,
+        "p90": 520.0,
+        "regime": "short",
+        "volatility_model": "garch",
+        "expense_ratio": 0.0003,
+        "dividend_yield": 0.013,
+        "nav_premium_discount": 0.0001,
+        "aggregate_pe": 27.5,
+        "last_updated": "2026-08-30T09:00:02+00:00",
+        "source": "equicast",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_etf_price_bands_parquet_writes_ticker_prefixed_path(tmp_path: Path) -> None:
+    records = [_etf_band_record("2026-09-01"), _etf_band_record("2026-09-02")]
+
+    path = write_etf_price_bands_parquet(records, tmp_path)
+
+    assert path == tmp_path / "etf=VOO" / "forecasting" / "price_bands.parquet"
+    result = pd.read_parquet(path)
+    assert result.to_dict(orient="records") == records
+
+
+def test_write_etf_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_etf_price_bands_parquet([], tmp_path) is None
     assert list(tmp_path.iterdir()) == []

@@ -325,10 +325,13 @@ s3://equicast-market-data-<env>/
 ## Forecasting
 
 `equicast-forecasting`'s `--forecast-kind` flag is **required** as of
-GitHub issue #66 (it added a second forecast kind, price-bands, for
-stock/fx only — ETF only ever runs `--forecast-kind dividends`, the
-pre-existing projection described above); the Saturday
-`equicast-forecasting` step in `etf-ingestion.yml` now passes it
-explicitly. See
-[packages/forecasting/README.md](../packages/forecasting/README.md) for
-the full model.
+GitHub issue #66 (it added a second forecast kind, `price-bands`,
+originally stock/fx only). Issue #67 added `price-bands` support for ETF
+too — routed through one of three ETF-type schemas (Broad/S&P,
+FTSE/regional, Thematic/Focused) rather than stock's 16 sector/sub-sector
+ones — but the Saturday `equicast-forecasting` step in `etf-ingestion.yml`
+still only passes `--forecast-kind dividends`; ETF price-band forecasting
+is available via the CLI (`--asset-class etf --forecast-kind price-bands`)
+but not yet wired into this scheduled workflow. See
+[packages/forecasting/README.md](../packages/forecasting/README.md#etf-price-band-forecasting)
+for the full model.
