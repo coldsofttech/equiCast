@@ -7,8 +7,11 @@ interest-rate data is available (see
 [FX price-band forecasting](#fx-price-band-forecasting)); daily,
 sector-routed stock price probability bands from actual price/fundamentals
 data (see [Stock price-band forecasting](#stock-price-band-forecasting));
-and daily, ETF-type-routed price probability bands from actual price/fund
-data (see [ETF price-band forecasting](#etf-price-band-forecasting)).
+daily, ETF-type-routed price probability bands from actual price/fund
+data (see [ETF price-band forecasting](#etf-price-band-forecasting)); and
+daily, per-index-routed price probability bands for market benchmarks
+from actual index price history (see
+[Benchmark price-band forecasting](#benchmark-price-band-forecasting)).
 
 ## Dividend forecasting
 
@@ -345,9 +348,10 @@ uv run equicast-forecasting --asset-class stock --forecast-kind price-bands --ti
 Writes `stock=<TICKER>/forecasting/price_bands.parquet` per ticker —
 nothing for a ticker with too little price history to forecast from.
 `--forecast-kind dividends` (stock/etf) is the pre-existing dividend
-forecast; `--forecast-kind price-bands` is stock/etf/fx (see
-[ETF price-band forecasting](#etf-price-band-forecasting) below for the
-etf case, added by issue #67). **Per the issue's "fail loudly" requirement**, a
+forecast; `--forecast-kind price-bands` is stock/etf/fx/benchmark (see
+[ETF](#etf-price-band-forecasting)/[Benchmark](#benchmark-price-band-forecasting)
+price-band forecasting below for the etf/benchmark cases, added by issues
+#67/#68). **Per the issue's "fail loudly" requirement**, a
 ticker that fails to route raises `UnroutableSectorError`, caught per-
 ticker so the rest of the batch still completes and writes normally, but
 `run()` re-raises a summary `ForecastBatchError` once every ticker has had
@@ -484,6 +488,96 @@ Same "fail loudly" `UnroutableEtfTypeError`/`ForecastBatchError` handling
 as stock's own CLI wiring above. Not yet wired into any scheduled GitHub
 Actions workflow — see
 [docs/etf-pipeline.md](../../docs/etf-pipeline.md#forecasting).
+
+## Benchmark price-band forecasting
+
+Implements [GitHub issue #68](https://github.com/coldsofttech/equiCast/issues/68):
+the same "one daily probability band per calendar day" shape as
+[Stock](#stock-price-band-forecasting)/[ETF](#etf-price-band-forecasting)
+price-band forecasting, applied at the index level. Routed through a
+**per-index schema** keyed directly off `equicast_benchmark`'s own S3
+partition key (e.g. `"SP500"`, `"FTSE100"`) — see
+[`benchmark_schemas.yaml`](src/equicast_forecasting/benchmark_schemas.yaml)
+— rather than any substring/taxonomy match against a fetched field: a
+benchmark's own config already names it exactly, there's nothing to infer.
+
+### Usage
+
+```python
+from equicast_forecasting import benchmark_price_bands
+
+# `prices` needs at least `date`/`close` keys per record - the shape
+# equicast_benchmark.BenchmarkClient.prices() already returns.
+benchmark_price_bands(prices, "SP500", years=10)
+# [{"key": "SP500", "benchmark": "S&P 500", "currency_sensitivity": "low",
+#   "date": "2026-09-10", "p10": 4312.5, "p50": 4501.2, "p90": 4689.8,
+#   "regime": "short", "volatility_model": "garch", "cape_zscore": None,
+#   "last_updated": "2026-09-09T17:34:19+00:00", "source": "equicast"}, ...]
+```
+
+Raises `UnroutableBenchmarkError` if `key` matches no registered
+benchmark — same "fail loudly, no generic fallback" requirement issues
+#66/#67 already established, applied here too: **every benchmark
+configured in [`packages/benchmark/config/`](../benchmark/config/) needs
+its own explicit schema entry** — unlike ETF's 3-type "Other" catch-all,
+there's no shared fallback bucket here (a deliberate choice: the issue's
+own table has an "Other" row, but this registry instead gives every one
+of today's 15 configured benchmarks — including the ones the issue's
+table would call "Other," like DAX/Nikkei 225 — its own bespoke entry).
+
+### Same Monte Carlo engine as stock/ETF, but no real bias anywhere
+
+Same regime split as stock/ETF (short: GARCH/EWMA-calibrated volatility,
+no drift; medium: bootstrap, no bias; long: bootstrap + a valuation-
+reversion bias, same z-score-reverts-toward-its-mean formula
+`stock_forecast.py`'s own `_long_drift` uses) — but **no benchmark gets a
+real bias today**. Unlike stock (a real per-sector multiple z-score for
+9/16 sectors) or ETF (a real expense-ratio drag for every fund), a raw
+index ticker reports no fundamentals at all: verified live against
+yfinance's `.info` for `^GSPC`/`^FTSE`/`^RUA`/`^N225`/`^GDAXI`/`^DJI`/
+`^NDX`, every one returns `None` for `trailingPE`/`dividendYield`/
+`priceToBook`/`category`. There's no single issuer to report a P/E or
+CAPE for the way a stock or an ETF has.
+
+`benchmark_price_bands()`'s `cape_zscore` parameter is kept real and
+explicit (defaulting to `None`, degrading the long horizon to a plain
+unbiased bootstrap) rather than inlined as a hardcoded constant — exactly
+how FX forecasting's own `reer_deviation` (also always `None` today) is
+wired — so a future real CAPE/aggregate-PE data source only needs to pass
+a value in, not change this module's shape.
+
+### `currency_sensitivity`: a real per-index config value, not a constant
+
+The issue is explicit: "don't reuse the same `currency_drag_benefit`
+weighting across all benchmarks; make it a configurable per-index
+parameter, not a constant." Each schema entry declares its own
+`currency_sensitivity` (`none`/`low`/`moderate`/`high`) — FTSE 100 is
+`high` (the issue's own framing: its heavy overseas-earnings weighting
+means FX correlation "matters more here than for S&P 500/Russell 3000",
+both `low`) — returned on every record as real per-index *configuration*.
+There's no real historical FX-correlation signal behind it yet to turn
+into an actual drift number, though — same honest "the config knob
+exists, the number is 0.0 until real data arrives" shape `cape_zscore`
+has. The classification itself is illustrative (ordinary market knowledge
+— e.g. MSCI Emerging Markets classified `high` for real EM currency
+volatility — not derived from any real data equicast ingests); see
+`benchmark_schemas.yaml`'s own header comment for the full reasoning per
+benchmark.
+
+### CLI
+
+```bash
+cd packages/forecasting
+uv run equicast-forecasting --asset-class benchmark --forecast-kind price-bands --config ../benchmark/config/benchmarks.dev.yaml --out ./output
+uv run equicast-forecasting --asset-class benchmark --forecast-kind price-bands --benchmarks-json '[{"key":"SP500","symbol":"^GSPC"}]' --out ./output --years 10 --num-paths 2000
+```
+
+Writes `benchmark=<KEY>/forecasting/price_bands.parquet` per benchmark —
+nothing for a benchmark with too little price history to forecast from.
+Same "fail loudly" `UnroutableBenchmarkError`/`ForecastBatchError`
+handling as stock's/ETF's own CLI wiring above. Not yet wired into any
+scheduled GitHub Actions workflow — see
+[docs/benchmark-pipeline.md](../../docs/benchmark-pipeline.md#forecasting).
 
 ## Development
 

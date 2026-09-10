@@ -9,6 +9,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Benchmark (market index) price-band forecasting (GitHub issue #68):
+  `equicast_forecasting.benchmark_price_bands()` extends the same
+  GARCH/EWMA-calibrated Monte Carlo bootstrap engine to market indices,
+  routed to a per-index schema keyed directly off `equicast_benchmark`'s
+  own S3 partition key (e.g. `"SP500"`) rather than a substring/taxonomy
+  match — every one of today's 15 configured benchmarks gets its own
+  explicit schema entry (`benchmark_schemas.yaml`), raising
+  `UnroutableBenchmarkError` for anything unmapped ("fail loudly," same as
+  issues #66/#67 — deliberately no generic "Other" fallback bucket despite
+  the issue's own table having one). No benchmark gets a real
+  valuation-reversion bias today: a raw index ticker reports no
+  fundamentals at all via yfinance's `.info` (verified live against
+  `^GSPC`/`^FTSE`/`^RUA`/`^N225`/`^GDAXI`/`^DJI`/`^NDX`), so `cape_zscore`
+  is kept as a real, explicit parameter defaulting to `None` rather than a
+  hardcoded 0.0 — ready for a future real CAPE/aggregate-PE data source,
+  same shape FX forecasting's own unwired `reer_deviation` already uses.
+  Each schema also declares a `currency_sensitivity` classification
+  (`none`/`low`/`moderate`/`high`, FTSE 100 highest per the issue's own
+  framing) — a real per-index config value, satisfying the issue's
+  explicit "don't reuse the same currency_drag_benefit weighting across
+  all benchmarks" requirement, though not yet backed by a real
+  FX-correlation signal. Wired into `equicast-forecasting`'s CLI —
+  `--asset-class benchmark --forecast-kind price-bands`, with a new
+  `--benchmarks-json` source flag alongside `--config` — writing
+  `benchmark=<KEY>/forecasting/price_bands.parquet`. Not yet wired into
+  any scheduled workflow. Stands alone — no relative-performance overlay
+  hook into stock/ETF forecasting.
+
 - ETF-type price-band forecasting (GitHub issue #67): `equicast_forecasting.
   etf_price_bands()` extends issue #66's stock model to ETFs — same
   GARCH/EWMA-calibrated Monte Carlo bootstrap engine, but routed to one of

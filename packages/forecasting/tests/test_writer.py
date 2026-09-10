@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 from equicast_forecasting.writer import (
+    write_benchmark_price_bands_parquet,
     write_dividend_forecast_parquet,
     write_etf_price_bands_parquet,
     write_fx_price_bands_parquet,
@@ -150,3 +151,36 @@ def test_write_etf_price_bands_parquet_writes_ticker_prefixed_path(tmp_path: Pat
 def test_write_etf_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_etf_price_bands_parquet([], tmp_path) is None
     assert list(tmp_path.iterdir()) == []
+
+
+def _benchmark_band_record(date: str, **overrides: object) -> dict:
+    record = {
+        "key": "SP500",
+        "benchmark": "S&P 500",
+        "currency_sensitivity": "low",
+        "date": date,
+        "p10": 4300.0,
+        "p50": 4500.0,
+        "p90": 4700.0,
+        "regime": "short",
+        "volatility_model": "garch",
+        "cape_zscore": None,
+        "last_updated": "2026-08-30T09:00:02+00:00",
+        "source": "equicast",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_benchmark_price_bands_parquet_writes_key_prefixed_path(tmp_path: Path) -> None:
+    records = [_benchmark_band_record("2026-09-01"), _benchmark_band_record("2026-09-02")]
+
+    path = write_benchmark_price_bands_parquet(records, tmp_path)
+
+    assert path == tmp_path / "benchmark=SP500" / "forecasting" / "price_bands.parquet"
+    result = pd.read_parquet(path)
+    assert result.to_dict(orient="records") == records
+
+
+def test_write_benchmark_price_bands_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_benchmark_price_bands_parquet([], tmp_path) is None

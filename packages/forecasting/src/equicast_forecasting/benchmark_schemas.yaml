@@ -1,0 +1,165 @@
+# Benchmark (market index) forecasting schema registry for
+# benchmark_forecast.py (GitHub issue #68) - same registry idea as
+# sector_schemas.yaml (issue #66)/etf_type_schemas.yaml (issue #67), but
+# routes on equicast_benchmark's own `key` (the S3 partition key each
+# configured index already carries - packages/benchmark/config/
+# benchmarks.*.yaml, e.g. "SP500", "FTSE100") directly, not a substring
+# match against any yfinance field - a benchmark's own config already
+# names it exactly, there's nothing to infer.
+#
+# Unlike etf_type_schemas.yaml's 3-type "Other" catch-all, this registry
+# has **no generic fallback** - every benchmark configured in
+# packages/benchmark/config/benchmarks.*.yaml needs its own explicit entry
+# here, same "fail loudly" requirement issues #66/#67 already established
+# (see benchmark_registry.py's UnroutableBenchmarkError). The issue's own
+# table only names S&P 500/Russell 3000/FTSE 100 plus a generic "Other"
+# row - the 12 other entries below all reuse "Other"'s own parameter names
+# verbatim (still each its own explicit entry, not a shared fallback).
+#
+# `currency_sensitivity` (none/low/moderate/high) is the per-index
+# parameter the issue explicitly requires ("don't reuse the same
+# currency_drag_benefit weighting across all benchmarks; make it a
+# configurable per-index parameter, not a constant") - a categorical,
+# **illustrative** classification only, not derived from any real data
+# equicast ingests (there's no historical FX-correlation computation
+# behind it yet - see benchmark_forecast.py's module docstring for why the
+# long-horizon regime's actual drift is 0.0 for every benchmark today
+# regardless of this field). Assigned from the issue's own framing (FTSE
+# 100 "matters more" than S&P 500/Russell 3000) plus ordinary market
+# knowledge (FTSE 250/All-Share are UK-domiciled like FTSE 100 but
+# structurally less overseas-earnings-heavy than FTSE 100 itself; MSCI
+# Emerging Markets carries the most currency volatility of the MSCI
+# family) - a reasonable starting point for whenever a real FX-correlation
+# signal is wired in, not a rigorously derived weighting.
+#
+# `parameters` are the short/medium/long field names from the issue's own
+# table (verbatim for S&P 500/Russell 3000/FTSE 100; the "Other" row's set
+# for everything else), kept here as documentation of the target signal
+# set only - see this package's README/benchmark_forecast.py's module
+# docstring for why none of them (nor a CAPE/aggregate-PE valuation
+# signal) have a real data source at the index level today: yfinance's
+# `.info` for a raw index ticker (verified live against ^GSPC/^FTSE/^RUA/
+# ^N225/^GDAXI/^DJI/^NDX) reports no trailingPE/dividendYield/
+# priceToBook/category at all - unlike a stock or a fund, a raw index has
+# no single issuer to report fundamentals for.
+
+benchmarks:
+  - key: SP500
+    label: "S&P 500"
+    currency_sensitivity: low
+    parameters:
+      short: [iv_vix, breadth_indicator, options_skew]
+      medium: [agg_forward_pe_vs_history, earnings_revision_breadth, sector_weight_rotation]
+      long: [starting_cape, margin_trend_aggregate, buyback_yield, gdp_growth_correlation]
+
+  - key: RUSSELL3000
+    label: "Russell 3000"
+    currency_sensitivity: low
+    parameters:
+      short: [iv, small_cap_breadth]
+      medium: [agg_forward_pe_vs_history, small_cap_vs_large_cap_spread, earnings_revision_breadth]
+      long: [starting_cape, small_cap_risk_premium_trend, margin_trend_aggregate]
+
+  - key: FTSE100
+    label: "FTSE 100"
+    currency_sensitivity: high
+    parameters:
+      short: [iv, gbp_correlation]
+      medium: [sector_concentration, forward_pe_vs_historical_uk_discount]
+      long: [starting_pe_vs_longrun_uk_discount, dividend_yield_structural, currency_drag_benefit]
+
+  - key: RUSSELL2000
+    label: "Russell 2000"
+    currency_sensitivity: low
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: DOW_JONES
+    label: "Dow Jones Industrial Average"
+    currency_sensitivity: low
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: NASDAQ100
+    label: "Nasdaq 100"
+    currency_sensitivity: low
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: FTSE250
+    label: "FTSE 250"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: FTSE_ALL_SHARE
+    label: "FTSE All-Share"
+    currency_sensitivity: high
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: STOXX_EUROPE_600
+    label: "STOXX Europe 600"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: EURO_STOXX_50
+    label: "Euro Stoxx 50"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: DAX
+    label: "DAX"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: NIKKEI225
+    label: "Nikkei 225"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: MSCI_WORLD
+    label: "MSCI World"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: MSCI_ACWI
+    label: "MSCI ACWI"
+    currency_sensitivity: moderate
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]
+
+  - key: MSCI_EM
+    label: "MSCI Emerging Markets"
+    currency_sensitivity: high
+    parameters:
+      short: [iv, local_currency_correlation]
+      medium: [sector_concentration, forward_pe_vs_own_history]
+      long: [starting_pe_vs_own_longrun_avg, dividend_yield, currency_drag_benefit]

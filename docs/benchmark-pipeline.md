@@ -157,10 +157,12 @@ on `main`, or on demand via its `workflow_dispatch` trigger (Actions tab →
 offset from `fx-ingestion.yml`/`etf-ingestion.yml`, see
 [fx-pipeline.md](fx-pipeline.md#running-the-scheduled-ingestion)), so none
 of the four ever overlap. Unlike `etf-ingestion.yml`/`stock-ingestion.yml`,
-there's no Saturday entry — `equicast-benchmark` has no forecasting step
-(indices pay no dividends), so there's nothing for a weekly run to do here.
-Can also be triggered manually (Actions tab → *Benchmark Ingestion* → *Run
-workflow*, any day) with these inputs:
+there's no Saturday entry — `equicast-benchmark` has no *dividend*
+forecasting step (indices pay no dividends), so there was nothing for a
+weekly run to do here. Issue #68 (see [Forecasting](#forecasting) below)
+added *price-band* forecasting, but it's not yet wired into this workflow
+either. Can also be triggered manually (Actions tab → *Benchmark
+Ingestion* → *Run workflow*, any day) with these inputs:
 
 | Input | Default | Meaning |
 |---|---|---|
@@ -199,3 +201,14 @@ s3://equicast-market-data-<env>/
         ├── history.parquet   (written once by a --full-load run)
         └── current.parquet   (rewritten by every run)
 ```
+
+## Forecasting
+
+GitHub issue #68 added `equicast-forecasting` support for benchmarks —
+`--asset-class benchmark --forecast-kind price-bands` — routing each
+configured benchmark's own `key` (e.g. `SP500`) to one of its per-index
+schemas and writing `benchmark=<KEY>/forecasting/price_bands.parquet`. Not
+wired into this workflow's scheduled runs; see
+[packages/forecasting/README.md](../packages/forecasting/README.md#benchmark-price-band-forecasting)
+for the full model. `--forecast-kind dividends` still doesn't apply here —
+indices pay no dividends.
