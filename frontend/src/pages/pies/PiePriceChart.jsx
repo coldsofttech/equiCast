@@ -215,11 +215,16 @@ async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
  * dash animation too (ec-chart-avg-line/ec-chart-current-line,
  * HoldingPriceChart.css — already imported here, so no extra CSS needed).
  *
- * A range switch doesn't blank the view while the new bars load, the main
- * line draws in left-to-right, the area fill fades+rises in, and the
- * compare/benchmark overlay gets its own clip-path draw-in — all identical
- * to HoldingPriceChart.jsx's own animation (see that component's docstring
- * for the full reasoning); this just ports the same mainLineRef/revision/
+ * A range switch doesn't blank the view while the new bars load — the
+ * previous chart stays up, dimmed via "is-refreshing", same as
+ * HoldingPriceChart.jsx (see that component's docstring for the full
+ * reasoning, including why the "draws in left-to-right"/"fades+rises in"
+ * reveal itself is reserved for this entity's genuine first paint only,
+ * not a same-entity range switch — replaying it there used to make the
+ * chart flash invisible for a frame right as the dim lifted, GitHub issue
+ * #137). The compare/benchmark overlay's own clip-path draw-in is
+ * unaffected either way, since it's keyed on the compare path itself, not
+ * `revision`. This just ports the same mainLineRef/revision/
  * compareClipRectRef mechanics since PiePriceChart has its own separate
  * fetch effect and JSX, not anything HoldingPriceChart's CSS import alone
  * could cover. No candle-reveal case, since this chart has no Candles type.
@@ -261,11 +266,24 @@ function PiePriceChart({
   const [bars, setBars] = useState([]);
   const [status, setStatus] = useState("loading");
 
-  // Bumped each time a fetch actually lands new bars — mirrors
-  // HoldingPriceChart's own `revision`, driving the reveal animations
-  // (mainLineRef's effect and ec-chart-reveal below) so they only replay
-  // once there's really a new curve to draw.
+  // Bumped only for this entity's genuine first paint, mirroring
+  // HoldingPriceChart's own `revision` fix for GitHub issue #137 — a
+  // same-entity range switch (already kept smooth via the previous
+  // chart staying up, dimmed by "is-refreshing") shouldn't also replay
+  // the "start from nothing" reveal (mainLineRef's effect and
+  // ec-chart-reveal below), which made the chart flash fully invisible
+  // for a frame right as the dim was lifting — a blink, not the intended
+  // smooth update. `holdings` gets a new array identity on most renders
+  // of the caller even for the *same* pie/account (see
+  // DiversificationChart.jsx's own signature fix for the identical
+  // problem), so "did the entity actually change" is judged by a
+  // content signature (sorted tickers), not `holdings`' own reference.
   const [revision, setRevision] = useState(0);
+  const holdingsSignature = holdings
+    .map((h) => h.ticker)
+    .sort()
+    .join("|");
+  const prevEntityRef = useRef({ holdingsSignature: null, currency: null });
 
   useEffect(() => {
     let cancelled = false;
@@ -275,12 +293,16 @@ function PiePriceChart({
       if (cancelled) return;
       setBars(aggregated);
       setStatus(aggregated.length > 0 ? "ok" : "empty");
-      setRevision((r) => r + 1);
+      const isSameEntity =
+        prevEntityRef.current.holdingsSignature === holdingsSignature &&
+        prevEntityRef.current.currency === currency;
+      prevEntityRef.current = { holdingsSignature, currency };
+      if (!isSameEntity) setRevision((r) => r + 1);
     });
     return () => {
       cancelled = true;
     };
-  }, [api, holdings, rangeId, currency]);
+  }, [api, holdings, rangeId, currency, holdingsSignature]);
 
   // Nothing above clears `bars` while a range switch is in flight, so this
   // keeps reading the previous range's chart right up until the new one

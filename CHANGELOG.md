@@ -164,6 +164,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The holding/pie/account price chart blinked (flashed fully invisible for
+  a frame) on a same-entity time-range switch instead of updating smoothly
+  (GitHub issue #137). The reveal animations added for a chart's genuine
+  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
+  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
+  `revision`) were replaying on *every* successful fetch, including a
+  plain range switch — whose own "keep the previous chart up, dimmed via
+  is-refreshing" transition already had nothing to hide the reveal's own
+  "start from nothing" state behind, so the chart flashed blank right as
+  the dim lifted. `revision` now only bumps on a chart's real first paint
+  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
+  change; `PiePriceChart`'s equivalent, keyed off a content signature of
+  `holdings` rather than its own unstable array identity, the same fix
+  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
+  a same-entity range switch now just updates the chart's shape directly
+  under the existing dim/undim transition, no separate blink.
 - An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
   `sector`/`industry` at all — yfinance doesn't populate either for a fund
   — so every etf catalog row carried `None` for both, and a `/search`
