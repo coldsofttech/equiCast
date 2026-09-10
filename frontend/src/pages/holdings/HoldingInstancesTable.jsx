@@ -1,3 +1,4 @@
+import Balance from "../../components/core/Balance.jsx";
 import { formatPrice } from "./holdingFinancials.js";
 
 /**
@@ -47,18 +48,22 @@ function HoldingInstancesTable({
               <tr key={instance.holding.id} onClick={() => onRowClick(instance)}>
                 <td>{instance.transactionsError ? "—" : instance.shares}</td>
                 <td>
-                  {instance.transactionsError || instance.avgPriceNative == null
-                    ? "—"
-                    : formatPrice(instance.avgPriceNative, nativeCurrency)}
+                  {instance.transactionsError || instance.avgPriceNative == null ? (
+                    "—"
+                  ) : (
+                    <Balance>{formatPrice(instance.avgPriceNative, nativeCurrency)}</Balance>
+                  )}
                 </td>
                 <td>
-                  {instance.transactionsError || instance.avgPriceNative == null
-                    ? "—"
-                    : fxState === "loading"
-                      ? "…"
-                      : fxRate != null
-                        ? formatPrice(instance.avgPriceNative * fxRate, defaultCurrency)
-                        : "—"}
+                  {instance.transactionsError || instance.avgPriceNative == null ? (
+                    "—"
+                  ) : fxState === "loading" ? (
+                    "…"
+                  ) : fxRate != null ? (
+                    <Balance>{formatPrice(instance.avgPriceNative * fxRate, defaultCurrency)}</Balance>
+                  ) : (
+                    "—"
+                  )}
                 </td>
                 <td>{instance.location}</td>
                 <td>

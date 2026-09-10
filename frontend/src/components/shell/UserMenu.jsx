@@ -4,6 +4,7 @@ import { useAuth0 } from "@auth0/auth0-react";
 import SettingsModal from "./SettingsModal.jsx";
 import { clearCachedProfile } from "../../api/useCurrentUser.js";
 import { clearCachedAccounts } from "../../api/useAccounts.js";
+import { clearCachedGreeting } from "../../utils/greeting.js";
 import "./UserMenu.css";
 
 function initialsFor(name, email) {
@@ -66,13 +67,14 @@ function UserMenu({ profile, onProfileUpdate }) {
   const showImage = Boolean(user?.picture) && !imgFailed;
 
   const handleSignOut = () => {
-    // Both caches survive the Auth0 logout/login redirect round trip (the
-    // profile's sessionStorage survives it same-tab; accounts' IndexedDB
-    // survives it — and a browser restart — on any tab), so clear them here
-    // rather than leaving a stale profile/accounts cache for whoever signs
-    // in next.
+    // All three caches survive the Auth0 logout/login redirect round trip
+    // (profile's and the greeting's sessionStorage survive it same-tab;
+    // accounts' IndexedDB survives it — and a browser restart — on any
+    // tab), so clear them here rather than leaving a stale profile/
+    // accounts/greeting cache for whoever signs in next.
     clearCachedProfile();
     clearCachedAccounts();
+    clearCachedGreeting();
     logout({ logoutParams: { returnTo: window.location.origin } });
   };
 

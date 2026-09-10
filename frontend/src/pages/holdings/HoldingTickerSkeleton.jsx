@@ -6,11 +6,12 @@ import "./HoldingTickerSkeleton.css";
  * Placeholder "cards" shown in place of the real page content while the
  * market profile/transactions/price chart/dividends are still loading —
  * mirrors the real layout below (StatTiles row, price chart card, Owned
- * shares table, CAGR card, Stats/About columns, Dividends cards, Recent
- * activity card) so the page doesn't jump around once the real content
- * swaps in. `isOwned` hides the StatTiles/Owned shares/Recent activity rows
- * for a ticker the user doesn't hold, same as the real content does — the
- * CAGR card isn't gated on it, since HoldingCagrSection.jsx renders off
+ * shares table, CAGR card, Buy/Sell Rating card, Stats/About columns,
+ * Dividends cards, Recent activity card) so the page doesn't jump around
+ * once the real content swaps in. `isOwned` hides the StatTiles/Owned
+ * shares/Recent activity rows for a ticker the user doesn't hold, same as
+ * the real content does — the CAGR and Buy/Sell Rating cards aren't gated
+ * on it, since HoldingCagrSection.jsx/HoldingBuySellGauge.jsx render off
  * market metrics regardless of ownership. The Dividends card grid and the
  * Transactions row list each always render three placeholders regardless
  * of how many (if any) the real sections end up showing — neither's real
@@ -70,6 +71,16 @@ function HoldingTickerSkeleton({ isOwned }) {
             </div>
           ))}
         </div>
+      </Card>
+
+      <Card className="ec-detail-section">
+        <Skeleton width="130px" height="1.25rem" />
+        <div className="ec-buysell-head">
+          <Skeleton width="40px" height="1.25rem" />
+          <Skeleton width="120px" height="0.75rem" />
+          <Skeleton width="40px" height="1.25rem" />
+        </div>
+        <Skeleton width="100%" height="10px" />
       </Card>
 
       <div className="ec-account-columns">
