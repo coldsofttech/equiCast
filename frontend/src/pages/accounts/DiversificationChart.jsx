@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
 import "./DiversificationChart.css";
@@ -22,9 +23,27 @@ function scoreInfoFor(score) {
  * Passing `onRowClick` makes rows clickable (used by the Sector chart to
  * drill into the Industry chart) — `activeLabel` then highlights whichever
  * row is currently selected. Neither prop is needed for a read-only chart.
+ *
+ * Bars grow in from zero on load rather than appearing at full width.
+ * `data` is rebuilt (new array identity) on every render of the caller —
+ * including ones unrelated to this chart, like an unrelated modal opening —
+ * so the reveal is keyed off a content signature (label:pct pairs) rather
+ * than `data` itself: since `signature` is a plain string, React's own
+ * dependency comparison already skips the effect whenever it's unchanged,
+ * with no extra bookkeeping needed. The reveal only re-fires when the
+ * signature actually differs, e.g. navigating to a different account/pie,
+ * or the Sector chart's onRowClick filtering the Industry chart's rows.
  */
 function DiversificationChart({ title, caption, data, score, onRowClick, activeLabel }) {
   const scoreInfo = typeof score === "number" ? scoreInfoFor(score) : null;
+  const signature = data.map((entry) => `${entry.label}:${entry.pct}`).join("|");
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    setRevealed(false);
+    const frame = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [signature]);
 
   return (
     <Card className="ec-divchart ec-detail-section">
@@ -48,7 +67,10 @@ function DiversificationChart({ title, caption, data, score, onRowClick, activeL
                 <div className="ec-divchart-track">
                   <div
                     className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
-                    style={{ width: `${entry.pct}%` }}
+                    style={{
+                      width: revealed ? `${entry.pct}%` : "0%",
+                      transitionDelay: `${i * 60}ms`,
+                    }}
                   />
                 </div>
                 <span className="ec-divchart-pct">{entry.pct}%</span>
