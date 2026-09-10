@@ -518,6 +518,145 @@ class TestGetPrices:
             client.get_prices("etf", "voo", price_range="3d")
 
 
+class TestGetPriceHistory:
+    def test_returns_empty_shape_when_nothing_published(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_price_history("etf", "MISSING") == {
+            "ticker": "MISSING",
+            "currency": None,
+            "last_updated": None,
+            "daily": [],
+            "weekly": [],
+            "monthly": [],
+        }
+
+    def test_returns_dict_shape_with_currency_and_last_updated(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        rows = [
+            _price_row(f"{year}-01-02", close=624.5),
+            _price_row(f"{year}-01-05", close=628.64, last_updated=f"{year}-01-05T21:05:00+00:00"),
+        ]
+        _put_year(s3_client, "etf", "VOO", year, rows)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert result["ticker"] == "VOO"
+        assert result["currency"] == "USD"
+        assert result["last_updated"] == rows[-1]["last_updated"]
+        assert "source" not in result
+
+    def test_currency_is_none_when_price_rows_carry_no_currency_field(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        row = {
+            "from_currency": "GBP",
+            "to_currency": "USD",
+            "date": f"{year}-01-02",
+            "open": 1.3,
+            "high": 1.31,
+            "low": 1.29,
+            "close": 1.305,
+            "last_updated": f"{year}-01-02T21:00:00+00:00",
+            "source": "yfinance",
+        }
+        _put_year(s3_client, "fx", "GBPUSD", year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("fx", "GBPUSD")
+
+        assert result["currency"] is None
+
+    def test_daily_always_covers_jan_1_this_year_even_past_a_6_month_cutoff(self, s3_client) -> None:
+        # daily_cutoff = min(6-months-ago, this-year's Jan 1) — whatever
+        # "today" actually is when this test runs, this year's Jan 2 is
+        # always on-or-after that cutoff (it can't be earlier than Jan 1
+        # itself, and the cutoff is never later than Jan 1). This is the
+        # exact ytd-can-reach-further-back-than-6m case get_prices used to
+        # serve via a separate `range="ytd"` call.
+        year = datetime.now(UTC).year
+        row = _price_row(f"{year}-01-02", close=1.0)
+        _put_year(s3_client, "etf", "VOO", year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert [p["date"] for p in result["daily"]] == [row["date"]]
+
+    def test_daily_excludes_a_row_from_over_a_year_ago(self, s3_client) -> None:
+        today = datetime.now(UTC).date()
+        old = today - timedelta(days=400)
+        _put_year(s3_client, "etf", "VOO", old.year, [_price_row(old.isoformat(), close=1.0)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert old.isoformat() not in [p["date"] for p in result["daily"]]
+
+    def test_daily_rows_are_unaggregated(self, s3_client) -> None:
+        today = datetime.now(UTC).date()
+        recent = today - timedelta(days=5)
+        row = _price_row(recent.isoformat(), open=10, high=12, low=9, close=11)
+        _put_year(s3_client, "etf", "VOO", recent.year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert result["daily"] == [
+            {"date": row["date"], "open": 10, "high": 12, "low": 9, "close": 11}
+        ]
+
+    def test_weekly_covers_up_to_two_years_and_aggregates_by_iso_week(self, s3_client) -> None:
+        today = datetime.now(UTC).date()
+        # ~18 months ago — inside the weekly segment's 2-year window, but
+        # well past the daily segment's ~6-12 month window.
+        monday = today - timedelta(days=540)
+        monday = monday - timedelta(days=monday.weekday())
+        days = [monday, monday + timedelta(days=1)]
+        rows = [
+            _price_row(days[0].isoformat(), open=10, high=12, low=9, close=11),
+            _price_row(days[1].isoformat(), open=11, high=15, low=10, close=14),
+        ]
+        by_year: dict[int, list[dict]] = {}
+        for d, row in zip(days, rows):
+            by_year.setdefault(d.year, []).append(row)
+        for y, year_rows in by_year.items():
+            _put_year(s3_client, "etf", "VOO", y, year_rows)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert result["weekly"] == [
+            {"date": days[1].isoformat(), "open": 10, "high": 15, "low": 9, "close": 14}
+        ]
+
+    def test_weekly_excludes_rows_older_than_two_years(self, s3_client) -> None:
+        old = datetime.now(UTC).date() - timedelta(days=1000)
+        _put_year(s3_client, "etf", "VOO", old.year, [_price_row(old.isoformat(), close=1.0)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert result["weekly"] == []
+
+    def test_monthly_covers_the_full_history_and_aggregates_by_calendar_month(self, s3_client) -> None:
+        five_years_ago = datetime.now(UTC).date().replace(day=1) - timedelta(days=5 * 365)
+        first_of_month = five_years_ago.replace(day=1)
+        days = [first_of_month, first_of_month + timedelta(days=10)]
+        rows = [
+            _price_row(days[0].isoformat(), open=100, high=105, low=98, close=102),
+            _price_row(days[1].isoformat(), open=102, high=110, low=101, close=108),
+        ]
+        _put_year(s3_client, "etf", "VOO", first_of_month.year, rows)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_price_history("etf", "voo")
+
+        assert result["monthly"] == [
+            {"date": days[1].isoformat(), "open": 100, "high": 110, "low": 98, "close": 108}
+        ]
+
+
 class TestGetPriceOnDate:
     def test_exact_date_match(self, s3_client) -> None:
         year = datetime.now(UTC).year

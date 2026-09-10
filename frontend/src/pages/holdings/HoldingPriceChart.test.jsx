@@ -22,9 +22,18 @@ const COMPARE_BARS = [
   { date: "2024-01-02", open: 52, high: 56, low: 51, close: 55 },
 ];
 
+// Bars go in `monthly` (unfiltered by sliceForRange's "max" case) so the
+// default range — "max" — surfaces them without needing real date-cutoff
+// logic to line up with each test's fixed 2024 dates.
 function mockPrices(byTicker) {
   vi.mocked(getPrices).mockImplementation((_api, _assetClass, symbol) =>
-    Promise.resolve({ ticker: symbol, currency: "USD", prices: byTicker[symbol] ?? [] })
+    Promise.resolve({
+      ticker: symbol,
+      currency: "USD",
+      daily: [],
+      weekly: [],
+      monthly: byTicker[symbol] ?? [],
+    })
   );
 }
 
@@ -53,13 +62,13 @@ afterEach(() => {
 });
 
 describe("HoldingPriceChart", () => {
-  it("fetches this ticker's real prices for the default range", () => {
+  it("fetches this ticker's real price history once, no range param", () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     mockPrices({ AAPL: MAIN_BARS });
 
     render(<HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />);
 
-    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL", { range: "max" });
+    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "stock", "AAPL");
   });
 
   it("fetches and plots a selected comparison ticker's own real prices, rebased to this ticker's start", async () => {
@@ -70,7 +79,7 @@ describe("HoldingPriceChart", () => {
 
     await selectCompareTicker({ ticker: "AVGO", name: "Broadcom Inc.", type: "stock" });
 
-    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "stock", "AVGO", { range: "max" });
+    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "stock", "AVGO");
 
     // Both series go from their own start to +10% by the last bar, so once
     // rebased/date-aligned they should read the same % change even though
@@ -85,9 +94,12 @@ describe("HoldingPriceChart", () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     let resolveCompare;
     vi.mocked(getPrices).mockImplementation((_api, _assetClass, symbol) => {
-      if (symbol === "AAPL") return Promise.resolve({ ticker: symbol, currency: "USD", prices: MAIN_BARS });
+      if (symbol === "AAPL") {
+        return Promise.resolve({ ticker: symbol, currency: "USD", daily: [], weekly: [], monthly: MAIN_BARS });
+      }
       return new Promise((resolve) => {
-        resolveCompare = () => resolve({ ticker: symbol, currency: "USD", prices: COMPARE_BARS });
+        resolveCompare = () =>
+          resolve({ ticker: symbol, currency: "USD", daily: [], weekly: [], monthly: COMPARE_BARS });
       });
     });
 
@@ -110,7 +122,7 @@ describe("HoldingPriceChart", () => {
     fireEvent.focus(screen.getByLabelText("Compare against a stock, ETF, or benchmark"));
     fireEvent.click(await screen.findByRole("button", { name: "S&P 500" }));
 
-    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500", { range: "max" });
+    expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500");
 
     expect(await screen.findByText("S&P 500")).toBeInTheDocument();
     const changes = screen.getAllByText("▲ 10.0%");

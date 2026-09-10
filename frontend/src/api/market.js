@@ -308,18 +308,6 @@ export const MARKET_PROFILE_BADGE_TONES = {
 };
 
 /**
- * Every range GET .../prices/'s `?range=` accepts, in the order a range
- * picker should offer them — mirrors equicast_core.client.PRICE_RANGES
- * exactly; keep the two in sync if either changes.
- */
-export const PRICE_RANGES = ["1d", "5d", "1m", "6m", "ytd", "1y", "2y", "3y", "5y", "10y", "max"];
-
-/** The backend's own default when `range` is omitted — see
- * backend/market_data/views.py's PricesView / equicast_core's
- * DEFAULT_PRICE_RANGE. */
-export const DEFAULT_PRICE_RANGE = "max";
-
-/**
  * @typedef {Object} PriceBar
  * @property {string} date
  * @property {number} open
@@ -333,42 +321,44 @@ export const DEFAULT_PRICE_RANGE = "max";
  * @property {string} ticker
  * @property {string|null} currency
  * @property {string|null} last_updated
- * @property {PriceBar[]} prices - ascending/oldest-first. Daily bars for
- *   `range` "6m" or shorter; weekly ("1y"/"2y") or monthly ("3y" and up)
- *   OHLC bars otherwise — see equicast_core.client.get_prices.
+ * @property {PriceBar[]} daily - ascending/oldest-first, unaggregated, from
+ *   the earlier of 6 months ago or this year's Jan 1.
+ * @property {PriceBar[]} weekly - ascending/oldest-first, aggregated to one
+ *   bar per ISO week, from 2 years ago.
+ * @property {PriceBar[]} monthly - ascending/oldest-first, aggregated to
+ *   one bar per calendar month, full history — see
+ *   equicast_core.client.get_price_history. `pages/priceRangeSlicing.js`'s
+ *   `sliceForRange` picks/trims the right one of these three for whichever
+ *   range picker button is selected, entirely client-side (GitHub issue
+ *   #150) — this response covers every range in one fetch.
  */
 
 /**
- * GET /api/market/<asset_class>/<symbol>/prices/ — see
- * backend/market_data/views.py's PricesView. `range` is one of
- * PRICE_RANGES, defaulting client-side to DEFAULT_PRICE_RANGE ("max") so
- * the request URL and the cache key below always agree on what range was
- * actually asked for.
+ * GET /api/market/<asset_class>/<symbol>/prices/ (no `?range=` — see
+ * backend/market_data/views.py's PricesView; an explicit `?range=` still
+ * exists for a direct API caller, just not used by this UI-facing
+ * wrapper) — the bundled `{daily, weekly, monthly}` payload for every
+ * range the price chart's picker offers, fetched once per ticker.
  *
- * Cached in IndexedDB per `assetClass`/`symbol`/`range` for the rest of
- * the browser's local calendar day (see utils/priceCache.js) — the
- * backend's published price data only changes once a day, so a repeat
- * request for the same range later the same day is served from the cache
- * instead of hitting the API again. A cache miss/failure (including no
- * IndexedDB support at all) just falls through to the network call.
+ * Cached in IndexedDB per `assetClass`/`symbol` for the rest of the
+ * browser's local calendar day (see utils/priceCache.js) — the backend's
+ * published price data only changes once a day, so a repeat call later
+ * the same day is served from the cache instead of hitting the API again.
+ * A cache miss/failure (including no IndexedDB support at all) just falls
+ * through to the network call.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} assetClass
  * @param {string} symbol
- * @param {{ range?: string }} [options]
  * @returns {Promise<PriceSeries>}
  */
-export async function getPrices(api, assetClass, symbol, { range } = {}) {
-  const effectiveRange = range ?? DEFAULT_PRICE_RANGE;
-  const cacheKey = priceCacheKey(assetClass, symbol, effectiveRange);
+export async function getPrices(api, assetClass, symbol) {
+  const cacheKey = priceCacheKey(assetClass, symbol);
 
   const cached = await readCachedPrices(cacheKey);
   if (cached) return cached;
 
-  const query = new URLSearchParams({ range: effectiveRange }).toString();
-  const result = /** @type {PriceSeries} */ (
-    await api(`/market/${assetClass}/${symbol}/prices/?${query}`)
-  );
+  const result = /** @type {PriceSeries} */ (await api(`/market/${assetClass}/${symbol}/prices/`));
   writeCachedPrices(cacheKey, result);
   return result;
 }
