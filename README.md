@@ -259,8 +259,9 @@ README](packages/metrics/README.md#fundamentals--valuation-and-fundamental-metri
 for exactly how each field is sourced/derived.
 
 The pipeline writes all five as Parquet, landing in the same bucket as FX
-data — `stock=<TICKER>/metrics.parquet` merges `metrics()` and
-`fundamentals()` into one row, and price/dividend/events each split into a
+data — `stock=<TICKER>/metrics.parquet` merges `metrics()`,
+`fundamentals()`, and `buy_sell_pressure()`'s `buyers_pct`/`sellers_pct`
+gauge into one row, and price/dividend/events each split into a
 `history.parquet`/`current.parquet` pair the same way as FX's prices (see
 above) rather than one file per year — `events/current.parquet` combines
 all three event types for the current year (or later) into one file:

@@ -65,6 +65,46 @@
   display: none;
 }
 
+/* Left-aligned, stacked title + subtitle: a bold brand-accent title
+   ("Good evening, {name}", see greeting.js) with a smaller muted subtitle
+   underneath, no icon. */
+.ec-page-greeting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+  width: 100%;
+  margin-bottom: var(--ec-s-24);
+  animation: ec-greeting-in 0.4s ease;
+}
+
+.ec-page-greeting-title {
+  font-size: var(--ec-fs-24);
+  font-weight: 600;
+  color: var(--ec-accent);
+}
+
+.ec-page-greeting-subtitle {
+  font-size: var(--ec-fs-16);
+  color: var(--ec-text-muted);
+}
+
+@keyframes ec-greeting-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-page-greeting {
+    animation: none;
+  }
+}
+
 .ec-eyebrow {
   font-size: var(--ec-fs-12);
   font-weight: 700;

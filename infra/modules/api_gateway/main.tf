@@ -23,6 +23,20 @@ resource "aws_apigatewayv2_stage" "default" {
   api_id      = aws_apigatewayv2_api.this.id
   name        = "$default"
   auto_deploy = true
+
+  # A single, aggregate ceiling across every caller combined — HTTP APIs
+  # (unlike REST APIs) have no usage-plan/API-key mechanism to throttle
+  # per client, and this one catch-all $default route can't distinguish
+  # /api/accounts/ from /api/transactions/ either, so this is deliberately
+  # coarse: a safety net against a volumetric flood/cost blowout, not
+  # per-user fairness (see identity.throttling.Auth0UserRateThrottle in
+  # the Django app for that). A request rejected here never reaches
+  # Lambda at all, so this can only ever reduce cost under load, never add
+  # to it.
+  default_route_settings {
+    throttling_rate_limit  = var.throttling_rate_limit
+    throttling_burst_limit = var.throttling_burst_limit
+  }
 }
 
 resource "aws_lambda_permission" "apigateway" {

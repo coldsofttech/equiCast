@@ -54,7 +54,11 @@ _watchlists_client = WatchlistsClient(
 #: Validates a holding's ticker actually has market data before it's
 #: allowed to be created — same client market_data/views.py's ProfileView
 #: uses.
-_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+_market_data_client = MarketDataClient(
+    settings.MARKET_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
+)
 #: Backs the optional nested "transaction" on HoldingListView.post (create
 #: a holding and record its first transaction in one request) and cascades
 #: a transaction's deletion when its holding is removed directly —

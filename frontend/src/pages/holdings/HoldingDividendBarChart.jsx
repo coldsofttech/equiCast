@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import Balance from "../../components/core/Balance.jsx";
 import { formatPrice } from "./holdingFinancials.js";
 import "../accounts/PriceChart.css";
 import "./HoldingPriceChart.css";
@@ -119,7 +120,7 @@ function HoldingDividendBarChart({ records, currency, colorByStatus = false, emp
         {yTicks.map(({ key, value, y }) => (
           <g key={key}>
             <line x1={PADDING_LEFT} x2={WIDTH - PADDING_RIGHT} y1={y} y2={y} className="ec-chart-gridline" />
-            <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
+            <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label ec-balance">
               {formatPrice(value, currency)}
             </text>
           </g>
@@ -169,7 +170,7 @@ function HoldingDividendBarChart({ records, currency, colorByStatus = false, emp
               year: "numeric",
             })}
           </span>
-          <span>{formatPrice(hovered.price, currency)}</span>
+          <Balance>{formatPrice(hovered.price, currency)}</Balance>
           {colorByStatus && <span>{STATUS_LABEL[hovered.status]}</span>}
         </div>
       )}
