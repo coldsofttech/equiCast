@@ -262,24 +262,30 @@ function PiePriceChart({
   const [holdingHistories, setHoldingHistories] = useState([]);
   const [status, setStatus] = useState("loading");
 
-  // Bumped only for this entity's genuine first paint, mirroring
-  // HoldingPriceChart's own `revision` fix for GitHub issue #137 — a
-  // same-entity range switch (already kept smooth via the previous
-  // chart staying up, dimmed by "is-refreshing") shouldn't also replay
-  // the "start from nothing" reveal (mainLineRef's effect and
-  // ec-chart-reveal below), which made the chart flash fully invisible
-  // for a frame right as the dim was lifting — a blink, not the intended
-  // smooth update. `holdings` gets a new array identity on most renders
-  // of the caller even for the *same* pie/account (see
-  // DiversificationChart.jsx's own signature fix for the identical
-  // problem), so "did the entity actually change" is judged by a
-  // content signature (sorted tickers), not `holdings`' own reference.
+  // Bumped for this entity's genuine first paint, and again on every
+  // user-initiated range switch (see `handleRangeChange` below), mirroring
+  // HoldingPriceChart's own `revision` handling — see its comment for the
+  // full reasoning, including GitHub issue #137's original "flash to fully
+  // invisible" bug and why a click-driven bump (not a plain `[rangeId]`
+  // effect) is what avoids reintroducing it. `holdings` gets a new array
+  // identity on most renders of the caller even for the *same* pie/account
+  // (see DiversificationChart.jsx's own signature fix for the identical
+  // problem), so "did the entity actually change" (and so should reset
+  // straight back to a from-nothing reveal) is judged by a content
+  // signature (sorted tickers), not `holdings`' own reference.
   const [revision, setRevision] = useState(0);
+  const revealedRevisionRef = useRef(-1);
   const holdingsSignature = holdings
     .map((h) => h.ticker)
     .sort()
     .join("|");
   const prevEntityRef = useRef({ holdingsSignature: null, currency: null });
+
+  const handleRangeChange = (id) => {
+    if (id === rangeId) return;
+    setRangeId(id);
+    setRevision((r) => r + 1);
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -474,10 +480,17 @@ function PiePriceChart({
   });
   const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
 
-  // "Draws" the main line across the plot on every new revision — see
+  // "Draws" the main line across the plot on every new revision (including
+  // a range switch — see `handleRangeChange` above) — see
   // HoldingPriceChart.jsx's identical effect for the full reasoning
   // (stroke-dasharray/dashoffset, handed off to CSS's `transition:
-  // stroke-dashoffset` on .ec-chart-line, styles/chart.css).
+  // stroke-dashoffset` on .ec-chart-line, styles/chart.css). Also re-runs
+  // on every `linePath` change with no accompanying revision bump (e.g. a
+  // resize) — otherwise dasharray/dashoffset stay frozen at whatever the
+  // previous path measured, which can leave the new path rendering solid
+  // only partway before running into its own stale "gap" segment; that
+  // case just corrects the dash pattern with no animation, since nothing
+  // conceptually "new" is being revealed.
   useLayoutEffect(() => {
     const el = mainLineRef.current;
     if (!el || typeof el.getTotalLength !== "function") return;
@@ -488,13 +501,15 @@ function PiePriceChart({
       return;
     }
     if (!length) return;
+    const isNewReveal = revealedRevisionRef.current !== revision;
+    revealedRevisionRef.current = revision;
     el.style.transitionProperty = "none";
     el.style.strokeDasharray = `${length}`;
-    el.style.strokeDashoffset = `${length}`;
+    el.style.strokeDashoffset = isNewReveal ? `${length}` : "0";
     el.getBoundingClientRect();
     el.style.transitionProperty = "";
     el.style.strokeDashoffset = "0";
-  }, [revision]);
+  }, [revision, linePath]);
 
   // Same left-to-right draw-in for the compare/benchmark overlay as
   // HoldingPriceChart.jsx's own compareClipRectRef effect — a growing
@@ -546,7 +561,7 @@ function PiePriceChart({
             key={r.id}
             type="button"
             className={`ec-pchart-range-btn${r.id === rangeId ? " is-active" : ""}`}
-            onClick={() => setRangeId(r.id)}
+            onClick={() => handleRangeChange(r.id)}
           >
             {r.label}
           </button>

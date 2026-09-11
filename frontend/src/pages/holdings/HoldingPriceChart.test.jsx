@@ -143,7 +143,7 @@ describe("HoldingPriceChart", () => {
     expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500");
   });
 
-  it("doesn't replay the reveal animation on a same-ticker range switch (issue #137)", async () => {
+  it("replays the reveal animation on a same-ticker range switch", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     mockPrices({ AAPL: MAIN_BARS });
 
@@ -164,12 +164,14 @@ describe("HoldingPriceChart", () => {
     fireEvent.click(screen.getByRole("button", { name: "1Y" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "1Y" })).toHaveClass("is-active"));
 
-    // A same-ticker range switch must not bump `revision` (see
-    // hasRevealedRef) — if it did, the `key={revision}` on this group
-    // would force React to unmount/remount it, replaying the "start from
-    // nothing" reveal on top of the is-refreshing dim/undim and producing
-    // the blink issue #137 reported. Same node reference == no remount.
-    expect(container.querySelector(".ec-chart-reveal")).toBe(revealBefore);
+    // A user-initiated range switch now bumps `revision` too (see
+    // `handleRangeChange`), so the `key={revision}` on this group forces
+    // React to unmount/remount it, replaying the reveal — different node
+    // reference == remounted. Range slicing is synchronous (no fetch/dim
+    // gap to blink through), so this doesn't reintroduce issue #137's
+    // original "flash to fully invisible right as a dim was lifting" bug,
+    // which was about a same-ticker *background refetch* landing mid-flight.
+    expect(container.querySelector(".ec-chart-reveal")).not.toBe(revealBefore);
   });
 
   it("replays the reveal animation when the ticker itself changes", async () => {
