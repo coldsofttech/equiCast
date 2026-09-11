@@ -5,15 +5,6 @@
   background: var(--ec-bg);
 }
 
-.ec-terms-head {
-  padding: var(--ec-s-24) var(--ec-s-24) 0;
-}
-
-.ec-terms-logo-link {
-  display: inline-flex;
-  text-decoration: none;
-}
-
 .ec-terms-body {
   flex: 1;
   width: 100%;

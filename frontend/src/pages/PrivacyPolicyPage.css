@@ -5,15 +5,6 @@
   background: var(--ec-bg);
 }
 
-.ec-privacypolicy-head {
-  padding: var(--ec-s-24) var(--ec-s-24) 0;
-}
-
-.ec-privacypolicy-logo-link {
-  display: inline-flex;
-  text-decoration: none;
-}
-
 .ec-privacypolicy-body {
   flex: 1;
   width: 100%;

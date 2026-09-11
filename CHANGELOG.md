@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Sticky header rows on every signed-out page: `SignInScreen`'s
+  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
+  standalone logo header, now stay pinned to the top of the viewport while
+  scrolling — same `position: sticky` + `Topbar`-style opaque background/
+  bottom-border treatment `Topbar` itself already uses for signed-in
+  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
+  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
+  glow gradient), which silently breaks `position: sticky` for any
+  descendant, so the header couldn't stay pinned once you scrolled past
+  the hero section into the features/roadmap content below otherwise. It
+  no longer blends transparently into the hero glow as a result, matching
+  the other two pages' solid sticky bar instead.
+
+- New shared `PublicHeader` component (`frontend/src/components/shell/
+  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
+  replacing the three near-identical, independently-maintained sticky
+  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
+  grew their own copy of above. Fixes the logo sitting a few pixels lower
+  on the Privacy Policy/Terms and Conditions pages than on the sign-in
+  page (their header's asymmetric top/bottom padding vs. the sign-in
+  header's centered fixed height) by giving every signed-out page the
+  exact same markup/CSS instead of three copies that could drift apart.
+  Also adds the theme toggle to `PrivacyPolicyPage`/
+  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
+  had one before. Renamed token `--ec-landing-bar-h` →
+  `--ec-public-header-h` (`tokens.css`) to match.
+
 ### Changed
 
 - `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
