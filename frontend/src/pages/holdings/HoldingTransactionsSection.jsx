@@ -465,6 +465,11 @@ function HoldingTransactionsSection({
   if (validInstances.length === 0) return null;
 
   const showLocation = validInstances.length > 1;
+  // Gates every FX rate/native value/converted value column and field
+  // (row cards, both "See all" tables, the TransactionForm's own FX
+  // field) — nothing to convert when the holding's native currency
+  // already matches the user's default.
+  const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
 
   const handleDelete = () => {
     setIsDeleting(true);
@@ -607,7 +612,9 @@ function HoldingTransactionsSection({
                   <th>Date</th>
                   <th>Shares</th>
                   <th>Avg price (native)</th>
-                  <th>Total value</th>
+                  {showFx && <th>FX rate</th>}
+                  <th>Native value</th>
+                  {showFx && <th>Value</th>}
                   {showLocation && <th>Location</th>}
                   <th aria-label="Actions" />
                 </tr>
@@ -616,6 +623,8 @@ function HoldingTransactionsSection({
                 {sorted.map(({ transaction, holdingId, location }) => {
                   const type = transaction.type ?? "BUY";
                   const meta = averageTypeMeta(type);
+                  const fxRate = showFx ? displayFxRate(transaction) : null;
+                  const convertedTotal = showFx ? averageEntryTotalConverted(transaction) : null;
                   return (
                     <tr key={transaction.id}>
                       <td>
@@ -634,9 +643,21 @@ function HoldingTransactionsSection({
                           "—"
                         )}
                       </td>
+                      {showFx && (
+                        <td>{fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}</td>
+                      )}
                       <td>
                         <Balance>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</Balance>
                       </td>
+                      {showFx && (
+                        <td>
+                          {convertedTotal != null ? (
+                            <Balance>{formatPrice(convertedTotal, defaultCurrency)}</Balance>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                      )}
                       {showLocation && <td>{location}</td>}
                       <td>
                         <div className="ec-table-actions">
@@ -713,11 +734,9 @@ function HoldingTransactionsSection({
           <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-sell")}>
             Add Sell
           </button>
-          {fullHistory.length > recent.length && (
-            <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("see-all")}>
-              See all
-            </button>
-          )}
+          <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("see-all")}>
+            See all
+          </button>
         </div>
       </div>
 
@@ -779,6 +798,9 @@ function HoldingTransactionsSection({
                 <th>Date</th>
                 <th>Shares</th>
                 <th>Price (native)</th>
+                {showFx && <th>FX rate</th>}
+                <th>Native value</th>
+                {showFx && <th>Value</th>}
                 {showLocation && <th>Location</th>}
                 <th aria-label="Actions" />
               </tr>
@@ -786,6 +808,8 @@ function HoldingTransactionsSection({
             <tbody>
               {fullHistory.map(({ transaction, holdingId, location }) => {
                 const meta = tradeTypeMeta(transaction.type);
+                const fxRate = showFx ? displayFxRate(transaction) : null;
+                const convertedTotal = showFx ? tradeEntryTotalConverted(transaction) : null;
                 return (
                 <tr key={transaction.id}>
                   <td>
@@ -798,6 +822,21 @@ function HoldingTransactionsSection({
                   <td>
                     <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
                   </td>
+                  {showFx && (
+                    <td>{fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}</td>
+                  )}
+                  <td>
+                    <Balance>{formatPrice(tradeEntryTotal(transaction), nativeCurrency)}</Balance>
+                  </td>
+                  {showFx && (
+                    <td>
+                      {convertedTotal != null ? (
+                        <Balance>{formatPrice(convertedTotal, defaultCurrency)}</Balance>
+                      ) : (
+                        "—"
+                      )}
+                    </td>
+                  )}
                   {showLocation && <td>{location}</td>}
                   <td>
                     <div className="ec-table-actions">
