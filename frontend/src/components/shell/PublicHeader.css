@@ -1,0 +1,25 @@
+.ec-public-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  height: var(--ec-public-header-h);
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--ec-s-32);
+  background: var(--ec-bg-elev);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-public-header-logo-link {
+  display: inline-flex;
+  text-decoration: none;
+}
+
+@media (max-width: 520px) {
+  .ec-public-header {
+    padding-left: var(--ec-s-16);
+    padding-right: var(--ec-s-16);
+  }
+}

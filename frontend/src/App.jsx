@@ -10,6 +10,8 @@ import SearchPage from "./pages/search/SearchPage.jsx";
 import HoldingTickerPage from "./pages/holdings/HoldingTickerPage.jsx";
 import NotFoundPage from "./pages/errors/NotFoundPage.jsx";
 import OfflinePage from "./pages/errors/OfflinePage.jsx";
+import TermsAndConditionsPage from "./pages/TermsAndConditionsPage.jsx";
+import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
 
 function App() {
   const isOnline = useOnlineStatus();
@@ -21,6 +23,8 @@ function App() {
   return (
     <ErrorBoundary>
       <Routes>
+        <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
+        <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
         <Route
           element={
             <RequireAuth>

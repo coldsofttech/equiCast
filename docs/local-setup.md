@@ -80,7 +80,7 @@ Needs `USER_DATA_BUCKET` set (no default), plus the same Auth0 settings above, t
 API available at:
 - `GET /health/` — no dependencies, used to validate the Lambda packaging (see `docs/` for the zip-packaging script)
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of `fx`/`stock`/`etf`
-- `GET /api/market/<asset_class>/<symbol>/prices/` — current calendar year only
+- `GET /api/market/<asset_class>/<symbol>/prices/` — no `?range=` (what the frontend's price chart uses): one bundled `{daily, weekly, monthly}` response covering every range at the right granularity, fetched once and sliced client-side (GitHub issue #150). With an explicit `?range=` (one of `1d`/`5d`/`1m`/`6m`/`ytd`/`1y`/`2y`/`3y`/`5y`/`10y`/`max`, for a caller hitting this directly): a single `prices` array trimmed/aggregated to just that range, unchanged from before
 - `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1 character), case-insensitive substring match against every published catalog's `ticker`/`name` (see `equicast_core.catalog`) — results are only as fresh as the last ingestion run, not a live bucket scan. Optional `?asset_class=` narrows to one of `fx`/`stock`/`etf`. Paginated (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`), returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts, each with its nested `pies` (with their own nested `holdings`) and its own direct `holdings`
