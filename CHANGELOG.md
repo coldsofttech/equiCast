@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Sticky header rows on every signed-out page: `SignInScreen`'s
+  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
+  standalone logo header, now stay pinned to the top of the viewport while
+  scrolling — same `position: sticky` + `Topbar`-style opaque background/
+  bottom-border treatment `Topbar` itself already uses for signed-in
+  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
+  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
+  glow gradient), which silently breaks `position: sticky` for any
+  descendant, so the header couldn't stay pinned once you scrolled past
+  the hero section into the features/roadmap content below otherwise. It
+  no longer blends transparently into the hero glow as a result, matching
+  the other two pages' solid sticky bar instead.
+
 ### Changed
 
 - `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now

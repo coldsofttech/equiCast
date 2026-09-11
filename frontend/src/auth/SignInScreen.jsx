@@ -130,12 +130,13 @@ function SignInScreen({ onSignIn, error }) {
 
   return (
     <div className="ec-landing">
+      <header className="ec-landing-bar">
+        <Logo />
+        <ThemeToggle />
+      </header>
+
       <div className="ec-hero">
         <div className="ec-hero-glow" aria-hidden="true" />
-        <header className="ec-landing-bar">
-          <Logo />
-          <ThemeToggle />
-        </header>
 
         <div className="ec-hero-grid">
           <div className="ec-hero-copy">
