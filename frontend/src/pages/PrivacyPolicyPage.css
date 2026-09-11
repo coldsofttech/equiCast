@@ -22,6 +22,17 @@
   padding: var(--ec-s-32) var(--ec-s-24) var(--ec-s-40);
 }
 
+/* Inside AppShell (signed-in view), the title/subtitle sit flush against
+   AppShell's own .ec-page padding — override the standalone layout's
+   auto-centering/own padding so this body's text starts at that same left
+   edge instead of re-centering itself within a wider column and visibly
+   drifting right of the title. */
+.ec-privacypolicy-body--shell {
+  max-width: 680px;
+  margin: 0;
+  padding: 0;
+}
+
 .ec-privacypolicy-body h1 {
   font-size: var(--ec-fs-32);
   font-weight: 600;

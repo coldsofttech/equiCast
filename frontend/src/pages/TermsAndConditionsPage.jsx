@@ -1,7 +1,7 @@
 import { Link } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "../components/brand/Logo.jsx";
-import Topbar from "../components/shell/Topbar.jsx";
+import AppShell from "../components/shell/AppShell.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import "./TermsAndConditionsPage.css";
 
@@ -9,14 +9,15 @@ const LAST_UPDATED = "Last updated 10 September 2026.";
 
 /**
  * Public — not behind RequireAuth (see App.jsx) — since a visitor has to
- * be able to read this before ever signing in. One shared layout for both
- * states (so the title/body column lines up identically either way) with
- * only the header row swapped: a signed-out visitor gets a bare logo link
- * (no Topbar, which assumes a signed-in profile — same reason the error
- * pages are standalone, see components/errors/ErrorPage.jsx), while a
- * signed-in visitor (e.g. following the footer link from inside the app)
- * gets the real Topbar, so search/currency/hide-balances/account menu
- * stay reachable rather than disappearing on this one page.
+ * be able to read this before ever signing in. Two different layouts: a
+ * signed-out visitor gets a bare logo link (no AppShell/Topbar, which
+ * assumes a signed-in profile — same reason the error pages are
+ * standalone, see components/errors/ErrorPage.jsx), while a signed-in
+ * visitor (e.g. following the footer link from inside the app) gets the
+ * real AppShell — Topbar plus the same `stickyTitle` frozen-title-bar
+ * treatment AccountDetailPage/PieDetailPage/HoldingTickerPage use, so
+ * "Terms and Conditions" stays visible while scrolling through this long
+ * a page, the same as an account/pie name does on those pages.
  *
  * Grounded in what equiCast actually is and does — an open-source (MIT,
  * see the repo's LICENSE), self-hosted-style portfolio tracker with no
@@ -110,17 +111,21 @@ function TermsAndConditionsPage() {
     </>
   );
 
+  if (isAuthenticated) {
+    return (
+      <AppShell title="Terms and Conditions" subtitle={LAST_UPDATED} stickyTitle narrow footer={<SiteFooter />}>
+        <div className="ec-terms-body ec-terms-body--shell">{content}</div>
+      </AppShell>
+    );
+  }
+
   return (
     <div className="ec-terms">
-      {isAuthenticated ? (
-        <Topbar />
-      ) : (
-        <header className="ec-terms-head">
-          <Link to="/" className="ec-terms-logo-link" aria-label="Go to equiCast">
-            <Logo />
-          </Link>
-        </header>
-      )}
+      <header className="ec-terms-head">
+        <Link to="/" className="ec-terms-logo-link" aria-label="Go to equiCast">
+          <Logo />
+        </Link>
+      </header>
 
       <main className="ec-terms-body">
         <h1>Terms and Conditions</h1>

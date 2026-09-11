@@ -8,8 +8,13 @@ import TermsAndConditionsPage from "./TermsAndConditionsPage.jsx";
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
 vi.mock("../api/identity.js", () => ({ getMe: vi.fn() }));
 
+// jsdom has no IntersectionObserver — AppShell's stickyTitle needs one.
 beforeEach(() => {
   vi.mocked(getMe).mockResolvedValue({ default_currency: "USD" });
+  global.IntersectionObserver = class {
+    observe() {}
+    disconnect() {}
+  };
 });
 
 afterEach(() => {
@@ -102,6 +107,18 @@ describe("TermsAndConditionsPage", () => {
       expect(await screen.findByTitle("Default currency")).toHaveTextContent("USD");
       expect(screen.getByRole("button", { name: "Hide balances" })).toBeInTheDocument();
       expect(screen.getByLabelText("Account")).toBeInTheDocument();
+    });
+
+    it("renders a stickyTitle frozen-title bar, like AccountDetailPage/PieDetailPage", () => {
+      const { container } = render(
+        <MemoryRouter>
+          <TermsAndConditionsPage />
+        </MemoryRouter>
+      );
+
+      const frozenTitle = container.querySelector(".ec-frozen-title");
+      expect(frozenTitle).not.toBeNull();
+      expect(frozenTitle).toHaveTextContent("Terms and Conditions");
     });
   });
 });
