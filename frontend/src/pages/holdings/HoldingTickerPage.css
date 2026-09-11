@@ -143,12 +143,15 @@
   margin-top: var(--ec-s-8);
 }
 
-.ec-news-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--ec-s-16);
-  max-height: 100%;
-  overflow-y: auto;
+.ec-news-table-thumb {
+  width: 64px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--ec-r-6);
+}
+
+.ec-news-table-title {
+  white-space: normal;
 }
 
 .ec-news-card {
