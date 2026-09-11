@@ -1,7 +1,7 @@
 import math
 
 from django.conf import settings
-from equicast_core import ASSET_CLASSES, DEFAULT_PRICE_RANGE, PRICE_RANGES, MarketDataClient
+from equicast_core import ASSET_CLASSES, PRICE_RANGES, MarketDataClient
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -73,8 +73,8 @@ class DividendsView(APIView):
     list — see that method's docstring for the full shape. Unfiltered by
     date and not deduplicated; a caller wanting only upcoming payouts (or
     to prefer a declared one over an overlapping estimate) does that
-    itself, same division of responsibility as PricesView leaving range
-    selection to the caller."""
+    itself, same division of responsibility as PricesView's explicit-`range`
+    path leaving range selection to the caller."""
 
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -89,14 +89,14 @@ class DividendsView(APIView):
         return Response(dividends)
 
 
-class PricesView(APIView):
-    """`prices` is trimmed/aggregated to the requested `range` query param
-    (one of PRICE_RANGES, default DEFAULT_PRICE_RANGE — see
-    equicast_core.client.MarketDataClient.get_prices) server-side, not
-    fetched-then-cut client-side — a long-history "max"/"10y" response
-    could otherwise be several thousand daily rows, well past what's worth
-    sending over this Lambda-behind-API-Gateway deployment (see
-    backend/README.md) or rendering in a chart."""
+class NewsView(APIView):
+    """`news` is every article published in the trailing month for this
+    ticker/pair, newest first (see
+    `equicast_core.client.MarketDataClient.get_news`). Not published for
+    every asset class - fx tickers have no `news.parquet` at all (the fx
+    ingestion pipeline never writes one), so this 404s the same as any
+    other unpublished ticker rather than needing a separate asset-class
+    check here."""
 
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -105,7 +105,64 @@ class PricesView(APIView):
         if asset_class not in ASSET_CLASSES:
             return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
 
-        price_range = request.query_params.get("range", DEFAULT_PRICE_RANGE)
+        news = _client.get_news(asset_class, symbol)
+        if news is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(news)
+
+
+class EventsView(APIView):
+    """`events` combines every corporate event equicast_core.
+    MarketDataClient.get_events knows about — earnings reports, analyst
+    rating changes, stock splits — into one chronological, `event_type`-
+    tagged list — see that method's docstring for the full shape.
+    Unfiltered by date, same division of responsibility as
+    DividendsView/PricesView leaving range selection to the caller."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        events = _client.get_events(asset_class, symbol)
+        if events is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(events)
+
+
+class PricesView(APIView):
+    """Two shapes, depending on whether `range` is given:
+
+    - No `range` query param (the frontend's own price chart — see
+      HoldingPriceChart.jsx/PiePriceChart.jsx — never sends one): returns
+      `equicast_core.client.MarketDataClient.get_price_history`'s bundled
+      `{ticker, currency, last_updated, daily, weekly, monthly}`, fetched
+      once per ticker and sliced client-side for whichever range the user
+      picks, with no further request on a range change (GitHub issue #150).
+    - An explicit `range` query param (one of PRICE_RANGES, for a caller
+      hitting this endpoint directly rather than through the chart):
+      unchanged from before — `prices` trimmed/aggregated to that one range
+      server-side via `get_prices`, not fetched-then-cut client-side, since
+      a long-history "max"/"10y" single-range response could otherwise be
+      several thousand daily rows, well past what's worth sending over this
+      Lambda-behind-API-Gateway deployment (see backend/README.md) or
+      rendering in a chart. `get_price_history`'s bundled response stays a
+      few hundred rows total regardless, since only its `daily` segment is
+      unaggregated and that's capped at ~a year."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        if "range" not in request.query_params:
+            return Response(_client.get_price_history(asset_class, symbol))
+
+        price_range = request.query_params["range"]
         if price_range not in PRICE_RANGES:
             detail = f"Unknown range '{price_range}'. Must be one of: {', '.join(PRICE_RANGES)}."
             return Response({"detail": detail}, status=400)

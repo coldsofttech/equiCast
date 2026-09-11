@@ -1,12 +1,14 @@
-"""CLI: extract a profile, daily prices, and risk metrics for every configured benchmark.
+"""CLI: extract a profile, daily prices, risk metrics, and news for every
+configured benchmark.
 
-For each benchmark, all three are written as Parquet: one profile.parquet
+For each benchmark, all four are written as Parquet: one profile.parquet
 snapshot, one price.parquet per year covered (just the current year by
-default, or the benchmark's full yfinance history with --full-load), and one
-metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown, CAGR).
-These three fetches for a given benchmark are independent tasks submitted to
-the same worker pool, so they run concurrently rather than one after the
-other.
+default, or the benchmark's full yfinance history with --full-load), one
+metrics.parquet snapshot (volatility, Sharpe ratio, max drawdown, CAGR), and
+a news.parquet of the benchmark's news articles from the trailing month
+(omitted entirely when there's none - see equicast-news). These four
+fetches for a given benchmark are independent tasks submitted to the same
+worker pool, so they run concurrently rather than one after the other.
 """
 
 from __future__ import annotations
@@ -20,11 +22,13 @@ from pathlib import Path
 
 from equicast_datafeed import DatafeedClient
 from equicast_metrics import MetricsClient
+from equicast_news import NewsClient
 
 from equicast_benchmark.client import BenchmarkClient
 from equicast_benchmark.config import Benchmark, load_benchmarks, parse_benchmarks_json
 from equicast_benchmark.writer import (
     write_metrics_parquet,
+    write_news_parquet,
     write_price_parquet,
     write_profile_parquet,
 )
@@ -102,6 +106,11 @@ def _metrics_task(
     return [write_metrics_parquet(metrics, key, output_dir)]
 
 
+def _news_task(news_client: NewsClient, key: str, output_dir: Path) -> list[Path]:
+    logger.info("Fetching news for %s", key)
+    return write_news_parquet(news_client.news(), key, output_dir)
+
+
 def run(
     config: Path | None,
     output_dir: Path,
@@ -117,17 +126,19 @@ def run(
     # the configured request rate is a real ceiling regardless of concurrency.
     datafeed = DatafeedClient(max_calls=max_calls, period_seconds=period_seconds)
 
-    # One BenchmarkClient/MetricsClient per benchmark, shared by that
-    # benchmark's profile, prices, and metrics tasks — all three only read
-    # immutable state and delegate to the (thread-safe) shared datafeed, so
-    # calling them concurrently on one instance is safe.
+    # One BenchmarkClient/MetricsClient/NewsClient per benchmark, shared by
+    # that benchmark's profile, prices, metrics, and news tasks — all four
+    # only read immutable state and delegate to the (thread-safe) shared
+    # datafeed, so calling them concurrently on one instance is safe.
     tasks: list[Callable[[], list[Path]]] = []
     for benchmark in benchmarks:
         client = BenchmarkClient(benchmark.key, benchmark.symbol, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
+        news_client = NewsClient(client.symbol, datafeed=datafeed)
         tasks.append(partial(_profile_task, client, output_dir, benchmark.key))
         tasks.append(partial(_prices_task, client, output_dir, benchmark.key, full_load))
         tasks.append(partial(_metrics_task, metrics_client, benchmark.key, output_dir))
+        tasks.append(partial(_news_task, news_client, benchmark.key, output_dir))
 
     written: list[Path] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:

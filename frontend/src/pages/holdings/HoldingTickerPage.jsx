@@ -19,6 +19,7 @@ import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingBuySellGauge from "./HoldingBuySellGauge.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
+import HoldingNewsSection from "./HoldingNewsSection.jsx";
 import HoldingTransactionsSection from "./HoldingTransactionsSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
@@ -27,6 +28,7 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import {
   getDividends,
   getMetrics,
+  getNews,
   getProfile,
   searchTickers,
   MARKET_PROFILE_BADGE_TONES,
@@ -119,6 +121,7 @@ function HoldingTickerPage() {
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
   const [marketMetrics, setMarketMetrics] = useState(null);
   const [marketDividends, setMarketDividends] = useState(null);
+  const [marketNews, setMarketNews] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -216,7 +219,12 @@ function HoldingTickerPage() {
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
-    const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
+    // fx has no dividends concept (see api/market.js's getDividends jsdoc) —
+    // skip the request entirely rather than hitting the endpoint just to
+    // discard the result.
+    const dividendsPromise =
+      assetClass === "fx" ? Promise.resolve(null) : getDividends(api, assetClass, ticker).catch(() => null);
+    const newsPromise = getNews(api, assetClass, ticker).catch(() => null);
 
     // Page 1 (50 items, most-recent-date-first — see backend/transactions/
     // views.py's TransactionListView.get) per instance, IndexedDB-cached so
@@ -242,13 +250,14 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, metricsPromise, dividendsPromise, transactionsPromise]).then(
-      ([profileResult, metrics, dividends, transactionsResults]) => {
+    Promise.all([profilePromise, metricsPromise, dividendsPromise, newsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, dividends, news, transactionsResults]) => {
         if (cancelled) return;
         setMarketProfileStatus(profileResult.status);
         setMarketProfile(profileResult.profile);
         setMarketMetrics(metrics);
         setMarketDividends(dividends);
+        setMarketNews(news);
         const map = {};
         for (const result of transactionsResults) {
           map[result.holdingId] = result.error
@@ -662,6 +671,8 @@ function HoldingTickerPage() {
           <HoldingCagrSection marketMetrics={marketMetrics} />
 
           <HoldingBuySellGauge marketMetrics={marketMetrics} />
+
+          <HoldingNewsSection news={marketNews} />
 
           <div className="ec-account-columns">
             <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
