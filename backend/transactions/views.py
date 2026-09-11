@@ -133,7 +133,11 @@ _profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=se
 #: Needed only to resolve a holding's native currency (for FX conversion,
 #: see `resolve_converted_amounts`) — market_data/views.py holds the
 #: client actually used for market-data CRUD.
-_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+_market_data_client = MarketDataClient(
+    settings.MARKET_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
+)
 
 
 def resolve_transaction_mode(

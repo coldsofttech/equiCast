@@ -101,6 +101,7 @@
   --ec-topbar-h: 52px;
   --ec-menubar-h: 42px;
   --ec-banner-h: 36px;
+  --ec-public-header-h: 72px;
 }
 
 [data-theme="dark"] {

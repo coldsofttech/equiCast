@@ -35,6 +35,28 @@ def write_metrics_parquet(metrics: dict[str, Any], key: str, output_dir: Path) -
     return path
 
 
+def write_news_parquet(records: list[dict[str, Any]], key: str, output_dir: Path) -> list[Path]:
+    """Write `records` to `<output_dir>/benchmark=<KEY>/news.parquet`.
+
+    Unlike profile()/prices(), NewsClient is generic (keyed by a plain
+    yfinance symbol, not a benchmark key), so `key` is added to each record
+    here rather than already being present, same as `write_metrics_parquet`.
+    A single flat file, not split into history/current — see
+    `equicast_stock.writer.write_news_parquet`'s docstring for why.
+    Omitted entirely when there's nothing to write.
+    """
+    if not records:
+        return []
+
+    tagged = [{"key": key, **record} for record in records]
+    directory = output_dir / f"benchmark={key}"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "news.parquet"
+    pd.DataFrame(tagged).to_parquet(path, index=False)
+    return [path]
+
+
 def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Write `records` to `<output_dir>/benchmark=<KEY>/price/history.parquet` (every year
     before the current one) and/or `.../price/current.parquet` (the current year),

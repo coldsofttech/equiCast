@@ -1,0 +1,20 @@
+.ec-erricon-503-candle {
+  animation: ec-erricon-503-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes ec-erricon-503-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-erricon-503-candle {
+    animation: none;
+    opacity: 0.65;
+  }
+}

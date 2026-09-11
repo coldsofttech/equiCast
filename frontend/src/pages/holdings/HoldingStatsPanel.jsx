@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import FieldList from "../../components/core/FieldList.jsx";
@@ -69,7 +70,9 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
       <div className="ec-holding-range">
         <div className="ec-holding-range-info">
           <span className="ec-holding-range-label">High</span>
-          <span className="ec-holding-range-value">{high != null ? formatPrice(high, currency) : "—"}</span>
+          <span className="ec-holding-range-value">
+            {high != null ? <Balance>{formatPrice(high, currency)}</Balance> : "—"}
+          </span>
         </div>
         <RangeBar
           overallHigh={overallHigh}
@@ -81,7 +84,9 @@ function HighLowColumn({ title, high, low, overallHigh, overallLow, trend, curre
         />
         <div className="ec-holding-range-info">
           <span className="ec-holding-range-label">Low</span>
-          <span className="ec-holding-range-value">{low != null ? formatPrice(low, currency) : "—"}</span>
+          <span className="ec-holding-range-value">
+            {low != null ? <Balance>{formatPrice(low, currency)}</Balance> : "—"}
+          </span>
         </div>
       </div>
     </div>
@@ -123,13 +128,24 @@ function remainingMetricGroups(metrics, currency) {
     {
       title: "Per share",
       items: [
-        { label: "Trailing EPS", value: metrics?.trailing_eps != null ? formatPrice(metrics.trailing_eps, currency) : null },
-        { label: "Forward EPS", value: metrics?.forward_eps != null ? formatPrice(metrics.forward_eps, currency) : null },
+        {
+          label: "Trailing EPS",
+          value: metrics?.trailing_eps != null ? (
+            <Balance>{formatPrice(metrics.trailing_eps, currency)}</Balance>
+          ) : null,
+        },
+        {
+          label: "Forward EPS",
+          value: metrics?.forward_eps != null ? (
+            <Balance>{formatPrice(metrics.forward_eps, currency)}</Balance>
+          ) : null,
+        },
         {
           label: "Free cash flow/share",
-          value: metrics?.free_cash_flow_per_share != null
-            ? formatPrice(metrics.free_cash_flow_per_share, currency)
-            : null,
+          value:
+            metrics?.free_cash_flow_per_share != null ? (
+              <Balance>{formatPrice(metrics.free_cash_flow_per_share, currency)}</Balance>
+            ) : null,
         },
       ],
     },
@@ -256,9 +272,9 @@ function HoldingStatsPanel({ marketProfile, marketMetrics }) {
           {
             label: "Market cap",
             value:
-              marketProfile?.market_cap != null
-                ? formatCompactCurrency(marketProfile.market_cap, currency)
-                : null,
+              marketProfile?.market_cap != null ? (
+                <Balance>{formatCompactCurrency(marketProfile.market_cap, currency)}</Balance>
+              ) : null,
           },
           { label: "P/E ratio", value: formatRatio(marketMetrics?.pe_ratio) },
           { label: "Beta", value: marketProfile?.beta != null ? marketProfile.beta.toFixed(2) : null },
@@ -270,9 +286,9 @@ function HoldingStatsPanel({ marketProfile, marketMetrics }) {
           {
             label: "Dividend rate",
             value:
-              marketProfile?.dividend_rate != null
-                ? formatCurrency(marketProfile.dividend_rate, currency)
-                : null,
+              marketProfile?.dividend_rate != null ? (
+                <Balance>{formatCurrency(marketProfile.dividend_rate, currency)}</Balance>
+              ) : null,
           },
           { label: "Dividend frequency", value: formatDividendFrequency(marketProfile?.dividend_frequency) },
           {

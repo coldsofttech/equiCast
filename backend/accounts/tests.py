@@ -10,7 +10,6 @@ ACCOUNT = {
     "name": "ISA",
     "description": "Stocks & shares ISA",
     "account_type": "ISA",
-    "currency": "GBP",
     "created_at": "2026-01-01T00:00:00+00:00",
     "updated_at": "2026-01-01T00:00:00+00:00",
 }
@@ -154,7 +153,6 @@ class AccountListViewTests(TestCase):
             "name": "ISA",
             "description": "Stocks & shares ISA",
             "account_type": "ISA",
-            "currency": "GBP",
         }
         response = self.client.post(
             reverse("accounts-list"),
@@ -180,7 +178,6 @@ class AccountListViewTests(TestCase):
             "name": "ISA",
             "description": "Stocks & shares ISA",
             "account_type": "ISA",
-            "currency": "GBP",
             "icon": "bank2",
         }
         response = self.client.post(
@@ -224,7 +221,6 @@ class AccountListViewTests(TestCase):
                 "name": "ISA",
                 "description": "",
                 "account_type": "ISA",
-                "currency": "GBP",
             },
             content_type="application/json",
             **AUTH_HEADER,
@@ -247,7 +243,6 @@ class AccountListViewTests(TestCase):
                 "name": "Stocks & shares ISA",
                 "description": "",
                 "account_type": "ISA",
-                "currency": "GBP",
             },
             content_type="application/json",
             **AUTH_HEADER,

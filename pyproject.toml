@@ -5,6 +5,7 @@ members = [
     "packages/metrics",
     "packages/dividends",
     "packages/events",
+    "packages/news",
     "packages/forecasting",
     "packages/fx",
     "packages/benchmark",
@@ -21,6 +22,6 @@ target-version = "py311"
 select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 ignore_missing_imports = true
 exclude = ["backend/.*/migrations/"]

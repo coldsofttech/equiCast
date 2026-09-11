@@ -146,8 +146,9 @@ prices, dividends, events, and metrics for each, and writes:
   year (or later) only by default. In practice only ever has `"split"`
   rows for an ETF — see [On `events.parquet`](#on-eventsparquet) below
 - `<out>/etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
-  risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
-  CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
+  risk/performance metrics (volatility, Sharpe ratio, max drawdown, CAGR)
+  and its `buyers_pct`/`sellers_pct` buy/sell volume-pressure gauge — no
+  valuation/fundamental metrics, unlike `equicast-stock`
 
 ```bash
 uv run equicast-etf --config config/etfs.dev.yaml --out ./output
@@ -196,10 +197,15 @@ run) for it, same as `equicast-stock`.
 
 ### On `metrics.parquet`
 
-Only `MetricsClient.metrics()` — volatility, Sharpe ratio, max drawdown,
-CAGR (1/2/3/5/10-year) — works the same way as for a stock ticker or FX pair
-(see [equicast-metrics's README](../metrics/README.md)). Deliberately
-**not** `.fundamentals()`, unlike `equicast-stock`: its valuation ratios
+`MetricsClient.metrics()` — volatility, Sharpe ratio, max drawdown, CAGR
+(1/2/3/5/10-year) — works the same way as for a stock ticker or FX pair (see
+[equicast-metrics's README](../metrics/README.md)), plus
+`.buy_sell_pressure()`'s `buyers_pct`/`sellers_pct` gauge (same as
+`equicast-stock` — see
+[its README](../metrics/README.md#buy_sell_pressure--buysell-volume-pressure-gauge-stocketf-only)
+for the methodology; it has no `last_updated`/`source` of its own to merge
+in, just the two extra fields). Deliberately **not** `.fundamentals()`,
+unlike `equicast-stock`: its valuation ratios
 (PE, EPS, PEG, price-to-book/sales, EV/EBITDA, margins, ROE/ROA,
 debt-to-equity, FCF/share) are earnings/balance-sheet-based and stock-only.
 Checked live against VOO/QQQ/AGG/GLD before deciding this — 12-13 of its 15

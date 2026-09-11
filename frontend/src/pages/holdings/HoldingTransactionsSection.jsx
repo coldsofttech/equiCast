@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import Button from "../../components/core/Button.jsx";
@@ -35,6 +36,18 @@ const AVERAGE_TYPE_META = {
 
 function averageTypeMeta(type) {
   return AVERAGE_TYPE_META[type] ?? AVERAGE_TYPE_META.BUY;
+}
+
+/** Bootstrap icon + Badge tone per TRANSACTION-mode entry type — mirrors
+ * AVERAGE_TYPE_META so BUY/SELL rows read the same way AVERAGE-mode's
+ * BUY/DIVIDEND rows do. */
+const TRADE_TYPE_META = {
+  BUY: { icon: "bi-cart-plus", label: "Buy", tone: "success" },
+  SELL: { icon: "bi-cart-dash", label: "Sell", tone: "danger" },
+};
+
+function tradeTypeMeta(type) {
+  return TRADE_TYPE_META[type] ?? TRADE_TYPE_META.BUY;
 }
 
 /** Date/no_of_shares/{average_price_native,price_native}/amount_native/
@@ -222,7 +235,9 @@ function averageEntryTotal(transaction) {
 }
 
 /** One AVERAGE-mode entry (BUY or DIVIDEND) in the top-5 list — a single
- * row: icon-only type badge, date, total value, edit, delete. */
+ * row: icon-only type badge, date, no of shares, total value, edit, delete.
+ * A DIVIDEND has no `no_of_shares` (only a cash amount), same as the "See
+ * all" table's own "—" fallback for that column. */
 function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
   const type = transaction.type ?? "BUY";
   const meta = averageTypeMeta(type);
@@ -233,9 +248,12 @@ function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
         <i className={`bi ${meta.icon}`} aria-hidden="true" />
       </Badge>
       <span className="ec-transaction-row-date">{formatTransactionDate(transaction.date)}</span>
-      <span className="ec-transaction-row-value">
-        {formatPrice(averageEntryTotal(transaction), nativeCurrency)}
+      <span className="ec-transaction-row-shares">
+        {type === "BUY" ? transaction.no_of_shares : "—"}
       </span>
+      <Balance as="span" className="ec-transaction-row-value">
+        {formatPrice(averageEntryTotal(transaction), nativeCurrency)}
+      </Balance>
       <div className="ec-table-actions">
         <button type="button" className="ec-icon-btn" aria-label="Edit transaction" onClick={onEdit}>
           <i className="bi bi-pencil" aria-hidden="true" />
@@ -253,43 +271,42 @@ function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
   );
 }
 
-/** One BUY/SELL trade card for TRANSACTION-mode holdings. Deletable (the
- * only way to correct a mistaken entry, since these records are immutable —
- * no edit) via `onDelete`. */
-function TradeCard({ transaction, nativeCurrency, location, onDelete }) {
+/** One BUY/SELL trade record's total value, in native currency — shares *
+ * price, mirroring averageEntryTotal's BUY case. */
+function tradeEntryTotal(transaction) {
+  return Number(transaction.no_of_shares) * Number(transaction.price_native);
+}
+
+/** One BUY/SELL entry in the top-N list for TRANSACTION-mode holdings — same
+ * single-row layout AverageEntryCard uses (icon-only type badge, date,
+ * total value, actions), so both modes' transactions panels read the same
+ * way. Deletable (the only way to correct a mistaken entry, since these
+ * records are immutable — no edit) via `onDelete`. */
+function TradeRowCard({ transaction, nativeCurrency, location, onDelete }) {
+  const meta = tradeTypeMeta(transaction.type);
+
   return (
-    <div className="ec-dividend-card">
-      <div className="ec-transaction-card-head">
-        <Badge tone={transaction.type === "SELL" ? "danger" : "success"}>{transaction.type}</Badge>
-        {location && <span className="ec-transaction-card-location">{location}</span>}
-        <div className="ec-table-actions">
-          <button
-            type="button"
-            className="ec-icon-btn ec-icon-btn--danger"
-            aria-label="Delete transaction"
-            onClick={onDelete}
-          >
-            <i className="bi bi-trash" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      <div className="ec-dividend-fields-row">
-        <div className="ec-dividend-field">
-          <span className="ec-dividend-field-label">Date</span>
-          <span className="ec-dividend-field-value">
-            {formatTransactionDate(transaction.date)}
-          </span>
-        </div>
-        <div className="ec-dividend-field">
-          <span className="ec-dividend-field-label">Shares</span>
-          <span className="ec-dividend-field-value">{transaction.no_of_shares}</span>
-        </div>
-        <div className="ec-dividend-field">
-          <span className="ec-dividend-field-label">Price (native)</span>
-          <span className="ec-dividend-field-value">
-            {formatPrice(Number(transaction.price_native), nativeCurrency)}
-          </span>
-        </div>
+    <div className="ec-transaction-row-card">
+      <Badge tone={meta.tone} title={meta.label} aria-label={meta.label}>
+        <i className={`bi ${meta.icon}`} aria-hidden="true" />
+      </Badge>
+      <span className="ec-transaction-row-date">
+        {formatTransactionDate(transaction.date)}
+        {location && <span className="ec-transaction-card-location"> · {location}</span>}
+      </span>
+      <span className="ec-transaction-row-shares">{transaction.no_of_shares}</span>
+      <Balance as="span" className="ec-transaction-row-value">
+        {formatPrice(tradeEntryTotal(transaction), nativeCurrency)}
+      </Balance>
+      <div className="ec-table-actions">
+        <button
+          type="button"
+          className="ec-icon-btn ec-icon-btn--danger"
+          aria-label="Delete transaction"
+          onClick={onDelete}
+        >
+          <i className="bi bi-trash" aria-hidden="true" />
+        </button>
       </div>
     </div>
   );
@@ -309,9 +326,11 @@ function TradeCard({ transaction, nativeCurrency, location, onDelete }) {
  *   per holding, see equicast_core.transactions); "Add Dividend" offers
  *   every instance, since dividends are uncapped.
  * - TRANSACTION: header actions "Add Buy"/"Add Sell"/"See all", up to
- *   MAX_RECENT_TRANSACTIONS most recent BUY/SELL cards merged across every
- *   instance of this ticker, plus a "See all" drawer with the full history
- *   table. Records are immutable once created (no edit — mirrors
+ *   MAX_RECENT_TRANSACTIONS most recent BUY/SELL rows (same
+ *   `ec-transaction-row-list`/`ec-transaction-row-card` layout AVERAGE-mode's
+ *   top-5 list uses — see `TradeRowCard`) merged across every instance of
+ *   this ticker, plus a "See all" drawer with the full history table.
+ *   Records are immutable once created (no edit — mirrors
  *   equicast_core.transactions), but deletable, same as an AVERAGE-mode
  *   entry — the only way to correct a mistaken one. "Add Sell" only offers
  *   instances with net shares > 0 recorded (see `selectNetShares`); "Add
@@ -518,11 +537,17 @@ function HoldingTransactionsSection({
                       <td>{formatTransactionDate(transaction.date)}</td>
                       <td>{type === "BUY" ? transaction.no_of_shares : "—"}</td>
                       <td>
-                        {type === "BUY"
-                          ? formatPrice(Number(transaction.average_price_native), nativeCurrency)
-                          : "—"}
+                        {type === "BUY" ? (
+                          <Balance>
+                            {formatPrice(Number(transaction.average_price_native), nativeCurrency)}
+                          </Balance>
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</td>
+                      <td>
+                        <Balance>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</Balance>
+                      </td>
                       {showLocation && <td>{location}</td>}
                       <td>
                         <div className="ec-table-actions">
@@ -608,9 +633,9 @@ function HoldingTransactionsSection({
       </div>
 
       {recent.length > 0 ? (
-        <div className="ec-dividend-grid">
+        <div className="ec-transaction-row-list">
           {recentWithContext.map(({ transaction, holdingId, location }) => (
-            <TradeCard
+            <TradeRowCard
               key={transaction.id}
               transaction={transaction}
               nativeCurrency={nativeCurrency}
@@ -669,16 +694,20 @@ function HoldingTransactionsSection({
               </tr>
             </thead>
             <tbody>
-              {fullHistory.map(({ transaction, holdingId, location }) => (
+              {fullHistory.map(({ transaction, holdingId, location }) => {
+                const meta = tradeTypeMeta(transaction.type);
+                return (
                 <tr key={transaction.id}>
                   <td>
-                    <Badge tone={transaction.type === "SELL" ? "danger" : "success"}>
-                      {transaction.type}
+                    <Badge tone={meta.tone}>
+                      <i className={`bi ${meta.icon}`} aria-hidden="true" /> {meta.label}
                     </Badge>
                   </td>
                   <td>{formatTransactionDate(transaction.date)}</td>
                   <td>{transaction.no_of_shares}</td>
-                  <td>{formatPrice(Number(transaction.price_native), nativeCurrency)}</td>
+                  <td>
+                    <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
+                  </td>
                   {showLocation && <td>{location}</td>}
                   <td>
                     <div className="ec-table-actions">
@@ -693,7 +722,8 @@ function HoldingTransactionsSection({
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
