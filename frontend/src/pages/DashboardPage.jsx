@@ -126,7 +126,6 @@ function DashboardPage() {
 
       <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
         <AccountForm
-          defaultCurrency={profile?.default_currency}
           onSubmit={handleCreate}
           onCancel={closeCreate}
           isSubmitting={isSaving}

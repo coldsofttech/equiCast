@@ -4,37 +4,31 @@ import IconPicker from "../../components/core/IconPicker.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import ACCOUNT_TYPE_SUGGESTIONS from "../../config/accountTypes.json";
-import CURRENCIES from "../../config/currencies.json";
 import { ACCOUNT_ICON_OPTIONS, DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
 /**
  * Shared create/edit body for AccountsListPage's "New account" drawer and
- * AccountDetailPage's "Edit" drawer. `account_type`/`currency` have no
- * backend enum (see REQUIRED_CREATE_FIELDS in backend/accounts/views.py) —
- * free text with a `<datalist>` of common values rather than a closed
- * `<select>`, so a caller isn't blocked from an account type/currency this
- * list doesn't happen to include. The suggestion lists come from the same
- * config/*.json files as the Settings default-currency picker (see
- * SettingsModal.jsx), not a separate hardcoded array here.
+ * AccountDetailPage's "Edit" drawer. `account_type` has no backend enum
+ * (see REQUIRED_CREATE_FIELDS in backend/accounts/views.py) — free text
+ * with a `<datalist>` of common values rather than a closed `<select>`, so
+ * a caller isn't blocked from an account type this list doesn't happen to
+ * include.
  *
- * `defaultCurrency` (the caller's own profile.default_currency, see
- * useCurrentUser) seeds the currency field for a brand new account; it's
- * overridden by `initialValues.currency` when editing an existing one.
+ * No currency field — removed (GitHub issues #98/#115): every real money
+ * figure is already valued in the user's own `default_currency` (see
+ * Settings' default-currency picker), so there was nothing left for a
+ * per-account currency to mean.
  */
-const CURRENCY_SUGGESTIONS = CURRENCIES.map((currency) => currency.code);
-
 const EMPTY_VALUES = {
   name: "",
   description: "",
   account_type: "",
-  currency: "",
   icon: DEFAULT_ACCOUNT_ICON,
 };
 
-function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSubmitting, error }) {
+function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error }) {
   const [values, setValues] = useState({
     ...EMPTY_VALUES,
-    currency: defaultCurrency ?? EMPTY_VALUES.currency,
     ...initialValues,
   });
 
@@ -73,20 +67,6 @@ function AccountForm({ initialValues, defaultCurrency, onSubmit, onCancel, isSub
       />
       <datalist id="account-type-suggestions">
         {ACCOUNT_TYPE_SUGGESTIONS.map((option) => (
-          <option key={option} value={option} />
-        ))}
-      </datalist>
-      <TextField
-        id="account-currency"
-        label="Currency"
-        required
-        list="currency-suggestions"
-        value={values.currency}
-        onChange={setField("currency")}
-        hint="ISO code, e.g. GBP, USD, EUR."
-      />
-      <datalist id="currency-suggestions">
-        {CURRENCY_SUGGESTIONS.map((option) => (
           <option key={option} value={option} />
         ))}
       </datalist>

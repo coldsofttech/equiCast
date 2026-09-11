@@ -278,10 +278,9 @@ client.create_account(
     name="ISA",
     description="Stocks & shares ISA",
     account_type="ISA",
-    currency="GBP",
 )
 # {"id": "...", "name": "ISA", "description": "Stocks & shares ISA",
-#  "account_type": "ISA", "currency": "GBP",
+#  "account_type": "ISA",
 #  "created_at": "...", "updated_at": "..."}
 
 client.list_accounts("auth0|65f2c1...")
@@ -305,8 +304,12 @@ concurrent change.
 
 Membership isn't validated by `AccountsClient` itself — the Django
 backend's `accounts/views.py` does that, the same way it validates
-`account_type`/`currency`. `transaction_type` isn't an account field —
-see `UserProfileClient` below for that single, per-user setting.
+`account_type`. An account has no `currency` of its own (removed — GitHub
+issues #98/#115): every real money figure is already valued in the
+user's own `default_currency` (see `UserProfileClient` below), so there
+was nothing left for a per-account currency to mean. `transaction_type`
+isn't an account field either — same section, that single, per-user
+setting.
 
 ## `PiesClient` — S3 JSON user-owned data (pies)
 

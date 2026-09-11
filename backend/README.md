@@ -96,12 +96,12 @@ for how the cache itself works.
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists
   the caller's accounts
 - `POST /api/accounts/` — creates an account (`name`, `description`,
-  `account_type`, `currency`); `409` once the caller has `MAX_ACCOUNTS`
+  `account_type`); `409` once the caller has `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
   (each with its own nested `holdings`) and the account's own direct
   `holdings`
 - `PATCH /api/accounts/<id>/` — partially updates an account
-  (`name`/`description`/`account_type`/`currency`)
+  (`name`/`description`/`account_type`)
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has
   pies and/or direct holdings — pass `?force=true` to delete those along
   with the account

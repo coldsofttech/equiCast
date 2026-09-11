@@ -84,7 +84,7 @@ API available at:
 - `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1 character), case-insensitive substring match against every published catalog's `ticker`/`name` (see `equicast_core.catalog`) — results are only as fresh as the last ingestion run, not a live bucket scan. Optional `?asset_class=` narrows to one of `fx`/`stock`/`etf`. Paginated (`?page=`, default `1`; `?page_size=`, default `50`, capped at `200`), returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token; returns/creates the caller's profile (`user_id`, `default_currency`, defaulting to `"GBP"` on first login)
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists the caller's accounts, each with its nested `pies` (with their own nested `holdings`) and its own direct `holdings`
-- `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`, `currency`, `transaction_type` — `AVERAGE` or `TRANSACTION`); `409` once the caller has `MAX_ACCOUNTS`
+- `POST /api/accounts/` — creates an account (`name`, `description`, `account_type`); `409` once the caller has `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus the same nested `pies`/`holdings` shape as the list endpoint
 - `PATCH /api/accounts/<id>/` — partially updates an account; `transaction_type` is rejected with `409` once the account has any transactions recorded under it
 - `DELETE /api/accounts/<id>/` — deletes an account; `409` if it still has

@@ -43,13 +43,14 @@ import "./AccountDetailPage.css";
 
 /** An account's real holdings (direct and pie-nested alike) carry
  * `invested`/`dividends`/`current_price` already converted to the user's
- * default_currency, not the account's own `currency` (see
- * api/accounts.js's `Holding` typedef and equicast_core.client.
- * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
- * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row,
- * the Portfolios/Holdings row lists, and the price chart below are all
- * labeled in that currency, not `account.currency` (the heatmap is
- * weight-only and currency-agnostic). */
+ * default_currency (see api/accounts.js's `Holding` typedef and
+ * equicast_core.client.MarketDataClient.enrich_holdings) — an account has
+ * no `currency` of its own (removed — GitHub issues #98/#115) — same
+ * reasoning as PieDetailPage's own top stat row, so the real Value/
+ * Profit-loss/Dividends-so-far stat row, the Portfolios/Holdings row
+ * lists, and the price chart below are all labeled in that currency (the
+ * heatmap is weight-only and currency-agnostic, so it needs none of this
+ * at all). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
