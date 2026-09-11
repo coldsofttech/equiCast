@@ -585,8 +585,11 @@ class MarketDataClient:
         case follow the exact same logic `get_prices` uses.
         """
         today = datetime.now(UTC).date()
-        daily_cutoff = min(_start_date_for_range("6m", today), date(today.year, 1, 1)).isoformat()
-        weekly_cutoff = _start_date_for_range("2y", today).isoformat()
+        six_months_ago = _start_date_for_range("6m", today)
+        two_years_ago = _start_date_for_range("2y", today)
+        assert six_months_ago is not None and two_years_ago is not None  # both have a month cutoff
+        daily_cutoff = min(six_months_ago, date(today.year, 1, 1)).isoformat()
+        weekly_cutoff = two_years_ago.isoformat()
 
         prefix = f"{asset_class.lower()}={symbol.upper()}/price"
         rows: list[dict[str, Any]] = []
