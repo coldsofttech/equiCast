@@ -677,7 +677,7 @@ class TestGetPriceHistory:
 
         assert result["currency"] is None
 
-    def test_daily_always_covers_jan_1_this_year_even_past_a_6_month_cutoff(self, s3_client) -> None:
+    def test_daily_covers_jan_1_this_year_even_past_a_6_month_cutoff(self, s3_client) -> None:
         # daily_cutoff = min(6-months-ago, this-year's Jan 1) — whatever
         # "today" actually is when this test runs, this year's Jan 2 is
         # always on-or-after that cutoff (it can't be earlier than Jan 1
@@ -749,7 +749,7 @@ class TestGetPriceHistory:
 
         assert result["weekly"] == []
 
-    def test_monthly_covers_the_full_history_and_aggregates_by_calendar_month(self, s3_client) -> None:
+    def test_monthly_covers_full_history_and_aggregates_by_calendar_month(self, s3_client) -> None:
         five_years_ago = datetime.now(UTC).date().replace(day=1) - timedelta(days=5 * 365)
         first_of_month = five_years_ago.replace(day=1)
         days = [first_of_month, first_of_month + timedelta(days=10)]
