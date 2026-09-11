@@ -350,11 +350,10 @@
 }
 
 /** Grows from the zero-line out to its real width on load rather than
- * appearing at full size — see PieCagrSection's `revealed` state, which
- * renders width: 0% for one frame before flipping to the real value so
- * there's an actual change for this transition to animate. (HoldingCagrSection
- * shares this class too, but never varies its own width after the initial
- * correct-value render, so the transition is simply inert there.) */
+ * appearing at full size — see PieCagrSection's/HoldingCagrSection's own
+ * `revealed` state, which renders width: 0% for one frame before flipping
+ * to the real value so there's an actual change for this transition to
+ * animate. */
 .ec-cagr-bar-segment {
   position: absolute;
   top: 0;

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { plTone } from "../sampleFinancials.js";
 import { formatPercent } from "./holdingFinancials.js";
@@ -11,6 +12,15 @@ import { formatPercent } from "./holdingFinancials.js";
  * window (e.g. a recently-listed stock has no `cagr_10y` yet) — rows with a
  * `null`/missing value are simply skipped rather than shown as "—", so the
  * bars only ever compare windows that actually exist for this ticker.
+ *
+ * Once `marketMetrics` is ready, each bar segment grows from the zero-line
+ * out to its real width (rather than just appearing at full width) —
+ * `revealed` starts false on every fresh `marketMetrics`, then flips true
+ * on the next frame so there's an actual 0 -> final width change for
+ * `.ec-cagr-bar-segment`'s own `transition: width` (HoldingTickerPage.css)
+ * to animate — same pattern PieCagrSection uses. Each row's transition-
+ * delay is staggered by index so the bars fill in one after another rather
+ * than all at once.
  */
 const CAGR_PERIODS = [
   { key: "cagr_10y", label: "-10Y" },
@@ -33,6 +43,15 @@ const CAGR_PERIODS = [
  * @param {{ marketMetrics: import("../../api/market.js").MarketMetrics|null }} props
  */
 function HoldingCagrSection({ marketMetrics }) {
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    if (!marketMetrics) return undefined;
+    setRevealed(false);
+    const frame = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [marketMetrics]);
+
   const rows = CAGR_PERIODS.map(({ key, label }) => ({ label, value: marketMetrics?.[key] })).filter(
     (row) => row.value != null
   );
@@ -48,9 +67,10 @@ function HoldingCagrSection({ marketMetrics }) {
       </div>
 
       <div className="ec-cagr-list">
-        {rows.map(({ label, value }) => {
+        {rows.map(({ label, value }, index) => {
           const tone = plTone(value * 100);
           const barPct = maxAbs > 0 ? (Math.abs(value) / maxAbs) * 50 : 0;
+          const revealedWidth = revealed ? `${barPct}%` : "0%";
           return (
             <div className="ec-cagr-row" key={label}>
               <span className="ec-cagr-period">{label}</span>
@@ -58,7 +78,11 @@ function HoldingCagrSection({ marketMetrics }) {
                 <div className="ec-cagr-bar-zero" />
                 <div
                   className={`ec-cagr-bar-segment ${tone}`}
-                  style={value >= 0 ? { left: "50%", width: `${barPct}%` } : { right: "50%", width: `${barPct}%` }}
+                  style={
+                    value >= 0
+                      ? { left: "50%", width: revealedWidth, transitionDelay: `${index * 60}ms` }
+                      : { right: "50%", width: revealedWidth, transitionDelay: `${index * 60}ms` }
+                  }
                 />
               </div>
               <span className={`ec-cagr-value ${tone}`}>
