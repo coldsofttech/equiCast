@@ -69,6 +69,15 @@ behind API Gateway, and a chart is unreadable at daily resolution over a
 decade anyway. `currency`/`last_updated` reflect the matched rows before
 aggregation (an aggregated bucket has no per-row metadata of its own).
 
+`get_events(asset_class, symbol)` returns `{ticker, last_updated, events}`,
+combining `events/history.parquet` and `events/current.parquet` into one
+chronological list — each entry exactly what
+`equicast_events.EventsClient.events()` produces (earnings/rating/split
+records, `event_type`-tagged, only that type's own fields set — see that
+package's README), passed through untouched. `None` if neither file exists
+yet for this ticker/pair, the same "not configured" signal `get_profile()`
+returns.
+
 `get_price_history()` is `get_prices()`'s every range bundled into one
 call instead: `daily` (raw, unaggregated rows from the earlier of "6
 months ago" and this year's Jan 1 — covering both `price_range="6m"` and

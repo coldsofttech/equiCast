@@ -32,15 +32,18 @@ EventsClient("AAPL").events()
 # [{"ticker": "AAPL", "event_type": "earnings", "date": "2026-01-30",
 #   "eps_estimate": None, "reported_eps": 2.18, "surprise_pct": -3.5,
 #   "firm": None, "from_grade": None, "to_grade": None, "action": None,
+#   "price_target_action": None, "current_price_target": None, "prior_price_target": None,
 #   "ratio": None, "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"},
 #  {"ticker": "AAPL", "event_type": "rating", "date": "2026-03-01",
 #   "eps_estimate": None, "reported_eps": None, "surprise_pct": None,
 #   "firm": "Morgan Stanley", "from_grade": "Equal-Weight", "to_grade": "Overweight",
-#   "action": "up", "ratio": None, "last_updated": "2026-08-30T09:00:00+00:00",
-#   "source": "yfinance"},
+#   "action": "up", "price_target_action": "raises", "current_price_target": 275.0,
+#   "prior_price_target": 250.0, "ratio": None,
+#   "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"},
 #  {"ticker": "AAPL", "event_type": "split", "date": "2026-06-09",
 #   "eps_estimate": None, "reported_eps": None, "surprise_pct": None,
 #   "firm": None, "from_grade": None, "to_grade": None, "action": None,
+#   "price_target_action": None, "current_price_target": None, "prior_price_target": None,
 #   "ratio": 4.0, "last_updated": "2026-08-30T09:00:00+00:00", "source": "yfinance"}]
 ```
 
@@ -80,6 +83,16 @@ upgrade/downgrade history — inherently a historical log (each row is a past
 rating-change event), so there's no forward-looking equivalent the way
 earnings has estimated future rows. `from_grade` is `None` for a coverage
 initiation (yfinance reports an empty string there, not a grade).
+
+`price_target_action`/`current_price_target`/`prior_price_target` come from
+the same upgrade/downgrade row (yfinance's `priceTargetAction`/
+`currentPriceTarget`/`priorPriceTarget` columns) — no separate call needed.
+Both price targets are in the rating's own native trading currency, passed
+through as reported (not converted — resolving that, same as every other
+monetary field across equicast, is a caller's job). `0` (yfinance's own
+sentinel for "not applicable" — e.g. a coverage initiation has no *prior*
+target to report) is treated as `None`, the same as `from_grade`'s own
+empty-string sentinel.
 
 ### On `split` records
 

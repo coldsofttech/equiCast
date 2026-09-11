@@ -89,6 +89,27 @@ class DividendsView(APIView):
         return Response(dividends)
 
 
+class EventsView(APIView):
+    """`events` combines every corporate event equicast_core.
+    MarketDataClient.get_events knows about — earnings reports, analyst
+    rating changes, stock splits — into one chronological, `event_type`-
+    tagged list — see that method's docstring for the full shape.
+    Unfiltered by date, same division of responsibility as
+    DividendsView/PricesView leaving range selection to the caller."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, asset_class: str, symbol: str) -> Response:
+        if asset_class not in ASSET_CLASSES:
+            return Response({"detail": f"Unknown asset class '{asset_class}'."}, status=400)
+
+        events = _client.get_events(asset_class, symbol)
+        if events is None:
+            return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
+        return Response(events)
+
+
 class PricesView(APIView):
     """Two shapes, depending on whether `range` is given:
 

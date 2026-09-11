@@ -411,6 +411,42 @@ class MarketDataClient:
             "dividends": dividends,
         }
 
+    def get_events(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return `{ticker, last_updated, events}` for `symbol`, combining
+        `events/history.parquet` and `events/current.parquet` into one
+        chronological list, or `None` if neither exists yet.
+
+        Each entry is exactly what `equicast_events.EventsClient.events()`
+        produces per record — `{ticker, event_type, date, eps_estimate,
+        reported_eps, surprise_pct, firm, from_grade, to_grade, action,
+        price_target_action, current_price_target, prior_price_target,
+        ratio, last_updated, source}` — passed through untouched; only
+        `event_type` (`"earnings"`/`"rating"`/`"split"`) says which fields
+        on a given record actually apply, the rest are `None` (see
+        `EventsClient`'s own docstring).
+
+        `current.parquet` already includes any future-dated row (an
+        upcoming, estimated earnings date) alongside this year's, and
+        `history.parquet` only exists at all once a `--full-load` run has
+        written it — see `equicast_stock.writer.write_events_parquet`.
+        Deliberately unfiltered by date, same as `get_dividends` — a caller
+        wanting only upcoming events, or only some window of history,
+        applies that itself.
+        """
+        prefix = f"{asset_class.lower()}={symbol.upper()}"
+        history_rows = self._read_parquet(f"{prefix}/events/history.parquet") or []
+        current_rows = self._read_parquet(f"{prefix}/events/current.parquet") or []
+        events = history_rows + current_rows
+        if not events:
+            return None
+        events.sort(key=lambda record: record["date"])
+
+        return {
+            "ticker": events[0]["ticker"],
+            "last_updated": max(record["last_updated"] for record in events),
+            "events": events,
+        }
+
     def get_prices(
         self, asset_class: str, symbol: str, price_range: str = DEFAULT_PRICE_RANGE
     ) -> dict[str, Any]:
