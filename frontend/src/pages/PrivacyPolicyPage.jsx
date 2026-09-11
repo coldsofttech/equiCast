@@ -1,13 +1,23 @@
 import { Link } from "react-router-dom";
+import { useAuth0 } from "@auth0/auth0-react";
 import Logo from "../components/brand/Logo.jsx";
+import AppShell from "../components/shell/AppShell.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import "./PrivacyPolicyPage.css";
 
+const LAST_UPDATED = "Last updated 10 September 2026.";
+
 /**
  * Public — not behind RequireAuth (see App.jsx) — since a visitor has to
- * be able to read this before ever signing in. Standalone layout (no
- * AppShell/Topbar, which assumes a signed-in profile) for the same reason
- * the error pages are standalone — see components/errors/ErrorPage.jsx.
+ * be able to read this before ever signing in. Two different layouts: a
+ * signed-out visitor gets a bare logo link (no AppShell/Topbar, which
+ * assumes a signed-in profile — same reason the error pages are
+ * standalone, see components/errors/ErrorPage.jsx), while a signed-in
+ * visitor (e.g. following the footer link from inside the app) gets the
+ * real AppShell — Topbar plus the same `stickyTitle` frozen-title-bar
+ * treatment AccountDetailPage/PieDetailPage/HoldingTickerPage use, so
+ * "Privacy Policy" stays visible while scrolling through this long a
+ * page, the same as an account/pie name does on those pages.
  *
  * Every item named below is real — grounded in what equiCast's own code
  * actually collects/stores (Auth0 for sign-in identity; S3 JSON for
@@ -19,18 +29,10 @@ import "./PrivacyPolicyPage.css";
  * a substitute for legal review before being relied on.
  */
 function PrivacyPolicyPage() {
-  return (
-    <div className="ec-privacypolicy">
-      <header className="ec-privacypolicy-head">
-        <Link to="/" className="ec-privacypolicy-logo-link" aria-label="Go to equiCast">
-          <Logo />
-        </Link>
-      </header>
+  const { isAuthenticated } = useAuth0();
 
-      <main className="ec-privacypolicy-body">
-        <h1>Privacy Policy</h1>
-        <p className="ec-privacypolicy-updated">Last updated 10 September 2026.</p>
-
+  const content = (
+    <>
         <p>
           This page explains what personal and financial data equiCast collects when you use it,
           why, where it's stored, and who (if anyone) it's shared with. equiCast is an
@@ -137,6 +139,29 @@ function PrivacyPolicyPage() {
           </a>
           .
         </p>
+    </>
+  );
+
+  if (isAuthenticated) {
+    return (
+      <AppShell title="Privacy Policy" subtitle={LAST_UPDATED} stickyTitle narrow footer={<SiteFooter />}>
+        <div className="ec-privacypolicy-body ec-privacypolicy-body--shell">{content}</div>
+      </AppShell>
+    );
+  }
+
+  return (
+    <div className="ec-privacypolicy">
+      <header className="ec-privacypolicy-head">
+        <Link to="/" className="ec-privacypolicy-logo-link" aria-label="Go to equiCast">
+          <Logo />
+        </Link>
+      </header>
+
+      <main className="ec-privacypolicy-body">
+        <h1>Privacy Policy</h1>
+        <p className="ec-privacypolicy-updated">{LAST_UPDATED}</p>
+        {content}
       </main>
 
       <SiteFooter />

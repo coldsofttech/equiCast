@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import { getMe } from "../api/identity.js";
-import PrivacyPolicyPage from "./PrivacyPolicyPage.jsx";
+import TermsAndConditionsPage from "./TermsAndConditionsPage.jsx";
 
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
 vi.mock("../api/identity.js", () => ({ getMe: vi.fn() }));
@@ -21,43 +21,52 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("PrivacyPolicyPage", () => {
+describe("TermsAndConditionsPage", () => {
   describe("signed out", () => {
     beforeEach(() => {
       vi.mocked(useAuth0).mockReturnValue({ isAuthenticated: false });
     });
 
-    it("renders the policy's real sections", () => {
+    it("renders the terms' real sections", () => {
       render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
-      expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Information we collect" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Where it's stored" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Who we share it with" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Deleting your data" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Terms and Conditions" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "What equiCast is" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Not financial advice" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Your account and data" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Acceptable use" })).toBeInTheDocument();
     });
 
-    it("links to the GitHub repository for questions", () => {
+    it("links to the LICENSE file and GitHub repository", () => {
       render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
-      const links = screen.getAllByRole("link", { name: "equiCast's GitHub repository" });
+      expect(screen.getByRole("link", { name: "the LICENSE file" })).toHaveAttribute(
+        "href",
+        "https://github.com/coldsofttech/equiCast/blob/main/LICENSE"
+      );
+      const repoLinks = screen.getAllByRole("link", { name: "equiCast's GitHub repository" });
       expect(
-        links.some((link) => link.getAttribute("href") === "https://github.com/coldsofttech/equiCast/issues")
+        repoLinks.some((link) => link.getAttribute("href") === "https://github.com/coldsofttech/equiCast")
+      ).toBe(true);
+      expect(
+        repoLinks.some(
+          (link) => link.getAttribute("href") === "https://github.com/coldsofttech/equiCast/issues"
+        )
       ).toBe(true);
     });
 
     it("has no Topbar chrome", () => {
       render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
@@ -76,21 +85,21 @@ describe("PrivacyPolicyPage", () => {
       });
     });
 
-    it("still renders the policy content", () => {
+    it("still renders the terms content", () => {
       render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
-      expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
-      expect(screen.getByRole("heading", { name: "Deleting your data" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Terms and Conditions" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Acceptable use" })).toBeInTheDocument();
     });
 
     it("keeps the normal Topbar (search, currency, hide balances, account menu)", async () => {
       render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
@@ -103,13 +112,13 @@ describe("PrivacyPolicyPage", () => {
     it("renders a stickyTitle frozen-title bar, like AccountDetailPage/PieDetailPage", () => {
       const { container } = render(
         <MemoryRouter>
-          <PrivacyPolicyPage />
+          <TermsAndConditionsPage />
         </MemoryRouter>
       );
 
       const frozenTitle = container.querySelector(".ec-frozen-title");
       expect(frozenTitle).not.toBeNull();
-      expect(frozenTitle).toHaveTextContent("Privacy Policy");
+      expect(frozenTitle).toHaveTextContent("Terms and Conditions");
     });
   });
 });

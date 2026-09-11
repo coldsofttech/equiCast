@@ -1,20 +1,20 @@
-.ec-privacypolicy {
+.ec-terms {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
   background: var(--ec-bg);
 }
 
-.ec-privacypolicy-head {
+.ec-terms-head {
   padding: var(--ec-s-24) var(--ec-s-24) 0;
 }
 
-.ec-privacypolicy-logo-link {
+.ec-terms-logo-link {
   display: inline-flex;
   text-decoration: none;
 }
 
-.ec-privacypolicy-body {
+.ec-terms-body {
   flex: 1;
   width: 100%;
   max-width: 680px;
@@ -27,44 +27,44 @@
    auto-centering/own padding so this body's text starts at that same left
    edge instead of re-centering itself within a wider column and visibly
    drifting right of the title. */
-.ec-privacypolicy-body--shell {
+.ec-terms-body--shell {
   max-width: 680px;
   margin: 0;
   padding: 0;
 }
 
-.ec-privacypolicy-body h1 {
+.ec-terms-body h1 {
   font-size: var(--ec-fs-32);
   font-weight: 600;
   color: var(--ec-text);
   margin: 0 0 var(--ec-s-4);
 }
 
-.ec-privacypolicy-updated {
+.ec-terms-updated {
   font-size: var(--ec-fs-13);
   color: var(--ec-text-subtle);
   margin: 0 0 var(--ec-s-24);
 }
 
-.ec-privacypolicy-body h2 {
+.ec-terms-body h2 {
   font-size: var(--ec-fs-20);
   font-weight: 600;
   color: var(--ec-text);
   margin: var(--ec-s-32) 0 var(--ec-s-8);
 }
 
-.ec-privacypolicy-body p {
+.ec-terms-body p {
   font-size: var(--ec-fs-15);
   color: var(--ec-text-muted);
   line-height: 1.65;
   margin: 0 0 var(--ec-s-16);
 }
 
-.ec-privacypolicy-body a {
+.ec-terms-body a {
   color: var(--ec-accent);
 }
 
-.ec-privacypolicy-body code {
+.ec-terms-body code {
   font-family: var(--ec-font-mono);
   font-size: 0.9em;
   background: var(--ec-surface-2);
