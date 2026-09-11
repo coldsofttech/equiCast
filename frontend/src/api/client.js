@@ -26,17 +26,28 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 /**
  * Thrown for any non-2xx response. `status` lets a caller branch on it
- * (e.g. redirect to sign-in on 401) without parsing `.message`.
+ * (e.g. redirect to sign-in on 401) without parsing `.message` — `message`
+ * itself is already a reasonable, displayable string for any status,
+ * including 429 (DRF's own throttled detail already reads as e.g. "Request
+ * was throttled. Expected available in 46 seconds." — see
+ * backend/identity/throttling.py), so showing it plainly (e.g. in an
+ * `Alert`) needs no special-casing. `retryAfterSeconds` is for a caller
+ * that wants to do something *with* the wait — disable a submit button for
+ * that long, show a countdown — rather than just display text.
  */
 export class ApiError extends Error {
   /**
    * @param {string} message
    * @param {number} status
+   * @param {number|null} [retryAfterSeconds] - only ever set for a 429,
+   *   parsed from the response's `Retry-After` header (in seconds); `null`
+   *   for any other status, or a 429 with no parseable header.
    */
-  constructor(message, status) {
+  constructor(message, status, retryAfterSeconds = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.retryAfterSeconds = retryAfterSeconds;
   }
 }
 
@@ -91,7 +102,21 @@ export async function apiFetch(path, options = {}) {
     } catch {
       // Non-JSON (or empty) error body — fall back to statusText.
     }
-    throw new ApiError(detail, response.status);
+
+    // Only ever parsed for a 429 — see ApiError's own docstring. A
+    // Retry-After header on any other status isn't the "you're rate
+    // limited" signal this field means, so it's deliberately ignored
+    // rather than conflated with it. response.headers is real on every
+    // actual fetch() Response; optional chaining here is only for
+    // hand-rolled test mocks that omit it.
+    const retryAfterHeader =
+      response.status === 429 ? response.headers?.get("Retry-After") : null;
+    const retryAfterSeconds =
+      retryAfterHeader != null && Number.isFinite(Number(retryAfterHeader))
+        ? Number(retryAfterHeader)
+        : null;
+
+    throw new ApiError(detail, response.status, retryAfterSeconds);
   }
 
   if (response.status === 204) {

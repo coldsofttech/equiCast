@@ -58,7 +58,11 @@ _holdings_client = HoldingsClient(
 #: allowed into a pie (same client market_data/views.py's ProfileView and
 #: holdings/views.py use) and, via `enrich_holdings`, backs
 #: `_enrich_holdings` below.
-_market_data_client = MarketDataClient(settings.MARKET_DATA_BUCKET, region_name=settings.AWS_REGION)
+_market_data_client = MarketDataClient(
+    settings.MARKET_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
+)
 #: Needed only to cascade-delete a pie's holdings' transactions under
 #: PieDetailView.delete's force path — transactions/views.py holds the
 #: client actually used for transactions CRUD.

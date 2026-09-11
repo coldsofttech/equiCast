@@ -136,6 +136,73 @@
   color: var(--ec-text);
 }
 
+.ec-news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--ec-s-16);
+  margin-top: var(--ec-s-8);
+}
+
+.ec-news-table-thumb {
+  width: 64px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--ec-r-6);
+}
+
+.ec-news-table-title {
+  white-space: normal;
+}
+
+.ec-news-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-16);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.ec-news-card:hover,
+.ec-news-card:focus-visible {
+  border-color: var(--ec-accent);
+}
+
+.ec-news-card-thumb {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--ec-r-8);
+}
+
+.ec-news-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+}
+
+.ec-news-card-title {
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ec-news-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
 .ec-section-head-actions {
   display: flex;
   align-items: center;
@@ -274,11 +341,24 @@
   background: var(--ec-text-subtle);
 }
 
+/** Grows from the zero-line out to its real width on load rather than
+ * appearing at full size — see PieCagrSection's `revealed` state, which
+ * renders width: 0% for one frame before flipping to the real value so
+ * there's an actual change for this transition to animate. (HoldingCagrSection
+ * shares this class too, but never varies its own width after the initial
+ * correct-value render, so the transition is simply inert there.) */
 .ec-cagr-bar-segment {
   position: absolute;
   top: 0;
   bottom: 0;
   border-radius: 999px;
+  transition: width 0.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-cagr-bar-segment {
+    transition: none;
+  }
 }
 
 .ec-cagr-bar-segment.is-up {
@@ -311,6 +391,52 @@
 
 .ec-cagr-value.is-flat {
   color: var(--ec-text-subtle);
+}
+
+.ec-buysell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  margin: var(--ec-s-8) 0 var(--ec-s-12);
+}
+
+.ec-buysell-value {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-20);
+  font-weight: 800;
+}
+
+.ec-buysell-value.is-up {
+  color: var(--ec-success);
+}
+
+.ec-buysell-value.is-down {
+  color: var(--ec-danger);
+}
+
+.ec-buysell-label {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+}
+
+.ec-buysell-bar-track {
+  display: flex;
+  height: 10px;
+  border-radius: var(--ec-r-pill);
+  overflow: hidden;
+  background: var(--ec-border);
+}
+
+.ec-buysell-bar-segment.is-up {
+  background: var(--ec-success);
+}
+
+.ec-buysell-bar-segment.is-down {
+  background: var(--ec-danger);
 }
 
 .ec-holding-about-row {

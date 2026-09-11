@@ -3,6 +3,7 @@ from pathlib import Path
 import pandas as pd
 from equicast_benchmark.writer import (
     write_metrics_parquet,
+    write_news_parquet,
     write_price_parquet,
     write_profile_parquet,
 )
@@ -76,6 +77,38 @@ def test_write_price_parquet_current_year_only_writes_no_history_file(tmp_path: 
 
 def test_write_price_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_price_parquet([], tmp_path) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def _news_record(id_: str, **overrides) -> dict:
+    record = {
+        "ticker": "^GSPC",
+        "id": id_,
+        "title": "Some headline",
+        "summary": "Some summary",
+        "publisher": "Reuters",
+        "url": "https://example.com/click",
+        "thumbnail_url": "https://example.com/thumb.jpg",
+        "published_at": "2026-08-30T09:00:00+00:00",
+        "last_updated": "2026-08-30T09:05:00+00:00",
+        "source": "yfinance",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_news_parquet_adds_key_and_writes_a_single_flat_file(tmp_path: Path) -> None:
+    records = [_news_record("abc"), _news_record("def", published_at="2026-08-31T09:00:00+00:00")]
+
+    paths = write_news_parquet(records, "SP500", tmp_path)
+
+    assert paths == [tmp_path / "benchmark=SP500" / "news.parquet"]
+    result = pd.read_parquet(paths[0])
+    assert result.to_dict(orient="records") == [{"key": "SP500", **record} for record in records]
+
+
+def test_write_news_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_news_parquet([], "SP500", tmp_path) == []
     assert list(tmp_path.iterdir()) == []
 
 

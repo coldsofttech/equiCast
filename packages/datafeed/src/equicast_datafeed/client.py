@@ -84,6 +84,16 @@ class DatafeedClient:
         split), indexed by split date."""
         return self._call(lambda: yf.Ticker(symbol).splits, symbol)
 
+    def get_news(self, symbol: str, count: int = 50) -> list[dict[str, Any]]:
+        """Return up to `count` of `symbol`'s most recent news articles
+        (yfinance's own newest-first order), each a raw, nested dict (not a
+        DataFrame - unlike every other method here, this is yfinance's only
+        list-of-dicts-shaped call). No date-range parameter exists on
+        yfinance's side; a caller wanting only the trailing N days filters
+        the returned `content.pubDate` values itself (see
+        `equicast_news.NewsClient`)."""
+        return self._call(lambda: yf.Ticker(symbol).get_news(count=count), symbol)
+
     def _call(self, fetch: Any, symbol: str) -> Any:
         self._rate_limiter.acquire()
 

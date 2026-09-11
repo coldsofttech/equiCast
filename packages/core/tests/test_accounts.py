@@ -17,7 +17,6 @@ def _create(client: AccountsClient, user_id: str, **overrides) -> dict:
         "name": "ISA",
         "description": "",
         "account_type": "ISA",
-        "currency": "GBP",
         **overrides,
     }
     return client.create_account(user_id, **fields)
@@ -48,7 +47,6 @@ def test_create_account_persists_and_returns_the_account(s3_client) -> None:
     assert account["name"] == "ISA"
     assert account["description"] == "Stocks & shares ISA"
     assert account["account_type"] == "ISA"
-    assert account["currency"] == "GBP"
     assert account["created_at"] == account["updated_at"]
     assert client.list_accounts("auth0|abc123") == [account]
 

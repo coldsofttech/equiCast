@@ -16,12 +16,13 @@ packages/stock/config/stocks.prod.yaml  (production: the tickers to extract)
 equicast-stock CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
         │              ├────▶  equicast-dividends (ex-div date + amount)
         │              ├────▶  equicast-events (earnings/ratings/splits)
-        │              └────▶  equicast-metrics (volatility/Sharpe/drawdown/CAGR + fundamentals)
+        │              ├────▶  equicast-metrics (volatility/Sharpe/drawdown/CAGR + fundamentals)
+        │              └────▶  equicast-news (trailing-month news headlines)
         │                              │
         │                              ▼
         │                       Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet, metrics.parquet)
+Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet, metrics.parquet, news.parquet)
         │
         ▼
 GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -37,25 +38,27 @@ never relies on that default — it resolves `dev`/`prod` itself and always
 passes `--tickers-json` explicitly.
 
 `profile()`, `prices()`, dividends (via `equicast-dividends`'
-`DividendsClient`), events (via `equicast-events`' `EventsClient`), and
-`metrics()`/`fundamentals()` (via `equicast-metrics`) are all implemented.
-`equicast-stock` is the only current consumer of `DividendsClient`,
-`EventsClient`, and `MetricsClient.fundamentals()` — `equicast-fx` never
-calls any of them (fundamentals() raises for FX symbols; FX pairs have no
-dividends/earnings/analyst coverage the same way). All three are generic,
-symbol-keyed clients rather than `equicast-stock`-specific logic, so a
-future ETF package could reuse them the same way.
+`DividendsClient`), events (via `equicast-events`' `EventsClient`),
+`metrics()`/`fundamentals()` (via `equicast-metrics`), and news (via
+`equicast-news`' `NewsClient`) are all implemented. `equicast-stock` is the
+only current consumer of `DividendsClient`, `EventsClient`, and
+`MetricsClient.fundamentals()` — `equicast-fx` never calls any of them
+(fundamentals() raises for FX symbols; FX pairs have no dividends/earnings/
+analyst coverage the same way) — and, deliberately, `equicast-fx` never
+calls `NewsClient` either (no fx news, by product decision rather than a
+yfinance data-availability limit). All four are generic, symbol-keyed
+clients rather than `equicast-stock`-specific logic.
 
-Expect four `WARNING` lines near the top of every run's logs — a one-time
+Expect five `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed`/`StockClient` (data via
 yfinance, educational use only), one from `equicast-dividends` (dividend
 data via yfinance), one from `equicast-events` (earnings/rating/split data
-via yfinance), and one from `equicast-metrics` (metrics calculated by
-equicast, not independently verified). Each uses distinct message text, so
-none get deduped away by another package's disclaimer already having fired
-earlier in the same process. See the [README's disclaimer
-section](../README.md#disclaimer) for the full text; this is expected, not
-an error.
+via yfinance), one from `equicast-metrics` (metrics calculated by equicast,
+not independently verified), and one from `equicast-news` (news headlines
+via yfinance). Each uses distinct message text, so none get deduped away by
+another package's disclaimer already having fired earlier in the same
+process. See the [README's disclaimer section](../README.md#disclaimer) for
+the full text; this is expected, not an error.
 
 ## Running the CLI locally
 
@@ -93,8 +96,14 @@ For each ticker this writes:
   year or later.
 - `stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
-  max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,
+  max drawdown, CAGR), its buy/sell volume-pressure gauge
+  (`buyers_pct`/`sellers_pct`), and its stock-only fundamentals (PE, EPS, PEG,
   price-to-book/sales, EV/EBITDA, margins, returns, debt-to-equity, FCF/share)
+- `stock=<TICKER>/news.parquet` — one row per news article published in the
+  trailing month (no historical archive), newest first: ticker, id, title,
+  summary, publisher, url, thumbnail_url, published_at, last updated,
+  source. Not written for a ticker with no news in that window — see
+  [packages/news/README.md](../packages/news/README.md)
 - `stock=<TICKER>/forecasting/dividends.parquet` — one row per projected
   future ex-dividend date, up to `--years` (default 10) years out, via
   `equicast-forecasting` (see
@@ -124,11 +133,11 @@ earnings dates can be future-dated). It does not affect
 uv run equicast-stock --config config/stocks.dev.yaml --out ./output --full-load
 ```
 
-Profile, prices, dividends, events, and metrics are fetched as independent
-concurrent tasks per ticker (shared across one rate-limited
+Profile, prices, dividends, events, metrics, and news are fetched as
+independent concurrent tasks per ticker (shared across one rate-limited
 `DatafeedClient`), tune with:
 
-- `--max-workers` — profile/price/dividend/events/metrics fetches run concurrently, up to this many at once (default: 1)
+- `--max-workers` — profile/price/dividend/events/metrics/news fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -316,6 +325,7 @@ s3://equicast-market-data-<env>/
     ├── events/
     │   ├── history.parquet   (every year before 2026, written once by a --full-load run)
     │   └── current.parquet   (2026 or later, rewritten by every run)
+    ├── news.parquet   (trailing month only, rewritten wholesale by every run; omitted with no news)
     └── forecasting/
         └── dividends.parquet   (rewritten wholesale by every run, not history/current-split)
 ```

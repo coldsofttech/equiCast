@@ -13,6 +13,15 @@
   box-sizing: border-box;
 }
 
+/* Opt-in narrower column (see AppShell's `narrow` prop) — 680px content +
+   the 24px padding on each side above, so a page using it (e.g.
+   PrivacyPolicyPage/TermsAndConditionsPage) gets the same reading-width
+   column as its standalone signed-out layout, centered by .ec-page's own
+   margin: 0 auto. */
+.ec-page--narrow {
+  max-width: 728px;
+}
+
 /* AppShell's opt-in `stickyTitle` bar — fixed (not sticky) so it overlaps
    content instead of reserving space when hidden, occupying the same
    top-of-page slot MenuBar used to. Toggled visible via `.is-visible`
@@ -63,6 +72,55 @@
 
 .ec-page-title-icon:empty {
   display: none;
+}
+
+.ec-page-head--center {
+  justify-content: center;
+  text-align: center;
+}
+
+.ec-page-head--center .ec-page-head-main {
+  flex-direction: column;
+}
+
+/* Left-aligned, stacked title + subtitle: a bold brand-accent title
+   ("Good evening, {name}", see greeting.js) with a smaller muted subtitle
+   underneath, no icon. */
+.ec-page-greeting {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+  width: 100%;
+  margin-bottom: var(--ec-s-24);
+  animation: ec-greeting-in 0.4s ease;
+}
+
+.ec-page-greeting-title {
+  font-size: var(--ec-fs-24);
+  font-weight: 600;
+  color: var(--ec-accent);
+}
+
+.ec-page-greeting-subtitle {
+  font-size: var(--ec-fs-16);
+  color: var(--ec-text-muted);
+}
+
+@keyframes ec-greeting-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-page-greeting {
+    animation: none;
+  }
 }
 
 .ec-eyebrow {

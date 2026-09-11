@@ -4,6 +4,7 @@ import AppShell from "../../components/shell/AppShell.jsx";
 import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import Card from "../../components/core/Card.jsx";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import IconBadge from "../../components/core/IconBadge.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -42,13 +43,14 @@ import "./AccountDetailPage.css";
 
 /** An account's real holdings (direct and pie-nested alike) carry
  * `invested`/`dividends`/`current_price` already converted to the user's
- * default_currency, not the account's own `currency` (see
- * api/accounts.js's `Holding` typedef and equicast_core.client.
- * MarketDataClient.enrich_holdings) — same reasoning as PieDetailPage's own
- * top stat row, so the real Value/Profit-loss/Dividends-so-far stat row,
- * the Portfolios/Holdings row lists, and the price chart below are all
- * labeled in that currency, not `account.currency` (the heatmap is
- * weight-only and currency-agnostic). */
+ * default_currency (see api/accounts.js's `Holding` typedef and
+ * equicast_core.client.MarketDataClient.enrich_holdings) — an account has
+ * no `currency` of its own (removed — GitHub issues #98/#115) — same
+ * reasoning as PieDetailPage's own top stat row, so the real Value/
+ * Profit-loss/Dividends-so-far stat row, the Portfolios/Holdings row
+ * lists, and the price chart below are all labeled in that currency (the
+ * heatmap is weight-only and currency-agnostic, so it needs none of this
+ * at all). */
 const FALLBACK_CURRENCY = "USD";
 
 function AccountDetailPage() {
@@ -258,17 +260,29 @@ function AccountDetailPage() {
       <div className="ec-stat-grid">
         <StatTile
           label="Value"
-          value={formatCurrency(totals.currentValue, currency)}
-          hint={`Invested ${formatCurrency(totals.invested, currency)}`}
+          value={<Balance>{formatCurrency(totals.currentValue, currency)}</Balance>}
+          hint={
+            <>
+              Invested <Balance>{formatCurrency(totals.invested, currency)}</Balance>
+            </>
+          }
         />
         <StatTile
           label="Profit / loss"
-          value={`${totals.plValue >= 0 ? "+" : "-"}${formatCurrency(Math.abs(totals.plValue), currency)}`}
+          value={
+            <Balance>
+              {totals.plValue >= 0 ? "+" : "-"}
+              {formatCurrency(Math.abs(totals.plValue), currency)}
+            </Balance>
+          }
           tone={totalsTone}
           hint={`${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%`}
           hintTone={totalsTone}
         />
-        <StatTile label="Dividends so far" value={formatCurrency(totals.dividends, currency)} />
+        <StatTile
+          label="Dividends so far"
+          value={<Balance>{formatCurrency(totals.dividends, currency)}</Balance>}
+        />
       </div>
 
       <PiePriceChart
@@ -332,12 +346,15 @@ function AccountDetailPage() {
                       </div>
                     </div>
                     <div className="ec-detail-row-value">
-                      <span className="ec-detail-row-current">
+                      <Balance as="span" className="ec-detail-row-current">
                         {formatCurrency(pieTotals.currentValue, currency)}
-                      </span>
+                      </Balance>
                       <span className={`ec-detail-row-pl ${tone}`}>
-                        {plSign}
-                        {formatCurrency(Math.abs(pieTotals.plValue), currency)} ({plSign}
+                        <Balance>
+                          {plSign}
+                          {formatCurrency(Math.abs(pieTotals.plValue), currency)}
+                        </Balance>{" "}
+                        ({plSign}
                         {Math.abs(pieTotals.plPct).toFixed(1)}%)
                       </span>
                     </div>
@@ -401,12 +418,15 @@ function AccountDetailPage() {
                     </div>
                     <div className="ec-detail-row-value">
                       <span className="ec-detail-row-current">
-                        {formatCurrency(valuation.currentValue, currency)}
+                        <Balance>{formatCurrency(valuation.currentValue, currency)}</Balance>
                         {!valuation.hasLivePrice && " (cost basis)"}
                       </span>
                       <span className={`ec-detail-row-pl ${tone}`}>
-                        {plSign}
-                        {formatCurrency(Math.abs(valuation.plValue), currency)} ({plSign}
+                        <Balance>
+                          {plSign}
+                          {formatCurrency(Math.abs(valuation.plValue), currency)}
+                        </Balance>{" "}
+                        ({plSign}
                         {Math.abs(valuation.plPct).toFixed(1)}%)
                       </span>
                     </div>

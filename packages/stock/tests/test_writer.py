@@ -7,6 +7,7 @@ from equicast_stock.writer import (
     write_events_parquet,
     write_future_dividend_parquet,
     write_metrics_parquet,
+    write_news_parquet,
     write_price_parquet,
     write_profile_parquet,
 )
@@ -210,6 +211,9 @@ def _event_record(event_type: str, date: str, **overrides) -> dict:
         "from_grade": None,
         "to_grade": None,
         "action": None,
+        "price_target_action": None,
+        "current_price_target": None,
+        "prior_price_target": None,
         "ratio": None,
         "last_updated": "2026-08-28T21:29:05+00:00",
         "source": "yfinance",
@@ -276,6 +280,38 @@ def test_write_events_parquet_current_year_or_later_only_writes_no_history_file(
 
 def test_write_events_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
     assert write_events_parquet([], tmp_path) == []
+    assert list(tmp_path.iterdir()) == []
+
+
+def _news_record(id_: str, **overrides) -> dict:
+    record = {
+        "ticker": "AAPL",
+        "id": id_,
+        "title": "Apple beats estimates",
+        "summary": "Details here",
+        "publisher": "Reuters",
+        "url": "https://example.com/click",
+        "thumbnail_url": "https://example.com/thumb.jpg",
+        "published_at": "2026-08-30T09:00:00+00:00",
+        "last_updated": "2026-08-30T09:05:00+00:00",
+        "source": "yfinance",
+    }
+    record.update(overrides)
+    return record
+
+
+def test_write_news_parquet_writes_a_single_flat_file(tmp_path: Path) -> None:
+    records = [_news_record("abc"), _news_record("def", published_at="2026-08-31T09:00:00+00:00")]
+
+    paths = write_news_parquet(records, tmp_path)
+
+    assert paths == [tmp_path / "stock=AAPL" / "news.parquet"]
+    result = pd.read_parquet(paths[0])
+    assert result.to_dict(orient="records") == records
+
+
+def test_write_news_parquet_empty_records_writes_nothing(tmp_path: Path) -> None:
+    assert write_news_parquet([], tmp_path) == []
     assert list(tmp_path.iterdir()) == []
 
 

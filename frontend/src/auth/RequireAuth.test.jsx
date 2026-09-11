@@ -1,5 +1,6 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import RequireAuth from "./RequireAuth.jsx";
 
@@ -43,9 +44,11 @@ describe("RequireAuth (Auth0 configured)", () => {
     });
 
     render(
-      <RequireAuth>
-        <div>secret</div>
-      </RequireAuth>
+      <MemoryRouter>
+        <RequireAuth>
+          <div>secret</div>
+        </RequireAuth>
+      </MemoryRouter>
     );
 
     fireEvent.click(screen.getByRole("button", { name: /log in/i }));
@@ -65,9 +68,11 @@ describe("RequireAuth (Auth0 configured)", () => {
     });
 
     render(
-      <RequireAuth>
-        <div>secret</div>
-      </RequireAuth>
+      <MemoryRouter>
+        <RequireAuth>
+          <div>secret</div>
+        </RequireAuth>
+      </MemoryRouter>
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent(/something went wrong/i);
