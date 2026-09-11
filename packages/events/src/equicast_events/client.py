@@ -64,7 +64,8 @@ class EventsClient:
     def events(self, full_load: bool = False) -> list[dict[str, Any]]:
         """Return one record per event: {ticker, event_type, date,
         eps_estimate, reported_eps, surprise_pct, firm, from_grade,
-        to_grade, action, ratio, last_updated, source}.
+        to_grade, action, price_target_action, current_price_target,
+        prior_price_target, ratio, last_updated, source}.
 
         By default covers this calendar year to date plus any future-dated
         entries (`date >= this year`, not `== this year`) - only earnings
@@ -80,6 +81,16 @@ class EventsClient:
         `surprise_pct`/`ratio` are passed through as yfinance reports them
         (percentage points and a raw ratio respectively, not normalized to
         a 0-1 fraction the way e.g. `dividend_yield` is elsewhere).
+
+        `current_price_target`/`prior_price_target` are in the rating's own
+        native trading currency (not converted - same "caller resolves
+        currency" convention `equicast_core.transactions` uses for its own
+        monetary fields) - yfinance's `upgrades_downgrades` doesn't report
+        one directly, so there's nothing to normalize here. `0` for either
+        (yfinance's own sentinel for "not applicable" - e.g. an "init"/
+        "resume" rating action has no *prior* target to report) is treated
+        as `None`, the same way `from_grade`/`to_grade`'s own empty-string
+        sentinel already is.
         """
         fetched_at = datetime.now(UTC).isoformat()
         records = [
@@ -106,6 +117,9 @@ class EventsClient:
             "from_grade": None,
             "to_grade": None,
             "action": None,
+            "price_target_action": None,
+            "current_price_target": None,
+            "prior_price_target": None,
             "ratio": None,
             "last_updated": fetched_at,
             "source": "yfinance",
@@ -144,6 +158,9 @@ class EventsClient:
                 from_grade=row.get("FromGrade") or None,
                 to_grade=row.get("ToGrade") or None,
                 action=row.get("Action"),
+                price_target_action=row.get("priceTargetAction") or None,
+                current_price_target=round_value(_to_float(row.get("currentPriceTarget"))) or None,
+                prior_price_target=round_value(_to_float(row.get("priorPriceTarget"))) or None,
             )
             for date, row in ratings.iterrows()
         ]
