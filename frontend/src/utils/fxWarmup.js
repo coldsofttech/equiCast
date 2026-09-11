@@ -40,7 +40,13 @@ export function warmFxRates(api, profile) {
   (profile.fx_warmup_currencies ?? [])
     .filter((currency) => currency !== profile.default_currency)
     .forEach((currency) => {
-      getFxRateOnDate(api, currency, profile.default_currency, date).catch(() => {
+      // default→native, matching the direction the transaction form's own
+      // FX rate field now fetches/displays (a rate like "£1 = $xxx" — see
+      // HoldingTransactionsSection.jsx's TransactionForm) — warming the
+      // same direction that request will actually try first, rather than
+      // relying on get_fx_rate_on_date's own direct/inverted-pair fallback
+      // to land on the same cached file regardless.
+      getFxRateOnDate(api, profile.default_currency, currency, date).catch(() => {
         // Best-effort — see module docstring. A 404 (nothing published for
         // this pair) or a network failure just means this warm-up attempt
         // didn't help; it never blocks or surfaces to the caller.

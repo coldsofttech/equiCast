@@ -11,6 +11,7 @@ import { useApi } from "../../api/useApi.js";
 import { getFxRateOnDate } from "../../api/market.js";
 import {
   MAX_RECENT_TRANSACTIONS,
+  formatFxRatio,
   formatPrice,
   selectNetShares,
   selectPositionEntry,
@@ -75,7 +76,17 @@ function tradeTypeMeta(type) {
  * `date` is entered — the same historical rate the backend would otherwise
  * auto-resolve — letting the user preview and override it before saving;
  * `fxRateTouched` stops that auto-fill from clobbering a manual edit once
- * the user has actually typed into the field themselves. */
+ * the user has actually typed into the field themselves.
+ *
+ * The field itself shows/accepts the rate default→native (e.g. "£1 =
+ * $1.27"), matching how brokerage apps like Trading 212/Chip quote it —
+ * `fx_rate` is fetched/edited in that direction, then inverted (1/rate)
+ * right before it's sent as the `fx_rate` override, since that field is
+ * stored/used server-side native→default (`converted_value = native_value
+ * * fx_rate` — see equicast_core.transactions/resolve_converted_amounts).
+ * Editing an existing entry inverts the other way on load, so its already-
+ * stored native→default `fx_rate` still shows correctly in this form's
+ * default→native direction. */
 function TransactionForm({
   type,
   transactionType = "AVERAGE",
@@ -97,7 +108,16 @@ function TransactionForm({
   const priceFieldKey = isAverageBuy ? "average_price_native" : "price_native";
   const [price, setPrice] = useState(initialValues?.[priceFieldKey] ?? "");
   const [amount, setAmount] = useState(initialValues?.amount_native ?? "");
-  const [fxRate, setFxRate] = useState(initialValues?.fx_rate ?? "");
+  // `initialValues.fx_rate` (when editing) is always stored native→default
+  // (see equicast_core.transactions/resolve_converted_amounts — that
+  // direction is what `converted_value = native_value * fx_rate` actually
+  // uses), so it's inverted here to seed the field in the default→native
+  // direction this form shows/accepts (GitHub issue #149's follow-up: a
+  // rate like "£1 = $1.27" reads the way brokerage apps quote it, rather
+  // than "$1 = £0.79").
+  const [fxRate, setFxRate] = useState(
+    initialValues?.fx_rate ? String(1 / Number(initialValues.fx_rate)) : ""
+  );
   const [fxRateTouched, setFxRateTouched] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -107,7 +127,10 @@ function TransactionForm({
   useEffect(() => {
     if (!showFxField || !date || fxRateTouched) return undefined;
     let cancelled = false;
-    getFxRateOnDate(api, nativeCurrency, defaultCurrency, date)
+    // Fetched default→native (e.g. GBP→USD), not native→default — the
+    // direction this field displays/accepts, matching how brokerage apps
+    // like Trading 212/Chip quote a rate (£1 = $xxx) rather than $1 = £xxx.
+    getFxRateOnDate(api, defaultCurrency, nativeCurrency, date)
       .then((result) => {
         if (!cancelled) setFxRate(String(result.rate));
       })
@@ -125,7 +148,10 @@ function TransactionForm({
     event.preventDefault();
     setIsSaving(true);
     setError(null);
-    const fxFields = fxRate !== "" ? { fx_rate: fxRate } : {};
+    // Sent to the backend inverted, back to the native→default direction
+    // `fx_rate` is actually stored/used in (see the `fxRate` state comment
+    // above) — this field shows/accepts the reciprocal for display only.
+    const fxFields = fxRate !== "" ? { fx_rate: String(1 / Number(fxRate)) } : {};
     const fields =
       type === "DIVIDEND"
         ? { date, amount_native: amount, ...fxFields }
@@ -201,7 +227,7 @@ function TransactionForm({
       {showFxField && (
         <TextField
           id="transaction-fx-rate"
-          label={`FX rate (${nativeCurrency} → ${defaultCurrency})`}
+          label={`FX rate (${defaultCurrency} → ${nativeCurrency})`}
           type="number"
           min="0.000001"
           step="any"
@@ -234,13 +260,40 @@ function averageEntryTotal(transaction) {
     : Number(transaction.no_of_shares) * Number(transaction.average_price_native);
 }
 
+/** Same total as `averageEntryTotal`, but in the user's default currency —
+ * `average_price`/`amount` are `average_price_native`/`amount_native`'s
+ * already-converted counterparts (see api/transactions.js's Transaction
+ * typedef), so no client-side conversion is needed here. `null` when
+ * `fx_rate` couldn't be resolved for this entry (see equicast_core.
+ * transactions/resolve_converted_amounts) and so neither was this. */
+function averageEntryTotalConverted(transaction) {
+  const type = transaction.type ?? "BUY";
+  const converted = type === "DIVIDEND" ? transaction.amount : transaction.average_price;
+  if (converted == null) return null;
+  return type === "DIVIDEND" ? Number(converted) : Number(transaction.no_of_shares) * Number(converted);
+}
+
+/** `transaction.fx_rate` is stored/used server-side native→default (see
+ * TransactionForm's own comment on why) — inverted here for display, same
+ * default→native direction ("£1 = $xxx") the form itself now shows/accepts.
+ * `null` when unresolved. */
+function displayFxRate(transaction) {
+  return transaction.fx_rate ? 1 / Number(transaction.fx_rate) : null;
+}
+
 /** One AVERAGE-mode entry (BUY or DIVIDEND) in the top-5 list — a single
- * row: icon-only type badge, date, no of shares, total value, edit, delete.
- * A DIVIDEND has no `no_of_shares` (only a cash amount), same as the "See
- * all" table's own "—" fallback for that column. */
-function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
+ * row: icon-only type badge, date, no of shares, FX rate, native value,
+ * converted value, edit, delete. A DIVIDEND has no `no_of_shares` (only a
+ * cash amount), same as the "See all" table's own "—" fallback for that
+ * column. FX rate/native value only show when this holding's native
+ * currency actually differs from the user's default — nothing to convert
+ * otherwise, same gate `TransactionForm`'s own FX field uses. */
+function AverageEntryCard({ transaction, nativeCurrency, defaultCurrency, onEdit, onDelete }) {
   const type = transaction.type ?? "BUY";
   const meta = averageTypeMeta(type);
+  const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
+  const fxRate = showFx ? displayFxRate(transaction) : null;
+  const convertedTotal = showFx ? averageEntryTotalConverted(transaction) : null;
 
   return (
     <div className="ec-transaction-row-card">
@@ -251,9 +304,19 @@ function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
       <span className="ec-transaction-row-shares">
         {type === "BUY" ? transaction.no_of_shares : "—"}
       </span>
-      <Balance as="span" className="ec-transaction-row-value">
+      {showFx && (
+        <span className="ec-transaction-row-fx">
+          {fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}
+        </span>
+      )}
+      <Balance as="span" className="ec-transaction-row-native-value">
         {formatPrice(averageEntryTotal(transaction), nativeCurrency)}
       </Balance>
+      {showFx && (
+        <Balance as="span" className="ec-transaction-row-value">
+          {convertedTotal != null ? formatPrice(convertedTotal, defaultCurrency) : "—"}
+        </Balance>
+      )}
       <div className="ec-table-actions">
         <button type="button" className="ec-icon-btn" aria-label="Edit transaction" onClick={onEdit}>
           <i className="bi bi-pencil" aria-hidden="true" />
@@ -277,13 +340,28 @@ function tradeEntryTotal(transaction) {
   return Number(transaction.no_of_shares) * Number(transaction.price_native);
 }
 
+/** Same total as `tradeEntryTotal`, but in the user's default currency —
+ * mirrors `averageEntryTotalConverted`'s reasoning, just off `price`
+ * instead of `average_price`/`amount`. `null` when `fx_rate` couldn't be
+ * resolved for this entry. */
+function tradeEntryTotalConverted(transaction) {
+  if (transaction.price == null) return null;
+  return Number(transaction.no_of_shares) * Number(transaction.price);
+}
+
 /** One BUY/SELL entry in the top-N list for TRANSACTION-mode holdings — same
  * single-row layout AverageEntryCard uses (icon-only type badge, date,
- * total value, actions), so both modes' transactions panels read the same
- * way. Deletable (the only way to correct a mistaken entry, since these
- * records are immutable — no edit) via `onDelete`. */
-function TradeRowCard({ transaction, nativeCurrency, location, onDelete }) {
+ * no of shares, FX rate, native value, converted value, actions), so both
+ * modes' transactions panels read the same way. FX rate/native value only
+ * show when this holding's native currency differs from the user's
+ * default, same gate AverageEntryCard uses. Deletable (the only way to
+ * correct a mistaken entry, since these records are immutable — no edit)
+ * via `onDelete`. */
+function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, onDelete }) {
   const meta = tradeTypeMeta(transaction.type);
+  const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
+  const fxRate = showFx ? displayFxRate(transaction) : null;
+  const convertedTotal = showFx ? tradeEntryTotalConverted(transaction) : null;
 
   return (
     <div className="ec-transaction-row-card">
@@ -295,9 +373,19 @@ function TradeRowCard({ transaction, nativeCurrency, location, onDelete }) {
         {location && <span className="ec-transaction-card-location"> · {location}</span>}
       </span>
       <span className="ec-transaction-row-shares">{transaction.no_of_shares}</span>
-      <Balance as="span" className="ec-transaction-row-value">
+      {showFx && (
+        <span className="ec-transaction-row-fx">
+          {fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}
+        </span>
+      )}
+      <Balance as="span" className="ec-transaction-row-native-value">
         {formatPrice(tradeEntryTotal(transaction), nativeCurrency)}
       </Balance>
+      {showFx && (
+        <Balance as="span" className="ec-transaction-row-value">
+          {convertedTotal != null ? formatPrice(convertedTotal, defaultCurrency) : "—"}
+        </Balance>
+      )}
       <div className="ec-table-actions">
         <button
           type="button"
@@ -448,6 +536,7 @@ function HoldingTransactionsSection({
                 key={transaction.id}
                 transaction={transaction}
                 nativeCurrency={nativeCurrency}
+                defaultCurrency={defaultCurrency}
                 onEdit={() => setDrawer({ kind: "edit", holdingId, transaction })}
                 onDelete={() => setDeleting({ holdingId, transactionId: transaction.id })}
               />
@@ -639,6 +728,7 @@ function HoldingTransactionsSection({
               key={transaction.id}
               transaction={transaction}
               nativeCurrency={nativeCurrency}
+              defaultCurrency={defaultCurrency}
               location={showLocation ? location : null}
               onDelete={() => setDeleting({ holdingId, transactionId: transaction.id })}
             />

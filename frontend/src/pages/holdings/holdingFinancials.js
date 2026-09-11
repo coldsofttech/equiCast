@@ -92,6 +92,40 @@ export function formatRatio(value, digits = 2) {
 }
 
 /**
+ * An FX rate as a "1:1" ratio using each side's real currency symbol (e.g.
+ * "£1 : $1.2734"), matching how brokerage apps like Trading 212/Chip quote
+ * a rate — rather than a bare unlabeled number, which reads ambiguously
+ * once you're not sure which currency it's even rate-per-1-unit-of.
+ * `baseCurrency` is the "1" side (see HoldingTransactionsSection.jsx's
+ * `displayFxRate` — the default→native direction the transaction form
+ * itself shows/accepts), `quoteCurrency` the side `rate` is quoted in.
+ * `null` when `rate` is unset.
+ *
+ * @param {number|null|undefined} rate
+ * @param {string} baseCurrency
+ * @param {string} quoteCurrency
+ * @returns {string|null}
+ */
+export function formatFxRatio(rate, baseCurrency, quoteCurrency) {
+  if (rate == null) return null;
+  const base = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: baseCurrency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(1);
+  const quote = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: quoteCurrency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(rate);
+  return `${base} : ${quote}`;
+}
+
+/**
  * @typedef {Object} InstanceFinancials
  * @property {number} shares - net shares currently held.
  * @property {number|null} avgPriceNative - null when there are no

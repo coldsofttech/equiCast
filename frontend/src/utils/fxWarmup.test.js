@@ -30,8 +30,8 @@ describe("warmFxRates", () => {
     const pairs = vi.mocked(getFxRateOnDate).mock.calls.map(([, from, to]) => [from, to]);
     expect(pairs).toEqual(
       expect.arrayContaining([
-        ["USD", "GBP"],
-        ["EUR", "GBP"],
+        ["GBP", "USD"],
+        ["GBP", "EUR"],
       ])
     );
   });

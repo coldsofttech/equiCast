@@ -269,6 +269,19 @@
   text-align: right;
 }
 
+.ec-transaction-row-fx {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-subtle);
+  white-space: nowrap;
+}
+
+.ec-transaction-row-native-value {
+  font-family: var(--ec-font-mono);
+  font-weight: 600;
+  color: var(--ec-text-subtle);
+}
+
 .ec-transaction-row-value {
   font-family: var(--ec-font-mono);
   font-weight: 700;
