@@ -74,6 +74,15 @@
   display: none;
 }
 
+.ec-page-head--center {
+  justify-content: center;
+  text-align: center;
+}
+
+.ec-page-head--center .ec-page-head-main {
+  flex-direction: column;
+}
+
 /* Left-aligned, stacked title + subtitle: a bold brand-accent title
    ("Good evening, {name}", see greeting.js) with a smaller muted subtitle
    underneath, no icon. */

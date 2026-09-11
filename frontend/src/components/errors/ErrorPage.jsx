@@ -3,21 +3,18 @@ import Logo from "../brand/Logo.jsx";
 import "./ErrorPage.css";
 
 /**
- * Shared full-page layout for every error state (NotFoundPage,
- * ServiceUnavailablePage, AppErrorPage, OfflinePage) — deliberately
- * standalone, not wrapped in AppShell: AppShell's own Topbar fetches the
- * signed-in user's profile, which is exactly the kind of call that can be
- * what's failing (ServiceUnavailablePage) or unreachable (OfflinePage) in
- * the first place, and a 404/render-crash shouldn't depend on it
- * succeeding either. Only the brand mark, linked back to /dashboard, so
- * there's always one clear way out regardless of which of these fired.
+ * Standalone full-page layout for AppErrorPage — the one error state that
+ * genuinely can't assume AppShell's own Topbar is safe to render, since
+ * ErrorBoundary catches a render crash *anywhere* in the tree, Topbar
+ * included; re-rendering the very component that just crashed would loop.
+ * NotFoundPage and ServiceUnavailablePage don't have that problem (both
+ * only ever reached already signed in, past RequireAuth — see App.jsx/
+ * DashboardPage) and render inside AppShell instead, keeping the normal
+ * Topbar.
  *
- * `icon` carries each page's own animated SVG (see NotFoundIcon.jsx and
- * siblings) — the one deliberately bold, page-specific element; title/
- * message stay in the app's plain interface voice (what happened, not an
- * apology), and `action` is optional since OfflinePage has nothing useful
- * for a person to click (it recovers on its own once the browser reports
- * being back online — see useOnlineStatus.js).
+ * `icon` carries the page's own animated SVG (see AppErrorIcon.jsx);
+ * title/message stay in the app's plain interface voice (what happened,
+ * not an apology).
  */
 function ErrorPage({ icon, title, message, action }) {
   return (

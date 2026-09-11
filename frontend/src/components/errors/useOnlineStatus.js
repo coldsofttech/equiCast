@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 
 /**
  * Tracks the browser's own connectivity state (`navigator.onLine`,
- * updated live via the `online`/`offline` window events) — App.jsx uses
- * this to swap the entire routed app out for OfflinePage while offline,
- * since no page's own data can load without a connection regardless of
- * which one is showing.
+ * updated live via the `online`/`offline` window events) — Topbar uses
+ * this to show a slim banner instead of blocking the whole app, since
+ * every page's fetches already cache their last response in IndexedDB
+ * (priceCache.js, eventsCache.js, sessionCache.js, ...), so a signed-in
+ * visitor can keep reading that cached data while offline.
  *
  * `navigator.onLine` only reflects whether the device has *a* network
  * interface up, not whether equiCast's own API is actually reachable
