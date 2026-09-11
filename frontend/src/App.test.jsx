@@ -29,4 +29,15 @@ describe("App routing", () => {
 
     expect(screen.getByRole("alert")).toHaveTextContent(/auth0 isn't configured/i);
   });
+
+  it("serves /privacy-policy publicly, without the auth gate", () => {
+    render(
+      <MemoryRouter initialEntries={["/privacy-policy"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });

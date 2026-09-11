@@ -103,6 +103,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   dot's own mouseleave, so the cursor has time to reach it before it
   unmounts.
 
+- A public `/privacy-policy` page (`frontend/src/pages/PrivacyPolicyPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as a future `/cookie-policy` would be) since a visitor
+  has to be able to read it before ever signing in. Grounded in what
+  equiCast's own code actually collects/stores — Auth0 identity
+  (name/email/picture) for sign-in, the accounts/pies/watchlists/
+  holdings/transactions you enter yourself (S3 JSON via `equicast_core`),
+  and your currency/transaction-type profile settings (DynamoDB) — not
+  generic legal boilerplate. `SiteFooter` gains a "Privacy Policy" link,
+  which needs Router context — fixed three existing `RequireAuth` tests
+  that rendered `SignInScreen` (and so `SiteFooter`) without a
+  `MemoryRouter` to keep passing.
+
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
   header — `null` for any other status, or a 429 with no parseable header.

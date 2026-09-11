@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Logo from "../brand/Logo.jsx";
 import "./SiteFooter.css";
 
@@ -5,14 +6,19 @@ import "./SiteFooter.css";
  * The equiCast brand footer + data-source/no-advice disclaimer, shared
  * between SignInScreen (the logged-out landing page) and DashboardPage
  * (the logged-in landing page) so the two stay identical rather than two
- * copies of this same legal text drifting apart.
+ * copies of this same legal text drifting apart. The Privacy Policy link
+ * needs Router context (see App.test.jsx/RequireAuth.test.jsx, which wrap
+ * their renders in a MemoryRouter for exactly this reason).
  */
 function SiteFooter() {
   return (
     <>
       <footer className="ec-landing-foot">
         <Logo compact />
-        <span>© {new Date().getFullYear()} equiCast</span>
+        <span className="ec-landing-foot-links">
+          <span>© {new Date().getFullYear()} equiCast</span>
+          <Link to="/privacy-policy">Privacy Policy</Link>
+        </span>
       </footer>
 
       <section className="ec-disclaimer">
