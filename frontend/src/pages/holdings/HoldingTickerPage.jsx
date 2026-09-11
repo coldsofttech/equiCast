@@ -46,7 +46,11 @@ import {
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
-import { formatSyncedDate } from "../holdingValuation.js";
+import {
+  computeHoldingValuation,
+  formatSyncedDate,
+  summarizeHoldingValuations,
+} from "../holdingValuation.js";
 import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
@@ -518,73 +522,51 @@ function HoldingTickerPage() {
               });
 
               const totals = rollupInstances(instanceFinancials, currentPriceNative);
-              const totalsTone = plTone(totals.plPct ?? 0);
               avgPriceNative = totals.shares > 0 ? totals.invested / totals.shares : null;
 
-              // Total invested/Profit-loss are shown in the user's own default
-              // currency (fxRate converts nativeCurrency -> defaultCurrency —
-              // see resolveFxRate), not the holding's native currency: a GBP
-              // account holding a USD stock should read in GBP here, same
-              // reasoning as HoldingInstancesTable's own default-currency
-              // column. Profit/loss % needs no conversion, being currency-free.
-              // When there's no market profile at all (marketProfileStatus ===
-              // "missing"), nativeCurrency is null, so there's nothing to
-              // convert from/to — shown as a plain currency-less number
-              // instead of blocking forever on an fx lookup the page never
-              // even attempts in that case (see the fxRate effect above).
-              const totalsLoading = nativeCurrency != null && fxState === "loading";
-              const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
-              const investedDefault =
-                nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
-              const currentValueDefault =
-                totals.currentValue == null
-                  ? null
-                  : nativeCurrency == null
-                    ? totals.currentValue
-                    : fxRate != null
-                      ? totals.currentValue * fxRate
-                      : null;
-              const plValueDefault =
-                totals.plValue == null
-                  ? null
-                  : nativeCurrency == null
-                    ? totals.plValue
-                    : fxRate != null
-                      ? totals.plValue * fxRate
-                      : null;
-              const dividendsDefault =
-                nativeCurrency == null
-                  ? totals.dividendsNative
-                  : fxRate != null
-                    ? totals.dividendsNative * fxRate
-                    : null;
+              // Value/Invested/Profit-loss/Dividends are shown in the user's
+              // own default currency using each holding's own current_price/
+              // invested/dividends — already converted server-side (see
+              // equicast_core.client.MarketDataClient.enrich_holdings) — via
+              // the same computeHoldingValuation/summarizeHoldingValuations
+              // AccountDetailPage/PieDetailPage use, rather than this page
+              // separately re-fetching marketProfile.day_close and its own
+              // fx rate and converting client-side. That independent
+              // computation could land on a different price/fx snapshot than
+              // whatever the accounts/pies fetch had already enriched each
+              // holding with, so the exact same holding could show a
+              // different Value/Invested/P&L depending on whether you were
+              // looking at it from this page or from its account/pie page.
+              const holdingsForTicker = instances.map((instance) => instance.holding);
+              const valuations = holdingsForTicker.map(computeHoldingValuation);
+              const defaultTotals = summarizeHoldingValuations(holdingsForTicker, valuations);
+              const totalsTone = plTone(defaultTotals.plPct);
+              const totalsCurrency = defaultCurrency;
+              const investedDefault = defaultTotals.invested;
+              const currentValueDefault = defaultTotals.currentValue;
+              const plValueDefault = defaultTotals.plValue;
+              const dividendsDefault = defaultTotals.dividends;
 
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
                     label="Value"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : currentValueDefault != null ? (
+                      currentValueDefault != null ? (
                         <Balance>{formatMoney(currentValueDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
                       )
                     }
                     hint={
-                      totalsLoading ? (
-                        "…"
-                      ) : (
-                        <>
-                          Invested{" "}
-                          {investedDefault != null ? (
-                            <Balance>{formatMoney(investedDefault, totalsCurrency)}</Balance>
-                          ) : (
-                            "—"
-                          )}
-                        </>
-                      )
+                      <>
+                        Invested{" "}
+                        {investedDefault != null ? (
+                          <Balance>{formatMoney(investedDefault, totalsCurrency)}</Balance>
+                        ) : (
+                          "—"
+                        )}
+                      </>
                     }
                     tone={totalsTone}
                   />
@@ -605,9 +587,7 @@ function HoldingTickerPage() {
                   <StatTile
                     label="Profit / loss"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : plValueDefault != null ? (
+                      plValueDefault != null ? (
                         <Balance>
                           {plValueDefault >= 0 ? "+" : "-"}
                           {formatMoney(Math.abs(plValueDefault), totalsCurrency)}
@@ -616,16 +596,14 @@ function HoldingTickerPage() {
                         "—"
                       )
                     }
-                    hint={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
+                    hint={`${defaultTotals.plPct >= 0 ? "+" : "-"}${Math.abs(defaultTotals.plPct).toFixed(1)}%`}
                     tone={totalsTone}
                     hintTone={totalsTone}
                   />
                   <StatTile
                     label="Dividends"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : dividendsDefault != null ? (
+                      dividendsDefault != null ? (
                         <Balance>{formatMoney(dividendsDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
