@@ -261,6 +261,14 @@
   color: var(--ec-text);
 }
 
+.ec-transaction-row-shares {
+  min-width: 56px;
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
+  text-align: right;
+}
+
 .ec-transaction-row-value {
   font-family: var(--ec-font-mono);
   font-weight: 700;
