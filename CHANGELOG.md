@@ -67,7 +67,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   jurisdiction/entity to back up). `SiteFooter` gains a "Terms and
   Conditions" link, which needs Router context — fixed three existing
   `RequireAuth` tests that rendered `SignInScreen` (and so `SiteFooter`)
-  without a `MemoryRouter` to keep passing.
+  without a `MemoryRouter` to keep passing. Auth-aware like
+  `/privacy-policy`: a signed-in visitor (e.g. following the footer link
+  from inside the app) sees the normal `Topbar` instead of the bare logo
+  header a signed-out visitor gets, so search/currency/hide-balances/
+  account menu stay reachable.
+
+### Fixed
+
+- `SiteFooter`'s and the Terms and Conditions page's market-data
+  disclaimer said prices refresh "every 6 hours" — that was actually
+  `market_data_cache_ttl_seconds`'s cache TTL (a safety margin), not the
+  real ingestion cadence; every ingestion pipeline refreshes at most once
+  a day (see `infra/variables.tf`). Both now say "once a day", and
+  `SiteFooter`'s "may lag the market by up to a few hours" is corrected to
+  "up to a day" to match.
 
 - `/holdings/:ticker`'s price chart gains a "Key events" toggle (off by
   default, matching Yahoo Finance's own), overlaying real earnings/

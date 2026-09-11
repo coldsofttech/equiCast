@@ -25,8 +25,8 @@ function SiteFooter() {
 
       <section className="ec-disclaimer">
         <p>
-          Market data refreshes on a periodic ingestion cycle (every 6 hours), not a live
-          real-time feed — prices and figures shown may lag the market by up to a few hours.
+          Market data refreshes on a periodic ingestion cycle (once a day), not a live
+          real-time feed — prices and figures shown may lag the market by up to a day.
           equiCast is built for long-term investment analysis and forecasting, not intraday or
           high-frequency trading.
         </p>
