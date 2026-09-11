@@ -377,21 +377,28 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState("loading");
 
-  // Bumped only for this ticker's genuine first paint (never yet had any
-  // bars to show) — the reveal animations (mainLineRef's effect and
-  // ec-chart-reveal below) key off this rather than `bars`/`rangeId`
-  // directly, so a same-ticker range switch (which already keeps the
-  // previous chart up, dimmed via "is-refreshing" — see `bars` below)
-  // doesn't replay a "start from nothing" reveal on top of that dim/undim
-  // transition. Doing both at once was the actual bug behind GitHub issue
-  // #137: the reveal's own "from: opacity 0"/full-dasharray starting state
-  // made the chart flash to fully invisible for a frame exactly when the
-  // dim was lifting, reading as a blink rather than the intended smooth
-  // update. Reset to `false` whenever the ticker itself changes (a
-  // genuinely new chart, which should still draw in from nothing), via the
-  // ticker/assetClass effect below.
+  // Bumped for this ticker's genuine first paint, and again on every
+  // user-initiated range switch (see `handleRangeChange` below) — the
+  // reveal animations (mainLineRef's effect and ec-chart-reveal below) key
+  // off this rather than `bars`/`rangeId` directly, so a range switch plays
+  // the same "draw in" reveal a first paint does. This is deliberately a
+  // click-driven bump, not a plain `[rangeId]` effect: range slicing itself
+  // is synchronous (see priceRangeSlicing.js) and carries no fetch/loading
+  // gap to dim through — unlike the ticker-fetch bump below, which still
+  // guards against replaying the reveal for a same-ticker background
+  // refetch landing mid-flight (GitHub issue #137's original "flash to
+  // fully invisible right as a dim was lifting" bug, from before range
+  // switches stopped fetching at all). Reset whenever the ticker itself
+  // changes, via the ticker/assetClass effect below.
   const [revision, setRevision] = useState(0);
   const hasRevealedRef = useRef(false);
+  const revealedRevisionRef = useRef(-1);
+
+  const handleRangeChange = (id) => {
+    if (id === rangeId) return;
+    setRangeId(id);
+    setRevision((r) => r + 1);
+  };
 
   useEffect(() => {
     hasRevealedRef.current = false;
@@ -725,6 +732,22 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   // animate it back to 0. Left untouched under prefers-reduced-motion:
   // that media query just turns the CSS transition off, so the dashoffset
   // set here still resolves to 0, just without animating there.
+  //
+  // Also re-runs on every `linePath` change, not just on a new `revision` —
+  // dasharray/dashoffset are plain imperative DOM properties, not React
+  // props, so they'd otherwise stay frozen at whatever `getTotalLength()`
+  // measured for the *previous* path once this effect had already run for
+  // the current revision. Applied to a new, differently-shaped path (e.g. a
+  // resize recomputing x-coordinates without an accompanying revision
+  // bump), a stale dasharray/dashoffset pair can leave the line rendering
+  // solid only partway across before silently running into its own
+  // leftover "gap" segment for the remainder. `revealedRevisionRef` tells
+  // the two cases apart: a genuine new `revision` (first paint, or a range
+  // switch via `handleRangeChange` above) still gets the full animated
+  // draw-in; a `linePath` change with no accompanying revision bump (a
+  // resize, or a same-range background refetch) just corrects the dash
+  // pattern for the new path's real length with no animation, since there
+  // was nothing conceptually "new" being revealed.
   useLayoutEffect(() => {
     const el = mainLineRef.current;
     if (!el || typeof el.getTotalLength !== "function") return;
@@ -735,13 +758,15 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
       return;
     }
     if (!length) return;
+    const isNewReveal = revealedRevisionRef.current !== revision;
+    revealedRevisionRef.current = revision;
     el.style.transitionProperty = "none";
     el.style.strokeDasharray = `${length}`;
-    el.style.strokeDashoffset = `${length}`;
+    el.style.strokeDashoffset = isNewReveal ? `${length}` : "0";
     el.getBoundingClientRect();
     el.style.transitionProperty = "";
     el.style.strokeDashoffset = "0";
-  }, [revision]);
+  }, [revision, linePath]);
 
   // Same left-to-right draw-in as the main line above, but via a growing
   // clip-path rect (0 -> plotWidth wide) rather than stroke-dasharray/
@@ -802,7 +827,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
             key={r.id}
             type="button"
             className={`ec-pchart-range-btn${r.id === rangeId ? " is-active" : ""}`}
-            onClick={() => setRangeId(r.id)}
+            onClick={() => handleRangeChange(r.id)}
           >
             {r.label}
           </button>
