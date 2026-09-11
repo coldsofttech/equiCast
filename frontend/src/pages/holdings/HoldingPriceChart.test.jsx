@@ -143,6 +143,65 @@ describe("HoldingPriceChart", () => {
     expect(getMetrics).toHaveBeenCalledWith(expect.any(Function), "benchmark", "SP500");
   });
 
+  it("doesn't replay the reveal animation on a same-ticker range switch (issue #137)", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS });
+
+    const { container } = render(
+      <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
+    );
+
+    // The reveal group (`.ec-chart-reveal`) is only rendered for area/candle
+    // chart types — switch to Area so there's a real DOM node whose
+    // identity can be tracked across the range switch below.
+    fireEvent.click(await screen.findByRole("button", { name: "Area" }));
+    const revealBefore = await waitFor(() => {
+      const el = container.querySelector(".ec-chart-reveal");
+      expect(el).not.toBeNull();
+      return el;
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "1Y" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "1Y" })).toHaveClass("is-active"));
+
+    // A same-ticker range switch must not bump `revision` (see
+    // hasRevealedRef) — if it did, the `key={revision}` on this group
+    // would force React to unmount/remount it, replaying the "start from
+    // nothing" reveal on top of the is-refreshing dim/undim and producing
+    // the blink issue #137 reported. Same node reference == no remount.
+    expect(container.querySelector(".ec-chart-reveal")).toBe(revealBefore);
+  });
+
+  it("replays the reveal animation when the ticker itself changes", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    mockPrices({ AAPL: MAIN_BARS, MSFT: MAIN_BARS });
+
+    const { container, rerender } = render(
+      <HoldingPriceChart assetClass="stock" ticker="AAPL" currency="USD" />
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Area" }));
+    const revealBefore = await waitFor(() => {
+      const el = container.querySelector(".ec-chart-reveal");
+      expect(el).not.toBeNull();
+      return el;
+    });
+
+    rerender(<HoldingPriceChart assetClass="stock" ticker="MSFT" currency="USD" />);
+    await waitFor(() =>
+      expect(getPrices).toHaveBeenCalledWith(expect.any(Function), "stock", "MSFT")
+    );
+
+    // A genuinely different ticker is a fresh chart — hasRevealedRef resets
+    // (see the [assetClass, ticker] effect), so this *should* remount and
+    // replay the reveal, unlike the same-ticker case above.
+    const revealAfter = await waitFor(() => {
+      const el = container.querySelector(".ec-chart-reveal");
+      expect(el).not.toBeNull();
+      return el;
+    });
+    expect(revealAfter).not.toBe(revealBefore);
+  });
+
   it("fetches events only once the Key events toggle is switched on", async () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
     mockPrices({ AAPL: MAIN_BARS });

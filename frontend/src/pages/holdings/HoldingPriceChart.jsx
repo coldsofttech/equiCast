@@ -292,13 +292,19 @@ const X_AXIS_MAX_TICKS = 6;
  * previous ticker's chart stays up (dimmed via "is-refreshing",
  * styles/chart.css) rather than flashing to a bare loading line — a range
  * switch has no such gap to bridge any more, since it's a synchronous
- * client-side slice. The main line still "draws" across the plot
- * (stroke-dasharray/dashoffset, see mainLineRef's effect) and the area
- * fill/candles still fade+rise in (`ec-chart-reveal`, keyed on `revision`)
- * on *every* new set of bars — a real fetch landing or a plain range
- * click — same reveal Yahoo Finance's own chart uses on a range change.
- * The
- * avg-price/current-price reference lines get their own, different
+ * client-side slice. On this ticker's genuine first paint, the main line
+ * then "draws" across the plot (stroke-dasharray/dashoffset, see
+ * mainLineRef's effect) and the area fill/candles fade+rise in
+ * (`ec-chart-reveal`, keyed on `revision`) — the same reveal Yahoo
+ * Finance's own chart uses on load. A same-ticker range switch
+ * deliberately does *not* replay that reveal (`revision` only bumps once
+ * per ticker — see `hasRevealedRef`): doing so on top of the is-refreshing
+ * dim/undim made the chart flash fully invisible for a frame right as the
+ * dim lifted, reading as a blink rather than a smooth update (GitHub issue
+ * #137) — a range switch instead just updates the line/area/candle shapes
+ * directly, which the dim/undim transition already covers smoothly enough
+ * on its own. The avg-price/current-price reference lines get their own,
+ * different
  * treatment (HoldingPriceChart.css): a continuously flowing dash pattern —
  * avg-price right-to-left, current-price left-to-right, opposite
  * directions so the two read as distinct — rather than a one-shot reveal,
@@ -371,12 +377,25 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const [history, setHistory] = useState(null);
   const [status, setStatus] = useState("loading");
 
-  // Bumped whenever `bars` (below) points at a genuinely new set of bars —
-  // a real fetch landing or a plain range click — the reveal animation
-  // (see mainLineRef's effect and ec-chart-reveal below) keys off this
-  // rather than `bars` directly, so it's a stable dependency regardless of
-  // whether `bars`' own array identity would otherwise change.
+  // Bumped only for this ticker's genuine first paint (never yet had any
+  // bars to show) — the reveal animations (mainLineRef's effect and
+  // ec-chart-reveal below) key off this rather than `bars`/`rangeId`
+  // directly, so a same-ticker range switch (which already keeps the
+  // previous chart up, dimmed via "is-refreshing" — see `bars` below)
+  // doesn't replay a "start from nothing" reveal on top of that dim/undim
+  // transition. Doing both at once was the actual bug behind GitHub issue
+  // #137: the reveal's own "from: opacity 0"/full-dasharray starting state
+  // made the chart flash to fully invisible for a frame exactly when the
+  // dim was lifting, reading as a blink rather than the intended smooth
+  // update. Reset to `false` whenever the ticker itself changes (a
+  // genuinely new chart, which should still draw in from nothing), via the
+  // ticker/assetClass effect below.
   const [revision, setRevision] = useState(0);
+  const hasRevealedRef = useRef(false);
+
+  useEffect(() => {
+    hasRevealedRef.current = false;
+  }, [assetClass, ticker]);
 
   useEffect(() => {
     let cancelled = false;
@@ -387,6 +406,10 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
         if (cancelled) return;
         setHistory(result);
         setStatus("ok");
+        if (!hasRevealedRef.current) {
+          setRevision((r) => r + 1);
+          hasRevealedRef.current = true;
+        }
       })
       .catch(() => {
         if (cancelled) return;
@@ -406,10 +429,6 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   const bars = useMemo(() => sliceForRange(history, rangeId), [history, rangeId]);
   const hasData = bars.length > 0;
   const seriesCurrency = history?.currency ?? currency ?? null;
-
-  useEffect(() => {
-    setRevision((r) => r + 1);
-  }, [bars]);
 
   // Off by default (matches Yahoo Finance's own "Key events" toggle) and
   // fetched lazily — only once switched on — rather than alongside `series`
@@ -697,10 +716,10 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     }
   }
 
-  // "Draws" the main line across the plot on every new revision (a range
-  // switch, a ticker change, or the initial load) via the classic
-  // stroke-dasharray/dashoffset reveal — set the offset back to the path's
-  // full length with transitions off, force a reflow so the browser
+  // "Draws" the main line across the plot on every new revision (this
+  // ticker's own first paint only — see `hasRevealedRef` above) via the
+  // classic stroke-dasharray/dashoffset reveal — set the offset back to
+  // the path's full length with transitions off, force a reflow so the browser
   // registers that as the starting point, then hand off to CSS's own
   // `transition: stroke-dashoffset` (ec-chart-line, styles/chart.css) to
   // animate it back to 0. Left untouched under prefers-reduced-motion:
