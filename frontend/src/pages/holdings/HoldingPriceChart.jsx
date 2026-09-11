@@ -52,13 +52,6 @@ function barIndexForDate(bars, targetDate) {
  * dense, unreadable columns rather than a scattering of individual dots. */
 const EVENTS_DISABLED_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
 
-function formatAxisDate(dateStr, rangeId) {
-  const d = new Date(dateStr);
-  if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
-  if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
-
 /** `equicast_events.EventsClient`'s raw split `ratio` (e.g. `4.0` for a
  * 4-for-1 split, `0.5` for a 1-for-2 reverse split — see its own
  * docstring) as the "X-for-Y" form a split is normally described in,
