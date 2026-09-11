@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import Logo from "../brand/Logo.jsx";
 import "./SiteFooter.css";
 
@@ -5,20 +6,27 @@ import "./SiteFooter.css";
  * The equiCast brand footer + data-source/no-advice disclaimer, shared
  * between SignInScreen (the logged-out landing page) and DashboardPage
  * (the logged-in landing page) so the two stay identical rather than two
- * copies of this same legal text drifting apart.
+ * copies of this same legal text drifting apart. The Terms and Conditions
+ * and Privacy Policy links need Router context (see App.test.jsx/
+ * RequireAuth.test.jsx, which wrap their renders in a MemoryRouter for
+ * exactly this reason).
  */
 function SiteFooter() {
   return (
     <>
       <footer className="ec-landing-foot">
         <Logo compact />
-        <span>© {new Date().getFullYear()} equiCast</span>
+        <span className="ec-landing-foot-links">
+          <span>© {new Date().getFullYear()} equiCast</span>
+          <Link to="/terms-and-conditions">Terms and Conditions</Link>
+          <Link to="/privacy-policy">Privacy Policy</Link>
+        </span>
       </footer>
 
       <section className="ec-disclaimer">
         <p>
-          Market data refreshes on a periodic ingestion cycle (every 6 hours), not a live
-          real-time feed — prices and figures shown may lag the market by up to a few hours.
+          Market data refreshes on a periodic ingestion cycle (once a day), not a live
+          real-time feed — prices and figures shown may lag the market by up to a day.
           equiCast is built for long-term investment analysis and forecasting, not intraday or
           high-frequency trading.
         </p>

@@ -96,8 +96,9 @@ For each ticker this writes:
   last updated, source. Not written for a ticker with no events this year
   or later.
 - `etf=<TICKER>/metrics.parquet` — one row, `equicast-metrics`'
-  risk/performance metrics only (volatility, Sharpe ratio, max drawdown,
-  CAGR) — no valuation/fundamental metrics, unlike `equicast-stock`
+  risk/performance metrics (volatility, Sharpe ratio, max drawdown, CAGR)
+  and its `buyers_pct`/`sellers_pct` buy/sell volume-pressure gauge — no
+  valuation/fundamental metrics, unlike `equicast-stock`
 - `etf=<TICKER>/news.parquet` — one row per news article published in the
   trailing month (no historical archive), newest first: ticker, id, title,
   summary, publisher, url, thumbnail_url, published_at, last updated,

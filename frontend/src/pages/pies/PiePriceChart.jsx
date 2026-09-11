@@ -1,38 +1,14 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
 import { resolveFxRate, formatPrice } from "../holdings/holdingFinancials.js";
+import { RANGES, formatAxisDate, sliceForRange } from "../priceRangeSlicing.js";
 import PieComparePicker from "./PieComparePicker.jsx";
 import PieBenchmarkRating from "./PieBenchmarkRating.jsx";
 import "../accounts/PriceChart.css";
 import "../holdings/HoldingPriceChart.css";
-
-/** Same range set HoldingPriceChart offers — "1d" omitted since only daily
- * bars are ever stored (see market.js's PRICE_RANGES for the full set the
- * backend accepts). */
-const RANGES = [
-  { id: "5d", label: "1W" },
-  { id: "1m", label: "1M" },
-  { id: "6m", label: "6M" },
-  { id: "ytd", label: "YTD" },
-  { id: "1y", label: "1Y" },
-  { id: "2y", label: "2Y" },
-  { id: "3y", label: "3Y" },
-  { id: "5y", label: "5Y" },
-  { id: "10y", label: "10Y" },
-  { id: "max", label: "MAX" },
-];
-
-const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
-const VERY_LONG_RANGES = new Set(["10y", "max"]);
-
-function formatAxisDate(dateStr, rangeId) {
-  const d = new Date(dateStr);
-  if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
-  if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 /** Y-axis tick label: a signed percentage in comparison (pctMode) charts,
  * the usual currency-formatted value otherwise — same split
@@ -126,43 +102,62 @@ function buildAggregateBars(holdingSeries) {
 }
 
 /**
- * Fetches every held (`no_of_shares > 0`) holding's own real price series
- * for `rangeId` and combines them via `buildAggregateBars`, converting each
- * to `targetCurrency` via a single current FX rate (see resolveFxRate) —
- * shared by the main pie (PiePriceChart's own `holdings` prop) and a
- * "compare against" pie (fetched fresh via `getPie` once selected), so both
- * go through the exact same aggregation. A holding whose price/FX can't be
- * resolved is dropped rather than failing the whole fetch. `targetCurrency`
- * only has to be *some* consistent currency across the holdings it's
- * aggregating — for a compare pie, its choice doesn't affect the % growth
- * ratio the comparison actually plots (a constant FX rate cancels out of a
- * ratio), so the caller doesn't need the compare pie's own default
- * currency, just any one currency.
+ * Fetches every held (`no_of_shares > 0`) holding's own real *full* price
+ * history (the bundled `{daily, weekly, monthly}` payload — see
+ * api/market.js's getPrices) once, resolving each to `targetCurrency` via a
+ * single current FX rate (see resolveFxRate) — shared by the main pie
+ * (PiePriceChart's own `holdings` prop) and a "compare against" pie
+ * (fetched fresh via `getPie` once selected). A holding whose price/FX
+ * can't be resolved is dropped rather than failing the whole fetch.
+ * `targetCurrency` only has to be *some* consistent currency across the
+ * holdings it's aggregating — for a compare pie, its choice doesn't affect
+ * the % growth ratio the comparison actually plots (a constant FX rate
+ * cancels out of a ratio), so the caller doesn't need the compare pie's own
+ * default currency, just any one currency.
+ *
+ * Deliberately *not* range-scoped (no `rangeId` param) — unlike the old
+ * per-range fetch this replaces, every held holding's full history is
+ * fetched once regardless of which range is selected; `sliceAndAggregate`
+ * below does the range-scoping client-side on every range-picker click,
+ * with no further request (GitHub issue #150) — the previous version of
+ * this function re-fetched every held holding on every range click, which
+ * is the single biggest source of the extra API hits issue #150 flagged.
  */
-async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
+async function fetchHoldingHistories(api, holdings, targetCurrency) {
   const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
   if (heldHoldings.length === 0) return [];
 
   const results = await Promise.all(
     heldHoldings.map(async (holding) => {
       try {
-        const series = await getPrices(api, holding.asset_class, holding.ticker, { range: rangeId });
-        if (series.prices.length === 0) return null;
-        const fxRate = await resolveFxRate(api, series.currency, targetCurrency);
+        const history = await getPrices(api, holding.asset_class, holding.ticker);
+        if (history.daily.length === 0 && history.weekly.length === 0 && history.monthly.length === 0) {
+          return null;
+        }
+        const fxRate = await resolveFxRate(api, history.currency, targetCurrency);
         if (fxRate == null) return null;
-        return {
-          shares: Number(holding.no_of_shares),
-          fxRate,
-          bars: series.prices,
-          barsByDate: new Map(series.prices.map((b) => [b.date, b])),
-        };
+        return { shares: Number(holding.no_of_shares), fxRate, history };
       } catch {
         return null;
       }
     })
   );
 
-  const holdingSeries = results.filter(Boolean);
+  return results.filter(Boolean);
+}
+
+/**
+ * Slices each of `holdingHistories`' full price history down to `rangeId`
+ * (via `sliceForRange`) and combines the results with `buildAggregateBars`
+ * — the client-side, synchronous counterpart to the network fetch
+ * `fetchHoldingHistories` does once; called again on every range-picker
+ * click with no further request.
+ */
+function sliceAndAggregate(holdingHistories, rangeId) {
+  const holdingSeries = holdingHistories.map(({ shares, fxRate, history }) => {
+    const bars = sliceForRange(history, rangeId);
+    return { shares, fxRate, bars, barsByDate: new Map(bars.map((b) => [b.date, b])) };
+  });
   return holdingSeries.length > 0 ? buildAggregateBars(holdingSeries) : [];
 }
 
@@ -210,7 +205,25 @@ async function fetchAggregateBars(api, holdings, rangeId, targetCurrency) {
  * dashed / accent info dashed respectively) the same way HoldingPriceChart
  * treats avg buy price/current price — including in pctMode, log-scaled via
  * their own ratio to the first bar's close, so they stay meaningful and
- * on-screen even while comparing.
+ * on-screen even while comparing. They get the same continuously-flowing
+ * dash animation too (ec-chart-avg-line/ec-chart-current-line,
+ * HoldingPriceChart.css — already imported here, so no extra CSS needed).
+ *
+ * A holdings-set change doesn't blank the view while the new fetch is in
+ * flight (a range switch has no such gap any more — see
+ * `fetchHoldingHistories`/`sliceAndAggregate` above, GitHub issue #150):
+ * the previous chart stays up, dimmed via "is-refreshing", same as
+ * HoldingPriceChart.jsx (see that component's docstring for the full
+ * reasoning, including why the "draws in left-to-right"/"fades+rises in"
+ * reveal itself is reserved for this entity's genuine first paint only,
+ * not a same-entity range switch — replaying it there used to make the
+ * chart flash invisible for a frame right as the dim lifted, GitHub issue
+ * #137). The compare/benchmark overlay's own clip-path draw-in is
+ * unaffected either way, since it's keyed on the compare path itself, not
+ * `revision`. This just ports the same mainLineRef/revision/
+ * compareClipRectRef mechanics since PiePriceChart has its own separate
+ * fetch effect and JSX, not anything HoldingPriceChart's CSS import alone
+ * could cover. No candle-reveal case, since this chart has no Candles type.
  *
  * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, entityLabel?: string, compareItems?: { id: string, name: string }[], compareItemType?: "pie"|"account", fetchCompareHoldings: (refId: string) => Promise<import("../../api/accounts.js").Holding[]>, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
  */
@@ -230,6 +243,9 @@ function PiePriceChart({
   const [rangeId, setRangeId] = useState("max");
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
+  const mainLineRef = useRef(null);
+  const compareClipId = useId();
+  const compareClipRectRef = useRef(null);
   const [width, setWidth] = useState(DEFAULT_WIDTH);
 
   useLayoutEffect(() => {
@@ -243,30 +259,65 @@ function PiePriceChart({
     return () => observer.disconnect();
   }, []);
 
-  const [bars, setBars] = useState([]);
+  const [holdingHistories, setHoldingHistories] = useState([]);
   const [status, setStatus] = useState("loading");
+
+  // Bumped only for this entity's genuine first paint, mirroring
+  // HoldingPriceChart's own `revision` fix for GitHub issue #137 — a
+  // same-entity range switch (already kept smooth via the previous
+  // chart staying up, dimmed by "is-refreshing") shouldn't also replay
+  // the "start from nothing" reveal (mainLineRef's effect and
+  // ec-chart-reveal below), which made the chart flash fully invisible
+  // for a frame right as the dim was lifting — a blink, not the intended
+  // smooth update. `holdings` gets a new array identity on most renders
+  // of the caller even for the *same* pie/account (see
+  // DiversificationChart.jsx's own signature fix for the identical
+  // problem), so "did the entity actually change" is judged by a
+  // content signature (sorted tickers), not `holdings`' own reference.
+  const [revision, setRevision] = useState(0);
+  const holdingsSignature = holdings
+    .map((h) => h.ticker)
+    .sort()
+    .join("|");
+  const prevEntityRef = useRef({ holdingsSignature: null, currency: null });
 
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
     setHoverIndex(null);
-    fetchAggregateBars(api, holdings, rangeId, currency).then((aggregated) => {
+    fetchHoldingHistories(api, holdings, currency).then((result) => {
       if (cancelled) return;
-      setBars(aggregated);
-      setStatus(aggregated.length > 0 ? "ok" : "empty");
+      setHoldingHistories(result);
+      setStatus("ok");
+      const isSameEntity =
+        prevEntityRef.current.holdingsSignature === holdingsSignature &&
+        prevEntityRef.current.currency === currency;
+      prevEntityRef.current = { holdingsSignature, currency };
+      if (!isSameEntity) setRevision((r) => r + 1);
     });
     return () => {
       cancelled = true;
     };
-  }, [api, holdings, rangeId, currency]);
+  }, [api, holdings, currency, holdingsSignature]);
+
+  // Nothing above clears `holdingHistories` while a new fetch is in
+  // flight, so `bars` keeps reflecting the previous holdings set right up
+  // until the new one lands — see the "is-refreshing" wrapper below. A
+  // range switch has no such gap at all: slicing/aggregating client-side
+  // (sliceAndAggregate) is synchronous.
+  const bars = useMemo(
+    () => sliceAndAggregate(holdingHistories, rangeId),
+    [holdingHistories, rangeId]
+  );
+  const hasData = bars.length > 0;
 
   const [compare, setCompare] = useState({ id: "", type: null, refId: null, label: null });
-  const [compareBars, setCompareBars] = useState(null);
+  const [compareData, setCompareData] = useState(null);
   const [compareStatus, setCompareStatus] = useState("idle");
 
   useEffect(() => {
     if (!compare.id) {
-      setCompareBars(null);
+      setCompareData(null);
       setCompareStatus("idle");
       return undefined;
     }
@@ -276,14 +327,16 @@ function PiePriceChart({
 
     const load =
       compare.type === "benchmark"
-        ? getPrices(api, "benchmark", compare.refId, { range: rangeId }).then((series) => series.prices)
-        : fetchCompareHoldings(compare.refId).then((h) => fetchAggregateBars(api, h, rangeId, currency));
+        ? getPrices(api, "benchmark", compare.refId).then((history) => ({ type: "benchmark", history }))
+        : fetchCompareHoldings(compare.refId)
+            .then((h) => fetchHoldingHistories(api, h, currency))
+            .then((holdingHistories) => ({ type: "holdings", holdingHistories }));
 
     load
       .then((result) => {
         if (cancelled) return;
-        setCompareBars(result);
-        setCompareStatus(result.length > 0 ? "ok" : "empty");
+        setCompareData(result);
+        setCompareStatus("ok");
       })
       .catch(() => {
         if (cancelled) return;
@@ -293,7 +346,14 @@ function PiePriceChart({
     return () => {
       cancelled = true;
     };
-  }, [api, compare.id, compare.type, compare.refId, rangeId, currency, fetchCompareHoldings]);
+  }, [api, compare.id, compare.type, compare.refId, currency, fetchCompareHoldings]);
+
+  const compareBars = useMemo(() => {
+    if (!compareData) return null;
+    return compareData.type === "benchmark"
+      ? sliceForRange(compareData.history, rangeId)
+      : sliceAndAggregate(compareData.holdingHistories, rangeId);
+  }, [compareData, rangeId]);
 
   const handleCompareClear = () => setCompare({ id: "", type: null, refId: null, label: null });
 
@@ -414,6 +474,44 @@ function PiePriceChart({
   });
   const xTickIndices = axisTickIndices(bars.length, X_AXIS_MAX_TICKS);
 
+  // "Draws" the main line across the plot on every new revision — see
+  // HoldingPriceChart.jsx's identical effect for the full reasoning
+  // (stroke-dasharray/dashoffset, handed off to CSS's `transition:
+  // stroke-dashoffset` on .ec-chart-line, styles/chart.css).
+  useLayoutEffect(() => {
+    const el = mainLineRef.current;
+    if (!el || typeof el.getTotalLength !== "function") return;
+    let length;
+    try {
+      length = el.getTotalLength();
+    } catch {
+      return;
+    }
+    if (!length) return;
+    el.style.transitionProperty = "none";
+    el.style.strokeDasharray = `${length}`;
+    el.style.strokeDashoffset = `${length}`;
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.style.strokeDashoffset = "0";
+  }, [revision]);
+
+  // Same left-to-right draw-in for the compare/benchmark overlay as
+  // HoldingPriceChart.jsx's own compareClipRectRef effect — a growing
+  // clip-path rect rather than mainLineRef's stroke-dasharray trick, since
+  // this line keeps a real dasharray (.ec-pchart-compare-line,
+  // accounts/PriceChart.css) that trick would otherwise flatten.
+  useLayoutEffect(() => {
+    const el = compareClipRectRef.current;
+    if (!el) return;
+    el.style.transitionProperty = "none";
+    el.setAttribute("width", "0");
+    el.getBoundingClientRect();
+    el.style.transitionProperty = "";
+    el.setAttribute("width", String(Math.max(plotWidth, 0)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [comparePctPath]);
+
   return (
     <Card className="ec-pchart">
       <div className="ec-pchart-toolbar">
@@ -455,16 +553,16 @@ function PiePriceChart({
         ))}
       </div>
 
-      {status === "loading" && <p className="ec-loading">Loading price history…</p>}
-      {status === "empty" && (
+      {status === "loading" && !hasData && <p className="ec-loading">Loading price history…</p>}
+      {status === "ok" && !hasData && (
         <p className="ec-chart-caption">
           No price history to chart yet — this needs at least one holding with shares and published
           price/FX data.
         </p>
       )}
 
-      {status === "ok" && (
-        <>
+      {hasData && (
+        <div className={`ec-pchart-chart${status === "loading" ? " is-refreshing" : ""}`}>
           <div className="ec-pchart-legend">
             <span className="ec-pchart-legend-item">
               <span className="ec-pchart-dot ec-pchart-dot--main" aria-hidden="true" />
@@ -487,13 +585,13 @@ function PiePriceChart({
             {investedTotal != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
-                Total invested: {formatPrice(investedTotal, currency)}
+                Total invested: <Balance>{formatPrice(investedTotal, currency)}</Balance>
               </span>
             )}
             {currentValueTotal != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
-                Current value: {formatPrice(currentValueTotal, currency)}
+                Current value: <Balance>{formatPrice(currentValueTotal, currency)}</Balance>
               </span>
             )}
           </div>
@@ -520,7 +618,11 @@ function PiePriceChart({
                   y2={y}
                   className="ec-chart-gridline"
                 />
-                <text x={PADDING_LEFT - 8} y={y} className="ec-chart-axis-label ec-chart-yaxis-label">
+                <text
+                  x={PADDING_LEFT - 8}
+                  y={y}
+                  className={`ec-chart-axis-label ec-chart-yaxis-label${pctMode ? "" : " ec-balance"}`}
+                >
                   {pctMode
                     ? formatYAxisLabel((Math.exp(value) - 1) * 100, true, currency)
                     : formatYAxisLabel(value, false, currency)}
@@ -548,8 +650,29 @@ function PiePriceChart({
                   y2={yFor(0)}
                   className="ec-chart-zero-line"
                 />
-                <path d={pctLinePath} className="ec-chart-line" fill="none" />
-                {comparePctPath && <path d={comparePctPath} className="ec-pchart-compare-line" fill="none" />}
+                <path ref={mainLineRef} d={pctLinePath} className="ec-chart-line" fill="none" />
+                {comparePctPath && (
+                  <>
+                    <defs>
+                      <clipPath id={compareClipId}>
+                        <rect
+                          ref={compareClipRectRef}
+                          className="ec-chart-compare-clip"
+                          x={PADDING_LEFT}
+                          y={PADDING_TOP}
+                          width={plotWidth}
+                          height={plotHeight}
+                        />
+                      </clipPath>
+                    </defs>
+                    <path
+                      d={comparePctPath}
+                      className="ec-pchart-compare-line"
+                      fill="none"
+                      clipPath={`url(#${compareClipId})`}
+                    />
+                  </>
+                )}
                 {investedLog != null && (
                   <line
                     x1={PADDING_LEFT}
@@ -571,8 +694,12 @@ function PiePriceChart({
               </>
             ) : (
               <>
-                {chartType === "area" && <path d={areaPath} className="ec-pchart-area" />}
-                <path d={linePath} className="ec-chart-line" fill="none" />
+                {chartType === "area" && (
+                  <g className="ec-chart-reveal" key={revision}>
+                    <path d={areaPath} className="ec-pchart-area" />
+                  </g>
+                )}
+                <path ref={mainLineRef} d={linePath} className="ec-chart-line" fill="none" />
                 {investedTotal != null && (
                   <line
                     x1={PADDING_LEFT}
@@ -608,19 +735,30 @@ function PiePriceChart({
           {hovered && (
             <div className="ec-chart-tooltip">
               <span className="ec-chart-tooltip-date">{hoveredLabel}</span>
-              <span>O {formatPrice(hovered.open, currency)}</span>
-              <span>H {formatPrice(hovered.high, currency)}</span>
-              <span>L {formatPrice(hovered.low, currency)}</span>
-              <span>C {formatPrice(hovered.close, currency)}</span>
+              <span>
+                O <Balance>{formatPrice(hovered.open, currency)}</Balance>
+              </span>
+              <span>
+                H <Balance>{formatPrice(hovered.high, currency)}</Balance>
+              </span>
+              <span>
+                L <Balance>{formatPrice(hovered.low, currency)}</Balance>
+              </span>
+              <span>
+                C <Balance>{formatPrice(hovered.close, currency)}</Balance>
+              </span>
             </div>
           )}
 
           {compare.id && compareStatus === "loading" && (
             <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
           )}
-          {compare.id && (compareStatus === "error" || compareStatus === "empty") && (
-            <p className="ec-chart-caption">No price history published for {compare.label} for this range yet.</p>
-          )}
+          {compare.id &&
+            (compareStatus === "error" || (compareStatus === "ok" && (!compareBars || compareBars.length === 0))) && (
+              <p className="ec-chart-caption">
+                No price history published for {compare.label} for this range yet.
+              </p>
+            )}
 
           {compare.type === "benchmark" && holdingValuations && (
             <PieBenchmarkRating
@@ -631,7 +769,7 @@ function PiePriceChart({
               label={entityLabel}
             />
           )}
-        </>
+        </div>
       )}
     </Card>
   );

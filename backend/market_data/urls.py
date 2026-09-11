@@ -1,6 +1,14 @@
 from django.urls import path
 
-from .views import DividendsView, MetricsView, NewsView, PricesView, ProfileView, SearchView
+from .views import (
+    DividendsView,
+    EventsView,
+    MetricsView,
+    NewsView,
+    PricesView,
+    ProfileView,
+    SearchView,
+)
 
 urlpatterns = [
     path("search/", SearchView.as_view(), name="search"),
@@ -9,4 +17,5 @@ urlpatterns = [
     path("<str:asset_class>/<str:symbol>/metrics/", MetricsView.as_view(), name="metrics"),
     path("<str:asset_class>/<str:symbol>/dividends/", DividendsView.as_view(), name="dividends"),
     path("<str:asset_class>/<str:symbol>/news/", NewsView.as_view(), name="news"),
+    path("<str:asset_class>/<str:symbol>/events/", EventsView.as_view(), name="events"),
 ]

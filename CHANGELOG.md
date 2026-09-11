@@ -24,6 +24,288 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the article in a new tab on click. Cached client-side the same-day
   IndexedDB way dividends/metrics/prices are (`utils/newsCache.js`).
 
+- Sticky header rows on every signed-out page: `SignInScreen`'s
+  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
+  standalone logo header, now stay pinned to the top of the viewport while
+  scrolling — same `position: sticky` + `Topbar`-style opaque background/
+  bottom-border treatment `Topbar` itself already uses for signed-in
+  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
+  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
+  glow gradient), which silently breaks `position: sticky` for any
+  descendant, so the header couldn't stay pinned once you scrolled past
+  the hero section into the features/roadmap content below otherwise. It
+  no longer blends transparently into the hero glow as a result, matching
+  the other two pages' solid sticky bar instead.
+
+- New shared `PublicHeader` component (`frontend/src/components/shell/
+  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
+  replacing the three near-identical, independently-maintained sticky
+  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
+  grew their own copy of above. Fixes the logo sitting a few pixels lower
+  on the Privacy Policy/Terms and Conditions pages than on the sign-in
+  page (their header's asymmetric top/bottom padding vs. the sign-in
+  header's centered fixed height) by giving every signed-out page the
+  exact same markup/CSS instead of three copies that could drift apart.
+  Also adds the theme toggle to `PrivacyPolicyPage`/
+  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
+  had one before. Renamed token `--ec-landing-bar-h` →
+  `--ec-public-header-h` (`tokens.css`) to match.
+
+### Changed
+
+- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
+  returns one bundled `{ticker, currency, last_updated, daily, weekly,
+  monthly}` response instead of defaulting to `range="max"`'s single
+  `prices` array — new `equicast_core.client.MarketDataClient.
+  get_price_history` computes all three segments (`daily`: the earlier of
+  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
+  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
+  one pass over the same Parquet rows `get_prices` reads. An explicit
+  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
+  `get_prices`, still returns the old single-`prices` shape — this only
+  changes what omitting `range` gets you. Frontend: the price chart
+  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
+  response once per ticker and slices it client-side (new
+  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
+  picks, instead of re-fetching on every range-picker click — fixes
+  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
+  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
+  holding's price series on every range click, now it fetches each once.
+
+- `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
+  longer return a `source` field ("yfinance" vs "equicast" — which fields
+  on that record came directly from yfinance versus needed an
+  equicast-computed fallback). New `equicast_core.client._without_source`
+  strips it from every one of these three methods' return values (`.../
+  dividends/` already lost its own `source` field via the separate
+  reshape below); the underlying Parquet files ingestion writes are
+  untouched — `source` is still there, still documented per pipeline
+  (e.g. [packages/stock/README.md](packages/stock/README.md)), just no
+  longer part of what the API hands back to a caller. No frontend change
+  needed — nothing read `.source` off any of these responses; the
+  `MarketProfile`/`MarketMetrics`/`PriceSeries` JSDoc typedefs
+  (`frontend/src/api/market.js`) are updated to match.
+
+- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
+  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
+  — those are the same across every row for one symbol, so they're now
+  surfaced once at the top level only (`last_updated` there is still the
+  *latest* of every contributing row's own, same as before). Each
+  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
+  `price`/`status` (GitHub issue #57). `equicast_core.client.
+  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
+  `DividendRecord` typedef updated to match; no frontend call site actually
+  read the removed per-record fields, so this needed no other UI changes.
+
+### Added
+
+- Custom error pages with animated icons: `NotFoundPage` (404, replacing
+  the previous silent redirect-to-dashboard for an unmatched route),
+  `AppErrorPage` (an unexpected render crash, rendered by a new
+  `ErrorBoundary` wrapping the whole routed app in `App.jsx`),
+  `OfflinePage` (rendered app-wide by a new `useOnlineStatus` hook
+  whenever `navigator.onLine` goes false, recovering automatically once
+  back online), and `ServiceUnavailablePage` (a network failure or
+  genuine 5xx on a page's own initial load, as opposed to a normal 4xx —
+  see the new `isServiceUnavailableError.js`; wired into `DashboardPage`
+  as the reference implementation via `useAccounts`'s new `errorStatus`
+  field). Each has its own hand-drawn, CSS-animated SVG icon
+  (`components/errors/*Icon.jsx`) built from equiCast's own candlestick/
+  price-line visual language — a trailing, searching chart line for 404;
+  a pulsing row of greyed candles for 503; a cracked, briefly-shaking
+  candle for the app-crash page; still, "trying" signal bars built as
+  candlestick bodies for offline — rather than generic icon-font/clip-art
+  imagery, all respecting `prefers-reduced-motion`. Every page reuses the
+  same standalone `ErrorPage` layout (just the brand mark + icon + plain-
+  language title/message/action), deliberately not wrapped in `AppShell`
+  since its own Topbar fetch is exactly the kind of call that can be
+  what's failing. No API Gateway/infra changes — these are frontend-only,
+  reused for API-level failures the same way DashboardPage's wiring shows.
+
+- A public `/terms-and-conditions` page (`frontend/src/pages/TermsAndConditionsPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as `/privacy-policy`/a future `/cookie-policy` would
+  be) since a visitor has to be able to read it before ever signing in.
+  Grounded in what equiCast actually is — an open-source (MIT, see the
+  repo's `LICENSE`), self-hosted-style project with no registered company
+  behind it — and the same no-advice/data-source disclaimer `SiteFooter`
+  already carries, rather than generic legal boilerplate (no invented
+  governing-law/arbitration clauses this project has no real
+  jurisdiction/entity to back up). `SiteFooter` gains a "Terms and
+  Conditions" link, which needs Router context — fixed three existing
+  `RequireAuth` tests that rendered `SignInScreen` (and so `SiteFooter`)
+  without a `MemoryRouter` to keep passing. Auth-aware like
+  `/privacy-policy`: a signed-in visitor (e.g. following the footer link
+  from inside the app) gets `AppShell` (with `stickyTitle`, same as
+  AccountDetailPage/PieDetailPage/HoldingTickerPage, so "Terms and
+  Conditions" stays visible in a frozen title bar while scrolling through
+  this long a page) instead of the bare logo header a signed-out visitor
+  gets, so search/currency/hide-balances/account menu stay reachable too.
+  `AppShell` gains a new `narrow` prop (`frontend/src/components/shell/
+  AppShell.jsx`/`.css`) — caps `.ec-page` at a 680px reading column
+  instead of the usual 1120px, so the page-head (title/subtitle) and prose
+  body share one centered column matching the standalone signed-out
+  layout, rather than title/body drifting apart or the whole thing sitting
+  flush against a much wider dashboard-style page.
+
+- Fixed `SiteFooter`'s and the Terms and Conditions page's market-data
+  disclaimer, which said prices refresh "every 6 hours" — that was
+  actually `market_data_cache_ttl_seconds`'s cache TTL (a safety margin),
+  not the real ingestion cadence; every ingestion pipeline refreshes at
+  most once a day (see `infra/variables.tf`). Both now say "once a day",
+  and `SiteFooter`'s "may lag the market by up to a few hours" is
+  corrected to "up to a day" to match.
+
+- `/holdings/:ticker`'s price chart gains a "Key events" toggle (off by
+  default, matching Yahoo Finance's own), overlaying real earnings/
+  analyst-rating/stock-split markers — hovering one shows a floating
+  tooltip with that event's details (EPS estimate/actual/surprise for
+  earnings; analyst/rating action/rating/price-target change for a rating;
+  the split ratio for a split). A full vertical slice, since nothing
+  previously read the events data the ingestion pipelines already wrote:
+  new `equicast_core.client.MarketDataClient.get_events()` (combines
+  `events/history.parquet`/`events/current.parquet`, mirroring
+  `get_dividends()`'s shape), a new `GET /api/market/<asset_class>/
+  <symbol>/events/` endpoint, and `frontend/src/api/market.js`'s
+  `getEvents()` (same same-day IndexedDB caching as
+  getProfile/getMetrics/getDividends/getPrices — see the new
+  `utils/eventsCache.js`).
+
+  Also extends `equicast_events.EventsClient`'s `"rating"` records with
+  `price_target_action`/`current_price_target`/`prior_price_target` —
+  already present in the `upgrades_downgrades` data every rating record
+  was already built from (yfinance's `priceTargetAction`/
+  `currentPriceTarget`/`priorPriceTarget` columns), just not previously
+  read. `0` (yfinance's sentinel for "not applicable", e.g. a coverage
+  initiation has no *prior* target) is treated as `None`, same as
+  `from_grade`'s own empty-string sentinel. `packages/stock`'s and
+  `packages/etf`'s `events.parquet` schemas gain the three matching
+  columns.
+
+  The toggle is disabled for 2Y and every longer range (2Y/3Y/5Y/10Y/
+  MAX) — a full history's worth of events still all lands somewhere
+  on-screen regardless of range, but the number of distinct bars they can
+  spread across shrinks as the range grows, piling them into dense,
+  unreadable columns beyond 1Y. Switching to a disabled range while
+  events are on turns them back off automatically.
+
+  Events sharing the same date and `event_type` (e.g. several analysts
+  revising ratings the same day) now collapse into a single dot instead
+  of stacking one dot per event — matching Yahoo Finance's own rendering,
+  which never shows more than one marker per day. A single-event dot's
+  hover tooltip is unchanged; a merged dot's hover instead shows a
+  lightweight summary (type, date, event count) with the full per-event
+  details (unchanged fields) behind a click, opening a modal (reusing
+  `frontend/src/components/core/Modal.jsx`) with one table row per grouped
+  event and one column per `event_type`-specific field, so several
+  same-day events can be compared side by side.
+  The merged tooltip's "Click for details" is a real button rather than
+  inert text — closing on a short delay instead of immediately on the
+  dot's own mouseleave, so the cursor has time to reach it before it
+  unmounts.
+
+- A public `/privacy-policy` page (`frontend/src/pages/PrivacyPolicyPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as a future `/cookie-policy` would be) since a visitor
+  has to be able to read it before ever signing in. Grounded in what
+  equiCast's own code actually collects/stores — Auth0 identity
+  (name/email/picture) for sign-in, the accounts/pies/watchlists/
+  holdings/transactions you enter yourself (S3 JSON via `equicast_core`),
+  and your currency/transaction-type profile settings (DynamoDB) — not
+  generic legal boilerplate. `SiteFooter` gains a "Privacy Policy" link,
+  which needs Router context — fixed three existing `RequireAuth` tests
+  that rendered `SignInScreen` (and so `SiteFooter`) without a
+  `MemoryRouter` to keep passing. Auth-aware and `stickyTitle`/`narrow`
+  `AppShell`-based for signed-in visitors, same as `/terms-and-conditions`
+  above.
+
+- Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
+  gains `retryAfterSeconds`, parsed from the response's `Retry-After`
+  header — `null` for any other status, or a 429 with no parseable header.
+  DRF's own throttled `detail` text (see `backend/identity/throttling.py`)
+  already reads fine as a plain displayable string, so every existing
+  `err.message`/`<Alert>` call site already showed something sensible for
+  a 429 with no changes needed there; `retryAfterSeconds` is for a caller
+  that wants to act on the wait itself (disable a button, show a
+  countdown) rather than just display text. Needed a backend-side fix to
+  actually work once deployed: `Retry-After` isn't one of the handful of
+  response headers a browser exposes to a cross-origin `fetch()` by
+  default, so `backend/equicast_api/settings.py` now sets
+  `CORS_EXPOSE_HEADERS = ["Retry-After"]` — invisible locally (same-origin
+  via Vite's dev proxy), which is why this could otherwise go unnoticed
+  until a real deployment.
+
+- Two-layer rate limiting for the API, neither previously present at all.
+  Layer 1 (infra): the API Gateway HTTP API's `$default` stage now sets
+  `throttling_rate_limit`/`throttling_burst_limit` (defaults 25 req/s
+  sustained / 50 burst, `infra/modules/api_gateway`'s new
+  `throttling_rate_limit`/`throttling_burst_limit` variables) — a single
+  aggregate ceiling across every caller combined (HTTP APIs have no
+  per-client usage-plan/API-key concept the way REST APIs do), rejecting
+  with `429` before Lambda is ever invoked. Layer 2 (app): a new
+  `identity.throttling.Auth0UserRateThrottle` (DRF's own `SimpleRateThrottle`,
+  keyed by the caller's Auth0 `sub` rather than DRF's `UserRateThrottle`'s
+  `request.user.pk`, which `Auth0User` doesn't have), wired in globally via
+  `DEFAULT_THROTTLE_CLASSES`/`DEFAULT_THROTTLE_RATES` so every DRF view
+  gets it without opting in individually — per-user budget, default
+  120/min, overridable via the new `API_RATE_LIMIT_PER_MINUTE` env var
+  (`infra/variables.tf`'s `api_rate_limit_per_minute`, same
+  GitHub-Environment-variable convention as `MAX_TRANSACTIONS_FOR_HOLDING`
+  and friends). Backed by Django's cache (`CACHES` now set explicitly to
+  `LocMemCache`, previously an implicit default) — correct only within one
+  warm Lambda execution environment, not shared across the several that
+  can run concurrently under real traffic, so the effective per-user rate
+  can multiply by however many containers happen to be warm at once; an
+  accepted tradeoff given this app's current traffic volume rather than
+  standing up a new always-on/shared store, with a DynamoDB-backed counter
+  (the same on-demand pattern `UserProfileClient` already uses) as the
+  documented upgrade path if that ever stops being good enough. New
+  `backend/conftest.py` clears the Django cache between every test — this
+  throttle otherwise shares one counter across every test authenticating
+  as the same fixture user, tripping unrelated tests' assertions once
+  enough of them ran in one session.
+
+- `MarketDataClient._read_parquet` (the single choke point every S3 read
+  in `equicast_core.client` goes through) now caches in-process, in a
+  module-level TTL cache shared by every `MarketDataClient` instance in
+  the process — previously every request re-fetched the same profile/
+  metrics/dividends/prices/catalog Parquet from S3 from scratch, even
+  though nothing in it had changed since the last ingestion run, possibly
+  a full day earlier. TTL defaults to 6 hours (`DEFAULT_CACHE_TTL_SECONDS`),
+  overridable per deployment via the new `MARKET_DATA_CACHE_TTL_SECONDS`
+  env var (see `infra/variables.tf`'s `market_data_cache_ttl_seconds` and
+  `.github/workflows/terraform.yml`) — `0` disables caching outright. A
+  confirmed-missing key is cached too (e.g. a ticker with no dividends
+  published); a real S3 error never is. New `MarketDataClient.
+  warm_fx_cache()` prefetches the fx catalog and every configured pair's
+  current-year prices, called once from `backend/equicast_api/
+  lambda_handler.py` at Lambda cold start (deliberately not a Django
+  `AppConfig.ready()` hook, so it never fires during `manage.py test`/
+  local `runserver`) — fx conversion sits on the request path of nearly
+  every write (a transaction in a non-default currency) and every
+  holdings/pies/accounts read, the one piece of market data genuinely
+  needed for any operation. No new AWS resource backs any of this — each
+  Lambda execution environment gets its own independent, in-memory-only
+  cache, exactly as cheap as (and strictly faster than) every request
+  hitting S3 directly did before. See
+  [equicast-core's README](packages/core/README.md#caching) for how it
+  works.
+
+- Stock and ETF holdings get a new "Buy/Sell Rating" gauge on the holding
+  detail page (`/holdings/:ticker`), below the CAGR panel —
+  `HoldingBuySellGauge.jsx`, a single stacked bar split at `buyers_pct`
+  (green) / `sellers_pct` (red), both new fields on `GET .../metrics/`.
+  Computed by a new `equicast_metrics.calculations.buy_sell_volume_pressure`
+  (a Chaikin-Money-Flow-style technical proxy for order-flow sentiment,
+  derived from OHLCV price/volume history over the trailing year — not
+  literal buy/sell order counts) and exposed via a new
+  `MetricsClient.buy_sell_pressure()`, merged into `metrics.parquet` by
+  `equicast-stock`/`equicast-etf`'s own CLIs only (benchmark/fx have no
+  reliable volume data for this, so their `metrics.parquet` is unchanged).
+  Renders nothing for a holding with no recorded volume in the window (both
+  fields come back `None` together) or for a benchmark/fx holding (the
+  fields are simply absent there).
+
 - A pie can now have an `icon` (a bare bootstrap-icons name, e.g.
   "pie-chart-fill"), settable via a new generic `IconPicker`
   (`components/core/IconPicker.jsx`) — a labeled radiogroup grid over
@@ -65,6 +347,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The holding/pie/account price chart blinked (flashed fully invisible for
+  a frame) on a same-entity time-range switch instead of updating smoothly
+  (GitHub issue #137). The reveal animations added for a chart's genuine
+  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
+  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
+  `revision`) were replaying on *every* successful fetch, including a
+  plain range switch — whose own "keep the previous chart up, dimmed via
+  is-refreshing" transition already had nothing to hide the reveal's own
+  "start from nothing" state behind, so the chart flashed blank right as
+  the dim lifted. `revision` now only bumps on a chart's real first paint
+  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
+  change; `PiePriceChart`'s equivalent, keyed off a content signature of
+  `holdings` rather than its own unstable array identity, the same fix
+  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
+  a same-entity range switch now just updates the chart's shape directly
+  under the existing dim/undim transition, no separate blink.
 - An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
   `sector`/`industry` at all — yfinance doesn't populate either for a fund
   — so every etf catalog row carried `None` for both, and a `/search`

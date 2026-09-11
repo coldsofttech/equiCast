@@ -21,21 +21,69 @@
 
 /** The user's average buy price for this holding — a grey dashed
  * reference line so it reads as a marker against the real price series,
- * distinct from ec-pchart-compare-line's colored dashed overlay. */
+ * distinct from ec-pchart-compare-line's colored dashed overlay. The dash
+ * pattern continuously flows right-to-left (`stroke-dashoffset` walking
+ * positive — against the direction the line itself is drawn in, since it
+ * always runs from PADDING_LEFT to width - PADDING_RIGHT) — the opposite
+ * direction from ec-chart-current-line below, so the two read as distinct
+ * live references rather than one repeated treatment; `y1`/`y2` also
+ * transition so a change in its vertical position (a range switch
+ * rescaling the y-domain, or `avgPrice` itself changing) eases there
+ * instead of jumping. */
 .ec-chart-avg-line {
   stroke: var(--ec-text-muted);
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
+  animation: ec-chart-line-flow-rtl 1s linear infinite;
+  transition: y1 0.4s ease, y2 0.4s ease;
 }
 
 /** The latest real market price (marketProfile's day_close) — same dashed
- * treatment as ec-chart-avg-line, but in the accent info color so it reads
- * as a distinct marker whenever both lines are on-screen and don't
- * coincide with the series' own last bar. */
+ * treatment as ec-chart-avg-line, in the accent info color, but flowing
+ * left-to-right (the direction the line is actually drawn in) rather than
+ * against it. */
 .ec-chart-current-line {
   stroke: var(--ec-info);
   stroke-width: 1.5;
   stroke-dasharray: 6 4;
+  animation: ec-chart-line-flow-ltr 1s linear infinite;
+  transition: y1 0.4s ease, y2 0.4s ease;
+}
+
+/* +/-20 is two full "6 4" (length-10) pattern cycles each — any multiple of
+   10 loops seamlessly, this just spreads it over more of the animation's
+   duration than one cycle would. Positive dashoffset walks the pattern
+   backward along the path (right-to-left here); negative walks it forward
+   (left-to-right). */
+@keyframes ec-chart-line-flow-rtl {
+  to {
+    stroke-dashoffset: 20;
+  }
+}
+
+@keyframes ec-chart-line-flow-ltr {
+  to {
+    stroke-dashoffset: -20;
+  }
+}
+
+/** The comparison/benchmark series overlay's clip-path reveal rect
+ * (compareClipRectRef in HoldingPriceChart.jsx) — same left-to-right
+ * draw-in as the main line, but as a growing clip region rather than a
+ * stroke-dasharray trick, so the line's own "4 3" dasharray
+ * (ec-pchart-compare-line, accounts/PriceChart.css) stays intact instead of
+ * being flattened into one solid dash for the duration. */
+.ec-chart-compare-clip {
+  transition: width 0.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-chart-avg-line,
+  .ec-chart-current-line,
+  .ec-chart-compare-clip {
+    animation: none;
+    transition: none;
+  }
 }
 
 /** The 0% baseline in comparison (pctMode) charts — a plain gridline
@@ -54,4 +102,224 @@
 
 .ec-pchart-swatch--current {
   border-top-color: var(--ec-info);
+}
+
+/** "Key events" toggle switch — a plain checkbox under the hood (native
+ * keyboard/screen-reader semantics for free) with the input itself
+ * visually hidden and a hand-drawn pill/knob standing in for it, the same
+ * "real control, custom skin" approach a checkbox-styled toggle always
+ * needs since no native <input type="switch"> exists yet. */
+.ec-pchart-events-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-text);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ec-pchart-events-toggle.is-disabled {
+  color: var(--ec-text-subtle);
+  cursor: not-allowed;
+}
+
+.ec-pchart-events-toggle.is-disabled .ec-pchart-events-toggle-track {
+  opacity: 0.5;
+}
+
+.ec-pchart-events-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.ec-pchart-events-toggle-track {
+  position: relative;
+  width: 32px;
+  height: 18px;
+  border-radius: var(--ec-r-pill);
+  background: var(--ec-border-strong);
+  transition: background 0.15s ease;
+  flex-shrink: 0;
+}
+
+.ec-pchart-events-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ec-surface);
+  transition: transform 0.15s ease;
+}
+
+.ec-pchart-events-toggle input:checked + .ec-pchart-events-toggle-track {
+  background: var(--ec-accent);
+}
+
+.ec-pchart-events-toggle input:checked + .ec-pchart-events-toggle-track::after {
+  transform: translateX(14px);
+}
+
+.ec-pchart-events-toggle input:focus-visible + .ec-pchart-events-toggle-track {
+  outline: 2px solid var(--ec-accent);
+  outline-offset: 2px;
+}
+
+/** Pushes the toggle to the far right of the shared `.ec-chart-tooltip`
+ * OHLC readout row (chart.css) it now lives in, without touching that
+ * class's own layout for the other charts that render it without a
+ * trailing toggle. */
+.ec-chart-tooltip .ec-pchart-events-toggle {
+  margin-left: auto;
+}
+
+/** Positions the floating event tooltip (below) relative to the SVG's own
+ * box, not the wider card — the SVG's viewBox units already equal real
+ * CSS pixels 1:1 (see HoldingPriceChart.jsx's DEFAULT_WIDTH comment), so
+ * an event's already-computed x/y can be used directly as left/top here
+ * with no further coordinate conversion. */
+.ec-pchart-svg-wrap {
+  position: relative;
+}
+
+/** Shared by the SVG `<circle>` markers on the chart itself (`fill`/
+ * `stroke`, meaningless on an HTML element) and the plain `<span>` used
+ * as this same dot's icon inside the HTML tooltip below
+ * (`background`, meaningless on an SVG shape) — each rule only ever
+ * affects the element type it actually applies to, so both can share one
+ * set of type modifier classes without conflicting. */
+.ec-pchart-event-dot {
+  fill: var(--ec-info);
+  background: var(--ec-info);
+  stroke: var(--ec-surface);
+  stroke-width: 1.5;
+  cursor: pointer;
+}
+
+.ec-pchart-event-dot--rating {
+  fill: var(--ec-warning);
+  background: var(--ec-warning);
+}
+
+.ec-pchart-event-dot--split {
+  fill: var(--ec-accent);
+  background: var(--ec-accent);
+}
+
+.ec-pchart-event-tooltip {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+  min-width: 180px;
+  padding: var(--ec-s-8) var(--ec-s-12);
+  border-radius: var(--ec-r-8);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+  box-shadow: 0 4px 16px oklch(0 0 0 / 0.15);
+  font-size: var(--ec-fs-12);
+  pointer-events: none;
+}
+
+.ec-pchart-event-tooltip-title {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-6);
+  margin-bottom: var(--ec-s-4);
+  font-weight: 700;
+  color: var(--ec-text);
+}
+
+.ec-pchart-event-tooltip-title .ec-pchart-event-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  stroke: none;
+}
+
+.ec-pchart-event-tooltip-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--ec-s-16);
+  color: var(--ec-text-muted);
+}
+
+.ec-pchart-event-tooltip-row span:last-child {
+  color: var(--ec-text);
+  font-weight: 600;
+  text-align: right;
+}
+
+/** The lightweight variant shown for a dot merging >1 event (see
+ * `hoveredEventGroup` in HoldingPriceChart.jsx) — same box, plus a real
+ * "Click for details" button below the summary rows. Needs its own
+ * `pointer-events` (the base `.ec-pchart-event-tooltip` above is `none`,
+ * so a single-event tooltip never steals hover from the dot it floats
+ * beside) so that button is actually clickable. */
+.ec-pchart-event-tooltip--light {
+  pointer-events: auto;
+}
+
+.ec-pchart-event-tooltip-hint {
+  margin-top: var(--ec-s-4);
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--ec-accent);
+  font: inherit;
+  font-style: italic;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ec-pchart-event-tooltip-hint:hover {
+  text-decoration: underline;
+}
+
+/** The merged-events modal's table — one row per event, one column per
+ * `event_type`-specific field (see `EVENT_TABLE_COLUMNS`), so several
+ * same-day events can be compared side by side. Its own small table
+ * styling rather than the shared `.ec-table` (styles/table.css): that
+ * one's rows are hover-highlighted and cursor:pointer for navigation,
+ * neither of which applies to this plain read-only listing. */
+.ec-pchart-event-modal {
+  overflow-x: auto;
+}
+
+.ec-pchart-event-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--ec-fs-13);
+}
+
+.ec-pchart-event-table th,
+.ec-pchart-event-table td {
+  padding: var(--ec-s-8) var(--ec-s-12);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.ec-pchart-event-table th {
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ec-text-subtle);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-pchart-event-table tbody tr:not(:last-child) td {
+  border-bottom: 1px solid var(--ec-divider);
 }

@@ -10,11 +10,12 @@ dividend/future.parquet when yfinance reports a still-upcoming dividend for
 this ticker (see `equicast_dividends.DividendsClient.future_dividends` -
 omitted entirely otherwise, not written empty), an events/current.parquet
 (and events/history.parquet on --full-load), one metrics.parquet
-snapshot (volatility, Sharpe ratio, max drawdown, CAGR), and a
+snapshot (volatility, Sharpe ratio, max drawdown, CAGR, and a
+buyers_pct/sellers_pct buy/sell volume-pressure gauge), and a
 news.parquet of the ticker's news articles from the trailing month
 (omitted entirely when there's none - see equicast-news).
-metrics.parquet only carries MetricsClient.metrics() - not
-.fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
+metrics.parquet carries MetricsClient.metrics() and .buy_sell_pressure() -
+not .fundamentals(), which is stock-only and mostly None/unreliable for ETFs.
 events.parquet in practice only ever has "split" rows for an ETF ticker -
 earnings/analyst-rating events are always empty, since yfinance has no
 earnings or analyst coverage for a fund - but splits are real (e.g. QQQ's
@@ -158,7 +159,11 @@ def _events_task(
 
 def _metrics_task(metrics_client: MetricsClient, output_dir: Path, key: str) -> list[Path]:
     logger.info("Computing metrics for %s", key)
-    return [write_metrics_parquet(metrics_client.metrics(), metrics_client.symbol, output_dir)]
+    # buy_sell_pressure() has no last_updated/source of its own to
+    # reconcile (see its docstring) - just adds buyers_pct/sellers_pct
+    # alongside whatever metrics() already returned.
+    combined = {**metrics_client.metrics(), **metrics_client.buy_sell_pressure()}
+    return [write_metrics_parquet(combined, metrics_client.symbol, output_dir)]
 
 
 def _news_task(news_client: NewsClient, output_dir: Path, key: str) -> list[Path]:

@@ -96,7 +96,8 @@ For each ticker this writes:
   year or later.
 - `stock=<TICKER>/metrics.parquet` — one row, combining
   `equicast-metrics`' risk/performance metrics (volatility, Sharpe ratio,
-  max drawdown, CAGR) with its stock-only fundamentals (PE, EPS, PEG,
+  max drawdown, CAGR), its buy/sell volume-pressure gauge
+  (`buyers_pct`/`sellers_pct`), and its stock-only fundamentals (PE, EPS, PEG,
   price-to-book/sales, EV/EBITDA, margins, returns, debt-to-equity, FCF/share)
 - `stock=<TICKER>/news.parquet` — one row per news article published in the
   trailing month (no historical archive), newest first: ticker, id, title,

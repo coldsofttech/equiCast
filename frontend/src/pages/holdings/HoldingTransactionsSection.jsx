@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Badge from "../../components/core/Badge.jsx";
+import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import Button from "../../components/core/Button.jsx";
@@ -165,9 +166,9 @@ function AverageEntryCard({ transaction, nativeCurrency, onEdit, onDelete }) {
         <i className={`bi ${meta.icon}`} aria-hidden="true" />
       </Badge>
       <span className="ec-transaction-row-date">{formatTransactionDate(transaction.date)}</span>
-      <span className="ec-transaction-row-value">
+      <Balance as="span" className="ec-transaction-row-value">
         {formatPrice(averageEntryTotal(transaction), nativeCurrency)}
-      </span>
+      </Balance>
       <div className="ec-table-actions">
         <button type="button" className="ec-icon-btn" aria-label="Edit transaction" onClick={onEdit}>
           <i className="bi bi-pencil" aria-hidden="true" />
@@ -205,7 +206,7 @@ function TradeCard({ transaction, nativeCurrency, location }) {
         <div className="ec-dividend-field">
           <span className="ec-dividend-field-label">Price (native)</span>
           <span className="ec-dividend-field-value">
-            {formatPrice(Number(transaction.price_native), nativeCurrency)}
+            <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
           </span>
         </div>
       </div>
@@ -422,11 +423,17 @@ function HoldingTransactionsSection({
                       <td>{formatTransactionDate(transaction.date)}</td>
                       <td>{type === "BUY" ? transaction.no_of_shares : "—"}</td>
                       <td>
-                        {type === "BUY"
-                          ? formatPrice(Number(transaction.average_price_native), nativeCurrency)
-                          : "—"}
+                        {type === "BUY" ? (
+                          <Balance>
+                            {formatPrice(Number(transaction.average_price_native), nativeCurrency)}
+                          </Balance>
+                        ) : (
+                          "—"
+                        )}
                       </td>
-                      <td>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</td>
+                      <td>
+                        <Balance>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</Balance>
+                      </td>
                       {showLocation && <td>{location}</td>}
                       <td>
                         <div className="ec-table-actions">
@@ -535,7 +542,9 @@ function HoldingTransactionsSection({
                   </td>
                   <td>{formatTransactionDate(transaction.date)}</td>
                   <td>{transaction.no_of_shares}</td>
-                  <td>{formatPrice(Number(transaction.price_native), nativeCurrency)}</td>
+                  <td>
+                    <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
+                  </td>
                   {showLocation && <td>{location}</td>}
                 </tr>
               ))}

@@ -108,6 +108,9 @@ def _fake_events_client_factory(created: list[MagicMock] | None = None):
                 "from_grade": None,
                 "to_grade": None,
                 "action": None,
+                "price_target_action": None,
+                "current_price_target": None,
+                "prior_price_target": None,
                 "ratio": 4.0,
                 "last_updated": "2026-08-30T09:00:03+00:00",
                 "source": "yfinance",
@@ -135,6 +138,10 @@ def _fake_metrics_client_factory(created: list[MagicMock] | None = None):
             "cagr_10y": 0.15,
             "last_updated": "2026-08-30T09:00:04+00:00",
             "source": "equicast",
+        }
+        client.buy_sell_pressure.return_value = {
+            "buyers_pct": 0.55,
+            "sellers_pct": 0.45,
         }
         if created is not None:
             created.append(client)
@@ -366,6 +373,7 @@ def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> No
     events_created[0].events.assert_called_once_with(full_load=True)
     assert len(metrics_created) == 1
     metrics_created[0].metrics.assert_called_once_with()  # full_load doesn't affect metrics
+    metrics_created[0].buy_sell_pressure.assert_called_once_with()
     assert len(news_created) == 1
     news_created[0].news.assert_called_once_with()  # full_load doesn't affect news either
 

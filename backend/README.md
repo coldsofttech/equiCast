@@ -41,16 +41,39 @@ the holdings-per-account/pie/watchlist caps — see `infra/variables.tf`'s
 Set `MAX_TRANSACTIONS_FOR_HOLDING` (default `500`) the same way to tune the
 transactions-per-holding cap — see `infra/variables.tf`'s
 `max_transactions_for_holding`.
+Set `API_RATE_LIMIT_PER_MINUTE` (default `120`) the same way to tune the
+per-user request budget every DRF endpoint shares
+(`identity.throttling.Auth0UserRateThrottle`) — see `infra/variables.tf`'s
+`api_rate_limit_per_minute`. Layered with a separate, coarser safety net at
+the API Gateway stage itself (`throttling_rate_limit`/
+`throttling_burst_limit` in `infra/modules/api_gateway`, defaults 25 req/s
+sustained / 50 burst) — an aggregate ceiling across every caller combined
+(HTTP APIs have no per-client usage-plan concept, unlike REST APIs), not
+wired through a GitHub Environment variable since it's a fixed
+infrastructure safety net rather than a product-tunable cap. Both reject
+with `429`; a request the API Gateway limit rejects never reaches Lambda at
+all.
+Set `MARKET_DATA_CACHE_TTL_SECONDS` (default `21600`, 6 hours) the same way
+to tune `MarketDataClient`'s in-process S3 parquet cache TTL — see
+`infra/variables.tf`'s `market_data_cache_ttl_seconds`; `0` disables caching
+outright. See [equicast-core's README](../packages/core/README.md#caching)
+for how the cache itself works.
 
 - `GET /health/` — no dependencies, used to validate the Lambda packaging
 - `GET /api/market/<asset_class>/<symbol>/profile/` — `asset_class` is one of
   `fx`/`stock`/`etf`/`benchmark`
 - `GET /api/market/<asset_class>/<symbol>/prices/` — `{ticker, currency,
-  last_updated, source, prices: [{date, open, high, low, close}, ...]}`.
+  last_updated, prices: [{date, open, high, low, close}, ...]}`.
   Optional `?range=` (one of `1d`/`5d`/`1m`/`6m`/`ytd`/`1y`/`2y`/`3y`/`5y`/
   `10y`/`max`, default `max` — see `equicast_core.client.PRICE_RANGES`);
   `1y`/`2y` aggregate to weekly bars and `3y`/`5y`/`10y`/`max` to monthly
   bars rather than daily, keeping a long-history response small
+- `GET /api/market/<asset_class>/<symbol>/events/` — `{ticker, last_updated,
+  events: [{event_type, date, ...}, ...]}`, one entry per corporate event
+  (earnings report, analyst rating change, stock split — see
+  `equicast_core.client.MarketDataClient.get_events`), `event_type`-tagged
+  with only that type's own fields set. `404` if nothing's been published
+  yet for this ticker/pair
 - `GET /api/market/search/` — ticker/name search; `?q=` required (at least 1
   character), case-insensitive substring match against every published
   catalog's `ticker`/`name` (see `equicast_core.catalog`), so results are

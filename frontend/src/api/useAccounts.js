@@ -39,13 +39,19 @@ export function clearCachedAccounts() {
  * writes straight back to the cache, so a create/edit/delete on either page
  * is what the other page's next mount sees — no separate invalidation step.
  *
- * @returns {{ accounts: import("./accounts.js").Account[], isLoading: boolean, error: string | null, setAccounts: (update: import("./accounts.js").Account[] | ((current: import("./accounts.js").Account[]) => import("./accounts.js").Account[])) => void }}
+ * @returns {{ accounts: import("./accounts.js").Account[], isLoading: boolean, error: string | null, errorStatus: number | null, setAccounts: (update: import("./accounts.js").Account[] | ((current: import("./accounts.js").Account[]) => import("./accounts.js").Account[])) => void }}
  */
 export function useAccounts() {
   const api = useApi();
   const [accounts, setAccountsState] = useState(memoryAccounts ?? []);
   const [isLoading, setIsLoading] = useState(memoryAccounts == null);
   const [error, setError] = useState(null);
+  // The failed request's real HTTP status (null for a network failure with
+  // no response at all) — kept alongside `error`'s plain message so a
+  // caller can tell a genuine service-level failure (see
+  // isServiceUnavailableError.js) from an ordinary 4xx without this hook
+  // needing to know anything about how that distinction gets rendered.
+  const [errorStatus, setErrorStatus] = useState(null);
 
   const setAccounts = (update) => {
     setAccountsState((current) => {
@@ -62,6 +68,7 @@ export function useAccounts() {
     let cancelled = false;
     setIsLoading(true);
     setError(null);
+    setErrorStatus(null);
 
     (async () => {
       try {
@@ -85,7 +92,10 @@ export function useAccounts() {
           writeCachedAccounts(result);
         }
       } catch (err) {
-        if (!cancelled) setError(err.message ?? "Couldn't load your accounts.");
+        if (!cancelled) {
+          setError(err.message ?? "Couldn't load your accounts.");
+          setErrorStatus(err.status ?? null);
+        }
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -96,5 +106,5 @@ export function useAccounts() {
     };
   }, [api]);
 
-  return { accounts, isLoading, error, setAccounts };
+  return { accounts, isLoading, error, errorStatus, setAccounts };
 }

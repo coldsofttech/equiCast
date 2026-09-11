@@ -11,8 +11,9 @@ this ticker (see `equicast_dividends.DividendsClient.future_dividends` -
 omitted entirely otherwise, not written empty), an events/current.parquet
 (and events/history.parquet on --full-load), one metrics.parquet
 snapshot combining equicast-metrics' risk/performance metrics (volatility,
-Sharpe ratio, max drawdown, CAGR) with its stock-only valuation/fundamental
-metrics (PE, EPS, margins, returns, leverage, FCF/share), and a news.parquet
+Sharpe ratio, max drawdown, CAGR), its stock-only valuation/fundamental
+metrics (PE, EPS, margins, returns, leverage, FCF/share), and its
+buyers_pct/sellers_pct buy/sell volume-pressure gauge, and a news.parquet
 of the ticker's news articles from the trailing month (omitted entirely
 when there's none - see equicast-news). Profile and
 dividends are fetched together as one task (both need the same dividend
@@ -178,6 +179,10 @@ def _combine_metrics(risk_metrics: dict[str, Any], fundamentals: dict[str, Any])
 def _metrics_task(metrics_client: MetricsClient, output_dir: Path, key: str) -> list[Path]:
     logger.info("Computing metrics for %s", key)
     combined = _combine_metrics(metrics_client.metrics(), metrics_client.fundamentals())
+    # buy_sell_pressure() has no last_updated/source of its own to
+    # reconcile (see its docstring) - just adds buyers_pct/sellers_pct
+    # alongside whatever _combine_metrics already settled on.
+    combined = {**combined, **metrics_client.buy_sell_pressure()}
     return [write_metrics_parquet(combined, metrics_client.symbol, output_dir)]
 
 
