@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
+  (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
+  previously this mode was read-only, only ever populated by whatever
+  transactions already existed. Both reuse the same `TransactionForm` the
+  AVERAGE mode's "Add Buy"/"Add Dividend" already used, generalized with a
+  `transactionType` prop to pick the right price field
+  (`price_native` for a TRANSACTION-mode trade vs. `average_price_native`
+  for an AVERAGE-mode position). "Add Sell" only offers holdings with net
+  shares > 0 recorded (a new `selectNetShares` in `holdingFinancials.js`);
+  the backend's own `InsufficientSharesError` (`equicast_core.transactions`)
+  is still the authority on whether a given quantity is actually sellable.
+  TRANSACTION-mode BUY/SELL records stay immutable (no edit — mirrors the
+  backend), but are now deletable from the trade cards and "See all" table,
+  the only way to correct a mistaken entry, same as an AVERAGE-mode one
+  already was.
+
 - Recent news headlines, via a new `equicast-news` package (`NewsClient`,
   built on `equicast-datafeed` like `equicast-events`/`equicast-dividends`)
   wrapping yfinance's `get_news`. Trimmed to the trailing month by design

@@ -215,6 +215,17 @@
   color: var(--ec-text-subtle);
 }
 
+.ec-transaction-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  width: 100%;
+}
+
+.ec-transaction-card-head .ec-table-actions {
+  margin-left: auto;
+}
+
 .ec-badge i.bi {
   margin-right: var(--ec-s-4);
 }
@@ -248,6 +259,14 @@
   flex: 1;
   font-size: var(--ec-fs-14);
   color: var(--ec-text);
+}
+
+.ec-transaction-row-shares {
+  min-width: 56px;
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
+  text-align: right;
 }
 
 .ec-transaction-row-value {
