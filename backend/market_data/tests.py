@@ -155,6 +155,73 @@ class DividendsViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class EventsViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.get(reverse("events", args=["stock", "aapl"]))
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_events_for_known_symbol(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_events.return_value = {
+            "ticker": "AAPL",
+            "last_updated": "2026-08-30T09:00:00+00:00",
+            "events": [
+                {
+                    "ticker": "AAPL",
+                    "event_type": "rating",
+                    "date": "2026-03-01",
+                    "eps_estimate": None,
+                    "reported_eps": None,
+                    "surprise_pct": None,
+                    "firm": "Morgan Stanley",
+                    "from_grade": "Equal-Weight",
+                    "to_grade": "Overweight",
+                    "action": "up",
+                    "price_target_action": "raises",
+                    "current_price_target": 275.0,
+                    "prior_price_target": 250.0,
+                    "ratio": None,
+                    "last_updated": "2026-08-30T09:00:00+00:00",
+                    "source": "yfinance",
+                }
+            ],
+        }
+
+        response = self.client.get(reverse("events", args=["stock", "aapl"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), mock_client.get_events.return_value)
+        mock_client.get_events.assert_called_once_with("stock", "aapl")
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_404_when_symbol_not_found(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_events.return_value = None
+
+        response = self.client.get(reverse("events", args=["stock", "unknown"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 404)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_for_unknown_asset_class(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.get(reverse("events", args=["crypto", "btc"]), **AUTH_HEADER)
+
+        self.assertEqual(response.status_code, 400)
+
+
 class PricesViewTests(TestCase):
     def test_returns_401_when_unauthenticated(self) -> None:
         response = self.client.get(reverse("prices", args=["etf", "voo"]))
@@ -164,15 +231,21 @@ class PricesViewTests(TestCase):
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_price_series_for_the_default_range(
+    def test_no_range_param_returns_bundled_price_history(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:
+        """Omitting `range` entirely (the frontend's price chart — see
+        GitHub issue #150) hits `get_price_history`, not `get_prices` —
+        the bundled `{daily, weekly, monthly}` shape, fetched once and
+        sliced client-side for whichever range the user picks."""
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = {
+        mock_client.get_price_history.return_value = {
             "ticker": "VOO",
             "currency": "USD",
             "last_updated": "2026-01-02T21:00:00+00:00",
-            "prices": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
+            "daily": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
+            "weekly": [],
+            "monthly": [],
         }
 
         response = self.client.get(reverse("prices", args=["etf", "voo"]), **AUTH_HEADER)
@@ -182,9 +255,10 @@ class PricesViewTests(TestCase):
         self.assertEqual(data["ticker"], "VOO")
         self.assertEqual(data["currency"], "USD")
         self.assertEqual(
-            data["prices"], [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}]
+            data["daily"], [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}]
         )
-        mock_client.get_prices.assert_called_once_with("etf", "voo", price_range="max")
+        mock_client.get_price_history.assert_called_once_with("etf", "voo")
+        mock_client.get_prices.assert_not_called()
 
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -218,21 +292,26 @@ class PricesViewTests(TestCase):
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_empty_prices_when_no_data(
+    def test_returns_empty_history_when_no_data(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = {
+        mock_client.get_price_history.return_value = {
             "ticker": "UNKNOWN",
             "currency": None,
             "last_updated": None,
-            "prices": [],
+            "daily": [],
+            "weekly": [],
+            "monthly": [],
         }
 
         response = self.client.get(reverse("prices", args=["etf", "unknown"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["prices"], [])
+        data = response.json()
+        self.assertEqual(data["daily"], [])
+        self.assertEqual(data["weekly"], [])
+        self.assertEqual(data["monthly"], [])
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")

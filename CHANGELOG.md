@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
+  returns one bundled `{ticker, currency, last_updated, daily, weekly,
+  monthly}` response instead of defaulting to `range="max"`'s single
+  `prices` array — new `equicast_core.client.MarketDataClient.
+  get_price_history` computes all three segments (`daily`: the earlier of
+  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
+  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
+  one pass over the same Parquet rows `get_prices` reads. An explicit
+  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
+  `get_prices`, still returns the old single-`prices` shape — this only
+  changes what omitting `range` gets you. Frontend: the price chart
+  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
+  response once per ticker and slices it client-side (new
+  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
+  picks, instead of re-fetching on every range-picker click — fixes
+  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
+  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
+  holding's price series on every range click, now it fetches each once.
+
 - `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
   longer return a `source` field ("yfinance" vs "equicast" — which fields
   on that record came directly from yfinance versus needed an
@@ -49,6 +68,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Conditions" link, which needs Router context — fixed three existing
   `RequireAuth` tests that rendered `SignInScreen` (and so `SiteFooter`)
   without a `MemoryRouter` to keep passing.
+
+- `/holdings/:ticker`'s price chart gains a "Key events" toggle (off by
+  default, matching Yahoo Finance's own), overlaying real earnings/
+  analyst-rating/stock-split markers — hovering one shows a floating
+  tooltip with that event's details (EPS estimate/actual/surprise for
+  earnings; analyst/rating action/rating/price-target change for a rating;
+  the split ratio for a split). A full vertical slice, since nothing
+  previously read the events data the ingestion pipelines already wrote:
+  new `equicast_core.client.MarketDataClient.get_events()` (combines
+  `events/history.parquet`/`events/current.parquet`, mirroring
+  `get_dividends()`'s shape), a new `GET /api/market/<asset_class>/
+  <symbol>/events/` endpoint, and `frontend/src/api/market.js`'s
+  `getEvents()` (same same-day IndexedDB caching as
+  getProfile/getMetrics/getDividends/getPrices — see the new
+  `utils/eventsCache.js`).
+
+  Also extends `equicast_events.EventsClient`'s `"rating"` records with
+  `price_target_action`/`current_price_target`/`prior_price_target` —
+  already present in the `upgrades_downgrades` data every rating record
+  was already built from (yfinance's `priceTargetAction`/
+  `currentPriceTarget`/`priorPriceTarget` columns), just not previously
+  read. `0` (yfinance's sentinel for "not applicable", e.g. a coverage
+  initiation has no *prior* target) is treated as `None`, same as
+  `from_grade`'s own empty-string sentinel. `packages/stock`'s and
+  `packages/etf`'s `events.parquet` schemas gain the three matching
+  columns.
+
+  The toggle is disabled for 2Y and every longer range (2Y/3Y/5Y/10Y/
+  MAX) — a full history's worth of events still all lands somewhere
+  on-screen regardless of range, but the number of distinct bars they can
+  spread across shrinks as the range grows, piling them into dense,
+  unreadable columns beyond 1Y. Switching to a disabled range while
+  events are on turns them back off automatically.
+
+  Events sharing the same date and `event_type` (e.g. several analysts
+  revising ratings the same day) now collapse into a single dot instead
+  of stacking one dot per event — matching Yahoo Finance's own rendering,
+  which never shows more than one marker per day. A single-event dot's
+  hover tooltip is unchanged; a merged dot's hover instead shows a
+  lightweight summary (type, date, event count) with the full per-event
+  details (unchanged fields) behind a click, opening a modal (reusing
+  `frontend/src/components/core/Modal.jsx`) with one table row per grouped
+  event and one column per `event_type`-specific field, so several
+  same-day events can be compared side by side.
+  The merged tooltip's "Click for details" is a real button rather than
+  inert text — closing on a short delay instead of immediately on the
+  dot's own mouseleave, so the cursor has time to reach it before it
+  unmounts.
+
+- A public `/privacy-policy` page (`frontend/src/pages/PrivacyPolicyPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as a future `/cookie-policy` would be) since a visitor
+  has to be able to read it before ever signing in. Grounded in what
+  equiCast's own code actually collects/stores — Auth0 identity
+  (name/email/picture) for sign-in, the accounts/pies/watchlists/
+  holdings/transactions you enter yourself (S3 JSON via `equicast_core`),
+  and your currency/transaction-type profile settings (DynamoDB) — not
+  generic legal boilerplate. `SiteFooter` gains a "Privacy Policy" link,
+  which needs Router context — fixed three existing `RequireAuth` tests
+  that rendered `SignInScreen` (and so `SiteFooter`) without a
+  `MemoryRouter` to keep passing.
 
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
@@ -178,6 +258,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The holding/pie/account price chart blinked (flashed fully invisible for
+  a frame) on a same-entity time-range switch instead of updating smoothly
+  (GitHub issue #137). The reveal animations added for a chart's genuine
+  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
+  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
+  `revision`) were replaying on *every* successful fetch, including a
+  plain range switch — whose own "keep the previous chart up, dimmed via
+  is-refreshing" transition already had nothing to hide the reveal's own
+  "start from nothing" state behind, so the chart flashed blank right as
+  the dim lifted. `revision` now only bumps on a chart's real first paint
+  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
+  change; `PiePriceChart`'s equivalent, keyed off a content signature of
+  `holdings` rather than its own unstable array identity, the same fix
+  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
+  a same-entity range switch now just updates the chart's shape directly
+  under the existing dim/undim transition, no separate blink.
 - An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
   `sector`/`industry` at all — yfinance doesn't populate either for a fund
   — so every etf catalog row carried `None` for both, and a `/search`

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { getDividends, getMetrics, getPrices, getProfile, searchTickers } from "./market.js";
+import { getDividends, getEvents, getMetrics, getPrices, getProfile, searchTickers } from "./market.js";
 
 describe("market api", () => {
   it("searches tickers by query with default page/page size", async () => {
@@ -102,19 +102,19 @@ describe("market api", () => {
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/dividends/");
   });
 
-  it("defaults to the max range when none is given", async () => {
-    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", prices: [] });
+  it("fetches a symbol's events", async () => {
+    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", last_updated: null, events: [] });
+
+    await getEvents(api, "stock", "AAPL");
+
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/events/");
+  });
+
+  it("fetches the bundled price history with no range query param", async () => {
+    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", daily: [], weekly: [], monthly: [] });
 
     await getPrices(api, "stock", "AAPL");
 
-    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/?range=max");
-  });
-
-  it("passes a given range through as a query param", async () => {
-    const api = vi.fn().mockResolvedValue({ ticker: "AAPL", prices: [] });
-
-    await getPrices(api, "stock", "AAPL", { range: "1y" });
-
-    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/?range=1y");
+    expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/");
   });
 });

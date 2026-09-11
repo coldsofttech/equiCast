@@ -7,8 +7,9 @@ import "./SiteFooter.css";
  * between SignInScreen (the logged-out landing page) and DashboardPage
  * (the logged-in landing page) so the two stay identical rather than two
  * copies of this same legal text drifting apart. The Terms and Conditions
- * link needs Router context (see App.test.jsx/RequireAuth.test.jsx, which
- * wrap their renders in a MemoryRouter for exactly this reason).
+ * and Privacy Policy links need Router context (see App.test.jsx/
+ * RequireAuth.test.jsx, which wrap their renders in a MemoryRouter for
+ * exactly this reason).
  */
 function SiteFooter() {
   return (
@@ -18,6 +19,7 @@ function SiteFooter() {
         <span className="ec-landing-foot-links">
           <span>© {new Date().getFullYear()} equiCast</span>
           <Link to="/terms-and-conditions">Terms and Conditions</Link>
+          <Link to="/privacy-policy">Privacy Policy</Link>
         </span>
       </footer>
 

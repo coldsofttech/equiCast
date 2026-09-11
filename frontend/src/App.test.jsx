@@ -40,4 +40,15 @@ describe("App routing", () => {
     expect(screen.getByRole("heading", { name: "Terms and Conditions" })).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
+
+  it("serves /privacy-policy publicly, without the auth gate", () => {
+    render(
+      <MemoryRouter initialEntries={["/privacy-policy"]}>
+        <App />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByRole("heading", { name: "Privacy Policy" })).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
 });
