@@ -411,6 +411,37 @@ class MarketDataClient:
             "dividends": dividends,
         }
 
+    def get_news(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
+        """Return `{ticker, last_updated, news}` for `symbol`, or `None` if
+        this ticker/pair has no `news.parquet` in the bucket (yfinance
+        reported no articles in the trailing month - see
+        `equicast_news.NewsClient` - or this ticker hasn't been ingested
+        yet). `ticker` echoes the requested `symbol` (uppercased), same
+        convention as `get_prices`, rather than trusting a `ticker` field on
+        the rows themselves - a benchmark's news.parquet rows carry the
+        underlying yfinance symbol there (e.g. "^GSPC"), not the benchmark
+        key ("SP500") this method is actually called with.
+
+        `news` is every row of news.parquet, newest first
+        (`published_at` descending) - already written newest-first by
+        `NewsClient.news()`, but re-sorted here defensively rather than
+        trusted as an on-disk invariant. `last_updated` is the freshest
+        value across every row (in practice all rows share one value, from
+        a single ingestion run - see `NewsClient.news()` - but this doesn't
+        assume that).
+        """
+        key = f"{asset_class.lower()}={symbol.upper()}/news.parquet"
+        rows = self._read_parquet(key)
+        if not rows:
+            return None
+
+        rows = sorted(rows, key=lambda row: row["published_at"], reverse=True)
+        return {
+            "ticker": symbol.upper(),
+            "last_updated": max(row["last_updated"] for row in rows),
+            "news": rows,
+        }
+
     def get_events(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return `{ticker, last_updated, events}` for `symbol`, combining
         `events/history.parquet` and `events/current.parquet` into one

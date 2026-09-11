@@ -170,13 +170,46 @@ def _fake_metrics_client_factory(created: list[MagicMock] | None = None):
     return fake_metrics_client
 
 
+def _fake_news_client_factory(
+    created: list[MagicMock] | None = None, records: list[dict] | None = None
+):
+    def fake_news_client(symbol: str, datafeed=None) -> MagicMock:
+        client = MagicMock()
+        client.symbol = symbol
+        client.news.return_value = (
+            records
+            if records is not None
+            else [
+                {
+                    "ticker": symbol,
+                    "id": "abc123",
+                    "title": "Some headline",
+                    "summary": "Some summary",
+                    "publisher": "Reuters",
+                    "url": "https://example.com/click",
+                    "thumbnail_url": "https://example.com/thumb.jpg",
+                    "published_at": "2026-08-30T09:00:00+00:00",
+                    "last_updated": "2026-08-30T09:00:04+00:00",
+                    "source": "yfinance",
+                }
+            ]
+        )
+        if created is not None:
+            created.append(client)
+        return client
+
+    return fake_news_client
+
+
 def _patch_clients(
     stock_created: list[MagicMock] | None = None,
     dividends_created: list[MagicMock] | None = None,
     events_created: list[MagicMock] | None = None,
     metrics_created: list[MagicMock] | None = None,
+    news_created: list[MagicMock] | None = None,
     dividend_records: list[dict] | None = None,
     future_dividend_records: list[dict] | None = None,
+    news_records: list[dict] | None = None,
 ):
     return (
         patch("equicast_stock.cli.DatafeedClient"),
@@ -197,27 +230,32 @@ def _patch_clients(
             "equicast_stock.cli.MetricsClient",
             side_effect=_fake_metrics_client_factory(metrics_created),
         ),
+        patch(
+            "equicast_stock.cli.NewsClient",
+            side_effect=_fake_news_client_factory(news_created, records=news_records),
+        ),
     )
 
 
-def test_run_writes_profile_price_dividend_events_and_metrics_parquet_per_configured_ticker(
+def test_run_writes_profile_price_dividend_events_metrics_and_news_parquet_per_configured_ticker(
     tmp_path: Path,
 ) -> None:
     config = tmp_path / "stocks.yaml"
     config.write_text("tickers:\n  - AAPL\n  - MSFT\n")
     out_dir = tmp_path / "output"
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         written = run(config, out_dir)
 
-    assert len(written) == 10  # profile + price + dividend + events + metrics per ticker
+    assert len(written) == 12  # profile + price + dividend + events + metrics + news per ticker
     for ticker in ("AAPL", "MSFT"):
         assert (out_dir / f"stock={ticker}" / "profile.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "price" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "dividend" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "events" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "metrics.parquet").exists()
+        assert (out_dir / f"stock={ticker}" / "news.parquet").exists()
 
 
 def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> None:
@@ -234,10 +272,8 @@ def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> 
         for date in ("2025-02-10", "2025-05-10", "2025-08-10", "2025-11-10", "2026-02-10")
     ]
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
-        dividend_records=quarterly_records
-    )
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients(dividend_records=quarterly_records)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         run(None, out_dir, tickers_json='["AAPL"]')
 
     profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
@@ -250,8 +286,8 @@ def test_run_dividend_frequency_is_not_applicable_with_too_little_history(
     out_dir = tmp_path / "output"
 
     # Default fixture dividends_client returns exactly one record.
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         run(None, out_dir, tickers_json='["AAPL"]')
 
     profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
@@ -274,10 +310,8 @@ def test_run_writes_future_dividend_parquet_when_a_future_dividend_exists(
         }
     ]
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
-        future_dividend_records=future_records
-    )
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients(future_dividend_records=future_records)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         written = run(None, out_dir, tickers_json='["MNG.L"]')
 
     path = out_dir / "stock=MNG.L" / "dividend" / "future.parquet"
@@ -289,19 +323,29 @@ def test_run_omits_future_dividend_parquet_when_none_exists(tmp_path: Path) -> N
     out_dir = tmp_path / "output"
 
     # Default fixture dividends_client returns no future dividend.
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         run(None, out_dir, tickers_json='["AAPL"]')
 
     assert not (out_dir / "stock=AAPL" / "dividend" / "future.parquet").exists()
+
+
+def test_run_omits_news_parquet_when_no_news_published(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients(news_records=[])
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='["AAPL"]')
+
+    assert not (out_dir / "stock=AAPL" / "news.parquet").exists()
 
 
 def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
     out_dir = tmp_path / "output"
     tickers_json = '["AAPL"]'
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         written = run(None, out_dir, tickers_json=tickers_json)
 
     assert set(written) == {
@@ -310,6 +354,7 @@ def test_run_accepts_tickers_json_instead_of_config(tmp_path: Path) -> None:
         out_dir / "stock=AAPL" / "dividend" / "current.parquet",
         out_dir / "stock=AAPL" / "events" / "current.parquet",
         out_dir / "stock=AAPL" / "metrics.parquet",
+        out_dir / "stock=AAPL" / "news.parquet",
     }
 
 
@@ -320,6 +365,7 @@ def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> No
     dividends_created: list[MagicMock] = []
     events_created: list[MagicMock] = []
     metrics_created: list[MagicMock] = []
+    news_created: list[MagicMock] = []
 
     with (
         patch("equicast_stock.cli.DatafeedClient"),
@@ -339,6 +385,10 @@ def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> No
             "equicast_stock.cli.MetricsClient",
             side_effect=_fake_metrics_client_factory(metrics_created),
         ),
+        patch(
+            "equicast_stock.cli.NewsClient",
+            side_effect=_fake_news_client_factory(news_created),
+        ),
     ):
         run(None, out_dir, tickers_json=tickers_json, full_load=True)
 
@@ -350,6 +400,8 @@ def test_run_passes_full_load_through_to_prices_and_events(tmp_path: Path) -> No
     metrics_created[0].metrics.assert_called_once_with()  # full_load doesn't affect metrics
     metrics_created[0].fundamentals.assert_called_once_with()
     metrics_created[0].buy_sell_pressure.assert_called_once_with()
+    assert len(news_created) == 1
+    news_created[0].news.assert_called_once_with()  # full_load doesn't affect news either
 
     # dividends() is always called with full_load=True regardless of run()'s own
     # full_load flag - see _profile_and_dividends_task's docstring for why (it
@@ -366,10 +418,8 @@ def test_run_still_fetches_full_dividend_history_when_full_load_is_false(
     out_dir = tmp_path / "output"
     dividends_created: list[MagicMock] = []
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients(
-        dividends_created=dividends_created
-    )
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients(dividends_created=dividends_created)
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         run(None, out_dir, tickers_json='["AAPL"]', full_load=False)
 
     assert len(dividends_created) == 1
@@ -382,8 +432,8 @@ def test_run_combines_risk_metrics_and_fundamentals_into_one_metrics_parquet(
     out_dir = tmp_path / "output"
     tickers_json = '["AAPL"]'
 
-    datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch = _patch_clients()
-    with datafeed_patch, stock_patch, dividends_patch, events_patch, metrics_patch:
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
         run(None, out_dir, tickers_json=tickers_json)
 
     metrics = pd.read_parquet(out_dir / "stock=AAPL" / "metrics.parquet").to_dict(orient="records")[
@@ -420,6 +470,9 @@ def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
         patch(
             "equicast_stock.cli.MetricsClient", side_effect=_fake_metrics_client_factory()
         ) as mock_metrics_client,
+        patch(
+            "equicast_stock.cli.NewsClient", side_effect=_fake_news_client_factory()
+        ) as mock_news_client,
     ):
         run(config, out_dir, max_workers=2, max_calls=5, period_seconds=2.0)
 
@@ -432,4 +485,6 @@ def test_run_shares_one_datafeed_client_across_workers(tmp_path: Path) -> None:
     for call in mock_events_client.call_args_list:
         assert call.kwargs["datafeed"] is shared_datafeed
     for call in mock_metrics_client.call_args_list:
+        assert call.kwargs["datafeed"] is shared_datafeed
+    for call in mock_news_client.call_args_list:
         assert call.kwargs["datafeed"] is shared_datafeed

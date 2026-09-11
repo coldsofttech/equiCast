@@ -5,6 +5,7 @@ members = [
     "packages/metrics",
     "packages/dividends",
     "packages/events",
+    "packages/news",
     "packages/forecasting",
     "packages/fx",
     "packages/benchmark",

@@ -171,6 +171,27 @@ def write_metrics_parquet(metrics: dict[str, Any], ticker: str, output_dir: Path
     return path
 
 
+def write_news_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
+    """Write `records` to `<output_dir>/etf=<TICKER>/news.parquet` - a
+    single flat file, not split into history/current like
+    price/dividend/events: `NewsClient.news()` already trims to the
+    trailing month by design (see equicast-news), so there's no history to
+    separate out. Omitted entirely when there's nothing to write (no news
+    published for this ticker in the window), same convention as
+    `write_future_dividend_parquet`.
+    """
+    if not records:
+        return []
+
+    ticker = records[0]["ticker"]
+    directory = output_dir / f"etf={ticker}"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    path = directory / "news.parquet"
+    pd.DataFrame(records).to_parquet(path, index=False)
+    return [path]
+
+
 def write_events_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Write `records` to `<output_dir>/etf=<TICKER>/events/history.parquet` (every year
     before the current one) and/or `.../events/current.parquet` (the current year
