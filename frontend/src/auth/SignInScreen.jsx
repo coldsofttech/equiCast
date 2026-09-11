@@ -1,7 +1,6 @@
 import { useRef } from "react";
-import Logo from "../components/brand/Logo.jsx";
 import CandlestickSpearIcon from "../components/brand/CandlestickSpearIcon.jsx";
-import ThemeToggle from "../components/shell/ThemeToggle.jsx";
+import PublicHeader from "../components/shell/PublicHeader.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import DemoChart from "./DemoChart.jsx";
 import "./SignInScreen.css";
@@ -130,10 +129,7 @@ function SignInScreen({ onSignIn, error }) {
 
   return (
     <div className="ec-landing">
-      <header className="ec-landing-bar">
-        <Logo />
-        <ThemeToggle />
-      </header>
+      <PublicHeader />
 
       <div className="ec-hero">
         <div className="ec-hero-glow" aria-hidden="true" />

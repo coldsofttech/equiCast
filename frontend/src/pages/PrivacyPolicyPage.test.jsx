@@ -64,6 +64,17 @@ describe("PrivacyPolicyPage", () => {
       expect(screen.queryByLabelText("Search tickers")).not.toBeInTheDocument();
       expect(screen.queryByLabelText("Account")).not.toBeInTheDocument();
     });
+
+    it("renders the shared PublicHeader (logo link + theme toggle)", () => {
+      render(
+        <MemoryRouter>
+          <PrivacyPolicyPage />
+        </MemoryRouter>
+      );
+
+      expect(screen.getByRole("link", { name: "Go to equiCast" })).toHaveAttribute("href", "/");
+      expect(screen.getByRole("button", { name: /switch to (dark|light) theme/i })).toBeInTheDocument();
+    });
   });
 
   describe("signed in", () => {

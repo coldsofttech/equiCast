@@ -34,7 +34,7 @@
 /* ----- Hero ----- */
 .ec-hero {
   position: relative;
-  min-height: calc(100vh - var(--ec-landing-bar-h));
+  min-height: calc(100vh - var(--ec-public-header-h));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -48,20 +48,6 @@
   background:
     radial-gradient(640px 420px at 82% 12%, oklch(0.55 0.18 305 / 0.16), transparent 60%),
     radial-gradient(720px 480px at 8% 92%, oklch(0.55 0.18 270 / 0.14), transparent 60%);
-}
-
-.ec-landing-bar {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  height: var(--ec-landing-bar-h);
-  box-sizing: border-box;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 var(--ec-s-32);
-  background: var(--ec-bg-elev);
-  border-bottom: 1px solid var(--ec-divider);
 }
 
 .ec-hero-grid {
@@ -521,7 +507,6 @@
 }
 
 @media (max-width: 520px) {
-  .ec-landing-bar,
   .ec-hero-grid,
   .ec-features,
   .ec-roadmap {

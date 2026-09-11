@@ -22,6 +22,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer blends transparently into the hero glow as a result, matching
   the other two pages' solid sticky bar instead.
 
+- New shared `PublicHeader` component (`frontend/src/components/shell/
+  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
+  replacing the three near-identical, independently-maintained sticky
+  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
+  grew their own copy of above. Fixes the logo sitting a few pixels lower
+  on the Privacy Policy/Terms and Conditions pages than on the sign-in
+  page (their header's asymmetric top/bottom padding vs. the sign-in
+  header's centered fixed height) by giving every signed-out page the
+  exact same markup/CSS instead of three copies that could drift apart.
+  Also adds the theme toggle to `PrivacyPolicyPage`/
+  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
+  had one before. Renamed token `--ec-landing-bar-h` →
+  `--ec-public-header-h` (`tokens.css`) to match.
+
 ### Changed
 
 - `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now

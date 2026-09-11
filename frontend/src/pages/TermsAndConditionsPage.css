@@ -5,20 +5,6 @@
   background: var(--ec-bg);
 }
 
-.ec-terms-head {
-  position: sticky;
-  top: 0;
-  z-index: 10;
-  padding: var(--ec-s-24) var(--ec-s-24) var(--ec-s-16);
-  background: var(--ec-bg-elev);
-  border-bottom: 1px solid var(--ec-divider);
-}
-
-.ec-terms-logo-link {
-  display: inline-flex;
-  text-decoration: none;
-}
-
 .ec-terms-body {
   flex: 1;
   width: 100%;

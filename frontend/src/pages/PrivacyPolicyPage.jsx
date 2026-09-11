@@ -1,7 +1,6 @@
-import { Link } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
-import Logo from "../components/brand/Logo.jsx";
 import AppShell from "../components/shell/AppShell.jsx";
+import PublicHeader from "../components/shell/PublicHeader.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import "./PrivacyPolicyPage.css";
 
@@ -10,9 +9,11 @@ const LAST_UPDATED = "Last updated 10 September 2026.";
 /**
  * Public — not behind RequireAuth (see App.jsx) — since a visitor has to
  * be able to read this before ever signing in. Two different layouts: a
- * signed-out visitor gets a bare logo link (no AppShell/Topbar, which
+ * signed-out visitor gets `PublicHeader` (no AppShell/Topbar, which
  * assumes a signed-in profile — same reason the error pages are
- * standalone, see components/errors/ErrorPage.jsx), while a signed-in
+ * standalone, see components/errors/ErrorPage.jsx; `PublicHeader` is the
+ * same shared header SignInScreen/TermsAndConditionsPage use, so the logo
+ * sits pixel-identically across every signed-out page), while a signed-in
  * visitor (e.g. following the footer link from inside the app) gets the
  * real AppShell — Topbar plus the same `stickyTitle` frozen-title-bar
  * treatment AccountDetailPage/PieDetailPage/HoldingTickerPage use, so
@@ -152,11 +153,7 @@ function PrivacyPolicyPage() {
 
   return (
     <div className="ec-privacypolicy">
-      <header className="ec-privacypolicy-head">
-        <Link to="/" className="ec-privacypolicy-logo-link" aria-label="Go to equiCast">
-          <Logo />
-        </Link>
-      </header>
+      <PublicHeader />
 
       <main className="ec-privacypolicy-body">
         <h1>Privacy Policy</h1>
