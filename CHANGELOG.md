@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
+  returns one bundled `{ticker, currency, last_updated, daily, weekly,
+  monthly}` response instead of defaulting to `range="max"`'s single
+  `prices` array — new `equicast_core.client.MarketDataClient.
+  get_price_history` computes all three segments (`daily`: the earlier of
+  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
+  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
+  one pass over the same Parquet rows `get_prices` reads. An explicit
+  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
+  `get_prices`, still returns the old single-`prices` shape — this only
+  changes what omitting `range` gets you. Frontend: the price chart
+  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
+  response once per ticker and slices it client-side (new
+  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
+  picks, instead of re-fetching on every range-picker click — fixes
+  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
+  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
+  holding's price series on every range click, now it fetches each once.
+
 - `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
   longer return a `source` field ("yfinance" vs "equicast" — which fields
   on that record came directly from yfinance versus needed an

@@ -231,15 +231,21 @@ class PricesViewTests(TestCase):
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_price_series_for_the_default_range(
+    def test_no_range_param_returns_bundled_price_history(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:
+        """Omitting `range` entirely (the frontend's price chart — see
+        GitHub issue #150) hits `get_price_history`, not `get_prices` —
+        the bundled `{daily, weekly, monthly}` shape, fetched once and
+        sliced client-side for whichever range the user picks."""
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = {
+        mock_client.get_price_history.return_value = {
             "ticker": "VOO",
             "currency": "USD",
             "last_updated": "2026-01-02T21:00:00+00:00",
-            "prices": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
+            "daily": [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}],
+            "weekly": [],
+            "monthly": [],
         }
 
         response = self.client.get(reverse("prices", args=["etf", "voo"]), **AUTH_HEADER)
@@ -249,9 +255,10 @@ class PricesViewTests(TestCase):
         self.assertEqual(data["ticker"], "VOO")
         self.assertEqual(data["currency"], "USD")
         self.assertEqual(
-            data["prices"], [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}]
+            data["daily"], [{"date": "2026-01-02", "open": 1, "high": 2, "low": 0.5, "close": 1.5}]
         )
-        mock_client.get_prices.assert_called_once_with("etf", "voo", price_range="max")
+        mock_client.get_price_history.assert_called_once_with("etf", "voo")
+        mock_client.get_prices.assert_not_called()
 
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -285,21 +292,26 @@ class PricesViewTests(TestCase):
     @patch("market_data.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_returns_empty_prices_when_no_data(
+    def test_returns_empty_history_when_no_data(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
-        mock_client.get_prices.return_value = {
+        mock_client.get_price_history.return_value = {
             "ticker": "UNKNOWN",
             "currency": None,
             "last_updated": None,
-            "prices": [],
+            "daily": [],
+            "weekly": [],
+            "monthly": [],
         }
 
         response = self.client.get(reverse("prices", args=["etf", "unknown"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["prices"], [])
+        data = response.json()
+        self.assertEqual(data["daily"], [])
+        self.assertEqual(data["weekly"], [])
+        self.assertEqual(data["monthly"], [])
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")

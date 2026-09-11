@@ -5,6 +5,7 @@ import Modal from "../../components/core/Modal.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getEvents, getPrices } from "../../api/market.js";
 import { formatPrice } from "./holdingFinancials.js";
+import { RANGES, formatAxisDate, sliceForRange } from "../priceRangeSlicing.js";
 import HoldingBenchmarkRating from "./HoldingBenchmarkRating.jsx";
 import HoldingComparePicker from "./HoldingComparePicker.jsx";
 import "../accounts/PriceChart.css";
@@ -42,29 +43,6 @@ function barIndexForDate(bars, targetDate) {
   return result;
 }
 
-/** Every range this picker offers (see market.js's PRICE_RANGES for the
- * full set the backend accepts) — "1d" is deliberately omitted: only
- * daily bars are ever stored, so a "1 day" range would just be the single
- * latest row, not a meaningful chart. */
-const RANGES = [
-  { id: "5d", label: "1W" },
-  { id: "1m", label: "1M" },
-  { id: "6m", label: "6M" },
-  { id: "ytd", label: "YTD" },
-  { id: "1y", label: "1Y" },
-  { id: "2y", label: "2Y" },
-  { id: "3y", label: "3Y" },
-  { id: "5y", label: "5Y" },
-  { id: "10y", label: "10Y" },
-  { id: "max", label: "MAX" },
-];
-
-/** Ranges the backend returns weekly/monthly-aggregated bars for (see
- * equicast_core.client's _PRICE_RANGE_GRANULARITY) — used here only to
- * pick a coarser x-axis date format, not to re-aggregate anything. */
-const LONG_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
-const VERY_LONG_RANGES = new Set(["10y", "max"]);
-
 /** Ranges "Key events" is disabled for — a bar's own event count doesn't
  * shrink as the range grows (a full trading history's worth of quarterly
  * earnings/analyst-rating actions all still fall somewhere on-screen), but
@@ -73,13 +51,6 @@ const VERY_LONG_RANGES = new Set(["10y", "max"]);
  * distinct bars that `positionedEvents`' same-bar stacking piles them into
  * dense, unreadable columns rather than a scattering of individual dots. */
 const EVENTS_DISABLED_RANGES = new Set(["2y", "3y", "5y", "10y", "max"]);
-
-function formatAxisDate(dateStr, rangeId) {
-  const d = new Date(dateStr);
-  if (VERY_LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { year: "numeric" });
-  if (LONG_RANGES.has(rangeId)) return d.toLocaleDateString(undefined, { month: "short", year: "2-digit" });
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
-}
 
 /** `equicast_events.EventsClient`'s raw split `ratio` (e.g. `4.0` for a
  * 4-for-1 split, `0.5` for a 1-for-2 reverse split — see its own
@@ -263,12 +234,17 @@ const X_AXIS_MAX_TICKS = 6;
 /**
  * The holding page's own price chart — same candle/line/area toggle, hover
  * tooltip and "compare against" overlay as accounts/PriceChart.jsx, but its
- * own subject series (`ticker`) is real data from GET .../prices/ (range
- * picker wired straight to the backend's `?range=`), not a synthetic random
- * walk. A comparison (picked via HoldingComparePicker, which can search any
- * stock/ETF/benchmark in the app's catalog, not just something the caller
- * already holds — including a real market-index benchmark like the S&P
- * 500) is real too — its own GET .../prices/ call for the same range.
+ * own subject series (`ticker`) is real data from GET .../prices/, not a
+ * synthetic random walk. That endpoint returns one bundled `{daily,
+ * weekly, monthly}` payload covering every range in a single fetch (see
+ * api/market.js's getPrices/PriceSeries), and `priceRangeSlicing.js`'s
+ * `sliceForRange` picks/trims the right segment client-side whenever the
+ * range picker's `rangeId` changes, with no further request (GitHub issue
+ * #150). A comparison (picked via HoldingComparePicker,
+ * which can search any stock/ETF/benchmark in the app's catalog, not just
+ * something the caller already holds — including a real market-index
+ * benchmark like the S&P 500) is real too — its own GET .../prices/ call,
+ * fetched once and sliced the same way.
  *
  * Once a comparison is active the chart switches from an absolute price
  * scale to a log-scaled "growth since range start" scale (0% baseline,
@@ -288,10 +264,11 @@ const X_AXIS_MAX_TICKS = 6;
  * is normalized to two overlaid log-growth lines, so comparison mode is
  * always a plain line chart.
  *
- * Unlike PriceChart.jsx, this owns its own data fetching (re-fetching
- * whenever `rangeId` changes) rather than receiving pre-built bars as
- * props — same pattern TickerSearchField/CreatePortfolioDrawer already use
- * for a component that needs its own API calls.
+ * Unlike PriceChart.jsx, this owns its own data fetching (once per
+ * `assetClass`/`ticker`, not per `rangeId` — see above) rather than
+ * receiving pre-built bars as props — same pattern
+ * TickerSearchField/CreatePortfolioDrawer already use for a component
+ * that needs its own API calls.
  *
  * `avgPrice` (the caller's real weighted-average buy price for this
  * ticker, or null when there are no shares/no transactions) draws as a
@@ -310,14 +287,17 @@ const X_AXIS_MAX_TICKS = 6;
  * from both sides' `GET .../metrics/`, independent of this chart's own
  * range picker (see that component's docstring for the exact formula).
  *
- * Switching ranges doesn't blank the view while the new bars load: `series`
- * is left in place until the fetch resolves, so the previous range's chart
- * stays up (dimmed via "is-refreshing", styles/chart.css) rather than
- * flashing to a bare loading line. Once the new bars land, the main line
- * "draws" across the plot (stroke-dasharray/dashoffset, see mainLineRef's
- * effect) and the area fill/candles fade+rise in (`ec-chart-reveal`, keyed
- * on `revision` so it only replays when there's actually a new curve) —
- * the same reveal Yahoo Finance's own chart uses on a range change. The
+ * A ticker/asset-class change doesn't blank the view while the new fetch
+ * is in flight: `history` is left in place until it resolves, so the
+ * previous ticker's chart stays up (dimmed via "is-refreshing",
+ * styles/chart.css) rather than flashing to a bare loading line — a range
+ * switch has no such gap to bridge any more, since it's a synchronous
+ * client-side slice. The main line still "draws" across the plot
+ * (stroke-dasharray/dashoffset, see mainLineRef's effect) and the area
+ * fill/candles still fade+rise in (`ec-chart-reveal`, keyed on `revision`)
+ * on *every* new set of bars — a real fetch landing or a plain range
+ * click — same reveal Yahoo Finance's own chart uses on a range change.
+ * The
  * avg-price/current-price reference lines get their own, different
  * treatment (HoldingPriceChart.css): a continuously flowing dash pattern —
  * avg-price right-to-left, current-price left-to-right, opposite
@@ -388,25 +368,25 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     return () => observer.disconnect();
   }, []);
 
-  const [series, setSeries] = useState(null);
+  const [history, setHistory] = useState(null);
   const [status, setStatus] = useState("loading");
 
-  // Bumped each time a fetch actually lands new bars — the reveal
-  // animation (see mainLineRef's effect and ec-chart-reveal below) keys off
-  // this rather than `rangeId` directly, so it only replays once there's
-  // really a new curve to draw, not on every render in between.
+  // Bumped whenever `bars` (below) points at a genuinely new set of bars —
+  // a real fetch landing or a plain range click — the reveal animation
+  // (see mainLineRef's effect and ec-chart-reveal below) keys off this
+  // rather than `bars` directly, so it's a stable dependency regardless of
+  // whether `bars`' own array identity would otherwise change.
   const [revision, setRevision] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
     setHoverIndex(null);
-    getPrices(api, assetClass, ticker, { range: rangeId })
+    getPrices(api, assetClass, ticker)
       .then((result) => {
         if (cancelled) return;
-        setSeries(result);
-        setStatus(result.prices.length > 0 ? "ok" : "empty");
-        setRevision((r) => r + 1);
+        setHistory(result);
+        setStatus("ok");
       })
       .catch(() => {
         if (cancelled) return;
@@ -415,16 +395,21 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     return () => {
       cancelled = true;
     };
-  }, [api, assetClass, ticker, rangeId]);
+  }, [api, assetClass, ticker]);
 
-  // `series` is deliberately left in place while a range switch is in
-  // flight (nothing here clears it), so `bars` keeps rendering the
-  // previous range's chart — dimmed via the "is-refreshing" class below —
+  // `history` is deliberately left in place while a new ticker's fetch is
+  // in flight (nothing here clears it), so `bars` keeps rendering the
+  // previous ticker's chart — dimmed via the "is-refreshing" class below —
   // right up until the new one lands, instead of the view blanking out to
-  // a bare "Loading…" line every time a range button is clicked.
-  const bars = useMemo(() => series?.prices ?? [], [series]);
+  // a bare "Loading…" line. A range switch has no such gap at all: slicing
+  // `history` client-side is synchronous (see priceRangeSlicing.js).
+  const bars = useMemo(() => sliceForRange(history, rangeId), [history, rangeId]);
   const hasData = bars.length > 0;
-  const seriesCurrency = series?.currency ?? currency ?? null;
+  const seriesCurrency = history?.currency ?? currency ?? null;
+
+  useEffect(() => {
+    setRevision((r) => r + 1);
+  }, [bars]);
 
   // Off by default (matches Yahoo Finance's own "Key events" toggle) and
   // fetched lazily — only once switched on — rather than alongside `series`
@@ -498,26 +483,26 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
   }, [api, assetClass, ticker, showEvents]);
 
   // Fetches the selected comparison's (a ticker or a benchmark, both carry
-  // a real ticker/assetClass — see HoldingComparePicker) own real prices
-  // for the same range; skipped entirely while nothing is selected yet
+  // a real ticker/assetClass — see HoldingComparePicker) own real price
+  // history once; skipped entirely while nothing is selected yet
   // (compare.ticker/compare.assetClass still null).
-  const [compareSeries, setCompareSeries] = useState(null);
+  const [compareHistory, setCompareHistory] = useState(null);
   const [compareStatus, setCompareStatus] = useState("idle");
 
   useEffect(() => {
     if (!compare.ticker || !compare.assetClass) {
-      setCompareSeries(null);
+      setCompareHistory(null);
       setCompareStatus("idle");
       return undefined;
     }
 
     let cancelled = false;
     setCompareStatus("loading");
-    getPrices(api, compare.assetClass, compare.ticker, { range: rangeId })
+    getPrices(api, compare.assetClass, compare.ticker)
       .then((result) => {
         if (cancelled) return;
-        setCompareSeries(result);
-        setCompareStatus(result.prices.length > 0 ? "ok" : "empty");
+        setCompareHistory(result);
+        setCompareStatus("ok");
       })
       .catch(() => {
         if (cancelled) return;
@@ -526,9 +511,12 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     return () => {
       cancelled = true;
     };
-  }, [api, compare.ticker, compare.assetClass, rangeId]);
+  }, [api, compare.ticker, compare.assetClass]);
 
-  const compareBars = useMemo(() => compareSeries?.prices ?? [], [compareSeries]);
+  const compareBars = useMemo(
+    () => sliceForRange(compareHistory, rangeId),
+    [compareHistory, rangeId]
+  );
 
   // A comparison is always shown as % change from its own first bar, on the
   // same 0%-baseline scale as the main series (see pctMode below) — so,
@@ -804,11 +792,11 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
 
       {status === "loading" && !hasData && <p className="ec-loading">Loading price history…</p>}
       {status === "error" && <p className="ec-chart-caption">Couldn&rsquo;t load price history for {ticker}.</p>}
-      {status === "empty" && (
+      {status === "ok" && !hasData && (
         <p className="ec-chart-caption">No price history published for {ticker} for this range yet.</p>
       )}
 
-      {(status === "ok" || (status === "loading" && hasData)) && (
+      {hasData && (
         <div className={`ec-pchart-chart${status === "loading" ? " is-refreshing" : ""}`}>
           <div className="ec-pchart-legend">
             <span className="ec-pchart-legend-item">
@@ -1136,11 +1124,12 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
           {compare.ticker && compareStatus === "loading" && (
             <p className="ec-chart-caption">Loading {compare.label}&rsquo;s price history…</p>
           )}
-          {compare.ticker && (compareStatus === "error" || compareStatus === "empty") && (
-            <p className="ec-chart-caption">
-              No price history published for {compare.ticker} for this range yet.
-            </p>
-          )}
+          {compare.ticker &&
+            (compareStatus === "error" || (compareStatus === "ok" && compareBars.length === 0)) && (
+              <p className="ec-chart-caption">
+                No price history published for {compare.ticker} for this range yet.
+              </p>
+            )}
 
           {compare.assetClass === "benchmark" && (
             <HoldingBenchmarkRating

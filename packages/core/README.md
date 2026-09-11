@@ -25,6 +25,10 @@ client.get_profile("stock", "AAPL")
 client.get_prices("etf", "VOO", price_range="1y")
 # {"ticker": "VOO", "currency": "USD", "last_updated": "...",
 #  "prices": [{"date": "2026-01-02", "open": ..., "high": ..., "low": ..., "close": ...}, ...]}
+
+client.get_price_history("etf", "VOO")
+# {"ticker": "VOO", "currency": "USD", "last_updated": "...",
+#  "daily": [...], "weekly": [...], "monthly": [...]}
 ```
 
 `get_profile()`/`get_metrics()`/`get_dividends()`/`get_prices()` all drop
@@ -73,6 +77,20 @@ records, `event_type`-tagged, only that type's own fields set — see that
 package's README), passed through untouched. `None` if neither file exists
 yet for this ticker/pair, the same "not configured" signal `get_profile()`
 returns.
+
+`get_price_history()` is `get_prices()`'s every range bundled into one
+call instead: `daily` (raw, unaggregated rows from the earlier of "6
+months ago" and this year's Jan 1 — covering both `price_range="6m"` and
+`price_range="ytd"`'s windows, since ytd's can reach back up to ~12
+months in December), `weekly` (aggregated, from 2 years ago — a superset
+of `"1y"`/`"2y"`), and `monthly` (aggregated, full history — matches
+`"3y"`/`"5y"`/`"10y"`/`"max"`). Meant for a caller (the Django backend's
+`/api/market/.../prices/` with no `range` query param — see
+`backend/market_data/views.py`'s `PricesView`) that wants to fetch once
+and slice every range client-side afterwards, rather than one request per
+range picked (GitHub issue #150). Always reads both `current.parquet` and
+`history.parquet` — the `monthly` segment needs the full history
+regardless of how recent the ticker is.
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`

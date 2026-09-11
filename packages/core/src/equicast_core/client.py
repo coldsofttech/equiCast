@@ -558,6 +558,81 @@ class MarketDataClient:
             "prices": prices,
         }
 
+    def get_price_history(self, asset_class: str, symbol: str) -> dict[str, Any]:
+        """Return `{ticker, currency, last_updated, daily, weekly, monthly}`
+        for `symbol` — every range `get_prices` can serve individually via
+        its `price_range` param, bundled into one response instead, so a
+        caller (the frontend's price chart — see PricesView, which calls
+        this instead of `get_prices` when no `?range=` is given) can fetch
+        once and slice client-side for every range the user picks, with no
+        further request. `get_prices` itself is unchanged and still backs an
+        explicit `?range=` call.
+
+        - `daily`: raw (unaggregated) rows from the *earlier* of "6 months
+          ago" and this year's Jan 1 onward — covering both what
+          `get_prices(price_range="6m")` and `get_prices(price_range="ytd")`
+          each return on their own (ytd's window can reach back up to ~12
+          months in December, past a fixed 6-month cutoff).
+        - `weekly`: `_aggregate_prices(..., "week")` from 2 years ago onward
+          — a superset of what `price_range="1y"`/`"2y"` each return.
+        - `monthly`: `_aggregate_prices(..., "month")` over the full
+          history — matches `price_range="3y"`/`"5y"`/`"10y"`/`"max"`.
+
+        Always reads `history.parquet` alongside `current.parquet`
+        (`monthly` needs the full history regardless of how recent the
+        ticker is) — see `get_prices`'s docstring for the current/history
+        split. `currency`/`last_updated`/the empty-shape "nothing published"
+        case follow the exact same logic `get_prices` uses.
+        """
+        today = datetime.now(UTC).date()
+        six_months_ago = _start_date_for_range("6m", today)
+        two_years_ago = _start_date_for_range("2y", today)
+        assert six_months_ago is not None and two_years_ago is not None  # both have a month cutoff
+        daily_cutoff = min(six_months_ago, date(today.year, 1, 1)).isoformat()
+        weekly_cutoff = two_years_ago.isoformat()
+
+        prefix = f"{asset_class.lower()}={symbol.upper()}/price"
+        rows: list[dict[str, Any]] = []
+        history_rows = self._read_parquet(f"{prefix}/history.parquet")
+        if history_rows:
+            rows.extend(history_rows)
+        current_rows = self._read_parquet(f"{prefix}/current.parquet")
+        if current_rows:
+            rows.extend(current_rows)
+        rows.sort(key=lambda r: r["date"])
+
+        if not rows:
+            return {
+                "ticker": symbol.upper(),
+                "currency": None,
+                "last_updated": None,
+                "daily": [],
+                "weekly": [],
+                "monthly": [],
+            }
+
+        freshest = max(rows, key=lambda r: r["last_updated"])
+        daily_source = [
+            {
+                "date": r["date"],
+                "open": r["open"],
+                "high": r["high"],
+                "low": r["low"],
+                "close": r["close"],
+            }
+            for r in rows
+        ]
+        return {
+            "ticker": symbol.upper(),
+            "currency": rows[0].get("currency"),
+            "last_updated": freshest["last_updated"],
+            "daily": [r for r in daily_source if r["date"] >= daily_cutoff],
+            "weekly": _aggregate_prices(
+                [r for r in daily_source if r["date"] >= weekly_cutoff], "week"
+            ),
+            "monthly": _aggregate_prices(daily_source, "month"),
+        }
+
     def get_price_on_date(
             self, asset_class: str, symbol: str, on_date: str
     ) -> dict[str, Any] | None:
