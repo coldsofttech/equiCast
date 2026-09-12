@@ -1,0 +1,22 @@
+.ec-comingsoon {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 380px;
+  margin: var(--ec-s-32) auto;
+  padding: var(--ec-s-32) var(--ec-s-16);
+}
+
+.ec-comingsoon-icon {
+  font-size: 40px;
+  color: var(--ec-text-muted);
+  margin-bottom: var(--ec-s-16);
+}
+
+.ec-comingsoon-message {
+  font-size: var(--ec-fs-15);
+  color: var(--ec-text-muted);
+  line-height: 1.55;
+  margin: 0;
+}

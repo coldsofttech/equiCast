@@ -105,4 +105,30 @@ describe("UserMenu", () => {
     expect(navigate).toHaveBeenCalledWith("/accounts");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+
+  it("navigates to /watchlists and closes the panel from the account menu", () => {
+    mockUser({ name: "Ada Lovelace", email: "ada@example.com" });
+    const navigate = vi.fn();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
+
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /account/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Watchlists" }));
+
+    expect(navigate).toHaveBeenCalledWith("/watchlists");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
+
+  it("navigates to /goals and closes the panel from the account menu", () => {
+    mockUser({ name: "Ada Lovelace", email: "ada@example.com" });
+    const navigate = vi.fn();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
+
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /account/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Goals" }));
+
+    expect(navigate).toHaveBeenCalledWith("/goals");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
 });

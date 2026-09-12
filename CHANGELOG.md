@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- "Watchlists" and "Goals" entries in the account menu (`UserMenu.jsx`,
+  GitHub issue #170), each navigating to a new route (`/watchlists`,
+  `/goals`). Neither has a real page yet — Watchlists' backend already
+  exists (`backend/watchlists/`, already used elsewhere for
+  watchlist-scoped holdings) but has no frontend; Goals has no code on
+  `main` at all (an earlier `feat/goals` branch built a backend but was
+  never merged) — so both render a new shared `ComingSoonPage` for now,
+  to be replaced by the real UI in a follow-up issue rather than 404ing
+  or blocking this one on building two full features.
+
 - TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
   (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
   previously this mode was read-only, only ever populated by whatever
