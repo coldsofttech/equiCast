@@ -115,7 +115,13 @@ class AccountListViewTests(TestCase):
         mock_client.list_accounts.return_value = [ACCOUNT]
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
-        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "GBP"}
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
+        # #123) is a no-op here — see SyncDividendsForHoldingsTests
+        # (transactions/tests.py) for that sync's own coverage.
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
         # Enrichment itself (catalog lookup/FX conversion) is unit-tested at
         # MarketDataClient.enrich_holdings — this only checks the flat
         # enriched list is threaded through and split back into
@@ -304,7 +310,13 @@ class AccountDetailViewTests(TestCase):
         }
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
-        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "GBP"}
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
+        # #123) is a no-op here — see SyncDividendsForHoldingsTests
+        # (transactions/tests.py) for that sync's own coverage.
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
         mock_market_data_client.enrich_holdings.return_value = [
             enriched_pie_holding,
             enriched_direct_holding,

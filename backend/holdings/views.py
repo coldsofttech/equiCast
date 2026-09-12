@@ -23,7 +23,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from transactions.views import build_transaction_fields, resolve_converted_amounts
+from transactions.views import (
+    build_transaction_fields,
+    resolve_converted_amounts,
+    sync_dividends_for_holdings,
+)
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
@@ -94,10 +98,14 @@ def _enrich_holding(user_id: str, holding: dict[str, Any]) -> dict[str, Any]:
     `computeHoldingValuation` (holdingValuation.js) then has no live price
     to value the position at and falls back to its own cost basis — Value
     reading identical to Invested (flat P&L) right after any mutation,
-    until a full accounts refetch re-enriches it."""
-    return _market_data_client.enrich_holdings(
-        [holding], _profile_client.get_or_create_profile(user_id)["default_currency"]
-    )[0]
+    until a full accounts refetch re-enriches it.
+
+    Also runs `sync_dividends_for_holdings` (GitHub issue #123) first, so
+    `holding`'s auto-created `DIVIDEND` transactions land before its
+    rollup is read here — same profile lookup backs both."""
+    profile = _profile_client.get_or_create_profile(user_id)
+    holding = sync_dividends_for_holdings(user_id, [holding], profile)[0]
+    return _market_data_client.enrich_holdings([holding], profile["default_currency"])[0]
 
 
 class HoldingListView(APIView):
@@ -114,14 +122,18 @@ class HoldingListView(APIView):
                 status=400,
             )
 
-        return Response(
-            _client.list_holdings(
-                request.user.user_id,
-                account_id=account_id,
-                pie_id=pie_id,
-                watchlist_id=watchlist_id,
-            )
+        user_id = request.user.user_id
+        holdings = _client.list_holdings(
+            user_id, account_id=account_id, pie_id=pie_id, watchlist_id=watchlist_id
         )
+        # GitHub issue #123: auto-create DIVIDEND transactions from paid
+        # dividend history before returning — same as
+        # HoldingDetailView.get's _enrich_holding, just without the
+        # market-data enrichment this endpoint has never done.
+        if holdings:
+            profile = _profile_client.get_or_create_profile(user_id)
+            holdings = sync_dividends_for_holdings(user_id, holdings, profile)
+        return Response(holdings)
 
     def post(self, request: Request) -> Response:
         missing = REQUIRED_CREATE_FIELDS - request.data.keys()

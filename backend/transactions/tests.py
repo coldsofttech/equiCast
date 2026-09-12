@@ -11,6 +11,8 @@ from equicast_core import (
     TransactionNotFoundError,
 )
 
+from transactions.views import sync_dividends_for_holdings
+
 AUTH_HEADER = {"HTTP_AUTHORIZATION": "Bearer validtoken"}
 
 ACCOUNT_HOLDING = {
@@ -1181,3 +1183,91 @@ class TransactionDetailViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+
+class SyncDividendsForHoldingsTests(TestCase):
+    """GitHub issue #123 — called directly by accounts/pies/holdings
+    views.py's own _enrich_holdings/_enrich_holding, not through an HTTP
+    endpoint of its own, so these call the function directly rather than
+    going through self.client."""
+
+    def test_returns_holdings_unchanged_for_a_transaction_mode_profile(self) -> None:
+        result = sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], TRANSACTION_PROFILE)
+
+        self.assertEqual(result, [ACCOUNT_HOLDING])
+
+    @patch("transactions.views._client")
+    def test_skips_watchlist_and_fx_holdings_without_touching_transactions(
+        self, mock_client
+    ) -> None:
+        result = sync_dividends_for_holdings(
+            "auth0|abc123", [WATCHLIST_HOLDING, FX_HOLDING], AVERAGE_PROFILE
+        )
+
+        self.assertEqual(result, [WATCHLIST_HOLDING, FX_HOLDING])
+        mock_client.list_transactions.assert_not_called()
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
+    def test_returns_the_holding_unchanged_when_nothing_new_to_sync(
+        self, mock_client, mock_market_data_client
+    ) -> None:
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_market_data_client.get_dividends.return_value = None
+
+        result = sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], AVERAGE_PROFILE)
+
+        self.assertEqual(result, [ACCOUNT_HOLDING])
+        mock_client.create_transaction.assert_not_called()
+        mock_client.advance_dividends_synced_through.assert_not_called()
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_creates_a_missing_paid_dividend_and_refreshes_the_holdings_rollup(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        mock_client.list_transactions.side_effect = [
+            [AVERAGE_TRANSACTION],
+            [AVERAGE_TRANSACTION, DIVIDEND_TRANSACTION],
+        ]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-03-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                }
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        refreshed_holding = {**ACCOUNT_HOLDING, "dividends_native": 5.0, "dividends": 6.25}
+        mock_holdings_client.update_holding_financials.return_value = refreshed_holding
+
+        result = sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], AVERAGE_PROFILE)
+
+        mock_market_data_client.get_dividends.assert_called_once_with("stock", "AAPL")
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "AVERAGE",
+            amount_native=5.0,
+            date="2026-03-01",
+            type="DIVIDEND",
+            fx_rate=1.25,
+            average_price=None,
+            price=None,
+            amount=6.25,
+        )
+        mock_holdings_client.update_holding_financials.assert_called_once()
+        mock_client.advance_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2026-03-01"
+        )
+        self.assertEqual(result, [refreshed_holding])

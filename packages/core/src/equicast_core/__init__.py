@@ -42,6 +42,8 @@ from equicast_core.transactions import (
     TransactionNotFoundError,
     TransactionsClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
@@ -84,6 +86,8 @@ __all__ = [
     "TransactionNotFoundError",
     "TransactionsClient",
     "compute_holding_rollup",
+    "compute_new_dividend_transactions",
+    "latest_paid_dividend_date",
     "ASSET_CLASSES",
     "DEFAULT_CACHE_TTL_SECONDS",
     "DEFAULT_PRICE_RANGE",

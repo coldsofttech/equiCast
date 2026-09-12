@@ -82,7 +82,13 @@ class PieListViewTests(TestCase):
             "id": "h-2", "ticker": "VXUS", "asset_class": "etf", "pie_id": "not-this-user-list"
         }
         mock_holdings_client.list_holdings.return_value = [holding, other_holding]
-        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
+        # #123) is a no-op here — see SyncDividendsForHoldingsTests
+        # (transactions/tests.py) for that sync's own coverage.
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "USD",
+        }
         enriched_holding = {
             **holding,
             "name": "Vanguard S&P 500 ETF",
@@ -258,7 +264,13 @@ class PieDetailViewTests(TestCase):
         mock_client.get_pie.return_value = PIE
         holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
         mock_holdings_client.list_holdings.return_value = [holding]
-        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "USD"}
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
+        # #123) is a no-op here — see SyncDividendsForHoldingsTests
+        # (transactions/tests.py) for that sync's own coverage.
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "USD",
+        }
         enriched_holding = {
             **holding,
             "name": "Vanguard S&P 500 ETF",

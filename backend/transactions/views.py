@@ -13,6 +13,8 @@ from equicast_core import (
     TransactionsClient,
     UserProfileClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.pagination import PageNumberPagination
@@ -282,6 +284,89 @@ def _refresh_holding_rollup(user_id: str, holding_id: str, mode: str) -> None:
         _holdings_client.update_holding_financials(user_id, holding_id, **rollup)
     except HoldingNotFoundError:
         pass
+
+
+def sync_dividends_for_holdings(
+    user_id: str, holdings: list[dict[str, Any]], profile: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Auto-create `DIVIDEND` transactions for every `AVERAGE`-mode holding
+    in `holdings` from its paid dividend history (GitHub issue #123 — a
+    base for `TRANSACTION`-mode's own version, issue #124), returning
+    `holdings` with each synced holding's rollup (`dividends_native`/
+    `dividends`, alongside the rest of `compute_holding_rollup`'s fields)
+    refreshed in place. Called from accounts/pies/holdings views.py's own
+    `_enrich_holdings`/`_enrich_holding` — the same point each already
+    resolves the caller's profile for market-data enrichment — so a
+    holding's dividends stay caught up on every read, without the user
+    manually recording each payout.
+
+    A no-op (returns `holdings` unchanged) for a `TRANSACTION`-mode user.
+    Per-holding, skips anything `resolve_transaction_mode` wouldn't allow a
+    transaction against at all (a watchlist holding, or an fx holding) —
+    same eligibility rule, applied directly since there's no request here
+    to build an error `Response` from — and anything
+    `compute_new_dividend_transactions` finds nothing new for (no `BUY` on
+    record yet, no market-data dividend history, or nothing since the
+    holding's `dividends_synced_through` watermark).
+
+    Every payout `compute_new_dividend_transactions` even considers —
+    created here, or skipped as pre-`BUY` — advances that watermark via
+    `TransactionsClient.advance_dividends_synced_through`, regardless of
+    whether anything was actually created this call. This is what makes
+    deleting an auto-created `DIVIDEND` transaction a lasting correction:
+    without it, the next sync would see the payout as "missing" again
+    (nothing recorded for its ex-date) and recreate it right back."""
+    if profile["transaction_type"] != "AVERAGE":
+        return holdings
+
+    synced: list[dict[str, Any]] = []
+    for holding in holdings:
+        if (
+            holding["watchlist_id"] is not None
+            or holding["asset_class"] not in TRANSACTABLE_ASSET_CLASSES
+        ):
+            synced.append(holding)
+            continue
+
+        existing = _client.list_transactions(user_id, holding_id=holding["id"])
+        dividends_data = _market_data_client.get_dividends(
+            holding["asset_class"], holding["ticker"]
+        )
+        dividends = dividends_data["dividends"] if dividends_data else []
+        synced_through = _client.get_dividends_synced_through(user_id, holding["id"])
+        new_entries = compute_new_dividend_transactions(existing, dividends, synced_through)
+
+        for entry in new_entries:
+            fields = resolve_converted_amounts(
+                holding,
+                profile["default_currency"],
+                {
+                    "amount_native": entry["amount_native"],
+                    "date": entry["date"],
+                    "type": "DIVIDEND",
+                },
+            )
+            try:
+                _client.create_transaction(user_id, holding["id"], "AVERAGE", **fields)
+            except (TransactionAmountError, TransactionLimitExceededError):
+                continue
+
+        new_watermark = latest_paid_dividend_date(dividends, synced_through)
+        if new_watermark is not None and new_watermark != synced_through:
+            _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
+
+        if not new_entries:
+            synced.append(holding)
+            continue
+
+        transactions = _client.list_transactions(user_id, holding_id=holding["id"])
+        rollup = compute_holding_rollup(transactions, "AVERAGE")
+        try:
+            holding = _holdings_client.update_holding_financials(user_id, holding["id"], **rollup)
+        except HoldingNotFoundError:
+            pass
+        synced.append(holding)
+    return synced
 
 
 class TransactionListView(APIView):
