@@ -28,6 +28,13 @@
  *    one holding (via a key-range delete over that prefix) so a
  *    create/update/delete against it can't leave a stale page behind.
  *
+ * A historical FX rate for a given date has no dedicated store of its
+ * own — it's resolved client-side from an fx pair's own bundled price
+ * history (see holdingFinancials.js's `resolveFxRateOnDate`), which
+ * already lives in "holdings" via priceCache.js like any other ticker's
+ * prices. One cached fetch per pair per day covers every date lookup
+ * against it, rather than caching one entry per date requested.
+ *
  * Every read/write here is best-effort: IndexedDB can be unavailable (a
  * test environment, a browser/private-mode without it) or a call can fail
  * for any other reason, and none of that should ever break the page — a

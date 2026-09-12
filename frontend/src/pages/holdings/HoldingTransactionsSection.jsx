@@ -8,15 +8,24 @@ import Alert from "../../components/core/Alert.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import { TextField, SelectField } from "../../components/core/Field.jsx";
 import { useApi } from "../../api/useApi.js";
-import { getFxRateOnDate } from "../../api/market.js";
 import {
   MAX_RECENT_TRANSACTIONS,
   formatFxRatio,
   formatPrice,
+  resolveFxRateOnDate,
   selectNetShares,
   selectPositionEntry,
   selectRecentTradeTransactions,
 } from "./holdingFinancials.js";
+
+/** A complete "YYYY-MM-DD" with a plausible year — guards the FX
+ * auto-fill effect below against firing (even just a local lookup, no
+ * longer a network call) for every partial value a native
+ * `<input type="date">` reports while its year segment is still being
+ * typed digit by digit (e.g. "0002" → "0020" → "0202" → "2026"). */
+function isCompleteDate(date) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && Number(date.slice(0, 4)) >= 1990;
+}
 
 /** A plain "YYYY-MM-DD" date string as "10 Sep 2026" — same short format
  * HoldingDividendsSection's formatDividendDate uses. */
@@ -72,11 +81,15 @@ function tradeTypeMeta(type) {
  *
  * `nativeCurrency`/`defaultCurrency` gate the FX rate field: shown only
  * when both are known and differ (a same-currency holding has nothing to
- * convert). Once shown, it auto-fills from `getFxRateOnDate` for whichever
- * `date` is entered — the same historical rate the backend would otherwise
- * auto-resolve — letting the user preview and override it before saving;
- * `fxRateTouched` stops that auto-fill from clobbering a manual edit once
- * the user has actually typed into the field themselves.
+ * convert). Once shown, it auto-fills from `resolveFxRateOnDate` for
+ * whichever complete `date` is entered (see `isCompleteDate` — a native
+ * `<input type="date">` reports a string of partial-year values while
+ * that segment is still being typed, which this ignores) — the same
+ * historical rate the backend would otherwise auto-resolve, computed
+ * client-side from the pair's own already-fetched price history rather
+ * than a network call per date, letting the user preview and override it
+ * before saving; `fxRateTouched` stops that auto-fill from clobbering a
+ * manual edit once the user has actually typed into the field themselves.
  *
  * The field itself shows/accepts the rate default→native (e.g. "£1 =
  * $1.27"), matching how brokerage apps like Trading 212/Chip quote it —
@@ -125,20 +138,20 @@ function TransactionForm({
   const showFxField = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
 
   useEffect(() => {
-    if (!showFxField || !date || fxRateTouched) return undefined;
+    if (!showFxField || !isCompleteDate(date) || fxRateTouched) return undefined;
     let cancelled = false;
-    // Fetched default→native (e.g. GBP→USD), not native→default — the
-    // direction this field displays/accepts, matching how brokerage apps
-    // like Trading 212/Chip quote a rate (£1 = $xxx) rather than $1 = £xxx.
-    getFxRateOnDate(api, defaultCurrency, nativeCurrency, date)
-      .then((result) => {
-        if (!cancelled) setFxRate(String(result.rate));
-      })
-      .catch(() => {
-        // No rate published for this pair/date — leave the field blank;
-        // the backend still auto-resolves its own attempt on submit if
-        // the user doesn't type one in themselves.
-      });
+    // default→native (e.g. GBP→USD), not native→default — the direction
+    // this field displays/accepts, matching how brokerage apps like
+    // Trading 212/Chip quote a rate (£1 = $xxx) rather than $1 = £xxx.
+    // Resolved from each pair's own already-fetched/cached price history
+    // (see resolveFxRateOnDate) — no network call per date typed.
+    resolveFxRateOnDate(api, defaultCurrency, nativeCurrency, date).then((rate) => {
+      if (cancelled) return;
+      // `null` (no rate published for this pair/date) leaves the field
+      // blank; the backend still auto-resolves its own attempt on submit
+      // if the user doesn't type one in themselves.
+      if (rate != null) setFxRate(String(rate));
+    });
     return () => {
       cancelled = true;
     };

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { warmFxRates } from "./fxWarmup.js";
-import { getFxRateOnDate } from "../api/market.js";
+import { hasWarmedFxRates, warmFxRates } from "./fxWarmup.js";
+import { getPrices } from "../api/market.js";
 
-vi.mock("../api/market.js", () => ({ getFxRateOnDate: vi.fn() }));
+vi.mock("../api/market.js", () => ({ getPrices: vi.fn() }));
 
 const PROFILE = {
   user_id: "auth0|abc",
@@ -13,7 +13,7 @@ const PROFILE = {
 
 beforeEach(() => {
   sessionStorage.clear();
-  vi.mocked(getFxRateOnDate).mockResolvedValue({ rate: 1.2 });
+  vi.mocked(getPrices).mockResolvedValue({ ticker: "GBPUSD", daily: [], weekly: [], monthly: [] });
 });
 
 afterEach(() => {
@@ -21,17 +21,17 @@ afterEach(() => {
 });
 
 describe("warmFxRates", () => {
-  it("fetches one rate per configured currency, skipping the default currency itself", () => {
+  it("fetches one pair's full history per configured currency, skipping the default currency itself", () => {
     const api = vi.fn();
 
     warmFxRates(api, PROFILE);
 
-    expect(getFxRateOnDate).toHaveBeenCalledTimes(2);
-    const pairs = vi.mocked(getFxRateOnDate).mock.calls.map(([, from, to]) => [from, to]);
+    expect(getPrices).toHaveBeenCalledTimes(2);
+    const pairs = vi.mocked(getPrices).mock.calls.map(([, assetClass, symbol]) => [assetClass, symbol]);
     expect(pairs).toEqual(
       expect.arrayContaining([
-        ["GBP", "USD"],
-        ["GBP", "EUR"],
+        ["fx", "GBPUSD"],
+        ["fx", "GBPEUR"],
       ])
     );
   });
@@ -41,7 +41,7 @@ describe("warmFxRates", () => {
 
     warmFxRates(api, null);
 
-    expect(getFxRateOnDate).not.toHaveBeenCalled();
+    expect(getPrices).not.toHaveBeenCalled();
   });
 
   it("only fires once per session, even across multiple calls", () => {
@@ -50,13 +50,40 @@ describe("warmFxRates", () => {
     warmFxRates(api, PROFILE);
     warmFxRates(api, PROFILE);
 
-    expect(getFxRateOnDate).toHaveBeenCalledTimes(2);
+    expect(getPrices).toHaveBeenCalledTimes(2);
   });
 
   it("never throws when a lookup rejects", async () => {
-    vi.mocked(getFxRateOnDate).mockRejectedValue(new Error("no data"));
+    vi.mocked(getPrices).mockRejectedValue(new Error("no data"));
     const api = vi.fn();
 
     expect(() => warmFxRates(api, PROFILE)).not.toThrow();
+  });
+
+  it("resolves once every lookup has settled, including a rejected one", async () => {
+    vi.mocked(getPrices)
+      .mockResolvedValueOnce({ ticker: "GBPUSD", daily: [], weekly: [], monthly: [] })
+      .mockRejectedValueOnce(new Error("no data"));
+    const api = vi.fn();
+
+    await expect(warmFxRates(api, PROFILE)).resolves.toBeUndefined();
+  });
+});
+
+describe("hasWarmedFxRates", () => {
+  it("is false before warmFxRates has ever run", () => {
+    expect(hasWarmedFxRates()).toBe(false);
+  });
+
+  it("is true once warmFxRates has run for a real profile", () => {
+    warmFxRates(vi.fn(), PROFILE);
+
+    expect(hasWarmedFxRates()).toBe(true);
+  });
+
+  it("stays false when warmFxRates short-circuits on a null profile", () => {
+    warmFxRates(vi.fn(), null);
+
+    expect(hasWarmedFxRates()).toBe(false);
   });
 });

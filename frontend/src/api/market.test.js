@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from "vitest";
 import {
   getDividends,
   getEvents,
-  getFxRateOnDate,
   getMetrics,
   getNews,
   getPrices,
@@ -133,18 +132,5 @@ describe("market api", () => {
     await getPrices(api, "stock", "AAPL");
 
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/prices/");
-  });
-
-  it("fetches the historical fx rate for a currency pair and date", async () => {
-    const api = vi.fn().mockResolvedValue({
-      from_currency: "USD",
-      to_currency: "GBP",
-      date: "2026-01-15",
-      rate: 0.79,
-    });
-
-    await getFxRateOnDate(api, "USD", "GBP", "2026-01-15");
-
-    expect(api).toHaveBeenCalledWith("/market/fx-rate/USD/GBP/?date=2026-01-15");
   });
 });

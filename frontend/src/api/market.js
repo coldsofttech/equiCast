@@ -492,38 +492,13 @@ export async function getPrices(api, assetClass, symbol) {
   return result;
 }
 
-/**
- * @typedef {Object} FxRate
- * @property {string} from_currency
- * @property {string} to_currency
- * @property {string} date
- * @property {number} rate
- */
-
-/**
- * GET /api/market/fx-rate/<fromCurrency>/<toCurrency>/?date=... — see
- * backend/market_data/views.py's FxRateView. The historical FX rate on
- * `date` (not a live/current rate — see holdingFinancials.js's
- * resolveFxRate for that) — used by the transaction form to show/default
- * the rate a BUY/SELL/DIVIDEND would otherwise auto-resolve server-side
- * (GitHub issue #149), letting the user preview and override it before
- * submitting, and by utils/fxWarmup.js's login-time warm-up. Throws (a
- * 404 `ApiError` when no rate is published for that pair on or before
- * `date`) rather than returning `null` — callers catch and degrade.
- *
- * Not IndexedDB-cached like getPrices/getProfile above — this is a
- * one-off historical lookup keyed by an arbitrary caller-supplied date,
- * not per-asset data worth caching client-side.
- *
- * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {string} fromCurrency
- * @param {string} toCurrency
- * @param {string} date - "YYYY-MM-DD"
- * @returns {Promise<FxRate>}
- */
-export function getFxRateOnDate(api, fromCurrency, toCurrency, date) {
-  const query = new URLSearchParams({ date }).toString();
-  return /** @type {Promise<FxRate>} */ (
-    api(`/market/fx-rate/${fromCurrency}/${toCurrency}/?${query}`)
-  );
-}
+// The historical (as of a given date) FX rate a transaction form needs is
+// resolved entirely client-side, from an fx pair's own bundled price
+// history (getPrices below, already IndexedDB-cached) — see
+// holdingFinancials.js's resolveFxRateOnDate. There's deliberately no
+// per-date network lookup here: GET /api/market/fx-rate/... (backend
+// FxRateView) still exists and is what the backend's own
+// resolve_converted_amounts auto-resolves against at submission time, but
+// nothing in the frontend calls it directly any more — a per-keystroke
+// network request for whatever partial date a native <input type="date">
+// happened to report was exactly the problem this replaced.

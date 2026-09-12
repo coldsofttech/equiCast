@@ -15,8 +15,9 @@ import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
 import { createAccount } from "../api/accounts.js";
-import { warmFxRates } from "../utils/fxWarmup.js";
+import { hasWarmedFxRates, warmFxRates } from "../utils/fxWarmup.js";
 import { getSessionGreeting } from "../utils/greeting.js";
+import AppLoadingScreen from "./AppLoadingScreen.jsx";
 import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleton.jsx";
 
 /**
@@ -29,14 +30,19 @@ import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleto
  * "Create an account" opens the same drawer AccountsListPage uses right
  * here, instead of a redirect + a second button click over there.
  *
- * Also the trigger point for the login-time FX warm-up (GitHub issue #149,
- * see utils/fxWarmup.js) — this is the first page every signed-in user
- * lands on, and by the time `profile` has loaded here the warm-up can run
- * silently in the background well before the user ever reaches a
- * transaction form.
+ * Also the trigger point for the login-time FX warm-up (GitHub issues
+ * #149/#177, see utils/fxWarmup.js) — this is the first page every
+ * signed-in user lands on. While that warm-up is still in flight (a
+ * genuine first load this tab session only — see hasWarmedFxRates), the
+ * whole page is replaced by AppLoadingScreen, a fancier "getting
+ * everything ready" overlay, rather than rendering AppShell around a
+ * part-loaded page. It resolves once and never shows again this session,
+ * regardless of what accounts/profile do afterward.
  *
  * DashboardSkeleton fills the grid's place, and DashboardGreetingSkeleton
- * the greeting's, while useAccounts() is loading.
+ * the greeting's, while useAccounts() is loading — including a later
+ * same-session remount, where AppLoadingScreen itself is skipped (FX
+ * warm-up already settled) but accounts may still be genuinely refetching.
  *
  * A load failure severe enough to be a real outage (a network failure or
  * a 5xx, not an ordinary empty/validation state — see
@@ -49,16 +55,37 @@ function DashboardPage() {
   const api = useApi();
   const navigate = useNavigate();
   const { user } = useAuth0();
-  const { profile } = useCurrentUser();
+  const { profile, error: profileError } = useCurrentUser();
   const { accounts, isLoading, error: loadError, errorStatus, setAccounts } = useAccounts();
 
   // Pinned to sessionStorage (see getSessionGreeting) so it stays the same
   // for the whole tab session, not just this mount.
   const greeting = useMemo(() => getSessionGreeting(user), [user]);
 
+  // Lazily seeded from hasWarmedFxRates() rather than a plain `true`, so a
+  // same-session remount (warm-up already done, nothing pending) doesn't
+  // flash AppLoadingScreen for a frame before this effect gets a chance to
+  // resolve it — only a genuine first-load-this-session starts `true`.
+  const [isWarmingFx, setIsWarmingFx] = useState(() => !hasWarmedFxRates());
+
   useEffect(() => {
-    if (profile) warmFxRates(api, profile);
-  }, [api, profile]);
+    // A failed profile fetch has nothing to warm up with — don't leave
+    // AppLoadingScreen showing forever waiting on a `profile` that's never
+    // going to arrive; loadError's own ServiceUnavailablePage check below
+    // takes over from here instead.
+    if (profileError) {
+      setIsWarmingFx(false);
+      return;
+    }
+    if (!profile) return;
+    let cancelled = false;
+    warmFxRates(api, profile).then(() => {
+      if (!cancelled) setIsWarmingFx(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [api, profile, profileError]);
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -83,6 +110,10 @@ function DashboardPage() {
 
   if (loadError && isServiceUnavailableError(errorStatus)) {
     return <ServiceUnavailablePage onRetry={() => window.location.reload()} />;
+  }
+
+  if (isWarmingFx) {
+    return <AppLoadingScreen />;
   }
 
   return (
