@@ -57,23 +57,34 @@ class HoldingListViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("holdings.views._profile_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_the_users_holdings(
-        self, mock_jwks_client, mock_decode, mock_client, mock_profile_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_profile_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_holdings.return_value = [HOLDING]
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — that sync's own behavior is covered by
-        # transactions/tests.py's SyncDividendsForHoldingsTests, not this
-        # view-level test.
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issues
+        # #123/#124) is a no-op here — that sync's own behavior is covered
+        # by transactions/tests.py's SyncDividendsForHoldingsTests, not
+        # this view-level test.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "GBP",
         }
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
 
         response = self.client.get(reverse("holdings-list"), **AUTH_HEADER)
 
@@ -83,12 +94,20 @@ class HoldingListViewTests(TestCase):
             "auth0|abc123", account_id=None, pie_id=None, watchlist_id=None
         )
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("holdings.views._profile_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_filters_by_a_single_parent_query_param(
-        self, mock_jwks_client, mock_decode, mock_client, mock_profile_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_profile_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.list_holdings.return_value = [HOLDING]
@@ -96,6 +115,9 @@ class HoldingListViewTests(TestCase):
             "transaction_type": "TRANSACTION",
             "default_currency": "GBP",
         }
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
 
         response = self.client.get(reverse("holdings-list"), {"account_id": "acc-1"}, **AUTH_HEADER)
 
@@ -586,6 +608,8 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("holdings.views._profile_client")
     @patch("holdings.views._market_data_client")
     @patch("holdings.views._client")
@@ -598,6 +622,8 @@ class HoldingDetailViewTests(TestCase):
         mock_client,
         mock_market_data_client,
         mock_profile_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         # A holding fetched directly (as opposed to via an accounts/pies
         # list, which enriches every holding it returns) must still come
@@ -610,13 +636,16 @@ class HoldingDetailViewTests(TestCase):
         # after any mutation, until a full accounts refetch fixed it).
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_holding.return_value = HOLDING
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — see SyncDividendsForHoldingsTests
+        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issues
+        # #123/#124) is a no-op here — see SyncDividendsForHoldingsTests
         # (transactions/tests.py) for that sync's own coverage.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "GBP",
         }
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
         enriched = {**HOLDING, "current_price_native": 150.0, "current_price": 120.0}
         mock_market_data_client.enrich_holdings.return_value = [enriched]
 

@@ -59,6 +59,8 @@ class PieListViewTests(TestCase):
         mock_client.list_pies.assert_called_once_with("auth0|abc123", account_id=None)
         mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("pies.views._market_data_client")
     @patch("pies.views._profile_client")
     @patch("pies.views._holdings_client")
@@ -73,18 +75,30 @@ class PieListViewTests(TestCase):
         mock_holdings_client,
         mock_profile_client,
         mock_market_data_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
         other_pie = {**PIE, "id": "pie-2"}
         mock_client.list_pies.return_value = [PIE, other_pie]
-        holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
+        holding = {
+            "id": "h-1",
+            "ticker": "VOO",
+            "asset_class": "etf",
+            "pie_id": "pie-1",
+            "watchlist_id": None,
+        }
         other_holding = {
-            "id": "h-2", "ticker": "VXUS", "asset_class": "etf", "pie_id": "not-this-user-list"
+            "id": "h-2",
+            "ticker": "VXUS",
+            "asset_class": "etf",
+            "pie_id": "not-this-user-list",
+            "watchlist_id": None,
         }
         mock_holdings_client.list_holdings.return_value = [holding, other_holding]
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — see SyncDividendsForHoldingsTests
-        # (transactions/tests.py) for that sync's own coverage.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "USD",
@@ -245,6 +259,8 @@ class PieDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("pies.views._market_data_client")
     @patch("pies.views._profile_client")
     @patch("pies.views._holdings_client")
@@ -259,14 +275,22 @@ class PieDetailViewTests(TestCase):
         mock_holdings_client,
         mock_profile_client,
         mock_market_data_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
         mock_client.get_pie.return_value = PIE
-        holding = {"id": "h-1", "ticker": "VOO", "asset_class": "etf", "pie_id": "pie-1"}
+        holding = {
+            "id": "h-1",
+            "ticker": "VOO",
+            "asset_class": "etf",
+            "pie_id": "pie-1",
+            "watchlist_id": None,
+        }
         mock_holdings_client.list_holdings.return_value = [holding]
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — see SyncDividendsForHoldingsTests
-        # (transactions/tests.py) for that sync's own coverage.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "USD",
