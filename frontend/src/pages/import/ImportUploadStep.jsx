@@ -44,15 +44,15 @@ function ImportUploadStep({ onParsed, onCancel }) {
       {error && <Alert tone="danger">{error}</Alert>}
       <SelectField id="import-preset" label="Source" value={preset} onChange={handlePresetChange}>
         <option value="generic">Generic CSV</option>
-        <option value="trading212">Trading 212 export</option>
+        <option value="trading212">Trading212</option>
       </SelectField>
 
       {preset === "trading212" ? (
         <Alert tone="info">
           In the Trading 212 app: <strong>Settings → History → Export</strong>, pick the time
-          period, and under <strong>Include data</strong> check <strong>Orders</strong> and{" "}
-          <strong>Transactions</strong>. <strong>Dividends</strong> and <strong>Interest</strong>{" "}
-          can be left either way — equicast ignores those rows and backfills dividends itself.
+          period, and under <strong>Include data</strong> check <strong>Orders</strong> only.{" "}
+          <strong>Transactions</strong>, <strong>Dividends</strong> and <strong>Interest</strong>{" "}
+          can be left either way — equiCast ignores those rows and backfills dividends itself.
         </Alert>
       ) : (
         <Alert tone="info">
