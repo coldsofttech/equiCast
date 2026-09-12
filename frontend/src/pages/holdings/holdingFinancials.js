@@ -151,25 +151,24 @@ export function selectPositionEntry(transactions) {
   return transactions.find((t) => t.type === "BUY" || t.type == null) ?? null;
 }
 
-/** Cards `selectRecentTradeTransactions` returns, most recent first. */
+/** Cards `selectRecentTransactions` returns, most recent first. */
 export const MAX_RECENT_TRANSACTIONS = 5;
 
 /**
- * The `limit` most recent BUY/SELL records across `transactions` (already
- * merged across every instance of a ticker by the caller — a TRANSACTION-
- * mode holding logs discrete events, so unlike the AVERAGE-mode position
- * card there's no single "current" record to show, just the latest
- * activity), most recent first. DIVIDEND records are excluded here — this
- * is deliberately just the buy/sell activity feed the Transactions panel's
- * card grid shows; see `selectDividendEntries` for dividends.
+ * The `limit` most recent BUY/SELL/DIVIDEND records across `transactions`
+ * (already merged across every instance of a ticker by the caller — a
+ * TRANSACTION-mode holding logs discrete events, so unlike the AVERAGE-mode
+ * position card there's no single "current" record to show, just the
+ * latest activity), most recent first — mirrors AVERAGE mode's own card
+ * grid folding BUY and DIVIDEND into one merged, date-sorted list.
  *
  * @param {import("../../api/transactions.js").Transaction[]} transactions
  * @param {number} [limit]
  * @returns {import("../../api/transactions.js").Transaction[]}
  */
-export function selectRecentTradeTransactions(transactions, limit = MAX_RECENT_TRANSACTIONS) {
+export function selectRecentTransactions(transactions, limit = MAX_RECENT_TRANSACTIONS) {
   return transactions
-    .filter((t) => t.type === "BUY" || t.type === "SELL")
+    .filter((t) => t.type === "BUY" || t.type === "SELL" || t.type === "DIVIDEND")
     .sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""))
     .slice(0, limit);
 }
