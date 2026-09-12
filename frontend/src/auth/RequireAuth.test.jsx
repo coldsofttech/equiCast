@@ -26,9 +26,11 @@ describe("RequireAuth (Auth0 configured)", () => {
     });
 
     render(
-      <RequireAuth>
-        <div>secret</div>
-      </RequireAuth>
+      <MemoryRouter>
+        <RequireAuth>
+          <div>secret</div>
+        </RequireAuth>
+      </MemoryRouter>
     );
 
     expect(screen.getByRole("status")).toHaveTextContent(/loading/i);
@@ -87,9 +89,11 @@ describe("RequireAuth (Auth0 configured)", () => {
     });
 
     render(
-      <RequireAuth>
-        <div>secret</div>
-      </RequireAuth>
+      <MemoryRouter>
+        <RequireAuth>
+          <div>secret</div>
+        </RequireAuth>
+      </MemoryRouter>
     );
 
     expect(screen.getByText("secret")).toBeInTheDocument();

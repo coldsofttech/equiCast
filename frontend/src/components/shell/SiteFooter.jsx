@@ -20,6 +20,7 @@ function SiteFooter() {
           <span>© {new Date().getFullYear()} equiCast</span>
           <Link to="/terms-and-conditions">Terms and Conditions</Link>
           <Link to="/privacy-policy">Privacy Policy</Link>
+          <Link to="/cookie-policy">Cookie Policy</Link>
         </span>
       </footer>
 
