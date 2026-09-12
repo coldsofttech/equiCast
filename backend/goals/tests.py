@@ -74,7 +74,10 @@ class GoalListViewTests(TestCase):
             "account_ids": ["acc-1"],
         }
         response = self.client.post(
-            reverse("goals-list"), data=create_fields, content_type="application/json", **AUTH_HEADER
+            reverse("goals-list"),
+            data=create_fields,
+            content_type="application/json",
+            **AUTH_HEADER,
         )
 
         self.assertEqual(response.status_code, 201)
@@ -259,7 +262,9 @@ class GoalDetailViewTests(TestCase):
     @patch("goals.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_404_for_unknown_goal(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_get_returns_404_for_unknown_goal(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_goal.side_effect = GoalNotFoundError("no such goal")
 
@@ -303,7 +308,9 @@ class GoalDetailViewTests(TestCase):
     @patch("goals.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_patch_returns_404_for_unknown_goal(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_patch_returns_404_for_unknown_goal(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.update_goal.side_effect = GoalNotFoundError("no such goal")
 
@@ -330,7 +337,9 @@ class GoalDetailViewTests(TestCase):
     @patch("goals.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_delete_returns_404_for_unknown_goal(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_delete_returns_404_for_unknown_goal(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.delete_goal.side_effect = GoalNotFoundError("no such goal")
 

@@ -2,13 +2,13 @@ from typing import Any
 
 from django.conf import settings
 from equicast_core import (
+    PURPOSE_CHOICES,
     AccountsClient,
     GoalLimitExceededError,
     GoalMappingConflictError,
     GoalNotFoundError,
     GoalsClient,
     PiesClient,
-    PURPOSE_CHOICES,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.permissions import IsAuthenticated
@@ -87,9 +87,7 @@ def _validate_mapping(user_id: str, data: dict[str, Any]) -> str | None:
     if unknown_pies:
         return f"Unknown pie_id(s): {', '.join(sorted(unknown_pies))}."
 
-    self_overlap = {
-        pie_id for pie_id in pie_ids if pies_by_id[pie_id]["account_id"] in account_ids
-    }
+    self_overlap = {pie_id for pie_id in pie_ids if pies_by_id[pie_id]["account_id"] in account_ids}
     if self_overlap:
         return (
             f"pie_id(s) {', '.join(sorted(self_overlap))} already covered by an "
