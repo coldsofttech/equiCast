@@ -977,9 +977,10 @@ class TestDividendsSyncedThroughWatermark:
     DIVIDEND transaction must not make sync_dividends_for_holdings
     (backend/transactions/views.py) recreate it on the very next GET.
     rewind exists for TRANSACTION mode's own regression: a backdated
-    BUY/SELL must reopen the range it falls inside, or a payout the
-    corrected share-count history now makes eligible stays permanently
-    skipped."""
+    BUY/SELL changes the running share-count timeline for every payout
+    after it, so it must both reopen the range for newly-eligible payouts
+    and drop every already-created DIVIDEND (now stale) so the next sync
+    rebuilds them fresh against the corrected timeline."""
 
     def test_returns_none_when_never_set(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
@@ -1182,7 +1183,7 @@ class TestDividendsSyncedThroughWatermark:
 
         assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
 
-    def test_rewind_preserves_transactions(self, s3_client) -> None:
+    def test_rewind_preserves_buy_and_sell_transactions(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
             "auth0|abc123",
@@ -1199,6 +1200,53 @@ class TestDividendsSyncedThroughWatermark:
 
         transactions = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
         assert transactions == [transaction]
+
+    def test_rewind_drops_existing_dividend_transactions(self, s3_client) -> None:
+        """A DIVIDEND's amount is computed against the running share-count
+        timeline at sync time — a backdated BUY/SELL changes that timeline,
+        so an already-created DIVIDEND is now stale and must be rebuilt by
+        the next sync rather than surviving via recorded_dates dedup."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="BUY",
+            no_of_shares=10,
+            price_native=100,
+            date="2026-01-15",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["BUY"]
+
+    def test_rewind_no_op_leaves_dividend_transactions_untouched(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["DIVIDEND"]
 
 
 class TestHasTransactionsForHoldings:

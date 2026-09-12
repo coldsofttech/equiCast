@@ -930,19 +930,23 @@ class TransactionsClient:
         self, user_id: str, holding_id: str, transaction_date: str
     ) -> None:
         """Clear `holding_id`'s `dividends_synced_through` watermark (see
-        `advance_dividends_synced_through`) if `transaction_date` falls on
-        or before it — TRANSACTION mode's auto-dividend feature (GitHub
-        issue #124): a `BUY`/`SELL` just created or deleted somewhere
-        inside the range a sync has already examined changes the running
-        share-count timeline `compute_new_dividend_transactions` uses for
-        every payout after it, so the next `sync_dividends_for_holdings`
-        run needs to recheck the holding's whole paid-dividend history
-        with the corrected timeline — not just what's after the old
-        watermark, and not by trying to compute a narrower reopened range
-        (`recorded_dates`' own dedup already makes a full recheck safe,
-        never duplicating an already-created `DIVIDEND`). A no-op when the
-        watermark is unset or already before `transaction_date` (an
-        ordinary new-today `BUY`/`SELL`, not a backdated correction) —
+        `advance_dividends_synced_through`) and drop every auto-created
+        `DIVIDEND` on file, if `transaction_date` falls on or before the
+        watermark — TRANSACTION mode's auto-dividend feature (GitHub issue
+        #124): a `BUY`/`SELL` just created or deleted somewhere inside the
+        range a sync has already examined changes the running share-count
+        timeline `compute_new_dividend_transactions` uses for every payout
+        after it, so an already-created `DIVIDEND`'s amount (computed
+        against the *old* timeline) is now stale, not just newly-eligible
+        payouts the old timeline had skipped. Dropping every `DIVIDEND`
+        clears `compute_new_dividend_transactions`' `recorded_dates` dedup
+        too, so the next `sync_dividends_for_holdings` run rebuilds the
+        holding's whole paid-dividend history fresh against the corrected
+        timeline, same tradeoff `TransactionsClient.update_transaction`
+        makes for an AVERAGE-mode `BUY` edit — this also un-does any
+        dividend the user previously edited or deleted by hand. A no-op
+        when the watermark is unset or already before `transaction_date`
+        (an ordinary new-today `BUY`/`SELL`, not a backdated correction) —
         nothing already-examined needs rechecking. Called from
         `TransactionListView.post`/`TransactionDetailView.delete`
         (backend/transactions/views.py) for a TRANSACTION-mode `BUY`/`SELL`
@@ -952,6 +956,7 @@ class TransactionsClient:
             transactions, current, etag = self._load(user_id, holding_id)
             if current is None or transaction_date > current:
                 return
+            transactions = [t for t in transactions if t["type"] != "DIVIDEND"]
             try:
                 self._save(user_id, holding_id, transactions, None, etag)
             except self._s3.exceptions.ClientError as exc:
