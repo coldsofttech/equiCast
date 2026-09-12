@@ -70,12 +70,16 @@
 
 .PARAMETER SeedMarketData
   Only applies with -StartLocalStack: also ingests all four asset classes
-  via their CLI/config (equicast-fx/packages/fx/config/fx_pairs.dev.yaml,
-  equicast-stock/packages/stock/config/stocks.dev.yaml,
-  equicast-etf/packages/etf/config/etfs.dev.yaml,
-  equicast-benchmark/packages/benchmark/config/benchmarks.dev.yaml) and
+  via their CLI/config (equicast-fx/packages/fx/config/fx_pairs.local.yaml,
+  equicast-stock/packages/stock/config/stocks.local.yaml,
+  equicast-etf/packages/etf/config/etfs.local.yaml,
+  equicast-benchmark/packages/benchmark/config/benchmarks.local.yaml) and
   builds/uploads each asset class's catalog into LocalStack, so
-  /api/market/... has something to return. Also runs equicast-forecasting
+  /api/market/... has something to return. Each *.local.yaml is gitignored
+  and auto-created (seeded with that asset class's *.dev.yaml tickers/pairs)
+  the first time it's needed - edit it afterwards to point local runs at
+  whatever tickers you're validating, without touching the dev/prod configs
+  CI uses. Also runs equicast-forecasting
   (packages/forecasting) for stock and ETF tickers, writing
   forecasting/dividends.parquet alongside each ticker's other output (fx
   and benchmark have no dividends, so both are skipped there). These CLIs
@@ -91,7 +95,7 @@
   -SeedMarketData restores straight from that folder (via `aws s3 sync`,
   no network calls, no ingestion CLIs) instead of re-seeding, as long as
   -FullLoad matches what was cached. Pass -ForceReseed to ignore the cache
-  and ingest fresh data anyway (e.g. the dev config files changed, or the
+  and ingest fresh data anyway (e.g. you edited a *.local.yaml, or the
   cached data is just stale).
 
 .PARAMETER FullLoad
@@ -304,6 +308,35 @@ function Restore-LocalStackAppData {
     }
 }
 
+# *.local.yaml (fx_pairs.local.yaml, stocks.local.yaml, etfs.local.yaml,
+# benchmarks.local.yaml) is gitignored - each developer's own ticker/pair
+# overrides for -SeedMarketData, never committed. Auto-created here (seeded
+# with that asset class's *.dev.yaml tickers/pairs, stripped of the dev
+# header comment which wouldn't apply) the first time it's missing, so a
+# fresh clone still has something to seed from; left untouched once it
+# exists, so edits made for local testing survive across runs.
+function Confirm-LocalConfig {
+    param([string]$DevConfigPath, [string]$LocalConfigPath)
+    if (Test-Path $LocalConfigPath) {
+        return
+    }
+    Write-Host "Creating $LocalConfigPath from $(Split-Path -Leaf $DevConfigPath) - edit its tickers/pairs freely to validate specific symbols locally."
+    $devLines = Get-Content $DevConfigPath
+    $bodyStartIndex = 0
+    while ($bodyStartIndex -lt $devLines.Count -and $devLines[$bodyStartIndex] -match "^\s*#") {
+        $bodyStartIndex++
+    }
+    $header = @(
+        "# Local-only overrides for .\scripts\local-dev.ps1 -SeedMarketData - gitignored,",
+        "# not used by CI. Defaults to the same list as the matching *.dev.yaml; edit",
+        "# freely to point local runs at whatever tickers/pairs you're validating."
+    )
+    $localLines = $header + $devLines[$bodyStartIndex..($devLines.Count - 1)]
+    # Plain BOM-less UTF-8, same reasoning as the DynamoDB item writes below -
+    # avoids surprising a YAML/CLI parser with a leading BOM.
+    [System.IO.File]::WriteAllText($LocalConfigPath, ($localLines -join "`n") + "`n", [System.Text.UTF8Encoding]::new($false))
+}
+
 function Stop-SpawnedProcess {
     param($Process, [string]$Label)
     if (-not $Process) { return }
@@ -498,6 +531,15 @@ try {
 
         # --- Optionally seed all four asset classes' catalogs ---------------
         if ($SeedMarketData) {
+            # Make sure each asset class's *.local.yaml exists before either
+            # branch below runs - the cache-restore branch doesn't read it,
+            # but it should still be there afterward, ready to edit for the
+            # next run that does ingest.
+            Confirm-LocalConfig (Join-Path $RepoRoot "packages\fx\config\fx_pairs.dev.yaml") (Join-Path $RepoRoot "packages\fx\config\fx_pairs.local.yaml")
+            Confirm-LocalConfig (Join-Path $RepoRoot "packages\stock\config\stocks.dev.yaml") (Join-Path $RepoRoot "packages\stock\config\stocks.local.yaml")
+            Confirm-LocalConfig (Join-Path $RepoRoot "packages\etf\config\etfs.dev.yaml") (Join-Path $RepoRoot "packages\etf\config\etfs.local.yaml")
+            Confirm-LocalConfig (Join-Path $RepoRoot "packages\benchmark\config\benchmarks.dev.yaml") (Join-Path $RepoRoot "packages\benchmark\config\benchmarks.local.yaml")
+
             # A previous run's seed, if its -FullLoad mode matches this run's -
             # see the cache-write side below for what gets written here and why.
             $cachedSeedInfo = $null
@@ -527,10 +569,10 @@ try {
                 # they're independent, network-bound CLI calls, so there's nothing
                 # to gain from serializing them.
                 $pipelines = @(
-                    @{ AssetClass = "fx";        Package = "fx";        Cli = "equicast-fx";        Config = "config\fx_pairs.dev.yaml" },
-                    @{ AssetClass = "stock";     Package = "stock";     Cli = "equicast-stock";     Config = "config\stocks.dev.yaml" },
-                    @{ AssetClass = "etf";       Package = "etf";       Cli = "equicast-etf";       Config = "config\etfs.dev.yaml" },
-                    @{ AssetClass = "benchmark"; Package = "benchmark"; Cli = "equicast-benchmark"; Config = "config\benchmarks.dev.yaml" }
+                    @{ AssetClass = "fx";        Package = "fx";        Cli = "equicast-fx";        Config = "config\fx_pairs.local.yaml" },
+                    @{ AssetClass = "stock";     Package = "stock";     Cli = "equicast-stock";     Config = "config\stocks.local.yaml" },
+                    @{ AssetClass = "etf";       Package = "etf";       Cli = "equicast-etf";       Config = "config\etfs.local.yaml" },
+                    @{ AssetClass = "benchmark"; Package = "benchmark"; Cli = "equicast-benchmark"; Config = "config\benchmarks.local.yaml" }
                 )
 
                 Write-Host "Seeding fx/stock/etf/benchmark market data into $MarketDataBucket in parallel (FullLoad=$([bool]$FullLoad))..."
