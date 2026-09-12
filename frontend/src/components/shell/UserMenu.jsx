@@ -20,10 +20,11 @@ function initialsFor(name, email) {
  * signed-in user's name/email (read straight off the Auth0 ID token via
  * `user` — no extra API round trip), its nav entries (now that MenuBar is
  * gone) — "Accounts", "Watchlists", "Goals" (GitHub issue #170; the latter
- * two currently land on ComingSoonPage — see WatchlistsPage/GoalsPage) —
- * "Settings" (opens SettingsModal), and the sign-out action. Only rendered
- * inside AppShell, which only mounts once RequireAuth has already
- * confirmed `isAuthenticated`, so `user` is always populated here.
+ * two currently land on ComingSoonPage — see WatchlistsPage/GoalsPage), and
+ * "Import transactions" — "Settings" (opens SettingsModal), and the
+ * sign-out action. Only rendered inside AppShell, which only mounts once
+ * RequireAuth has already confirmed `isAuthenticated`, so `user` is always
+ * populated here.
  *
  * `profile`/`onProfileUpdate` are passed down from Topbar's own
  * useCurrentUser() call (rather than this component fetching its own copy)
@@ -168,6 +169,18 @@ function UserMenu({ profile, onProfileUpdate }) {
           >
             <i className="bi bi-gear" aria-hidden="true" />
             Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              navigate("/import");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-upload" aria-hidden="true" />
+            Import Transactions
           </button>
           <button
             type="button"

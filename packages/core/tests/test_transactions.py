@@ -1,3 +1,5 @@
+from typing import Any
+
 import boto3
 import pytest
 from equicast_core.transactions import (
@@ -10,6 +12,8 @@ from equicast_core.transactions import (
     TransactionNotFoundError,
     TransactionsClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from moto import mock_aws
 
@@ -63,6 +67,7 @@ class TestCreateAverageTransaction:
         assert transaction["amount_native"] is None
         assert transaction["amount"] is None
         assert transaction["fx_rate"] is None
+        assert transaction["external_id"] is None
         assert transaction["date"] == "2026-01-15"
         assert transaction["type"] == "BUY"
         assert transaction["created_at"] == transaction["updated_at"]
@@ -91,6 +96,25 @@ class TestCreateAverageTransaction:
         )
 
         assert transaction["fx_rate"] == 1.25
+
+    def test_create_stores_the_caller_supplied_external_id(self, s3_client) -> None:
+        """`external_id` (e.g. a broker's own row/order id from a
+        transaction import) is stored unconditionally, the same as
+        `fx_rate` — `None` when the caller doesn't supply one."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+            external_id="t212-order-42",
+        )
+
+        assert transaction["external_id"] == "t212-order-42"
 
     def test_create_raises_for_non_positive_no_of_shares(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
@@ -940,6 +964,113 @@ class TestUpdateTransaction:
                 "auth0|abc123", HOLDING_ID, transaction["id"], "TRANSACTION", fx_rate=0.85
             )
 
+    def test_update_rejects_external_id_on_an_average_buy_record(self, s3_client) -> None:
+        """`external_id` is immutable once set by `create_transaction` —
+        omitted from every `update_transaction` allowed-fields set, an
+        import's dedup check can always trust it against the original
+        import."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+            external_id="t212-order-42",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                transaction["id"],
+                "AVERAGE",
+                external_id="t212-order-99",
+            )
+
+
+class TestCreateTransactionExternalIdDedup:
+    """A second `create_transaction` call sharing an `external_id` must be
+    rejected — this is what makes concurrent callers race-safe (e.g. two
+    browser tabs, or a frontend effect double-firing, both independently
+    deciding the same auto-created dividend payout is new — see
+    backend/transactions/views.py's sync_dividends_for_holdings)."""
+
+    def test_a_second_transaction_with_the_same_external_id_is_rejected(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+
+        with pytest.raises(TransactionAlreadyExistsError):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "TRANSACTION",
+                type="DIVIDEND",
+                amount_native=5.0,
+                date="2026-03-01",
+                external_id="dividend:2026-03-01",
+            )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 1
+
+    def test_a_none_external_id_never_collides_with_itself(self, s3_client) -> None:
+        """`external_id=None` (every hand-entered/API-created transaction)
+        must never trip the dedup check against other `None`-external_id
+        records — only a real, matching, non-`None` id counts."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
+    def test_different_external_ids_both_succeed(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+            external_id="dividend:2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
 
 class TestDeleteTransaction:
     def test_delete_removes_it(self, s3_client) -> None:
@@ -963,6 +1094,286 @@ class TestDeleteTransaction:
 
         with pytest.raises(TransactionNotFoundError):
             client.delete_transaction("auth0|abc123", HOLDING_ID, "does-not-exist")
+
+
+class TestDividendsSyncedThroughWatermark:
+    """The auto-dividend feature's high-water mark —
+    get_dividends_synced_through/advance_dividends_synced_through (GitHub
+    issue #123) and rewind_dividends_synced_through (issue #124). The
+    regression advance/get exist to prevent: deleting an auto-created
+    DIVIDEND transaction must not make sync_dividends_for_holdings
+    (backend/transactions/views.py) recreate it on the very next GET.
+    rewind exists for TRANSACTION mode's own regression: a backdated
+    BUY/SELL changes the running share-count timeline for every payout
+    after it, so it must both reopen the range for newly-eligible payouts
+    and drop every already-created DIVIDEND (now stale) so the next sync
+    rebuilds them fresh against the corrected timeline."""
+
+    def test_returns_none_when_never_set(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_advance_sets_the_watermark_when_none_set_yet(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_advance_moves_the_watermark_forward(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-06-01"
+
+    def test_advance_never_moves_the_watermark_backward(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-06-01"
+
+    def test_create_transaction_preserves_an_existing_watermark(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_update_transaction_preserves_the_watermark_when_neither_date_nor_shares_change(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", average_price_native=110
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_update_transaction_resets_the_watermark_when_no_of_shares_changes(
+        self, s3_client
+    ) -> None:
+        """A share-count correction changes every already-synced DIVIDEND's
+        amount (no_of_shares * per_share, computed at sync time) — rewinding
+        the watermark to None lets the next sync_dividends_for_holdings
+        rebuild the whole history against the corrected count."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", no_of_shares=20
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_update_transaction_resets_the_watermark_when_date_changes(self, s3_client) -> None:
+        """Backdating the BUY can open up payouts between the new and old
+        date that an already-advanced watermark had already skipped past —
+        rewinding to None lets them be reconsidered."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", date="2025-11-01"
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_update_transaction_drops_auto_created_dividends_when_shares_change(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        buy = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, buy["id"], "AVERAGE", no_of_shares=20
+        )
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["BUY"]
+
+    def test_delete_transaction_preserves_an_existing_watermark(self, s3_client) -> None:
+        """The exact regression this feature exists to prevent: deleting an
+        auto-created DIVIDEND transaction must not reset the watermark that
+        keeps sync_dividends_for_holdings from recreating it."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.delete_transaction("auth0|abc123", HOLDING_ID, transaction["id"])
+
+        assert client.list_transactions("auth0|abc123", holding_id=HOLDING_ID) == []
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_rewind_is_a_no_op_when_no_watermark_is_set(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_rewind_is_a_no_op_when_the_transaction_date_is_after_the_watermark(
+        self, s3_client
+    ) -> None:
+        """An ordinary new-today BUY/SELL, not a backdated correction —
+        nothing already-examined needs rechecking."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_rewind_clears_the_watermark_when_the_transaction_date_is_on_it(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_rewind_clears_the_watermark_when_the_transaction_date_is_before_it(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_rewind_preserves_buy_and_sell_transactions(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="BUY",
+            no_of_shares=10,
+            price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        transactions = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert transactions == [transaction]
+
+    def test_rewind_drops_existing_dividend_transactions(self, s3_client) -> None:
+        """A DIVIDEND's amount is computed against the running share-count
+        timeline at sync time — a backdated BUY/SELL changes that timeline,
+        so an already-created DIVIDEND is now stale and must be rebuilt by
+        the next sync rather than surviving via recorded_dates dedup."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="BUY",
+            no_of_shares=10,
+            price_native=100,
+            date="2026-01-15",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["BUY"]
+
+    def test_rewind_no_op_leaves_dividend_transactions_untouched(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["DIVIDEND"]
 
 
 class TestHasTransactionsForHoldings:
@@ -1386,3 +1797,183 @@ class TestComputeHoldingRollup:
 
         assert rollup["dividends_native"] == pytest.approx(8.0)
         assert rollup["dividends"] is None
+
+
+class TestComputeNewDividendTransactions:
+    """See backend/transactions/views.py's sync_dividends_for_holdings — the
+    auto-dividend feature (AVERAGE mode: GitHub issue #123, default `mode`
+    here) that calls this to decide which paid payouts still need turning
+    into a real DIVIDEND transaction. See
+    TestComputeNewDividendTransactionsTransactionMode below for TRANSACTION
+    mode (issue #124)."""
+
+    BUY = {"type": "BUY", "no_of_shares": 10, "date": "2026-01-10"}
+
+    def test_returns_nothing_with_no_buy_record_yet(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+        assert compute_new_dividend_transactions([], dividends) == []
+
+    def test_treats_a_legacy_type_none_record_as_the_buy(self) -> None:
+        legacy_buy = {"type": None, "no_of_shares": 10, "date": "2026-01-10"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions([legacy_buy], dividends) == [
+            {"date": "2026-02-01", "amount_native": 5.0}
+        ]
+
+    def test_multiplies_per_share_price_by_the_buys_shares(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.75}]
+
+        assert compute_new_dividend_transactions([self.BUY], dividends) == [
+            {"date": "2026-02-01", "amount_native": 7.5}
+        ]
+
+    def test_skips_a_payout_dated_before_the_buy(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-01-01", "price": 0.5}]
+        assert compute_new_dividend_transactions([self.BUY], dividends) == []
+
+    def test_skips_a_payout_already_recorded_as_a_dividend_transaction(self) -> None:
+        existing_dividend = {"type": "DIVIDEND", "date": "2026-02-01"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions([self.BUY, existing_dividend], dividends) == []
+
+    def test_skips_declared_and_estimated_payouts(self) -> None:
+        dividends = [
+            {"status": "declared", "ex_dividend_date": "2026-03-01", "price": 0.5},
+            {"status": "estimated", "ex_dividend_date": "2026-04-01", "price": 0.5},
+        ]
+        assert compute_new_dividend_transactions([self.BUY], dividends) == []
+
+    def test_skips_a_payout_missing_ex_date_or_price(self) -> None:
+        dividends: list[dict[str, Any]] = [
+            {"status": "paid", "ex_dividend_date": None, "price": 0.5},
+            {"status": "paid", "ex_dividend_date": "2026-02-01", "price": None},
+        ]
+        assert compute_new_dividend_transactions([self.BUY], dividends) == []
+
+    def test_returns_one_entry_per_qualifying_payout_in_given_order(self) -> None:
+        dividends = [
+            {"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5},
+            {"status": "paid", "ex_dividend_date": "2026-05-01", "price": 0.6},
+        ]
+
+        assert compute_new_dividend_transactions([self.BUY], dividends) == [
+            {"date": "2026-02-01", "amount_native": 5.0},
+            {"date": "2026-05-01", "amount_native": 6.0},
+        ]
+
+    def test_skips_a_payout_on_or_before_synced_through_even_if_not_recorded(self) -> None:
+        """The deleted-dividend-comes-back regression: a payout already
+        considered by an earlier sync (synced_through covers it) is never
+        recreated, even though — because the user deleted the resulting
+        transaction — nothing in existing_transactions matches its date
+        any more."""
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+
+        assert (
+            compute_new_dividend_transactions(
+                [self.BUY], dividends, synced_through="2026-02-01"
+            )
+            == []
+        )
+        assert (
+            compute_new_dividend_transactions(
+                [self.BUY], dividends, synced_through="2026-03-01"
+            )
+            == []
+        )
+
+    def test_still_returns_a_payout_after_synced_through(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-05-01", "price": 0.6}]
+
+        assert compute_new_dividend_transactions(
+            [self.BUY], dividends, synced_through="2026-02-01"
+        ) == [{"date": "2026-05-01", "amount_native": 6.0}]
+
+
+class TestComputeNewDividendTransactionsTransactionMode:
+    """TRANSACTION mode's version (GitHub issue #124) of the class above —
+    unlike AVERAGE mode's single fixed BUY, the share count used for a
+    payout is the running BUY/SELL balance as of that payout's own
+    ex-date, so a payout from years ago can be backfilled correctly using
+    the whole trade history, not just "shares held right now"."""
+
+    def test_returns_nothing_with_no_trades_on_record(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+
+        assert (
+            compute_new_dividend_transactions([], dividends, mode="TRANSACTION") == []
+        )
+
+    def test_uses_the_running_balance_as_of_the_ex_date(self) -> None:
+        buy = {"type": "BUY", "no_of_shares": 10, "date": "2026-01-01"}
+        sell = {"type": "SELL", "no_of_shares": 4, "date": "2026-02-01"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-03-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions(
+            [buy, sell], dividends, mode="TRANSACTION"
+        ) == [{"date": "2026-03-01", "amount_native": 3.0}]
+
+    def test_backfills_a_payout_between_two_buys_using_the_earlier_balance(self) -> None:
+        """The past-adjustment case issue #124 specifically calls out — a
+        payout dated between two BUYs only reflects the first one."""
+        first_buy = {"type": "BUY", "no_of_shares": 5, "date": "2026-01-01"}
+        second_buy = {"type": "BUY", "no_of_shares": 5, "date": "2026-04-01"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions(
+            [first_buy, second_buy], dividends, mode="TRANSACTION"
+        ) == [{"date": "2026-02-01", "amount_native": 2.5}]
+
+    def test_skips_a_payout_when_the_running_balance_is_zero(self) -> None:
+        buy = {"type": "BUY", "no_of_shares": 10, "date": "2026-01-01"}
+        sell = {"type": "SELL", "no_of_shares": 10, "date": "2026-02-01"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-03-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions([buy, sell], dividends, mode="TRANSACTION") == []
+
+    def test_skips_a_payout_before_the_earliest_trade(self) -> None:
+        buy = {"type": "BUY", "no_of_shares": 10, "date": "2026-03-01"}
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-01-01", "price": 0.5}]
+
+        assert compute_new_dividend_transactions([buy], dividends, mode="TRANSACTION") == []
+
+    def test_dedup_and_synced_through_still_apply(self) -> None:
+        buy = {"type": "BUY", "no_of_shares": 10, "date": "2026-01-01"}
+        recorded_dividend = {"type": "DIVIDEND", "date": "2026-02-01"}
+        dividends = [
+            {"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5},
+            {"status": "paid", "ex_dividend_date": "2026-03-01", "price": 0.5},
+        ]
+
+        assert compute_new_dividend_transactions(
+            [buy, recorded_dividend], dividends, synced_through="2026-03-01", mode="TRANSACTION"
+        ) == []
+
+
+class TestLatestPaidDividendDate:
+    """See backend/transactions/views.py's sync_dividends_for_holdings — the
+    new dividends_synced_through watermark it advances a holding to after
+    every sync (GitHub issue #123), via
+    TransactionsClient.advance_dividends_synced_through."""
+
+    def test_returns_none_with_no_paid_dividends_and_no_current_watermark(self) -> None:
+        dividends = [{"status": "declared", "ex_dividend_date": "2026-03-01"}]
+        assert latest_paid_dividend_date(dividends, None) is None
+
+    def test_returns_the_latest_paid_ex_date(self) -> None:
+        dividends = [
+            {"status": "paid", "ex_dividend_date": "2026-02-01"},
+            {"status": "paid", "ex_dividend_date": "2026-05-01"},
+            {"status": "declared", "ex_dividend_date": "2026-08-01"},
+        ]
+        assert latest_paid_dividend_date(dividends, None) == "2026-05-01"
+
+    def test_keeps_the_current_watermark_when_more_recent_than_any_paid_dividend(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01"}]
+        assert latest_paid_dividend_date(dividends, "2026-06-01") == "2026-06-01"
+
+    def test_ignores_a_paid_entry_missing_its_ex_date(self) -> None:
+        dividends = [{"status": "paid", "ex_dividend_date": None}]
+        assert latest_paid_dividend_date(dividends, "2026-01-01") == "2026-01-01"

@@ -17,6 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from transactions.views import sync_dividends_for_holdings
 
 #: Fields required to create an account; description may be blank but must
 #: be present so a caller doesn't silently omit it. No `currency` field —
@@ -89,11 +90,16 @@ def _enrich_holdings(user_id: str, holdings: list[dict[str, Any]]) -> list[dict[
     once on the full flat list before `_nest_pies_and_holdings` splits it
     back apart, rather than once per pie. Short-circuits on an empty
     `holdings` before even reading the caller's profile, since there'd be
-    nothing to enrich either way."""
+    nothing to enrich either way.
+
+    Also runs `sync_dividends_for_holdings` (GitHub issue #123) first, so a
+    holding's auto-created `DIVIDEND` transactions land before its rollup
+    is read here — same profile lookup backs both."""
     if not holdings:
         return holdings
-    default_currency = _profile_client.get_or_create_profile(user_id)["default_currency"]
-    return _market_data_client.enrich_holdings(holdings, default_currency)
+    profile = _profile_client.get_or_create_profile(user_id)
+    holdings = sync_dividends_for_holdings(user_id, holdings, profile)
+    return _market_data_client.enrich_holdings(holdings, profile["default_currency"])
 
 
 def _nest_pies_and_holdings(accounts, pies, holdings):

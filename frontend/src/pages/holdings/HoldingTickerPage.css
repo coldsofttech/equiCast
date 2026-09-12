@@ -107,11 +107,23 @@
   background: var(--ec-surface);
 }
 
+.ec-dividend-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ec-s-8);
+}
+
 .ec-dividend-amount {
   font-family: var(--ec-font-mono);
   font-size: var(--ec-fs-24);
   font-weight: 800;
   color: var(--ec-text);
+}
+
+.ec-dividend-native-amount {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
 }
 
 .ec-dividend-fields-row {
@@ -288,42 +300,6 @@
   color: var(--ec-text);
 }
 
-.ec-dividend-bar {
-  fill: var(--ec-accent);
-}
-
-.ec-dividend-bar.is-declared {
-  fill: var(--ec-success);
-}
-
-.ec-dividend-bar.is-estimated {
-  fill: var(--ec-info);
-}
-
-.ec-dividend-bar.is-hovered {
-  opacity: 0.8;
-}
-
-.ec-dividend-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ec-s-8);
-  height: 32px;
-  padding: 0 var(--ec-s-12);
-  margin-bottom: var(--ec-s-16);
-  border: 1px solid var(--ec-border-strong);
-  border-radius: var(--ec-r-pill);
-  background: var(--ec-surface);
-  color: var(--ec-text);
-  font-weight: 700;
-  font-size: var(--ec-fs-13);
-  cursor: pointer;
-}
-
-.ec-dividend-view-toggle:hover {
-  background: var(--ec-surface-hover);
-}
-
 .ec-cagr-list {
   display: flex;
   flex-direction: column;
@@ -444,19 +420,40 @@
 }
 
 .ec-buysell-bar-track {
-  display: flex;
+  position: relative;
   height: 10px;
   border-radius: var(--ec-r-pill);
   overflow: hidden;
   background: var(--ec-border);
 }
 
+/** Fixed at its final left/width (the split sits at sellers_pct from the
+ * first frame) and instead reveals via `scaleX` from 0 -> 1, each side
+ * scaling outward from the sellers/buyers boundary — see
+ * HoldingBuySellGauge's own `revealed` state, which renders scaleX(0) for
+ * one frame before flipping to scaleX(1) so there's an actual change for
+ * this transition to animate. */
+.ec-buysell-bar-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transition: transform 0.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-buysell-bar-segment {
+    transition: none;
+  }
+}
+
 .ec-buysell-bar-segment.is-up {
   background: var(--ec-success);
+  transform-origin: left;
 }
 
 .ec-buysell-bar-segment.is-down {
   background: var(--ec-danger);
+  transform-origin: right;
 }
 
 .ec-holding-about-row {
