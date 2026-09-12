@@ -107,11 +107,23 @@
   background: var(--ec-surface);
 }
 
+.ec-dividend-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ec-s-8);
+}
+
 .ec-dividend-amount {
   font-family: var(--ec-font-mono);
   font-size: var(--ec-fs-24);
   font-weight: 800;
   color: var(--ec-text);
+}
+
+.ec-dividend-native-amount {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
 }
 
 .ec-dividend-fields-row {

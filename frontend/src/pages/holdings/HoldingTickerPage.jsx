@@ -167,6 +167,15 @@ function HoldingTickerPage() {
   }, [accounts, ticker]);
 
   const isOwned = instances.length > 0;
+  // Total shares held across every instance of this ticker — holding.
+  // no_of_shares is already each mode's own net rollup figure (see
+  // equicast_core.transactions.compute_holding_rollup), so summing it
+  // across instances works the same for AVERAGE and TRANSACTION alike.
+  // Feeds HoldingDividendsSection's per-card total-value calculation.
+  const sharesOwned = instances.reduce(
+    (sum, instance) => sum + Number(instance.holding.no_of_shares ?? 0),
+    0
+  );
 
   // Only needed when the ticker isn't held anywhere — an owned instance
   // already carries its asset class. `location.state?.assetClass` (set by
@@ -665,7 +674,11 @@ function HoldingTickerPage() {
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 
-          <HoldingDividendsSection dividends={marketDividends} />
+          <HoldingDividendsSection
+            dividends={marketDividends}
+            sharesOwned={sharesOwned}
+            defaultCurrency={userProfile?.default_currency ?? null}
+          />
 
           {isOwned && (
             <HoldingTransactionsSection
