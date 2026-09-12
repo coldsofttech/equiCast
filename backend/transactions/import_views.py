@@ -388,8 +388,8 @@ def _validate_commit_rows(rows: Any) -> str | None:
         if not row.get("date"):
             return "Row missing date."
         try:
-            shares = float(row.get("no_of_shares"))
-            price = float(row.get("price_native"))
+            shares = float(row.get("no_of_shares"))  # type: ignore[arg-type]
+            price = float(row.get("price_native"))  # type: ignore[arg-type]
         except (TypeError, ValueError):
             return "Row has invalid no_of_shares/price_native."
         if shares <= 0 or price <= 0:
