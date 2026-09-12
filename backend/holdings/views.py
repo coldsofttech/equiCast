@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.conf import settings
 from equicast_core import (
     AccountNotFoundError,
@@ -21,7 +23,11 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from transactions.views import build_transaction_fields, resolve_converted_amounts
+from transactions.views import (
+    build_transaction_fields,
+    resolve_converted_amounts,
+    sync_dividends_for_holdings,
+)
 
 ASSET_CLASSES = {"fx", "stock", "etf"}
 
@@ -75,6 +81,33 @@ _transactions_client = TransactionsClient(
 _profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
 
 
+def _enrich_holding(user_id: str, holding: dict[str, Any]) -> dict[str, Any]:
+    """Resolve `user_id`'s `default_currency` and delegate to
+    `MarketDataClient.enrich_holdings` for the same catalog-backed
+    current_price_native/current_price (and name/sector/industry/website/
+    market_cap) merge accounts/views.py's/pies/views.py's own
+    `_enrich_holdings` apply to every holding a *list* endpoint returns —
+    see that method's docstring for what it fills in and why.
+
+    `HoldingDetailView.get` is the one holding-returning endpoint that
+    previously skipped this: `refreshHoldingAfterMutation` (frontend
+    HoldingTickerPage.jsx) re-fetches a holding straight from here after
+    every transaction create/update/delete and merges it back into the
+    cached accounts tree, clobbering whatever `current_price` an earlier
+    accounts/pies fetch had already enriched it with. Without this,
+    `computeHoldingValuation` (holdingValuation.js) then has no live price
+    to value the position at and falls back to its own cost basis — Value
+    reading identical to Invested (flat P&L) right after any mutation,
+    until a full accounts refetch re-enriches it.
+
+    Also runs `sync_dividends_for_holdings` (GitHub issue #123) first, so
+    `holding`'s auto-created `DIVIDEND` transactions land before its
+    rollup is read here — same profile lookup backs both."""
+    profile = _profile_client.get_or_create_profile(user_id)
+    holding = sync_dividends_for_holdings(user_id, [holding], profile)[0]
+    return _market_data_client.enrich_holdings([holding], profile["default_currency"])[0]
+
+
 class HoldingListView(APIView):
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -89,14 +122,18 @@ class HoldingListView(APIView):
                 status=400,
             )
 
-        return Response(
-            _client.list_holdings(
-                request.user.user_id,
-                account_id=account_id,
-                pie_id=pie_id,
-                watchlist_id=watchlist_id,
-            )
+        user_id = request.user.user_id
+        holdings = _client.list_holdings(
+            user_id, account_id=account_id, pie_id=pie_id, watchlist_id=watchlist_id
         )
+        # GitHub issue #123: auto-create DIVIDEND transactions from paid
+        # dividend history before returning — same as
+        # HoldingDetailView.get's _enrich_holding, just without the
+        # market-data enrichment this endpoint has never done.
+        if holdings:
+            profile = _profile_client.get_or_create_profile(user_id)
+            holdings = sync_dividends_for_holdings(user_id, holdings, profile)
+        return Response(holdings)
 
     def post(self, request: Request) -> Response:
         missing = REQUIRED_CREATE_FIELDS - request.data.keys()
@@ -238,7 +275,7 @@ class HoldingDetailView(APIView):
             holding = _client.get_holding(request.user.user_id, holding_id)
         except HoldingNotFoundError:
             return Response(status=404)
-        return Response(holding)
+        return Response(_enrich_holding(request.user.user_id, holding))
 
     def delete(self, request: Request, holding_id: str) -> Response:
         try:

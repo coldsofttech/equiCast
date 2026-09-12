@@ -253,6 +253,14 @@ packages/benchmark/output/
 packages/benchmark/chunks/
 packages/benchmark/smoke_output/
 
+# equiCast per-developer local ticker/pair overrides for local-dev.ps1
+# -SeedMarketData - auto-created from the matching *.dev.yaml the first time
+# it's needed, meant for ad-hoc local edits, not to be committed
+packages/fx/config/fx_pairs.local.yaml
+packages/stock/config/stocks.local.yaml
+packages/etf/config/etfs.local.yaml
+packages/benchmark/config/benchmarks.local.yaml
+
 # backend/scripts/build_lambda_package.sh output
 backend/build/
 backend/build_requirements.txt

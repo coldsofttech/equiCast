@@ -68,6 +68,18 @@
   color: var(--ec-accent-soft-text);
 }
 
+/** Separates the dividend chart's past-range buttons from its forecast-
+ * range buttons (only shown once "Show forecast" is on) — a plain vertical
+ * rule, not a button, so it's excluded from the group's own flex gap
+ * spacing rhythm by carrying its own margin instead. */
+.ec-pchart-range-sep {
+  flex-shrink: 0;
+  width: 1px;
+  align-self: stretch;
+  margin: 0 var(--ec-s-4);
+  background: var(--ec-divider);
+}
+
 .ec-pchart-legend {
   display: flex;
   flex-wrap: wrap;
@@ -106,4 +118,12 @@
   stroke: var(--ec-purple);
   stroke-width: 2;
   stroke-dasharray: 4 3;
+}
+
+/** The dividend chart's forecast fill in Area mode — mirrors .ec-pchart-area
+ * but in the same purple .ec-pchart-compare-line already uses for the
+ * forecast line, so Area mode fills the forecast segment too instead of
+ * always rendering it as a bare line. */
+.ec-pchart-forecast-area {
+  fill: var(--ec-purple-soft);
 }

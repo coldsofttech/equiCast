@@ -7,7 +7,157 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Watchlists" and "Goals" entries in the account menu (`UserMenu.jsx`,
+  GitHub issue #170), each navigating to a new route (`/watchlists`,
+  `/goals`). Neither has a real page yet — Watchlists' backend already
+  exists (`backend/watchlists/`, already used elsewhere for
+  watchlist-scoped holdings) but has no frontend; Goals has no code on
+  `main` at all (an earlier `feat/goals` branch built a backend but was
+  never merged) — so both render a new shared `ComingSoonPage` for now,
+  to be replaced by the real UI in a follow-up issue rather than 404ing
+  or blocking this one on building two full features.
+
+- TRANSACTION-mode holdings now also auto-record their paid dividend
+  history as `DIVIDEND` transactions (GitHub issue #124, extending #123's
+  AVERAGE-mode version) — but backfilled across the whole trade history
+  rather than only from "now" forward: `compute_new_dividend_transactions`
+  (`equicast_core.transactions`) gained a `mode` parameter, and
+  TRANSACTION mode's share count for a payout is now the running
+  `BUY`/`SELL` balance as of that payout's own ex-date (a new
+  `_transaction_mode_shares_at` helper), not a single fixed quantity — so
+  a payout from years ago backfills correctly using the whole history,
+  and one landing while the balance is exactly zero (fully sold by then)
+  is skipped rather than recorded for $0.
+
+  A `BUY`/`SELL` created or deleted with a date on or before the
+  holding's `dividends_synced_through` watermark now rewinds it (new
+  `TransactionsClient.rewind_dividends_synced_through`, called from
+  `TransactionListView.post`/`TransactionDetailView.delete`) — a
+  backdated trade changes the share-count timeline for every payout after
+  it, so the reopened range needs a full recheck with the corrected
+  history (an ordinary new-today trade, after the watermark, leaves it
+  untouched). Same as issue #123, an already-created `DIVIDEND`
+  transaction's amount is never rewritten once it exists — a stale amount
+  from a since-added/removed trade is corrected by the user, by hand,
+  same as any dividend.
+
+- AVERAGE-mode holdings now auto-record their paid dividend history as
+  `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
+  mode's own version, issue #124), rather than requiring the user to
+  hand-enter every payout. New `equicast_core.transactions.
+  compute_new_dividend_transactions` turns each `"paid"` entry from
+  `MarketDataClient.get_dividends` not yet recorded into `{date,
+  amount_native}` (shares × per-share payout, using the holding's single
+  `BUY` position — nothing before that `BUY`'s own date qualifies, since
+  there's no share count on record to anchor an earlier payout to); new
+  `sync_dividends_for_holdings` (`backend/transactions/views.py`) turns
+  those into real transactions via `TransactionsClient.create_transaction`
+  and refreshes the holding's rollup. Runs from `GET /api/accounts/`,
+  `/api/accounts/<id>/`, `/api/pies/`, `/api/pies/<id>/`, and
+  `/api/holdings/` (list and detail) — the same point each already
+  resolves the caller's profile for market-data enrichment — so a
+  holding's dividends stay caught up on every read. A no-op for
+  TRANSACTION-mode users, watchlist/fx holdings, or a holding with no
+  `BUY` on record yet.
+
+  Each holding tracks a new `dividends_synced_through` watermark
+  (persisted alongside its transactions, `TransactionsClient.
+  get_dividends_synced_through`/`advance_dividends_synced_through`,
+  advanced via new `equicast_core.transactions.latest_paid_dividend_date`)
+  — every payout a sync even considers, created or skipped as pre-`BUY`,
+  moves it forward, and `create_transaction`/`update_transaction`/
+  `delete_transaction` always carry it forward untouched. Without this, a
+  payout the user deleted would look "missing" again — nothing recorded
+  for its ex-date — and the very next `GET` would just recreate it;
+  deleting an auto-created dividend is now a lasting correction.
+
+- TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
+  (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
+  previously this mode was read-only, only ever populated by whatever
+  transactions already existed. Both reuse the same `TransactionForm` the
+  AVERAGE mode's "Add Buy"/"Add Dividend" already used, generalized with a
+  `transactionType` prop to pick the right price field
+  (`price_native` for a TRANSACTION-mode trade vs. `average_price_native`
+  for an AVERAGE-mode position). "Add Sell" only offers holdings with net
+  shares > 0 recorded (a new `selectNetShares` in `holdingFinancials.js`);
+  the backend's own `InsufficientSharesError` (`equicast_core.transactions`)
+  is still the authority on whether a given quantity is actually sellable.
+  TRANSACTION-mode BUY/SELL records stay immutable (no edit — mirrors the
+  backend), but are now deletable from the trade cards and "See all" table,
+  the only way to correct a mistaken entry, same as an AVERAGE-mode one
+  already was.
+
+- Recent news headlines, via a new `equicast-news` package (`NewsClient`,
+  built on `equicast-datafeed` like `equicast-events`/`equicast-dividends`)
+  wrapping yfinance's `get_news`. Trimmed to the trailing month by design
+  (no historical archive), newest first. The stock, etf, and benchmark
+  ingestion pipelines each write it to a flat `news.parquet` per ticker
+  (not split into history/current like price/dividend/events, since there's
+  no history to separate out); the fx pipeline does not, by design (no fx
+  news). `MarketDataClient.get_news`/`GET /api/market/<asset_class>/
+  <symbol>/news/` (`market_data.views.NewsView`) expose it, 404 for a
+  ticker/pair with none published. On `/holdings/:ticker`, a new
+  `HoldingNewsSection` shows it as a card grid (3-4 per row) right after the
+  CAGR panel, capped with a "See all" Drawer for the rest; each card opens
+  the article in a new tab on click. Cached client-side the same-day
+  IndexedDB way dividends/metrics/prices are (`utils/newsCache.js`).
+
+- Sticky header rows on every signed-out page: `SignInScreen`'s
+  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
+  standalone logo header, now stay pinned to the top of the viewport while
+  scrolling — same `position: sticky` + `Topbar`-style opaque background/
+  bottom-border treatment `Topbar` itself already uses for signed-in
+  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
+  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
+  glow gradient), which silently breaks `position: sticky` for any
+  descendant, so the header couldn't stay pinned once you scrolled past
+  the hero section into the features/roadmap content below otherwise. It
+  no longer blends transparently into the hero glow as a result, matching
+  the other two pages' solid sticky bar instead.
+
+- New shared `PublicHeader` component (`frontend/src/components/shell/
+  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
+  replacing the three near-identical, independently-maintained sticky
+  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
+  grew their own copy of above. Fixes the logo sitting a few pixels lower
+  on the Privacy Policy/Terms and Conditions pages than on the sign-in
+  page (their header's asymmetric top/bottom padding vs. the sign-in
+  header's centered fixed height) by giving every signed-out page the
+  exact same markup/CSS instead of three copies that could drift apart.
+  Also adds the theme toggle to `PrivacyPolicyPage`/
+  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
+  had one before. Renamed token `--ec-landing-bar-h` →
+  `--ec-public-header-h` (`tokens.css`) to match.
+
 ### Changed
+
+- `HoldingBuySellGauge`'s stacked sellers/buyers bar now grows in from 0%
+  on load instead of appearing at its final width (GitHub issue #174) —
+  same `revealed`-state pattern `HoldingCagrSection`/`PieCagrSection`
+  already use for their own bars: starts at 0%, flips to the real width
+  on the next frame so `.ec-buysell-bar-segment`'s new `transition: width`
+  (`HoldingTickerPage.css`) has an actual change to animate.
+
+- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
+  returns one bundled `{ticker, currency, last_updated, daily, weekly,
+  monthly}` response instead of defaulting to `range="max"`'s single
+  `prices` array — new `equicast_core.client.MarketDataClient.
+  get_price_history` computes all three segments (`daily`: the earlier of
+  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
+  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
+  one pass over the same Parquet rows `get_prices` reads. An explicit
+  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
+  `get_prices`, still returns the old single-`prices` shape — this only
+  changes what omitting `range` gets you. Frontend: the price chart
+  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
+  response once per ticker and slices it client-side (new
+  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
+  picks, instead of re-fetching on every range-picker click — fixes
+  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
+  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
+  holding's price series on every range click, now it fetches each once.
 
 - `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
   longer return a `source` field ("yfinance" vs "equicast" — which fields
@@ -83,6 +233,126 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `handleCreateTransaction`, covering BUY/SELL/DIVIDEND). The cookie
   policy page and banner copy are updated to describe this instead of
   the "equiCast doesn't use analytics today" placeholder text they had.
+
+- Custom error pages with animated icons: `NotFoundPage` (404, replacing
+  the previous silent redirect-to-dashboard for an unmatched route),
+  `AppErrorPage` (an unexpected render crash, rendered by a new
+  `ErrorBoundary` wrapping the whole routed app in `App.jsx`),
+  `OfflinePage` (rendered app-wide by a new `useOnlineStatus` hook
+  whenever `navigator.onLine` goes false, recovering automatically once
+  back online), and `ServiceUnavailablePage` (a network failure or
+  genuine 5xx on a page's own initial load, as opposed to a normal 4xx —
+  see the new `isServiceUnavailableError.js`; wired into `DashboardPage`
+  as the reference implementation via `useAccounts`'s new `errorStatus`
+  field). Each has its own hand-drawn, CSS-animated SVG icon
+  (`components/errors/*Icon.jsx`) built from equiCast's own candlestick/
+  price-line visual language — a trailing, searching chart line for 404;
+  a pulsing row of greyed candles for 503; a cracked, briefly-shaking
+  candle for the app-crash page; still, "trying" signal bars built as
+  candlestick bodies for offline — rather than generic icon-font/clip-art
+  imagery, all respecting `prefers-reduced-motion`. Every page reuses the
+  same standalone `ErrorPage` layout (just the brand mark + icon + plain-
+  language title/message/action), deliberately not wrapped in `AppShell`
+  since its own Topbar fetch is exactly the kind of call that can be
+  what's failing. No API Gateway/infra changes — these are frontend-only,
+  reused for API-level failures the same way DashboardPage's wiring shows.
+
+- A public `/terms-and-conditions` page (`frontend/src/pages/TermsAndConditionsPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as `/privacy-policy`/a future `/cookie-policy` would
+  be) since a visitor has to be able to read it before ever signing in.
+  Grounded in what equiCast actually is — an open-source (MIT, see the
+  repo's `LICENSE`), self-hosted-style project with no registered company
+  behind it — and the same no-advice/data-source disclaimer `SiteFooter`
+  already carries, rather than generic legal boilerplate (no invented
+  governing-law/arbitration clauses this project has no real
+  jurisdiction/entity to back up). `SiteFooter` gains a "Terms and
+  Conditions" link, which needs Router context — fixed three existing
+  `RequireAuth` tests that rendered `SignInScreen` (and so `SiteFooter`)
+  without a `MemoryRouter` to keep passing. Auth-aware like
+  `/privacy-policy`: a signed-in visitor (e.g. following the footer link
+  from inside the app) gets `AppShell` (with `stickyTitle`, same as
+  AccountDetailPage/PieDetailPage/HoldingTickerPage, so "Terms and
+  Conditions" stays visible in a frozen title bar while scrolling through
+  this long a page) instead of the bare logo header a signed-out visitor
+  gets, so search/currency/hide-balances/account menu stay reachable too.
+  `AppShell` gains a new `narrow` prop (`frontend/src/components/shell/
+  AppShell.jsx`/`.css`) — caps `.ec-page` at a 680px reading column
+  instead of the usual 1120px, so the page-head (title/subtitle) and prose
+  body share one centered column matching the standalone signed-out
+  layout, rather than title/body drifting apart or the whole thing sitting
+  flush against a much wider dashboard-style page.
+
+- Fixed `SiteFooter`'s and the Terms and Conditions page's market-data
+  disclaimer, which said prices refresh "every 6 hours" — that was
+  actually `market_data_cache_ttl_seconds`'s cache TTL (a safety margin),
+  not the real ingestion cadence; every ingestion pipeline refreshes at
+  most once a day (see `infra/variables.tf`). Both now say "once a day",
+  and `SiteFooter`'s "may lag the market by up to a few hours" is
+  corrected to "up to a day" to match.
+
+- `/holdings/:ticker`'s price chart gains a "Key events" toggle (off by
+  default, matching Yahoo Finance's own), overlaying real earnings/
+  analyst-rating/stock-split markers — hovering one shows a floating
+  tooltip with that event's details (EPS estimate/actual/surprise for
+  earnings; analyst/rating action/rating/price-target change for a rating;
+  the split ratio for a split). A full vertical slice, since nothing
+  previously read the events data the ingestion pipelines already wrote:
+  new `equicast_core.client.MarketDataClient.get_events()` (combines
+  `events/history.parquet`/`events/current.parquet`, mirroring
+  `get_dividends()`'s shape), a new `GET /api/market/<asset_class>/
+  <symbol>/events/` endpoint, and `frontend/src/api/market.js`'s
+  `getEvents()` (same same-day IndexedDB caching as
+  getProfile/getMetrics/getDividends/getPrices — see the new
+  `utils/eventsCache.js`).
+
+  Also extends `equicast_events.EventsClient`'s `"rating"` records with
+  `price_target_action`/`current_price_target`/`prior_price_target` —
+  already present in the `upgrades_downgrades` data every rating record
+  was already built from (yfinance's `priceTargetAction`/
+  `currentPriceTarget`/`priorPriceTarget` columns), just not previously
+  read. `0` (yfinance's sentinel for "not applicable", e.g. a coverage
+  initiation has no *prior* target) is treated as `None`, same as
+  `from_grade`'s own empty-string sentinel. `packages/stock`'s and
+  `packages/etf`'s `events.parquet` schemas gain the three matching
+  columns.
+
+  The toggle is disabled for 2Y and every longer range (2Y/3Y/5Y/10Y/
+  MAX) — a full history's worth of events still all lands somewhere
+  on-screen regardless of range, but the number of distinct bars they can
+  spread across shrinks as the range grows, piling them into dense,
+  unreadable columns beyond 1Y. Switching to a disabled range while
+  events are on turns them back off automatically.
+
+  Events sharing the same date and `event_type` (e.g. several analysts
+  revising ratings the same day) now collapse into a single dot instead
+  of stacking one dot per event — matching Yahoo Finance's own rendering,
+  which never shows more than one marker per day. A single-event dot's
+  hover tooltip is unchanged; a merged dot's hover instead shows a
+  lightweight summary (type, date, event count) with the full per-event
+  details (unchanged fields) behind a click, opening a modal (reusing
+  `frontend/src/components/core/Modal.jsx`) with one table row per grouped
+  event and one column per `event_type`-specific field, so several
+  same-day events can be compared side by side.
+  The merged tooltip's "Click for details" is a real button rather than
+  inert text — closing on a short delay instead of immediately on the
+  dot's own mouseleave, so the cursor has time to reach it before it
+  unmounts.
+
+- A public `/privacy-policy` page (`frontend/src/pages/PrivacyPolicyPage.jsx`),
+  reachable without signing in (registered outside `RequireAuth` in
+  `App.jsx`, same as a future `/cookie-policy` would be) since a visitor
+  has to be able to read it before ever signing in. Grounded in what
+  equiCast's own code actually collects/stores — Auth0 identity
+  (name/email/picture) for sign-in, the accounts/pies/watchlists/
+  holdings/transactions you enter yourself (S3 JSON via `equicast_core`),
+  and your currency/transaction-type profile settings (DynamoDB) — not
+  generic legal boilerplate. `SiteFooter` gains a "Privacy Policy" link,
+  which needs Router context — fixed three existing `RequireAuth` tests
+  that rendered `SignInScreen` (and so `SiteFooter`) without a
+  `MemoryRouter` to keep passing. Auth-aware and `stickyTitle`/`narrow`
+  `AppShell`-based for signed-in visitors, same as `/terms-and-conditions`
+  above.
 
 - Frontend handling for a `429` API response: `ApiError` (`frontend/src/api/client.js`)
   gains `retryAfterSeconds`, parsed from the response's `Retry-After`
@@ -212,6 +482,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The holding/pie/account price chart blinked (flashed fully invisible for
+  a frame) on a same-entity time-range switch instead of updating smoothly
+  (GitHub issue #137). The reveal animations added for a chart's genuine
+  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
+  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
+  `revision`) were replaying on *every* successful fetch, including a
+  plain range switch — whose own "keep the previous chart up, dimmed via
+  is-refreshing" transition already had nothing to hide the reveal's own
+  "start from nothing" state behind, so the chart flashed blank right as
+  the dim lifted. `revision` now only bumps on a chart's real first paint
+  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
+  change; `PiePriceChart`'s equivalent, keyed off a content signature of
+  `holdings` rather than its own unstable array identity, the same fix
+  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
+  a same-entity range switch now just updates the chart's shape directly
+  under the existing dim/undim transition, no separate blink.
 - An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
   `sector`/`industry` at all — yfinance doesn't populate either for a fund
   — so every etf catalog row carried `None` for both, and a `/search`

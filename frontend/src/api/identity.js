@@ -3,6 +3,10 @@
  * @property {string} user_id
  * @property {string} default_currency
  * @property {"AVERAGE"|"TRANSACTION"} transaction_type
+ * @property {string[]} fx_warmup_currencies - currencies the login-time FX
+ *   warm-up pairs against `default_currency` (see utils/fxWarmup.js and
+ *   GitHub issue #149) — user-editable in Settings, defaults to `["GBP",
+ *   "USD", "EUR"]` on first login.
  */
 
 /**
@@ -48,5 +52,22 @@ export function updateDefaultCurrency(api, defaultCurrency) {
 export function updateTransactionType(api, transactionType) {
   return /** @type {Promise<UserProfile>} */ (
     api("/identity/me/", { method: "PATCH", body: { transaction_type: transactionType } })
+  );
+}
+
+/**
+ * PATCH /api/identity/me/ — see MeView.patch. The currencies the
+ * login-time FX warm-up pairs against `default_currency` (see
+ * utils/fxWarmup.js and GitHub issue #149) — each must be one of the
+ * codes in frontend/src/config/currencies.json, same as
+ * `updateDefaultCurrency`.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string[]} currencies
+ * @returns {Promise<UserProfile>}
+ */
+export function updateFxWarmupCurrencies(api, currencies) {
+  return /** @type {Promise<UserProfile>} */ (
+    api("/identity/me/", { method: "PATCH", body: { fx_warmup_currencies: currencies } })
   );
 }

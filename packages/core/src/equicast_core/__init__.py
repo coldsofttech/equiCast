@@ -16,6 +16,14 @@ from equicast_core.client import (
     MarketDataClient,
     clear_cache,
 )
+from equicast_core.goals import (
+    MAX_GOALS,
+    PURPOSE_CHOICES,
+    GoalLimitExceededError,
+    GoalMappingConflictError,
+    GoalNotFoundError,
+    GoalsClient,
+)
 from equicast_core.holdings import (
     MAX_HOLDINGS_FOR_ACCOUNT,
     MAX_HOLDINGS_FOR_PIE,
@@ -25,6 +33,13 @@ from equicast_core.holdings import (
     HoldingLimitExceededError,
     HoldingNotFoundError,
     HoldingsClient,
+)
+from equicast_core.imports import (
+    PRESETS,
+    ImportParseError,
+    InvalidRow,
+    ParsedRow,
+    ParseResult,
 )
 from equicast_core.pies import (
     MAX_PIES,
@@ -42,6 +57,8 @@ from equicast_core.transactions import (
     TransactionNotFoundError,
     TransactionsClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
@@ -67,6 +84,12 @@ __all__ = [
     "WatchlistLimitExceededError",
     "WatchlistNotFoundError",
     "WatchlistsClient",
+    "MAX_GOALS",
+    "PURPOSE_CHOICES",
+    "GoalLimitExceededError",
+    "GoalMappingConflictError",
+    "GoalNotFoundError",
+    "GoalsClient",
     "MAX_HOLDINGS_FOR_ACCOUNT",
     "MAX_HOLDINGS_FOR_PIE",
     "MAX_HOLDINGS_FOR_WATCHLIST",
@@ -75,6 +98,11 @@ __all__ = [
     "HoldingLimitExceededError",
     "HoldingNotFoundError",
     "HoldingsClient",
+    "PRESETS",
+    "ImportParseError",
+    "InvalidRow",
+    "ParsedRow",
+    "ParseResult",
     "MAX_TRANSACTIONS_FOR_HOLDING",
     "TRANSACTION_ACTIONS",
     "InsufficientSharesError",
@@ -84,6 +112,8 @@ __all__ = [
     "TransactionNotFoundError",
     "TransactionsClient",
     "compute_holding_rollup",
+    "compute_new_dividend_transactions",
+    "latest_paid_dividend_date",
     "ASSET_CLASSES",
     "DEFAULT_CACHE_TTL_SECONDS",
     "DEFAULT_PRICE_RANGE",

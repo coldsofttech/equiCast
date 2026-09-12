@@ -208,6 +208,14 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     resources = ["${module.user_data_bucket.bucket_arn}/transactions/*"]
   }
 
+  # Goals domain (see GoalsClient) — same rationale as the
+  # accounts/pies/watchlists/holdings/transactions statements above: its
+  # own statement/review, scoped to goals/* only.
+  statement {
+    actions   = ["s3:GetObject", "s3:PutObject"]
+    resources = ["${module.user_data_bucket.bucket_arn}/goals/*"]
+  }
+
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
   # .../accounts/*, .../pies/*, .../watchlists/*, .../holdings/*, or
   # .../transactions/*) is required alongside s3:GetObject for a key that
@@ -230,7 +238,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["accounts/*", "pies/*", "watchlists/*", "holdings/*", "transactions/*"]
+      values   = ["accounts/*", "pies/*", "watchlists/*", "holdings/*", "transactions/*", "goals/*"]
     }
   }
 }
@@ -261,6 +269,7 @@ module "backend_lambda" {
     MAX_ACCOUNTS                  = tostring(var.max_accounts)
     MAX_PIES                      = tostring(var.max_pies)
     MAX_WATCHLISTS                = tostring(var.max_watchlists)
+    MAX_GOALS                     = tostring(var.max_goals)
     MAX_HOLDINGS_FOR_ACCOUNT      = tostring(var.max_holdings_for_account)
     MAX_HOLDINGS_FOR_PIE          = tostring(var.max_holdings_for_pie)
     MAX_HOLDINGS_FOR_WATCHLIST    = tostring(var.max_holdings_for_watchlist)

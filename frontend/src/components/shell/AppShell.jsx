@@ -37,6 +37,19 @@ const STICKY_TITLE_ROOT_MARGIN = "-52px 0px 0px 0px";
  * name stays visible while scrolling through a long page. Off by default;
  * every other page just has nothing in that space now that MenuBar (nav
  * with no real destinations beyond the logo-linked Dashboard) is gone.
+ *
+ * `narrow`, when true, caps `.ec-page` at a readable text-column width
+ * instead of the usual 1120px — used by PrivacyPolicyPage/
+ * TermsAndConditionsPage so a signed-in visitor's page-head (title/
+ * subtitle) and prose body share one centered column, same as the
+ * standalone signed-out layout, rather than a full-width dashboard-style
+ * page.
+ *
+ * `centerTitle`, when true, centers the page-head instead of its usual
+ * left-aligned/space-between layout — used by NotFoundPage/
+ * ServiceUnavailablePage so `title` lines up with their own centered
+ * icon/message/action body underneath, rather than sitting flush left
+ * above centered content.
  */
 function AppShell({
   greeting,
@@ -50,6 +63,8 @@ function AppShell({
   footer,
   sidebar,
   stickyTitle = false,
+  narrow = false,
+  centerTitle = false,
 }) {
   const titleRef = useRef(null);
   const [isTitleFrozen, setIsTitleFrozen] = useState(false);
@@ -72,9 +87,9 @@ function AppShell({
           {title}
         </div>
       )}
-      <main className="ec-page">
+      <main className={`ec-page${narrow ? " ec-page--narrow" : ""}`}>
         {greeting && <div className="ec-page-greeting">{greeting}</div>}
-        <div className="ec-page-head">
+        <div className={`ec-page-head${centerTitle ? " ec-page-head--center" : ""}`}>
           <div className="ec-page-head-main">
             {titleIcon && <div className="ec-page-title-icon">{titleIcon}</div>}
             <div>

@@ -17,14 +17,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from transactions.views import sync_dividends_for_holdings
 
 #: Fields required to create an account; description may be blank but must
-#: be present so a caller doesn't silently omit it.
-REQUIRED_CREATE_FIELDS = {"name", "description", "account_type", "currency"}
+#: be present so a caller doesn't silently omit it. No `currency` field —
+#: removed (GitHub issues #98/#115): every real money figure is already
+#: valued in the user's own `default_currency` (see UserProfileClient), so
+#: there was nothing left for a per-account currency to mean.
+REQUIRED_CREATE_FIELDS = {"name", "description", "account_type"}
 #: Optional at create time — an account without one falls back to a default
 #: icon client-side, same reasoning as pies/views.py's OPTIONAL_CREATE_FIELDS.
 OPTIONAL_CREATE_FIELDS = {"icon"}
-UPDATABLE_FIELDS = {"name", "description", "account_type", "currency", "icon"}
+UPDATABLE_FIELDS = {"name", "description", "account_type", "icon"}
 
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
@@ -86,11 +90,16 @@ def _enrich_holdings(user_id: str, holdings: list[dict[str, Any]]) -> list[dict[
     once on the full flat list before `_nest_pies_and_holdings` splits it
     back apart, rather than once per pie. Short-circuits on an empty
     `holdings` before even reading the caller's profile, since there'd be
-    nothing to enrich either way."""
+    nothing to enrich either way.
+
+    Also runs `sync_dividends_for_holdings` (GitHub issue #123) first, so a
+    holding's auto-created `DIVIDEND` transactions land before its rollup
+    is read here — same profile lookup backs both."""
     if not holdings:
         return holdings
-    default_currency = _profile_client.get_or_create_profile(user_id)["default_currency"]
-    return _market_data_client.enrich_holdings(holdings, default_currency)
+    profile = _profile_client.get_or_create_profile(user_id)
+    holdings = sync_dividends_for_holdings(user_id, holdings, profile)
+    return _market_data_client.enrich_holdings(holdings, profile["default_currency"])
 
 
 def _nest_pies_and_holdings(accounts, pies, holdings):
@@ -151,7 +160,6 @@ class AccountListView(APIView):
                 name=request.data["name"],
                 description=request.data["description"],
                 account_type=request.data["account_type"],
-                currency=request.data["currency"],
                 **optional_fields,
             )
         except AccountAlreadyExistsError:
