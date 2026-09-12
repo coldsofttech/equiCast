@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -22,6 +23,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+logger = logging.getLogger(__name__)
 
 #: Asset classes transactions are allowed against — fx holdings never carry
 #: transactions (see module docstring in equicast_core.transactions).
@@ -312,13 +315,24 @@ def sync_dividends_for_holdings(
 
     Every payout `compute_new_dividend_transactions` even considers —
     created here, or skipped as pre-history — advances that watermark via
-    `TransactionsClient.advance_dividends_synced_through`, regardless of
-    whether anything was actually created this call. This is what makes
-    deleting an auto-created `DIVIDEND` transaction a lasting correction:
-    without it, the next sync would see the payout as "missing" again
-    (nothing recorded for its ex-date) and recreate it right back. In
-    TRANSACTION mode, a backdated `BUY`/`SELL` (issue #124's "past
-    adjustments") reopens part of that watermark instead — see
+    `TransactionsClient.advance_dividends_synced_through`, *provided every
+    `create_transaction` call this pass actually succeeded* — this is what
+    makes deleting an auto-created `DIVIDEND` transaction a lasting
+    correction: without it, the next sync would see the payout as "missing"
+    again (nothing recorded for its ex-date) and recreate it right back.
+    But advancing the watermark unconditionally — even when a create
+    genuinely failed (`TransactionAmountError`/`TransactionLimitExceededError`,
+    caught below) — would silently and *permanently* lock that holding out
+    of ever syncing the failed payout (or anything after it, once the
+    watermark covers those dates too): every future call would see
+    `ex_date <= synced_through` and skip it forever, with no created
+    transaction to show for it. So the watermark only advances when nothing
+    failed this pass; a partial failure leaves it exactly where it was, and
+    the next sync retries the whole batch — already-created entries are
+    naturally skipped via `recorded_dates`, so only the ones that actually
+    failed (or are newly eligible) get reattempted. In TRANSACTION mode, a
+    backdated `BUY`/`SELL` (issue #124's "past adjustments") reopens part of
+    an already-advanced watermark instead — see
     `TransactionListView.post`/`TransactionDetailView.delete`'s calls to
     `TransactionsClient.rewind_dividends_synced_through`."""
     mode = profile["transaction_type"]
@@ -341,6 +355,7 @@ def sync_dividends_for_holdings(
             existing, dividends, synced_through, mode=mode
         )
 
+        all_created = True
         for entry in new_entries:
             fields = resolve_converted_amounts(
                 holding,
@@ -353,12 +368,22 @@ def sync_dividends_for_holdings(
             )
             try:
                 _client.create_transaction(user_id, holding["id"], mode, **fields)
-            except (TransactionAmountError, TransactionLimitExceededError):
+            except (TransactionAmountError, TransactionLimitExceededError) as exc:
+                all_created = False
+                logger.warning(
+                    "sync_dividends_for_holdings: failed to create DIVIDEND for holding "
+                    "'%s' (%s) on %s: %s",
+                    holding["id"],
+                    holding.get("ticker"),
+                    entry["date"],
+                    exc,
+                )
                 continue
 
-        new_watermark = latest_paid_dividend_date(dividends, synced_through)
-        if new_watermark is not None and new_watermark != synced_through:
-            _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
+        if all_created:
+            new_watermark = latest_paid_dividend_date(dividends, synced_through)
+            if new_watermark is not None and new_watermark != synced_through:
+                _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
 
         if not new_entries:
             synced.append(holding)

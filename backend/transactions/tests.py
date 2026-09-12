@@ -1414,3 +1414,80 @@ class SyncDividendsForHoldingsTests(TestCase):
             amount=3.75,
         )
         self.assertEqual(result, [refreshed_holding])
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_does_not_advance_the_watermark_when_a_create_fails(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """A payout that fails to create (e.g. a transient
+        TransactionAmountError) must never be marked as synced — advancing
+        the watermark regardless would permanently skip it (and anything
+        after it) on every future sync despite nothing ever actually being
+        recorded, since compute_new_dividend_transactions treats
+        `ex_date <= synced_through` as already handled either way."""
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_client.create_transaction.side_effect = TransactionAmountError("boom")
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-03-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                }
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+
+        sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], AVERAGE_PROFILE)
+
+        mock_client.create_transaction.assert_called_once()
+        mock_client.advance_dividends_synced_through.assert_not_called()
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_advances_the_watermark_when_every_create_in_the_batch_succeeds(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """Two eligible payouts, both created successfully — the watermark
+        must still advance to the latest one, same as a single-payout sync
+        (see test_creates_a_missing_paid_dividend_and_refreshes_the_holdings_rollup)."""
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-06-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                },
+                {
+                    "ex_dividend_date": "2026-06-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                },
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        mock_holdings_client.update_holding_financials.return_value = ACCOUNT_HOLDING
+
+        sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], AVERAGE_PROFILE)
+
+        self.assertEqual(mock_client.create_transaction.call_count, 2)
+        mock_client.advance_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2026-06-01"
+        )
