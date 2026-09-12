@@ -9,16 +9,27 @@ import EmptyState from "../components/core/EmptyState.jsx";
 import Drawer from "../components/core/Drawer.jsx";
 import AccountCard from "./accounts/AccountCard.jsx";
 import AccountForm from "./accounts/AccountForm.jsx";
+import GoalCard from "./goals/GoalCard.jsx";
+import GoalForm from "./goals/GoalForm.jsx";
 import ServiceUnavailablePage from "./errors/ServiceUnavailablePage.jsx";
 import isServiceUnavailableError from "../components/errors/isServiceUnavailableError.js";
 import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
+import { useGoals } from "../api/useGoals.js";
 import { createAccount } from "../api/accounts.js";
+import { createGoal } from "../api/goals.js";
+import { useGoalAchievementSync } from "./goals/goalFinancials.js";
 import { hasWarmedFxRates, warmFxRates } from "../utils/fxWarmup.js";
 import { getSessionGreeting } from "../utils/greeting.js";
 import AppLoadingScreen from "./AppLoadingScreen.jsx";
-import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleton.jsx";
+import DashboardSkeleton, { DashboardGreetingSkeleton, DashboardGoalsSkeleton } from "./DashboardSkeleton.jsx";
+import "./goals/Goals.css";
+
+/** How many active goals the dashboard widget shows before "View all goals" is
+ * the only way to see the rest — keeps the widget to a glance-able size
+ * regardless of MAX_GOALS. */
+const DASHBOARD_GOALS_LIMIT = 4;
 
 /**
  * The landing page once signed in (App.jsx redirects "/" here — see
@@ -50,6 +61,14 @@ import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleto
  * ServiceUnavailablePage rather than rendering AppShell with an inline
  * Alert — this is the landing page, so there's nothing else useful to
  * show around that failure anyway.
+ *
+ * Below the accounts grid, a Goals widget (see GoalCard.jsx) shows every
+ * `active` goal as a card with its live client-side progress (see
+ * goals/goalFinancials.js) — achieved goals drop out of this view, visible
+ * only via the "View all goals" link through to GoalsListPage.
+ * DashboardGoalsSkeleton fills its place while useGoals() is loading, gated
+ * separately from the accounts grid's own loading state since the two
+ * fetches resolve independently.
  */
 function DashboardPage() {
   const api = useApi();
@@ -57,6 +76,31 @@ function DashboardPage() {
   const { user } = useAuth0();
   const { profile, error: profileError } = useCurrentUser();
   const { accounts, isLoading, error: loadError, errorStatus, setAccounts } = useAccounts();
+  const { goals, isLoading: isGoalsLoading, setGoals } = useGoals();
+  const activeGoals = goals.filter((goal) => goal.status === "active");
+
+  useGoalAchievementSync(goals, accounts, api, setGoals);
+
+  const [isGoalCreateOpen, setIsGoalCreateOpen] = useState(false);
+  const [isGoalSaving, setIsGoalSaving] = useState(false);
+  const [goalSaveError, setGoalSaveError] = useState(null);
+
+  const closeGoalCreate = () => {
+    setIsGoalCreateOpen(false);
+    setGoalSaveError(null);
+  };
+
+  const handleGoalCreate = (values) => {
+    setIsGoalSaving(true);
+    setGoalSaveError(null);
+    createGoal(api, values)
+      .then((goal) => {
+        setGoals((current) => [...current, goal]);
+        closeGoalCreate();
+      })
+      .catch((err) => setGoalSaveError(err.message ?? "Couldn't create the goal."))
+      .finally(() => setIsGoalSaving(false));
+  };
 
   // Pinned to sessionStorage (see getSessionGreeting) so it stays the same
   // for the whole tab session, not just this mount.
@@ -132,7 +176,7 @@ function DashboardPage() {
       subtitle="Every account you're tracking, at a glance."
       actions={
         accounts.length > 0 && (
-          <Button variant="primary" onClick={() => navigate("/accounts")}>
+          <Button variant="primary" style={{ minWidth: "168px" }} onClick={() => navigate("/accounts")}>
             View all accounts
           </Button>
         )
@@ -173,6 +217,59 @@ function DashboardPage() {
           onCancel={closeCreate}
           isSubmitting={isSaving}
           error={saveError}
+        />
+      </Drawer>
+
+      <div className="ec-section-head" style={{ marginTop: "var(--ec-s-24)" }}>
+        <h2 className="ec-section-title">Goals</h2>
+        {!isGoalsLoading && goals.length > 0 && (
+          <Button variant="primary" style={{ minWidth: "168px" }} onClick={() => navigate("/goals")}>
+            View all goals
+          </Button>
+        )}
+      </div>
+
+      {isGoalsLoading && <DashboardGoalsSkeleton />}
+
+      {!isGoalsLoading && activeGoals.length === 0 && (
+        <EmptyState
+          title="No active goals"
+          description="Set a goal and map accounts or pies to it to track progress toward it."
+          action={
+            <Button variant="primary" onClick={() => setIsGoalCreateOpen(true)}>
+              Set a goal
+            </Button>
+          }
+        />
+      )}
+
+      {!isGoalsLoading && activeGoals.length > 0 && (
+        <div className="ec-account-grid">
+          {activeGoals.slice(0, DASHBOARD_GOALS_LIMIT).map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              accounts={accounts}
+              defaultCurrency={profile?.default_currency}
+              onClick={() => navigate("/goals")}
+            />
+          ))}
+        </div>
+      )}
+
+      <Drawer open={isGoalCreateOpen} onClose={closeGoalCreate} title="New goal">
+        <GoalForm
+          accounts={accounts}
+          claimedAccountIds={
+            new Set(goals.filter((goal) => goal.status !== "achieved").flatMap((goal) => goal.account_ids ?? []))
+          }
+          claimedPieIds={
+            new Set(goals.filter((goal) => goal.status !== "achieved").flatMap((goal) => goal.pie_ids ?? []))
+          }
+          onSubmit={handleGoalCreate}
+          onCancel={closeGoalCreate}
+          isSubmitting={isGoalSaving}
+          error={goalSaveError}
         />
       </Drawer>
     </AppShell>
