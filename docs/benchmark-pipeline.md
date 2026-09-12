@@ -14,12 +14,13 @@ packages/benchmark/config/benchmarks.prod.yaml  (production: the benchmarks to e
         │
         ▼
 equicast-benchmark CLI  ── uses ──▶  equicast-datafeed (rate limiting + retries)
-        │                     └────▶  equicast-metrics (volatility, Sharpe, drawdown, CAGR)
+        │                     ├────▶  equicast-metrics (volatility, Sharpe, drawdown, CAGR)
+        │                     └────▶  equicast-news (trailing-month news headlines)
         │                                     │
         │                                     ▼
         │                              Yahoo Finance (yfinance)
         ▼
-Parquet files (profile.parquet, price.parquet, metrics.parquet)
+Parquet files (profile.parquet, price.parquet, metrics.parquet, news.parquet)
         │
         ▼
 GitHub Actions (benchmark-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
@@ -35,10 +36,11 @@ at `config/benchmarks.dev.yaml`; `benchmark-ingestion.yml` never relies on
 that default — it resolves `dev`/`prod` itself and always passes
 `--benchmarks-json` explicitly.
 
-Expect two `WARNING` lines near the top of every run's logs — a one-time
+Expect three `WARNING` lines near the top of every run's logs — a one-time
 (per process) disclaimer from `equicast-datafeed` (data via yfinance,
-educational use only) and one from `equicast-metrics` (metrics calculated by
-equicast, not independently verified). See the [README's disclaimer
+educational use only), one from `equicast-metrics` (metrics calculated by
+equicast, not independently verified), and one from `equicast-news` (news
+headlines via yfinance). See the [README's disclaimer
 section](../README.md#disclaimer) for the full text; this is expected, not
 an error.
 
@@ -48,7 +50,11 @@ the same reasoning `equicast-fx` uses (an index pays none and has no
 earnings/balance sheet). `key` (e.g. `"SP500"`) is a stable, human-readable
 S3 partition identifier you choose; `symbol` (e.g. `"^GSPC"`) is the exact
 yfinance ticker to fetch — see `packages/benchmark/config/benchmarks.prod.yaml`
-for the full list.
+for the full list. `NewsClient` — unlike `BenchmarkClient`/`MetricsClient`
+— is generic and symbol-keyed rather than key-aware, so
+`write_news_parquet` tags each row with `key` itself (`news.parquet` rows
+carry both `ticker`, the real yfinance symbol, and `key`, the S3 partition
+identifier — see `packages/benchmark/src/equicast_benchmark/writer.py`).
 
 ## Running the CLI locally
 
@@ -64,6 +70,11 @@ For each benchmark this writes:
 - `benchmark=<KEY>/price/current.parquet` — one row per trading day, for the
   current year only by default
 - `benchmark=<KEY>/metrics.parquet` — one row, volatility/Sharpe/drawdown/CAGR
+- `benchmark=<KEY>/news.parquet` — one row per news article published in
+  the trailing month (no historical archive), newest first: key, ticker,
+  id, title, summary, publisher, url, thumbnail_url, published_at, last
+  updated, source. Not written for a benchmark with no news in that window
+  — see [packages/news/README.md](../packages/news/README.md)
 
 Add `--full-load` to fetch each benchmark's entire available yfinance
 history for **prices**, additionally writing
@@ -77,10 +88,11 @@ regardless of this flag:
 uv run equicast-benchmark --benchmarks-json '[{"key":"SP500","symbol":"^GSPC"}]' --out ./output --full-load
 ```
 
-Profile, prices, and metrics are fetched as independent concurrent tasks per
-benchmark (shared across one rate-limited `DatafeedClient`), tune with:
+Profile, prices, metrics, and news are fetched as independent concurrent
+tasks per benchmark (shared across one rate-limited `DatafeedClient`), tune
+with:
 
-- `--max-workers` — profile/price/metrics fetches run concurrently, up to this many at once (default: 1)
+- `--max-workers` — profile/price/metrics/news fetches run concurrently, up to this many at once (default: 1)
 - `--max-calls` / `--period-seconds` — shared rate limit, e.g. 5 calls per 1.0s (default: 1/1.0)
 
 ## Running the Docker image locally
@@ -195,6 +207,7 @@ s3://equicast-market-data-<env>/
 └── benchmark=SP500/
     ├── profile.parquet
     ├── metrics.parquet
+    ├── news.parquet   (trailing month only, rewritten wholesale by every run; omitted with no news)
     └── price/
         ├── history.parquet   (written once by a --full-load run)
         └── current.parquet   (rewritten by every run)

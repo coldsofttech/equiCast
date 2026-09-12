@@ -146,14 +146,17 @@ repos:
 
       - id: eslint-frontend
         name: eslint (React frontend)
-        entry: bash -c 'cd frontend && npm run lint'
+        entry: >-
+          bash -c 'cd frontend && files=(); for f in "$@"; do
+          files+=("${f#frontend/}"); done;
+          npx eslint --no-error-on-unmatched-pattern "${files[@]}"' --
         language: system
-        pass_filenames: false
+        pass_filenames: true
         files: ^frontend/.*\.(js|jsx|ts|tsx)$
 
       - id: vitest-frontend
         name: vitest (React frontend, unit)
-        entry: bash -c 'cd frontend && npm run test -- --run'
+        entry: bash -c 'cd frontend && npm run test -- --run --changed'
         language: system
         pass_filenames: false
         files: ^frontend/.*\.(js|jsx|ts|tsx)$

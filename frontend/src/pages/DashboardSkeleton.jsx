@@ -1,5 +1,6 @@
 import Card from "../components/core/Card.jsx";
 import Skeleton from "../components/core/Skeleton.jsx";
+import "./goals/Goals.css";
 
 /**
  * Placeholder for the greeting's title + subtitle (see greeting.js and
@@ -45,6 +46,38 @@ function DashboardSkeleton() {
           <div className="ec-account-card-meta">
             <Skeleton width="140px" height="0.75rem" />
           </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Placeholder goal cards shown in the dashboard's Goals widget while
+ * useGoals() is still loading — mirrors GoalCard.jsx's layout (icon+name,
+ * purpose badge, current value/target line, progress bar, target date)
+ * inside the same `.ec-account-grid`/`.ec-account-card` classes the real
+ * cards use, same "three cards" reasoning as DashboardSkeleton's own
+ * account cards.
+ */
+export function DashboardGoalsSkeleton() {
+  return (
+    <div className="ec-account-grid">
+      {[0, 1, 2].map((i) => (
+        <Card className="ec-account-card" key={i}>
+          <div className="ec-goal-card-head">
+            <div className="ec-goal-card-title">
+              <Skeleton circle width="28px" height="28px" />
+              <Skeleton width="100px" height="1rem" />
+            </div>
+            <Skeleton circle width="56px" height="22px" />
+          </div>
+          <div className="ec-account-card-value">
+            <Skeleton width="120px" height="1.5rem" />
+            <Skeleton width="140px" height="0.8125rem" />
+          </div>
+          <Skeleton width="100%" height="8px" />
+          <Skeleton width="110px" height="0.75rem" />
         </Card>
       ))}
     </div>

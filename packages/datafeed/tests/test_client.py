@@ -129,6 +129,17 @@ def test_get_splits_returns_series() -> None:
     assert result == "not-really-a-series"
 
 
+def test_get_news_returns_list_and_passes_count_through() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.get_news.return_value = [{"id": "abc"}]
+
+        result = _client().get_news("AAPL", count=10)
+
+    mock_ticker.assert_called_once_with("AAPL")
+    mock_ticker.return_value.get_news.assert_called_once_with(count=10)
+    assert result == [{"id": "abc"}]
+
+
 def test_constructing_client_shows_yfinance_disclaimer_once(
     caplog: pytest.LogCaptureFixture,
 ) -> None:

@@ -157,6 +157,53 @@ class MeViewTests(TestCase):
     @patch("identity.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
+    def test_patch_updates_fx_warmup_currencies(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_client.update_fx_warmup_currencies.return_value = {
+            "user_id": "auth0|abc123",
+            "fx_warmup_currencies": ["GBP", "INR"],
+        }
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"fx_warmup_currencies": ["GBP", "INR"]},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(), {"user_id": "auth0|abc123", "fx_warmup_currencies": ["GBP", "INR"]}
+        )
+        mock_client.update_fx_warmup_currencies.assert_called_once_with(
+            "auth0|abc123", ["GBP", "INR"]
+        )
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_rejects_unsupported_fx_warmup_currency(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"fx_warmup_currencies": ["GBP", "JPY"]},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_client.update_fx_warmup_currencies.assert_not_called()
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
     def test_patch_rejects_unsupported_currency(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:

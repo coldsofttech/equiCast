@@ -60,6 +60,12 @@ variable "max_watchlists" {
   default     = 5
 }
 
+variable "max_goals" {
+  description = "Max goals per user (goals/views.py's GoalLimitExceededError cap)."
+  type        = number
+  default     = 10
+}
+
 variable "max_holdings_for_account" {
   description = "Max holdings directly under one account, not counting pie-scoped ones (HoldingsClient's HoldingLimitExceededError cap)."
   type        = number

@@ -59,7 +59,6 @@
  * @property {string} name
  * @property {string} description
  * @property {string} account_type
- * @property {string} currency
  * @property {string|null} [icon] - bare bootstrap-icons name (e.g. "bank2"),
  *   `null`/absent for an account predating this field — see
  *   config/accountIcons.js's DEFAULT_ACCOUNT_ICON for the display fallback.
@@ -94,7 +93,7 @@ export function getAccount(api, accountId) {
  * POST /api/accounts/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ name: string, description: string, account_type: string, currency: string, icon?: string }} data
+ * @param {{ name: string, description: string, account_type: string, icon?: string }} data
  * @returns {Promise<Account>}
  */
 export function createAccount(api, data) {
@@ -107,7 +106,7 @@ export function createAccount(api, data) {
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} accountId
- * @param {Partial<{ name: string, description: string, account_type: string, currency: string, icon: string }>} fields
+ * @param {Partial<{ name: string, description: string, account_type: string, icon: string }>} fields
  * @returns {Promise<Account>}
  */
 export function updateAccount(api, accountId, fields) {

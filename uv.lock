@@ -28,6 +28,7 @@ members = [
     "equicast-forecasting",
     "equicast-fx",
     "equicast-metrics",
+    "equicast-news",
     "equicast-stock",
 ]
 
@@ -751,6 +752,7 @@ source = { editable = "packages/benchmark" }
 dependencies = [
     { name = "equicast-datafeed" },
     { name = "equicast-metrics" },
+    { name = "equicast-news" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyyaml" },
@@ -769,6 +771,7 @@ dev = [
 requires-dist = [
     { name = "equicast-datafeed", editable = "packages/datafeed" },
     { name = "equicast-metrics", editable = "packages/metrics" },
+    { name = "equicast-news", editable = "packages/news" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },
@@ -877,6 +880,7 @@ dependencies = [
     { name = "equicast-dividends" },
     { name = "equicast-events" },
     { name = "equicast-metrics" },
+    { name = "equicast-news" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyyaml" },
@@ -897,6 +901,7 @@ requires-dist = [
     { name = "equicast-dividends", editable = "packages/dividends" },
     { name = "equicast-events", editable = "packages/events" },
     { name = "equicast-metrics", editable = "packages/metrics" },
+    { name = "equicast-news", editable = "packages/news" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },
@@ -1037,6 +1042,32 @@ requires-dist = [
 provides-extras = ["dev"]
 
 [[package]]
+name = "equicast-news"
+version = "0.1.0"
+source = { editable = "packages/news" }
+dependencies = [
+    { name = "equicast-datafeed" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "mypy" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "equicast-datafeed", editable = "packages/datafeed" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "equicast-stock"
 version = "0.1.0"
 source = { editable = "packages/stock" }
@@ -1045,6 +1076,7 @@ dependencies = [
     { name = "equicast-dividends" },
     { name = "equicast-events" },
     { name = "equicast-metrics" },
+    { name = "equicast-news" },
     { name = "pandas" },
     { name = "pyarrow" },
     { name = "pyyaml" },
@@ -1065,6 +1097,7 @@ requires-dist = [
     { name = "equicast-dividends", editable = "packages/dividends" },
     { name = "equicast-events", editable = "packages/events" },
     { name = "equicast-metrics", editable = "packages/metrics" },
+    { name = "equicast-news", editable = "packages/news" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pyarrow", specifier = ">=17.0" },

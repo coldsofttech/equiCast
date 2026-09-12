@@ -107,11 +107,23 @@
   background: var(--ec-surface);
 }
 
+.ec-dividend-amount-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--ec-s-8);
+}
+
 .ec-dividend-amount {
   font-family: var(--ec-font-mono);
   font-size: var(--ec-fs-24);
   font-weight: 800;
   color: var(--ec-text);
+}
+
+.ec-dividend-native-amount {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
 }
 
 .ec-dividend-fields-row {
@@ -136,6 +148,73 @@
   color: var(--ec-text);
 }
 
+.ec-news-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--ec-s-16);
+  margin-top: var(--ec-s-8);
+}
+
+.ec-news-table-thumb {
+  width: 64px;
+  height: 40px;
+  object-fit: cover;
+  border-radius: var(--ec-r-6);
+}
+
+.ec-news-table-title {
+  white-space: normal;
+}
+
+.ec-news-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-16);
+  border-radius: var(--ec-r-12);
+  border: 1px solid var(--ec-border);
+  background: var(--ec-surface);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.ec-news-card:hover,
+.ec-news-card:focus-visible {
+  border-color: var(--ec-accent);
+}
+
+.ec-news-card-thumb {
+  width: 100%;
+  height: 120px;
+  object-fit: cover;
+  border-radius: var(--ec-r-8);
+}
+
+.ec-news-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-4);
+}
+
+.ec-news-card-title {
+  font-size: var(--ec-fs-14);
+  font-weight: 700;
+  color: var(--ec-text);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ec-news-card-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-subtle);
+}
+
 .ec-section-head-actions {
   display: flex;
   align-items: center;
@@ -146,6 +225,17 @@
 .ec-transaction-card-location {
   font-size: var(--ec-fs-12);
   color: var(--ec-text-subtle);
+}
+
+.ec-transaction-card-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  width: 100%;
+}
+
+.ec-transaction-card-head .ec-table-actions {
+  margin-left: auto;
 }
 
 .ec-badge i.bi {
@@ -183,46 +273,31 @@
   color: var(--ec-text);
 }
 
+.ec-transaction-row-shares {
+  min-width: 56px;
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-14);
+  color: var(--ec-text-subtle);
+  text-align: right;
+}
+
+.ec-transaction-row-fx {
+  font-family: var(--ec-font-mono);
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text-subtle);
+  white-space: nowrap;
+}
+
+.ec-transaction-row-native-value {
+  font-family: var(--ec-font-mono);
+  font-weight: 600;
+  color: var(--ec-text-subtle);
+}
+
 .ec-transaction-row-value {
   font-family: var(--ec-font-mono);
   font-weight: 700;
   color: var(--ec-text);
-}
-
-.ec-dividend-bar {
-  fill: var(--ec-accent);
-}
-
-.ec-dividend-bar.is-declared {
-  fill: var(--ec-success);
-}
-
-.ec-dividend-bar.is-estimated {
-  fill: var(--ec-info);
-}
-
-.ec-dividend-bar.is-hovered {
-  opacity: 0.8;
-}
-
-.ec-dividend-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ec-s-8);
-  height: 32px;
-  padding: 0 var(--ec-s-12);
-  margin-bottom: var(--ec-s-16);
-  border: 1px solid var(--ec-border-strong);
-  border-radius: var(--ec-r-pill);
-  background: var(--ec-surface);
-  color: var(--ec-text);
-  font-weight: 700;
-  font-size: var(--ec-fs-13);
-  cursor: pointer;
-}
-
-.ec-dividend-view-toggle:hover {
-  background: var(--ec-surface-hover);
 }
 
 .ec-cagr-list {
@@ -264,11 +339,10 @@
 }
 
 /** Grows from the zero-line out to its real width on load rather than
- * appearing at full size — see PieCagrSection's `revealed` state, which
- * renders width: 0% for one frame before flipping to the real value so
- * there's an actual change for this transition to animate. (HoldingCagrSection
- * shares this class too, but never varies its own width after the initial
- * correct-value render, so the transition is simply inert there.) */
+ * appearing at full size — see PieCagrSection's/HoldingCagrSection's own
+ * `revealed` state, which renders width: 0% for one frame before flipping
+ * to the real value so there's an actual change for this transition to
+ * animate. */
 .ec-cagr-bar-segment {
   position: absolute;
   top: 0;
@@ -346,19 +420,40 @@
 }
 
 .ec-buysell-bar-track {
-  display: flex;
+  position: relative;
   height: 10px;
   border-radius: var(--ec-r-pill);
   overflow: hidden;
   background: var(--ec-border);
 }
 
+/** Fixed at its final left/width (the split sits at sellers_pct from the
+ * first frame) and instead reveals via `scaleX` from 0 -> 1, each side
+ * scaling outward from the sellers/buyers boundary — see
+ * HoldingBuySellGauge's own `revealed` state, which renders scaleX(0) for
+ * one frame before flipping to scaleX(1) so there's an actual change for
+ * this transition to animate. */
+.ec-buysell-bar-segment {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transition: transform 0.6s ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-buysell-bar-segment {
+    transition: none;
+  }
+}
+
 .ec-buysell-bar-segment.is-up {
   background: var(--ec-success);
+  transform-origin: left;
 }
 
 .ec-buysell-bar-segment.is-down {
   background: var(--ec-danger);
+  transform-origin: right;
 }
 
 .ec-holding-about-row {

@@ -11,7 +11,6 @@ import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
 import AccountForm from "./AccountForm.jsx";
 import { useApi } from "../../api/useApi.js";
-import { useCurrentUser } from "../../api/useCurrentUser.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { createAccount, deleteAccount, updateAccount } from "../../api/accounts.js";
 import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
@@ -31,7 +30,6 @@ function needsForce(account) {
 function AccountsListPage() {
   const api = useApi();
   const navigate = useNavigate();
-  const { profile } = useCurrentUser();
   const { accounts, isLoading, error: loadError, setAccounts } = useAccounts();
 
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -136,7 +134,6 @@ function AccountsListPage() {
               <tr>
                 <th>Name</th>
                 <th>Type</th>
-                <th>Currency</th>
                 <th>Pies</th>
                 <th aria-label="Actions" />
               </tr>
@@ -156,7 +153,6 @@ function AccountsListPage() {
                   <td>
                     <Badge tone="accent">{account.account_type}</Badge>
                   </td>
-                  <td>{account.currency}</td>
                   <td>{(account.pies ?? []).length}</td>
                   <td>
                     <div className="ec-table-actions">
@@ -193,7 +189,6 @@ function AccountsListPage() {
 
       <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
         <AccountForm
-          defaultCurrency={profile?.default_currency}
           onSubmit={handleCreate}
           onCancel={closeCreate}
           isSubmitting={isSaving}

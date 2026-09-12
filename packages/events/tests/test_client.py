@@ -33,17 +33,30 @@ def _earnings_df(rows: list[tuple[str, float | None, float | None, float | None]
     )
 
 
-def _ratings_df(rows: list[tuple[str, str, str, str, str]]) -> pd.DataFrame:
+def _ratings_df(
+    rows: list[tuple[str, str, str, str, str]],
+    price_targets: list[tuple[str, float, float]] | None = None,
+) -> pd.DataFrame:
+    """`price_targets` (priceTargetAction, currentPriceTarget,
+    priorPriceTarget per row, aligned with `rows`) is optional and omitted
+    from the DataFrame entirely when not given - mirrors a real
+    `upgrades_downgrades` call against an older yfinance version, or a
+    ticker yfinance genuinely has no price-target data for; `row.get(...)`
+    on a pandas Series (see EventsClient._rating_records) returns `None`
+    for a column that isn't there at all, the same as for a present-but-
+    empty cell, so most tests don't need to supply this."""
     index = pd.DatetimeIndex([date for date, *_ in rows]).rename("GradeDate")
-    return pd.DataFrame(
-        {
-            "Firm": [firm for _, firm, _, _, _ in rows],
-            "ToGrade": [to_grade for _, _, to_grade, _, _ in rows],
-            "FromGrade": [from_grade for _, _, _, from_grade, _ in rows],
-            "Action": [action for _, _, _, _, action in rows],
-        },
-        index=index,
-    )
+    data = {
+        "Firm": [firm for _, firm, _, _, _ in rows],
+        "ToGrade": [to_grade for _, _, to_grade, _, _ in rows],
+        "FromGrade": [from_grade for _, _, _, from_grade, _ in rows],
+        "Action": [action for _, _, _, _, action in rows],
+    }
+    if price_targets is not None:
+        data["priceTargetAction"] = [action for action, _, _ in price_targets]
+        data["currentPriceTarget"] = [current for _, current, _ in price_targets]
+        data["priorPriceTarget"] = [prior for _, _, prior in price_targets]
+    return pd.DataFrame(data, index=index)
 
 
 def _splits_series(entries: list[tuple[str, float]]) -> pd.Series:
@@ -127,6 +140,9 @@ def test_events_earnings_records_include_past_and_future_rows() -> None:
             "from_grade": None,
             "to_grade": None,
             "action": None,
+            "price_target_action": None,
+            "current_price_target": None,
+            "prior_price_target": None,
             "ratio": None,
             "last_updated": records[0]["last_updated"],
             "source": "yfinance",
@@ -142,6 +158,9 @@ def test_events_earnings_records_include_past_and_future_rows() -> None:
             "from_grade": None,
             "to_grade": None,
             "action": None,
+            "price_target_action": None,
+            "current_price_target": None,
+            "prior_price_target": None,
             "ratio": None,
             "last_updated": records[1]["last_updated"],
             "source": "yfinance",
@@ -152,7 +171,8 @@ def test_events_earnings_records_include_past_and_future_rows() -> None:
 def test_events_rating_records_include_all_fields() -> None:
     this_year = datetime.now(UTC).year
     ratings = _ratings_df(
-        [(f"{this_year}-03-01", "Morgan Stanley", "Overweight", "Equal-Weight", "up")]
+        [(f"{this_year}-03-01", "Morgan Stanley", "Overweight", "Equal-Weight", "up")],
+        price_targets=[("raises", 275.0, 250.0)],
     )
     client = EventsClient("AAPL", datafeed=_datafeed(ratings=ratings))
 
@@ -170,11 +190,32 @@ def test_events_rating_records_include_all_fields() -> None:
             "from_grade": "Equal-Weight",
             "to_grade": "Overweight",
             "action": "up",
+            "price_target_action": "raises",
+            "current_price_target": 275.0,
+            "prior_price_target": 250.0,
             "ratio": None,
             "last_updated": records[0]["last_updated"],
             "source": "yfinance",
         }
     ]
+
+
+def test_events_rating_record_treats_zero_price_target_as_none() -> None:
+    """yfinance reports `0` (not NaN) for a price target that doesn't apply
+    - e.g. an "init"/"resume" rating action has no *prior* target to
+    report - same sentinel-to-None treatment as from_grade/to_grade's own
+    empty-string sentinel."""
+    this_year = datetime.now(UTC).year
+    ratings = _ratings_df(
+        [(f"{this_year}-03-01", "Needham", "Buy", "", "init")],
+        price_targets=[("init", 300.0, 0.0)],
+    )
+    client = EventsClient("AAPL", datafeed=_datafeed(ratings=ratings))
+
+    records = client.events()
+
+    assert records[0]["current_price_target"] == 300.0
+    assert records[0]["prior_price_target"] is None
 
 
 def test_events_rating_record_treats_empty_from_grade_as_none() -> None:
@@ -206,6 +247,9 @@ def test_events_split_records() -> None:
             "from_grade": None,
             "to_grade": None,
             "action": None,
+            "price_target_action": None,
+            "current_price_target": None,
+            "prior_price_target": None,
             "ratio": 4.0,
             "last_updated": records[0]["last_updated"],
             "source": "yfinance",
