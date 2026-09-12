@@ -130,7 +130,11 @@ class TransactionNotFoundError(Exception):
 
 class TransactionAlreadyExistsError(Exception):
     """Raised by `create_transaction` for a second `BUY`-type record
-    against an AVERAGE-mode holding — use `update_transaction` instead."""
+    against an AVERAGE-mode holding (use `update_transaction` instead), or
+    for a second transaction sharing an already-recorded `external_id` —
+    the latter is the race-safe half of import dedup and
+    `sync_dividends_for_holdings`'s own auto-created-payout dedup, see
+    `create_transaction`'s docstring."""
 
 
 class TransactionAmountError(Exception):
@@ -648,19 +652,30 @@ class TransactionsClient:
         regardless of `type`, unlike the other monetary fields above which
         are `None`'d out for the types they don't apply to. `external_id` is
         an opaque caller-supplied identifier (e.g. a broker's own row/order
-        id from a transaction import) stored the same unconditional way as
-        `fx_rate` — `None` for a hand-entered/API-created transaction.
-        `update_transaction` never allows patching it, so once set it's
-        immutable for the life of the record; this is what lets a caller use
-        it for import dedup (skip a re-imported row whose `external_id`
-        already exists) without it ever drifting from the original import.
+        id from a transaction import, or `sync_dividends_for_holdings`'
+        synthetic `f"dividend:{ex_dividend_date}"` for an auto-created
+        payout) stored the same unconditional way as `fx_rate` — `None` for
+        a hand-entered/API-created transaction. `update_transaction` never
+        allows patching it, so once set it's immutable for the life of the
+        record. Whenever it's given, this method itself guards against a
+        second record ever sharing it — re-read fresh on every conflict-
+        retry attempt (not just checked once up front), so two callers
+        racing to create the same logical transaction concurrently (two
+        browser tabs, or a frontend effect double-firing) can't both
+        succeed: whichever loses the underlying write race sees the
+        winner's record on its own retry and raises instead of creating a
+        duplicate. Import dedup (skip a re-imported row whose `external_id`
+        already exists) is the caller-side half of this — this method is
+        what makes that check race-safe rather than just a best-effort
+        pre-check.
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
         `average_price_native`/`price_native`/`amount_native` (whichever
         `type` requires); `TransactionAlreadyExistsError` for a second
-        `BUY` against an `AVERAGE`-mode holding — use `update_transaction`
-        instead; `TransactionLimitExceededError` past
+        `BUY` against an `AVERAGE`-mode holding (use `update_transaction`
+        instead) or for a second transaction sharing an already-recorded
+        `external_id`; `TransactionLimitExceededError` past
         `max_transactions_for_holding`; and `InsufficientSharesError` for a
         `SELL` that would take the holding's net recorded shares below
         zero.
@@ -677,6 +692,14 @@ class TransactionsClient:
 
         for _ in range(_MAX_CONFLICT_RETRIES):
             existing, dividends_synced_through, etag = self._load(user_id, holding_id)
+
+            if external_id is not None and any(
+                t.get("external_id") == external_id for t in existing
+            ):
+                raise TransactionAlreadyExistsError(
+                    f"A transaction with external_id '{external_id}' already exists for "
+                    f"holding '{holding_id}'."
+                )
 
             shares = None
             if type == "DIVIDEND":

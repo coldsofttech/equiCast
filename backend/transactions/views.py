@@ -334,7 +334,35 @@ def sync_dividends_for_holdings(
     backdated `BUY`/`SELL` (issue #124's "past adjustments") reopens part of
     an already-advanced watermark instead — see
     `TransactionListView.post`/`TransactionDetailView.delete`'s calls to
-    `TransactionsClient.rewind_dividends_synced_through`."""
+    `TransactionsClient.rewind_dividends_synced_through`.
+
+    Two concurrent calls syncing the same holding (two browser tabs, or
+    React StrictMode's double-effect-mount in dev — this is the exact race
+    that surfaced both bugs this and the next paragraph document) can make
+    `create_transaction`'s own optimistic-concurrency retry
+    (`_MAX_CONFLICT_RETRIES`) genuinely exhaust and raise a `RuntimeError`,
+    since both callers are racing to write the same holding's transactions
+    file. Every step for one holding — the reads, the create loop, the
+    watermark advance — is wrapped in its own `try/except Exception`, so a
+    `RuntimeError` (or anything else unexpected) here is logged and this
+    holding is simply left for the next sync, rather than propagating out
+    of the whole function and silently abandoning every holding still left
+    in `holdings` (accounts/pies/holdings views.py's callers never see this
+    partial-failure — they get every other holding's fully up-to-date
+    result back regardless).
+
+    The same race can otherwise let two concurrent calls both decide the
+    same payout is new (neither has written it yet when each checks) and
+    both call `create_transaction` for it — silently doubling that
+    dividend rather than losing it. Each auto-created payout is given a
+    synthetic `external_id` (`f"dividend:{ex_dividend_date}"`, unique per
+    holding since it's scoped to one holding's transactions file), and
+    `create_transaction` itself rejects a second transaction sharing an
+    `external_id` (re-checked fresh on every conflict-retry attempt, not
+    just once) — so whichever of the two racing calls loses the write
+    raises `TransactionAlreadyExistsError` on its own retry instead of
+    creating a duplicate; that's treated as a success here, not a failure,
+    since the payout genuinely exists now."""
     mode = profile["transaction_type"]
     synced: list[dict[str, Any]] = []
     for holding in holdings:
@@ -345,45 +373,17 @@ def sync_dividends_for_holdings(
             synced.append(holding)
             continue
 
-        existing = _client.list_transactions(user_id, holding_id=holding["id"])
-        dividends_data = _market_data_client.get_dividends(
-            holding["asset_class"], holding["ticker"]
-        )
-        dividends = dividends_data["dividends"] if dividends_data else []
-        synced_through = _client.get_dividends_synced_through(user_id, holding["id"])
-        new_entries = compute_new_dividend_transactions(
-            existing, dividends, synced_through, mode=mode
-        )
-
-        all_created = True
-        for entry in new_entries:
-            fields = resolve_converted_amounts(
-                holding,
-                profile["default_currency"],
-                {
-                    "amount_native": entry["amount_native"],
-                    "date": entry["date"],
-                    "type": "DIVIDEND",
-                },
+        try:
+            new_entries = _sync_dividends_for_one_holding(user_id, holding, mode, profile)
+        except Exception:
+            logger.exception(
+                "sync_dividends_for_holdings: unexpected error syncing holding '%s' (%s); "
+                "leaving it for the next sync",
+                holding["id"],
+                holding.get("ticker"),
             )
-            try:
-                _client.create_transaction(user_id, holding["id"], mode, **fields)
-            except (TransactionAmountError, TransactionLimitExceededError) as exc:
-                all_created = False
-                logger.warning(
-                    "sync_dividends_for_holdings: failed to create DIVIDEND for holding "
-                    "'%s' (%s) on %s: %s",
-                    holding["id"],
-                    holding.get("ticker"),
-                    entry["date"],
-                    exc,
-                )
-                continue
-
-        if all_created:
-            new_watermark = latest_paid_dividend_date(dividends, synced_through)
-            if new_watermark is not None and new_watermark != synced_through:
-                _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
+            synced.append(holding)
+            continue
 
         if not new_entries:
             synced.append(holding)
@@ -397,6 +397,68 @@ def sync_dividends_for_holdings(
             pass
         synced.append(holding)
     return synced
+
+
+def _sync_dividends_for_one_holding(
+    user_id: str, holding: dict[str, Any], mode: str, profile: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The per-holding body of `sync_dividends_for_holdings`'s loop,
+    factored out so that function can wrap it in one `try/except` per
+    holding — see that function's docstring for why. Returns whatever
+    `compute_new_dividend_transactions` found (`[]` when there was nothing
+    new), regardless of how many of those actually got created; the
+    watermark itself only ever advances when every create this pass
+    succeeded, same "all or nothing" reasoning either way."""
+    existing = _client.list_transactions(user_id, holding_id=holding["id"])
+    dividends_data = _market_data_client.get_dividends(holding["asset_class"], holding["ticker"])
+    dividends = dividends_data["dividends"] if dividends_data else []
+    synced_through = _client.get_dividends_synced_through(user_id, holding["id"])
+    new_entries = compute_new_dividend_transactions(existing, dividends, synced_through, mode=mode)
+
+    all_created = True
+    for entry in new_entries:
+        fields = resolve_converted_amounts(
+            holding,
+            profile["default_currency"],
+            {
+                "amount_native": entry["amount_native"],
+                "date": entry["date"],
+                "type": "DIVIDEND",
+            },
+        )
+        try:
+            _client.create_transaction(
+                user_id,
+                holding["id"],
+                mode,
+                external_id=f"dividend:{entry['date']}",
+                **fields,
+            )
+        except TransactionAlreadyExistsError:
+            # A concurrent sync for this same holding (two browser tabs, a
+            # frontend effect double-firing) already created this exact
+            # payout — see TransactionsClient.create_transaction's
+            # external_id dedup. Nothing missing, so this doesn't count
+            # against all_created.
+            continue
+        except (TransactionAmountError, TransactionLimitExceededError, RuntimeError) as exc:
+            all_created = False
+            logger.warning(
+                "sync_dividends_for_holdings: failed to create DIVIDEND for holding "
+                "'%s' (%s) on %s: %s",
+                holding["id"],
+                holding.get("ticker"),
+                entry["date"],
+                exc,
+            )
+            continue
+
+    if all_created:
+        new_watermark = latest_paid_dividend_date(dividends, synced_through)
+        if new_watermark is not None and new_watermark != synced_through:
+            _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
+
+    return new_entries
 
 
 class TransactionListView(APIView):

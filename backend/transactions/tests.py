@@ -1347,6 +1347,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "auth0|abc123",
             "h-1",
             "AVERAGE",
+            external_id="dividend:2026-03-01",
             amount_native=5.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1405,6 +1406,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "auth0|abc123",
             "h-1",
             "TRANSACTION",
+            external_id="dividend:2026-03-01",
             amount_native=3.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1490,4 +1492,156 @@ class SyncDividendsForHoldingsTests(TestCase):
         self.assertEqual(mock_client.create_transaction.call_count, 2)
         mock_client.advance_dividends_synced_through.assert_called_once_with(
             "auth0|abc123", "h-1", "2026-06-01"
+        )
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_a_conflict_exhaustion_runtimeerror_is_treated_like_any_other_create_failure(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """A RuntimeError from create_transaction's own conflict-retry
+        exhaustion (real-world trigger: two concurrent syncs racing to
+        write the same holding, e.g. React StrictMode double-mounting an
+        effect in dev) must not silently advance that holding's watermark —
+        same "don't mark a failed create as synced" rule as
+        TransactionAmountError — while a *different* holding in the same
+        batch, unaffected by the race, still syncs normally."""
+
+        def create_transaction(user_id, holding_id, mode, **fields):
+            if holding_id == "h-1":
+                raise RuntimeError("Too many conflicting writes to transactions for holding 'h-1'.")
+            return {"id": "t-new"}
+
+        def update_holding_financials(user_id, holding_id, **rollup):
+            return ACCOUNT_HOLDING if holding_id == "h-1" else PIE_HOLDING
+
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_client.create_transaction.side_effect = create_transaction
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-03-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                }
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        mock_holdings_client.update_holding_financials.side_effect = update_holding_financials
+
+        result = sync_dividends_for_holdings(
+            "auth0|abc123", [ACCOUNT_HOLDING, PIE_HOLDING], AVERAGE_PROFILE
+        )
+
+        self.assertEqual(mock_client.create_transaction.call_count, 2)
+        # Only h-2 (unaffected by the race) advances — h-1's failed create
+        # must not be marked as synced.
+        mock_client.advance_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-2", "2026-03-01"
+        )
+        self.assertEqual(result, [ACCOUNT_HOLDING, PIE_HOLDING])
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_an_unexpected_error_on_one_holding_does_not_abort_the_rest_of_the_batch(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """Something failing well before create_transaction (here,
+        get_dividends itself) for one holding must not propagate out of
+        the whole function and abandon every holding still left in the
+        batch — GitHub issue reproduced against a real local import where
+        exactly this kind of per-holding failure silently zeroed out
+        several holdings' dividends at once."""
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_market_data_client.get_dividends.side_effect = [
+            RuntimeError("market data unavailable"),
+            {
+                "ticker": "AAPL",
+                "currency": "USD",
+                "last_updated": "2026-03-01",
+                "dividends": [
+                    {
+                        "ex_dividend_date": "2026-03-01",
+                        "payment_date": None,
+                        "price": 0.5,
+                        "status": "paid",
+                    }
+                ],
+            },
+        ]
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        mock_holdings_client.update_holding_financials.return_value = PIE_HOLDING
+
+        result = sync_dividends_for_holdings(
+            "auth0|abc123", [ACCOUNT_HOLDING, PIE_HOLDING], AVERAGE_PROFILE
+        )
+
+        # h-1's get_dividends blew up; h-2 (processed next) still synced
+        # normally.
+        mock_client.create_transaction.assert_called_once()
+        mock_client.advance_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-2", "2026-03-01"
+        )
+        self.assertEqual(result, [ACCOUNT_HOLDING, PIE_HOLDING])
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_a_concurrent_caller_already_creating_the_payout_still_advances_the_watermark(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """create_transaction raising TransactionAlreadyExistsError for the
+        external_id dedup case (see TransactionsClient.create_transaction)
+        means a concurrent sync already created this exact payout — that's
+        a success, not a failure, so it must not block the watermark from
+        advancing the way a genuine create failure does."""
+        mock_client.list_transactions.return_value = [AVERAGE_TRANSACTION]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_client.create_transaction.side_effect = TransactionAlreadyExistsError(
+            "A transaction with external_id 'dividend:2026-03-01' already exists."
+        )
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-03-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                }
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        mock_holdings_client.update_holding_financials.return_value = ACCOUNT_HOLDING
+
+        sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], AVERAGE_PROFILE)
+
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "AVERAGE",
+            external_id="dividend:2026-03-01",
+            amount_native=5.0,
+            date="2026-03-01",
+            type="DIVIDEND",
+            fx_rate=1.25,
+            average_price=None,
+            price=None,
+            amount=6.25,
+        )
+        mock_client.advance_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2026-03-01"
         )

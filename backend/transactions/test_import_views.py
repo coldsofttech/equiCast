@@ -653,6 +653,9 @@ class ImportCommitViewTests(TestCase):
         self.assertEqual(result["created_count"], 1)
         self.assertEqual(result["skipped_duplicate_count"], 1)
         mock_client.create_transaction.assert_called_once()
+        mock_client.rewind_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2024-02-01"
+        )
         _, kwargs = mock_client.create_transaction.call_args
         self.assertEqual(kwargs["external_id"], "dup-2")
 

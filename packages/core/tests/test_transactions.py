@@ -991,6 +991,87 @@ class TestUpdateTransaction:
             )
 
 
+class TestCreateTransactionExternalIdDedup:
+    """A second `create_transaction` call sharing an `external_id` must be
+    rejected — this is what makes concurrent callers race-safe (e.g. two
+    browser tabs, or a frontend effect double-firing, both independently
+    deciding the same auto-created dividend payout is new — see
+    backend/transactions/views.py's sync_dividends_for_holdings)."""
+
+    def test_a_second_transaction_with_the_same_external_id_is_rejected(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+
+        with pytest.raises(TransactionAlreadyExistsError):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "TRANSACTION",
+                type="DIVIDEND",
+                amount_native=5.0,
+                date="2026-03-01",
+                external_id="dividend:2026-03-01",
+            )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 1
+
+    def test_a_none_external_id_never_collides_with_itself(self, s3_client) -> None:
+        """`external_id=None` (every hand-entered/API-created transaction)
+        must never trip the dedup check against other `None`-external_id
+        records — only a real, matching, non-`None` id counts."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
+    def test_different_external_ids_both_succeed(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+            external_id="dividend:2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
+
 class TestDeleteTransaction:
     def test_delete_removes_it(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)

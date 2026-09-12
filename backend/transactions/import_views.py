@@ -587,6 +587,11 @@ def _commit_transaction_mode(
         created_count += 1
         if external_id:
             existing_external_ids.add(external_id)
+        # Same reasoning as TransactionListView.post (views.py): a backdated
+        # BUY/SELL can land inside the dividend watermark's already-synced
+        # range, so reopen it here too — bulk import creates transactions
+        # directly rather than going through that view.
+        _client.rewind_dividends_synced_through(user_id, holding_id, synthetic["date"])
 
     if created_count == 0 and not errors:
         status = "skipped"
