@@ -244,6 +244,7 @@ class ImportPreviewView(APIView):
         default_currency = profile["default_currency"]
 
         accounts_by_id = {a["id"]: a for a in _accounts_client.list_accounts(user_id)}
+        pies_by_id = {p["id"]: p for p in _pies_client.list_pies(user_id)}
         all_holdings = _holdings_client.list_holdings(user_id)
 
         rows_by_ticker: dict[str, list[dict[str, Any]]] = {}
@@ -313,6 +314,7 @@ class ImportPreviewView(APIView):
                             [existing_synth, *synthetic_rows], "TRANSACTION"
                         )
 
+                pie = pies_by_id.get(holding["pie_id"]) if holding["pie_id"] else None
                 existing_holdings.append(
                     {
                         "id": holding["id"],
@@ -323,6 +325,12 @@ class ImportPreviewView(APIView):
                             else None
                         ),
                         "pie_id": holding["pie_id"],
+                        "pie_name": pie.get("name") if pie else None,
+                        "pie_account_name": (
+                            accounts_by_id.get(pie.get("account_id"), {}).get("name")
+                            if pie
+                            else None
+                        ),
                         "already_has_position": already_has_position,
                         "combined_preview": combined_preview,
                         "duplicate_count": duplicate_count,

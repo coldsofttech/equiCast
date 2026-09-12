@@ -175,7 +175,10 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
             >
               {group.existing_holdings.map((holding) => (
                 <option key={holding.id} value={targetKey("existing_holding", holding.id)}>
-                  {holding.account_name ?? "Pie holding"} — existing
+                  {holding.pie_id
+                    ? `${holding.pie_account_name ?? "Pie"} → ${holding.pie_name ?? "Untitled"}`
+                    : holding.account_name}{" "}
+                  — existing
                   {holding.already_has_position ? ", will extend position" : ""}
                   {holding.duplicate_count > 0
                     ? `, ${holding.duplicate_count} row(s) already imported`
@@ -216,6 +219,22 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
   return (
     <div className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
+
+      {/* Buttons live up here, not just at the bottom — with 100+ ticker
+          groups (a real Trading 212 export can have that many), the bottom
+          of the page is a long scroll away. */}
+      <div className="ec-form-actions">
+        <Button type="button" variant="secondary" onClick={onCancel} disabled={isCommitting}>
+          Cancel
+        </Button>
+        <Button type="button" variant="secondary" onClick={onBack} disabled={isCommitting}>
+          Back
+        </Button>
+        <Button type="button" variant="primary" isLoading={isCommitting} onClick={handleCommit}>
+          Import
+        </Button>
+      </div>
+
       {preview.rows_skipped > 0 && (
         <Alert tone="info">
           {preview.rows_skipped} row(s) in the file weren&rsquo;t buy/sell orders (dividends,
@@ -236,38 +255,38 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
         </Alert>
       )}
 
-      <div className="ec-section-head">
-        <h2 className="ec-section-title">Ready to import</h2>
-        <Badge tone="success">{readyGroups.length}</Badge>
-      </div>
-      {readyGroups.length === 0 ? (
-        <p className="ec-loading">Nothing resolved yet — map a ticker below to include it.</p>
-      ) : (
-        <div className="ec-import-groups">{readyGroups.map(renderGroupCard)}</div>
-      )}
+      <details className="ec-import-section">
+        <summary className="ec-section-head">
+          <h2 className="ec-section-title">Ready to import</h2>
+          <Badge tone="success">{readyGroups.length}</Badge>
+          <ChevronIcon className="ec-import-section-chevron" />
+        </summary>
+        {readyGroups.length === 0 ? (
+          <p className="ec-loading">Nothing resolved yet — map a ticker below to include it.</p>
+        ) : (
+          <div className="ec-import-groups">{readyGroups.map(renderGroupCard)}</div>
+        )}
+      </details>
 
       {needsMappingGroups.length > 0 && (
-        <>
-          <div className="ec-section-head ec-import-section-head-gap">
+        <details className="ec-import-section">
+          <summary className="ec-section-head">
             <h2 className="ec-section-title">Needs ticker mapping</h2>
             <Badge tone="warning">{needsMappingGroups.length}</Badge>
-          </div>
+            <ChevronIcon className="ec-import-section-chevron" />
+          </summary>
           <div className="ec-import-groups">{needsMappingGroups.map(renderGroupCard)}</div>
-        </>
+        </details>
       )}
-
-      <div className="ec-form-actions">
-        <Button type="button" variant="secondary" onClick={onCancel} disabled={isCommitting}>
-          Cancel
-        </Button>
-        <Button type="button" variant="secondary" onClick={onBack} disabled={isCommitting}>
-          Back
-        </Button>
-        <Button type="button" variant="primary" isLoading={isCommitting} onClick={handleCommit}>
-          Import
-        </Button>
-      </div>
     </div>
+  );
+}
+
+function ChevronIcon({ className }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" width="14" height="14" fill="none" aria-hidden="true">
+      <path d="M6 9l6 6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 

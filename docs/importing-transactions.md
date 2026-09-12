@@ -31,7 +31,10 @@ In the Trading 212 app:
 
 Only buy/sell rows are used. Trading 212's own exchange rate for a row is
 used as that transaction's FX rate, rather than equicast's own historical
-lookup — this matches what the broker actually charged.
+lookup — this matches what the broker actually charged. Trading 212 quotes
+its rate the human-facing way ("£1 = $1.34"); equicast automatically
+inverts it to the direction it stores internally, so you don't need to do
+anything about this yourself.
 
 ## Generic CSV
 
@@ -48,6 +51,8 @@ Build your own CSV with these columns:
 | `currency`       | No       | Informational only, not used to resolve FX           |
 | `fx_rate`        | No       | Overrides equicast's own historical FX lookup        |
 | `external_id`    | No       | Your own identifier for the row, used for dedup      |
+
+`fx_rate`, if you supply it, must be in the **converted-per-native** direction — how many units of your default currency one unit of the instrument's native currency is worth (the same direction equicast stores/uses internally). This is the *opposite* of how brokers and FX quotes usually show a rate to a person ("£1 = $1.34") — if you have a rate quoted that way, invert it (`1 / rate`) before putting it in this column. The Trading 212 preset does this inversion for you automatically, since its export is quoted the human-facing way.
 
 ## Matching tickers
 

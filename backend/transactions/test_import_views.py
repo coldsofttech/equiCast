@@ -116,6 +116,7 @@ class ImportPreviewViewTests(TestCase):
     @patch("transactions.views._market_data_client")
     @patch("transactions.import_views._market_data_client")
     @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._pies_client")
     @patch("transactions.import_views._accounts_client")
     @patch("transactions.import_views._client")
     @patch("transactions.import_views._profile_client")
@@ -128,6 +129,7 @@ class ImportPreviewViewTests(TestCase):
         mock_profile_client,
         mock_client,
         mock_accounts_client,
+        mock_pies_client,
         mock_holdings_client,
         mock_market_data_client,
         mock_views_market_data_client,
@@ -138,6 +140,7 @@ class ImportPreviewViewTests(TestCase):
             "default_currency": "GBP",
         }
         mock_accounts_client.list_accounts.return_value = []
+        mock_pies_client.list_pies.return_value = []
         mock_holdings_client.list_holdings.return_value = []
         mock_market_data_client.get_profile.side_effect = lambda asset_class, ticker: (
             {"name": "Apple Inc.", "currency": "USD"}
@@ -171,6 +174,7 @@ class ImportPreviewViewTests(TestCase):
     @patch("transactions.views._market_data_client")
     @patch("transactions.import_views._market_data_client")
     @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._pies_client")
     @patch("transactions.import_views._accounts_client")
     @patch("transactions.import_views._client")
     @patch("transactions.import_views._profile_client")
@@ -183,6 +187,7 @@ class ImportPreviewViewTests(TestCase):
         mock_profile_client,
         mock_client,
         mock_accounts_client,
+        mock_pies_client,
         mock_holdings_client,
         mock_market_data_client,
         mock_views_market_data_client,
@@ -198,6 +203,7 @@ class ImportPreviewViewTests(TestCase):
             "default_currency": "GBP",
         }
         mock_accounts_client.list_accounts.return_value = []
+        mock_pies_client.list_pies.return_value = []
         mock_holdings_client.list_holdings.return_value = []
         mock_market_data_client.get_profile.return_value = {"name": "Carnival", "currency": "GBP"}
         mock_views_market_data_client.get_profile.return_value = None
@@ -238,6 +244,7 @@ class ImportPreviewViewTests(TestCase):
     @patch("transactions.views._market_data_client")
     @patch("transactions.import_views._market_data_client")
     @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._pies_client")
     @patch("transactions.import_views._accounts_client")
     @patch("transactions.import_views._client")
     @patch("transactions.import_views._profile_client")
@@ -250,6 +257,7 @@ class ImportPreviewViewTests(TestCase):
         mock_profile_client,
         mock_client,
         mock_accounts_client,
+        mock_pies_client,
         mock_holdings_client,
         mock_market_data_client,
         mock_views_market_data_client,
@@ -260,6 +268,7 @@ class ImportPreviewViewTests(TestCase):
             "default_currency": "GBP",
         }
         mock_accounts_client.list_accounts.return_value = [{"id": "acc-1", "name": "ISA"}]
+        mock_pies_client.list_pies.return_value = []
         mock_holdings_client.list_holdings.return_value = [
             {
                 "id": "h-1",
@@ -301,6 +310,74 @@ class ImportPreviewViewTests(TestCase):
         self.assertTrue(existing["already_has_position"])
         self.assertEqual(existing["combined_preview"]["no_of_shares"], 5.0)
         self.assertAlmostEqual(existing["combined_preview"]["average_price_native"], 96.0)
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._market_data_client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._pies_client")
+    @patch("transactions.import_views._accounts_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_preview_resolves_pie_name_and_its_parent_account_for_a_pie_holding(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_client,
+        mock_accounts_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_market_data_client,
+        mock_views_market_data_client,
+    ) -> None:
+        """An existing_holdings entry for a pie-scoped holding must carry
+        enough to build a real label (e.g. "ISA → FutureFund") —
+        account_name alone is always null for a pie holding (see
+        HoldingsClient: a holding belongs to exactly one of account_id/
+        pie_id/watchlist_id), so the pie's own name and its parent
+        account's name are resolved separately."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        mock_accounts_client.list_accounts.return_value = [{"id": "acc-1", "name": "ISA"}]
+        mock_pies_client.list_pies.return_value = [
+            {"id": "pie-1", "account_id": "acc-1", "name": "FutureFund"}
+        ]
+        mock_holdings_client.list_holdings.return_value = [
+            {
+                "id": "h-1",
+                "ticker": "AAPL",
+                "asset_class": "stock",
+                "account_id": None,
+                "pie_id": "pie-1",
+                "watchlist_id": None,
+            }
+        ]
+        mock_market_data_client.get_profile.return_value = {"name": "Apple Inc.", "currency": "USD"}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_client.list_transactions.return_value = []
+
+        csv_content = (
+            b"date,ticker,asset_class,type,no_of_shares,price_native\n"
+            b"2024-01-10,AAPL,stock,BUY,3,100.0\n"
+        )
+        upload = SimpleUploadedFile("import.csv", csv_content, content_type="text/csv")
+
+        response = self.client.post(
+            reverse("transactions-import-preview"),
+            data={"preset": "generic", "file": upload},
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        existing = response.json()["groups"][0]["existing_holdings"][0]
+        self.assertIsNone(existing["account_name"])
+        self.assertEqual(existing["pie_name"], "FutureFund")
+        self.assertEqual(existing["pie_account_name"], "ISA")
 
 
 class ImportCommitViewTests(TestCase):

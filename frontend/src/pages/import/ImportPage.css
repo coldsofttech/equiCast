@@ -1,5 +1,30 @@
-.ec-import-section-head-gap {
+.ec-import-section + .ec-import-section {
   margin-top: var(--ec-s-24);
+}
+
+.ec-import-section summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.ec-import-section summary::-webkit-details-marker,
+.ec-import-section summary::marker {
+  display: none;
+  content: "";
+}
+
+.ec-import-section-chevron {
+  margin-left: auto;
+  color: var(--ec-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.ec-import-section[open] .ec-import-section-chevron {
+  transform: rotate(180deg);
+}
+
+.ec-import-section .ec-import-groups {
+  margin-top: var(--ec-s-12);
 }
 
 .ec-import-invalid-rows {

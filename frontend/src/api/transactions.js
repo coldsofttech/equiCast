@@ -171,8 +171,11 @@ export function deleteTransaction(api, holdingId, transactionId) {
  * @typedef {Object} ImportExistingHolding
  * @property {string} id
  * @property {string|null} account_id
- * @property {string|null} account_name
+ * @property {string|null} account_name - set for an account-direct holding, `null` for a pie holding.
  * @property {string|null} pie_id
+ * @property {string|null} pie_name - set for a pie holding, `null` for an account-direct one.
+ * @property {string|null} pie_account_name - the pie's own parent account's name, set alongside
+ *   `pie_name` — e.g. an "ISA" account's "FutureFund" pie.
  * @property {boolean} already_has_position - AVERAGE mode only: true if this holding
  *   already has a BUY on record, so committing into it *extends* the position rather
  *   than creating a new one — see `combined_preview`.

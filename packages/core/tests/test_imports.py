@@ -50,7 +50,7 @@ class TestParseTrading212Csv:
             no_of_shares=10.0,
             price_native=148.0,
             currency="USD",
-            fx_rate=0.79,
+            fx_rate=1 / 0.79,
             raw=buy.raw,
         )
 
@@ -141,6 +141,27 @@ class TestParseTrading212Csv:
         result = parse_trading212_csv(file)
 
         assert result.rows[0].fx_rate is None
+
+    def test_exchange_rate_is_inverted_to_equicasts_native_to_default_convention(self) -> None:
+        """Trading 212 quotes its Exchange rate column default->native
+        (e.g. "£1 = $1.34"), the same direction brokerage apps quote a rate
+        in for a human to read — equicast's own `fx_rate` is native->default
+        (`converted = native * fx_rate`), so this must be inverted. Verified
+        against a real row from an actual export: 0.0169122 shares @ $80.90
+        with Exchange rate 1.34136958 settled for a Total of £1.02 — i.e.
+        native_usd / raw_rate == total_gbp, not native_usd * raw_rate."""
+        file = _csv(
+            f"""
+            {TRADING212_HEADER}
+            Market buy,2024-03-01 14:32:10,US0378331005,AAPL,Apple Inc.,EOF123,0.0169122,80.90,USD,1.34136958,,GBP,1.02,GBP,,,,
+            """.replace("            ", "")
+        )
+
+        result = parse_trading212_csv(file)
+
+        native_value = result.rows[0].no_of_shares * result.rows[0].price_native
+        assert result.rows[0].fx_rate == pytest.approx(1 / 1.34136958)
+        assert native_value * result.rows[0].fx_rate == pytest.approx(1.02, abs=0.001)
 
 
 class TestParseGenericCsv:

@@ -29,6 +29,21 @@ acquisitions/ISIN changes, share-based dividends) are recognized-but-
 not-trades today — silently dropped, counted in `rows_skipped` — rather
 than actually modeled; see the transaction-import follow-up GitHub issues
 for each.
+
+`ParsedRow.fx_rate` is always in equicast's own native->default direction
+(`converted = native * fx_rate` — see
+`equicast_core.transactions.resolve_converted_amounts`), ready to pass
+straight through as a caller's `fx_rate` override, regardless of which
+direction the source file itself quotes a rate in. Trading 212's own
+`Exchange rate` column is quoted default->native — the same "£1 = $1.34"
+direction brokerage apps quote a rate in for a human to read (matching
+equicast's own UI convention for a hand-entered override — see
+`frontend/src/pages/holdings/HoldingTransactionsSection.jsx`'s
+`TransactionForm`) — so `parse_trading212_csv` inverts it (`1 / rate`)
+before it ever reaches a `ParsedRow`. Getting this backwards silently
+produces a converted figure off by a factor of `rate²` instead of an
+outright error, which is why it's handled once here rather than trusted to
+each caller.
 """
 
 from __future__ import annotations
@@ -170,6 +185,18 @@ def _parse_optional_float(value: str | None) -> float | None:
         return None
 
 
+def _invert_rate(rate: float | None) -> float | None:
+    """Trading 212's `Exchange rate` column is quoted default->native
+    (e.g. "£1 = $1.34") — see module docstring. equicast's own `fx_rate`
+    is native->default, so this inverts it to that convention before it
+    ever reaches a `ParsedRow`. `None`/`0` pass through as `None` (an
+    unpublished/degenerate rate is still "unresolved", not a
+    ZeroDivisionError)."""
+    if not rate:
+        return None
+    return 1 / rate
+
+
 def parse_trading212_csv(file: IO[Any]) -> ParseResult:
     """Parse a Trading 212 "History" export (in the Trading 212 app:
     Settings > History > Export, Include data: Orders + Transactions) into
@@ -244,7 +271,7 @@ def _build_trading212_row(
         no_of_shares=_parse_positive_float(row.get("No. of shares"), "No. of shares", row_number),
         price_native=_parse_positive_float(row.get("Price / share"), "Price / share", row_number),
         currency=_clean(row.get("Currency (Price / share)")),
-        fx_rate=_parse_optional_float(row.get("Exchange rate")),
+        fx_rate=_invert_rate(_parse_optional_float(row.get("Exchange rate"))),
         raw=dict(row),
     )
 
