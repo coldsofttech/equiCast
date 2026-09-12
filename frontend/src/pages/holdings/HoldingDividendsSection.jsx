@@ -4,16 +4,8 @@ import Badge from "../../components/core/Badge.jsx";
 import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
-import HoldingDividendBarChart from "./HoldingDividendBarChart.jsx";
-import {
-  DIVIDEND_HISTORY_RANGES,
-  UPCOMING_DIVIDEND_RANGES,
-  formatPrice,
-  resolveFxRate,
-  selectDividendHistory,
-  selectUpcomingDividends,
-  selectUpcomingDividendsInRange,
-} from "./holdingFinancials.js";
+import HoldingDividendChart from "./HoldingDividendChart.jsx";
+import { formatPrice, resolveFxRate, selectUpcomingDividends } from "./holdingFinancials.js";
 import "../accounts/PriceChart.css";
 
 /** A plain "YYYY-MM-DD" date string as "10 Sep 2026" — same short format
@@ -93,18 +85,8 @@ function DividendCard({ card, currency, sharesOwned, defaultCurrency, fxRate }) 
 /**
  * Up to MAX_UPCOMING_DIVIDENDS upcoming-dividend cards (see
  * holdingFinancials.js's `selectUpcomingDividends`), plus a "See all"
- * button opening a Drawer with a single Past/Upcoming toggle button (one
- * button showing the currently active view's label; clicking it flips to
- * the other view, same swap-in-place pattern as the app's dark/light
- * ThemeToggle) - each view is its own bar chart with its own range picker:
- *  - "Past": every real historical payout, ranged 1Y/2Y/3Y/5Y/10Y/MAX
- *    (same long-horizon picker as the price chart), defaulting to 1Y.
- *  - "Upcoming": every declared/estimated record due within the selected
- *    range - same dedup rule as the card grid (a declared record wins over
- *    an overlapping estimate) but windowed by date instead of capped by
- *    count - ranged 1Y/2Y/3Y/5Y/10Y (no MAX: a forecast never projects
- *    past 10 years out), defaulting to 1Y. Bars are colored green/blue to
- *    match the Declared/Estimated badge tones.
+ * button opening a Drawer with the full history/forecast line chart (see
+ * HoldingDividendChart.jsx).
  *
  * Renders nothing when `dividends` is null (no data published yet) or
  * carries no records at all (paid, declared, or estimated).
@@ -113,6 +95,7 @@ function DividendCard({ card, currency, sharesOwned, defaultCurrency, fxRate }) 
  *   dividends: import("../../api/market.js").DividendsResponse|null,
  *   sharesOwned?: number,
  *   defaultCurrency?: string|null,
+ *   ownFirstDividendDate?: string|null,
  * }} props `sharesOwned` — total shares held across every instance of this
  *   ticker (0 or omitted when not owned) — scales each card's headline
  *   amount from a per-share payout to that payout's total value for the
@@ -120,14 +103,19 @@ function DividendCard({ card, currency, sharesOwned, defaultCurrency, fxRate }) 
  *   default currency (see `UserProfile`); once resolved to an FX rate
  *   against `dividends.currency`, each card's headline switches from the
  *   ticker's native currency to this one, same as the Value/Invested stat
- *   tiles above.
+ *   tiles above. `ownFirstDividendDate` — this position's own earliest
+ *   recorded DIVIDEND transaction date, when owned — anchors the "See
+ *   all" chart's history to "since you started receiving payouts" instead
+ *   of the ticker's own listed history; see HoldingDividendChart.jsx.
  */
-function HoldingDividendsSection({ dividends, sharesOwned = 0, defaultCurrency = null }) {
+function HoldingDividendsSection({
+  dividends,
+  sharesOwned = 0,
+  defaultCurrency = null,
+  ownFirstDividendDate = null,
+}) {
   const api = useApi();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
-  const [drawerView, setDrawerView] = useState("past");
-  const [historyRangeId, setHistoryRangeId] = useState("1y");
-  const [upcomingRangeId, setUpcomingRangeId] = useState("1y");
   const [fxRate, setFxRate] = useState(null);
 
   const allDividends = dividends?.dividends ?? [];
@@ -154,8 +142,6 @@ function HoldingDividendsSection({ dividends, sharesOwned = 0, defaultCurrency =
   if (allDividends.length === 0) return null;
 
   const upcomingCards = selectUpcomingDividends(allDividends);
-  const pastRecords = selectDividendHistory(allDividends, historyRangeId);
-  const upcomingRecords = selectUpcomingDividendsInRange(allDividends, upcomingRangeId);
 
   return (
     <Card className="ec-detail-section">
@@ -184,58 +170,13 @@ function HoldingDividendsSection({ dividends, sharesOwned = 0, defaultCurrency =
       )}
 
       <Drawer open={isDrawerOpen} onClose={() => setIsDrawerOpen(false)} title="Dividends">
-        <button
-          type="button"
-          className="ec-dividend-view-toggle"
-          onClick={() => setDrawerView((current) => (current === "past" ? "upcoming" : "past"))}
-          aria-label={`Switch to ${drawerView === "past" ? "Upcoming" : "Past"} view`}
-        >
-          <i className="bi bi-arrow-left-right" aria-hidden="true" />
-          {drawerView === "past" ? "Past" : "Upcoming"}
-        </button>
-
-        {drawerView === "past" ? (
-          <div>
-            <div className="ec-pchart-ranges" role="group" aria-label="Dividend history range">
-              {DIVIDEND_HISTORY_RANGES.map((range) => (
-                <button
-                  key={range.id}
-                  type="button"
-                  className={`ec-pchart-range-btn${range.id === historyRangeId ? " is-active" : ""}`}
-                  onClick={() => setHistoryRangeId(range.id)}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-            <HoldingDividendBarChart
-              records={pastRecords}
-              currency={currency}
-              emptyMessage="No dividend history in this range."
-            />
-          </div>
-        ) : (
-          <div>
-            <div className="ec-pchart-ranges" role="group" aria-label="Upcoming dividends range">
-              {UPCOMING_DIVIDEND_RANGES.map((range) => (
-                <button
-                  key={range.id}
-                  type="button"
-                  className={`ec-pchart-range-btn${range.id === upcomingRangeId ? " is-active" : ""}`}
-                  onClick={() => setUpcomingRangeId(range.id)}
-                >
-                  {range.label}
-                </button>
-              ))}
-            </div>
-            <HoldingDividendBarChart
-              records={upcomingRecords}
-              currency={currency}
-              colorByStatus
-              emptyMessage="No upcoming dividends declared or estimated in this range."
-            />
-          </div>
-        )}
+        <HoldingDividendChart
+          dividends={allDividends}
+          currency={currency}
+          defaultCurrency={defaultCurrency}
+          fxRate={fxRate}
+          ownFirstDividendDate={ownFirstDividendDate}
+        />
       </Drawer>
     </Card>
   );

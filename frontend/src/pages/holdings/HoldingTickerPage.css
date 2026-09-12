@@ -300,42 +300,6 @@
   color: var(--ec-text);
 }
 
-.ec-dividend-bar {
-  fill: var(--ec-accent);
-}
-
-.ec-dividend-bar.is-declared {
-  fill: var(--ec-success);
-}
-
-.ec-dividend-bar.is-estimated {
-  fill: var(--ec-info);
-}
-
-.ec-dividend-bar.is-hovered {
-  opacity: 0.8;
-}
-
-.ec-dividend-view-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--ec-s-8);
-  height: 32px;
-  padding: 0 var(--ec-s-12);
-  margin-bottom: var(--ec-s-16);
-  border: 1px solid var(--ec-border-strong);
-  border-radius: var(--ec-r-pill);
-  background: var(--ec-surface);
-  color: var(--ec-text);
-  font-weight: 700;
-  font-size: var(--ec-fs-13);
-  cursor: pointer;
-}
-
-.ec-dividend-view-toggle:hover {
-  background: var(--ec-surface-hover);
-}
-
 .ec-cagr-list {
   display: flex;
   flex-direction: column;
