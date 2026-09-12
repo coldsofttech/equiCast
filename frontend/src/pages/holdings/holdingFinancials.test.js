@@ -1,12 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  availableForecastRanges,
+  availablePastRanges,
   formatDividendFrequency,
   formatPercent,
   formatPrice,
   formatRatio,
   resolveFxRate,
+  resolveFxRateOnDate,
   rollupInstances,
   selectDividendHistory,
+  selectRemainingDividendsThisYear,
   selectUpcomingDividends,
   selectUpcomingDividendsInRange,
 } from "./holdingFinancials.js";
@@ -119,6 +123,90 @@ describe("resolveFxRate", () => {
   });
 });
 
+describe("resolveFxRateOnDate", () => {
+  it("short-circuits to 1 when the two currencies match", async () => {
+    const api = vi.fn();
+    await expect(resolveFxRateOnDate(api, "USD", "USD", "2026-01-15")).resolves.toBe(1);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("returns null when either currency or the date is unknown", async () => {
+    const api = vi.fn();
+    await expect(resolveFxRateOnDate(api, null, "USD", "2026-01-15")).resolves.toBeNull();
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", null)).resolves.toBeNull();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("finds the latest daily bar on or before the given date", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [
+        { date: "2026-01-10", close: 1.25 },
+        { date: "2026-01-14", close: 1.27 },
+        { date: "2026-01-20", close: 1.3 },
+      ],
+      weekly: [],
+      monthly: [],
+    });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15");
+
+    expect(api).toHaveBeenCalledWith("/market/fx/GBPUSD/prices/");
+    expect(rate).toBe(1.27);
+  });
+
+  it("falls through to monthly bars for a date older than daily/weekly cover", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [{ date: "2026-01-10", close: 1.27 }],
+      weekly: [{ date: "2025-06-01", close: 1.24 }],
+      monthly: [
+        { date: "2020-01-01", close: 1.31 },
+        { date: "2021-01-01", close: 1.35 },
+      ],
+    });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2021-06-01");
+
+    expect(rate).toBe(1.35);
+  });
+
+  it("falls back to the inverted pair, taking its reciprocal", async () => {
+    const api = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("404"))
+      .mockResolvedValueOnce({
+        ticker: "USDGBP",
+        daily: [{ date: "2026-01-14", close: 0.8 }],
+        weekly: [],
+        monthly: [],
+      });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15");
+
+    expect(api).toHaveBeenNthCalledWith(1, "/market/fx/GBPUSD/prices/");
+    expect(api).toHaveBeenNthCalledWith(2, "/market/fx/USDGBP/prices/");
+    expect(rate).toBeCloseTo(1.25);
+  });
+
+  it("resolves to null when neither pair has anything published that far back", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [{ date: "2026-01-10", close: 1.27 }],
+      weekly: [],
+      monthly: [],
+    });
+
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", "2020-01-01")).resolves.toBeNull();
+  });
+
+  it("resolves to null when neither pair is published at all", async () => {
+    const api = vi.fn().mockRejectedValue(new Error("404"));
+
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15")).resolves.toBeNull();
+  });
+});
+
 describe("formatDividendFrequency", () => {
   it("maps each known backend cadence to a display label", () => {
     expect(formatDividendFrequency("weekly")).toBe("Weekly");
@@ -223,6 +311,44 @@ describe("selectUpcomingDividends", () => {
   });
 });
 
+describe("selectRemainingDividendsThisYear", () => {
+  function isoDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function record(status, exDividendDate, overrides = {}) {
+    return {
+      ticker: "AAPL",
+      currency: "USD",
+      ex_dividend_date: exDividendDate,
+      payment_date: null,
+      price: 0.26,
+      status,
+      last_updated: "2026-08-30T09:00:00+00:00",
+      source: status === "estimated" ? "equicast" : "yfinance",
+      ...overrides,
+    };
+  }
+
+  it("includes an upcoming record due before the end of this year", () => {
+    const dividends = [record("declared", isoDate(10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual(dividends);
+  });
+
+  it("excludes a record due next year", () => {
+    const nextYear = new Date().getFullYear() + 1;
+    const dividends = [record("estimated", `${nextYear}-01-15`)];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
+  });
+
+  it("excludes paid/past records, same as selectUpcomingDividends", () => {
+    const dividends = [record("paid", isoDate(-10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
+  });
+});
+
 describe("selectUpcomingDividendsInRange", () => {
   function isoDateFromNow(days) {
     const date = new Date();
@@ -312,21 +438,39 @@ describe("selectDividendHistory", () => {
       { ...paidRecord(0.1), status: "estimated" },
     ];
 
-    expect(selectDividendHistory(dividends, "max")).toEqual([dividends[0]]);
+    expect(selectDividendHistory(dividends, "10y")).toEqual([dividends[0]]);
   });
 
   it("sorts ascending by ex-dividend date", () => {
     const older = paidRecord(2);
     const newer = paidRecord(0.5);
 
-    expect(selectDividendHistory([newer, older], "max")).toEqual([older, newer]);
+    expect(selectDividendHistory([newer, older], "10y")).toEqual([older, newer]);
   });
 
-  it("max returns every paid record, regardless of age", () => {
+  it("10y returns every paid record within the last 10 years", () => {
     const dividends = [paidRecord(1), paidRecord(9)];
-    expect(selectDividendHistory(dividends, "max")).toEqual(
+    expect(selectDividendHistory(dividends, "10y")).toEqual(
       [...dividends].sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date))
     );
+  });
+
+  it("sinceDate raises the floor when later than the range's own cutoff", () => {
+    const withinRange = paidRecord(2);
+    const beforeSince = paidRecord(4);
+
+    const result = selectDividendHistory([withinRange, beforeSince], "10y", isoDateYearsAgo(3));
+
+    expect(result).toEqual([withinRange]);
+  });
+
+  it("sinceDate has no effect when earlier than the range's own cutoff", () => {
+    const withinRange = paidRecord(0.5);
+    const outsideRange = paidRecord(1.5);
+
+    const result = selectDividendHistory([withinRange, outsideRange], "1y", isoDateYearsAgo(9));
+
+    expect(result).toEqual([withinRange]);
   });
 
   it("trims to the given range", () => {
@@ -341,5 +485,55 @@ describe("selectDividendHistory", () => {
   it("returns an empty array when nothing falls in range", () => {
     const dividends = [paidRecord(9)];
     expect(selectDividendHistory(dividends, "1y")).toEqual([]);
+  });
+});
+
+describe("availablePastRanges", () => {
+  function yearsAgoIso(years) {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - years);
+    return date.toISOString().slice(0, 10);
+  }
+
+  it("returns every preset when earliestDate is unknown", () => {
+    expect(availablePastRanges(null).map((r) => r.id)).toEqual(["1y", "2y", "3y", "5y", "10y"]);
+  });
+
+  it("returns every preset when earliestDate predates all of them", () => {
+    expect(availablePastRanges(yearsAgoIso(20)).map((r) => r.id)).toEqual([
+      "1y",
+      "2y",
+      "3y",
+      "5y",
+      "10y",
+    ]);
+  });
+
+  it("drops presets past the first one that already reaches earliestDate", () => {
+    expect(availablePastRanges(yearsAgoIso(3)).map((r) => r.id)).toEqual(["1y", "2y", "3y"]);
+  });
+
+  it("always keeps at least the smallest preset", () => {
+    expect(availablePastRanges(yearsAgoIso(0.1)).map((r) => r.id)).toEqual(["1y"]);
+  });
+});
+
+describe("availableForecastRanges", () => {
+  function yearsFromNowIso(years) {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() + years);
+    return date.toISOString().slice(0, 10);
+  }
+
+  it("returns every preset when latestForecastDate is unknown", () => {
+    expect(availableForecastRanges(null).map((r) => r.id)).toEqual(["1y", "2y", "3y", "5y", "10y"]);
+  });
+
+  it("drops presets past the first one that already reaches latestForecastDate", () => {
+    expect(availableForecastRanges(yearsFromNowIso(2)).map((r) => r.id)).toEqual(["1y", "2y"]);
+  });
+
+  it("always keeps at least the smallest preset", () => {
+    expect(availableForecastRanges(yearsFromNowIso(0.1)).map((r) => r.id)).toEqual(["1y"]);
   });
 });

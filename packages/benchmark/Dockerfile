@@ -9,6 +9,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages/datafeed/ packages/datafeed/
 COPY packages/metrics/ packages/metrics/
+COPY packages/news/ packages/news/
 COPY packages/benchmark/ packages/benchmark/
 
 WORKDIR /app/packages/benchmark

@@ -19,11 +19,12 @@ function initialsFor(name, email) {
 /**
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
- * `user` — no extra API round trip), "Accounts"/"Goals" (its only nav entry
- * points now that MenuBar is gone), "Settings" (opens SettingsModal), and
- * the sign-out action. Only rendered inside AppShell, which only mounts
- * once RequireAuth has already confirmed `isAuthenticated`, so `user` is
- * always populated here.
+ * `user` — no extra API round trip), its nav entries (now that MenuBar is
+ * gone) — "Accounts", "Watchlists" (GitHub issue #170; currently lands on
+ * ComingSoonPage — see WatchlistsPage), "Goals", and "Import transactions"
+ * — "Settings" (opens SettingsModal), and the sign-out action. Only
+ * rendered inside AppShell, which only mounts once RequireAuth has already
+ * confirmed `isAuthenticated`, so `user` is always populated here.
  *
  * `profile`/`onProfileUpdate` are passed down from Topbar's own
  * useCurrentUser() call (rather than this component fetching its own copy)
@@ -139,6 +140,18 @@ function UserMenu({ profile, onProfileUpdate }) {
             role="menuitem"
             className="ec-usermenu-item"
             onClick={() => {
+              navigate("/watchlists");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-binoculars" aria-hidden="true" />
+            Watchlists
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
               navigate("/goals");
               setIsOpen(false);
             }}
@@ -157,6 +170,18 @@ function UserMenu({ profile, onProfileUpdate }) {
           >
             <i className="bi bi-gear" aria-hidden="true" />
             Settings
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              navigate("/import");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-upload" aria-hidden="true" />
+            Import Transactions
           </button>
           <button
             type="button"

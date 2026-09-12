@@ -1,0 +1,28 @@
+.ec-erricon-apperror {
+  animation: ec-erricon-apperror-shake 0.5s ease-in-out 1;
+}
+
+@keyframes ec-erricon-apperror-shake {
+  0%,
+  100% {
+    transform: translateX(0) rotate(0);
+  }
+  20% {
+    transform: translateX(-4px) rotate(-1deg);
+  }
+  40% {
+    transform: translateX(4px) rotate(1deg);
+  }
+  60% {
+    transform: translateX(-3px) rotate(0);
+  }
+  80% {
+    transform: translateX(3px) rotate(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ec-erricon-apperror {
+    animation: none;
+  }
+}

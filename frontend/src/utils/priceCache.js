@@ -3,6 +3,11 @@
  * api/market.js's getPrices) — see marketDataCache.js for the shared
  * IndexedDB plumbing/rationale this and profileCache.js/metricsCache.js
  * all build on.
+ *
+ * One entry per ticker, not per ticker+range — getPrices always fetches
+ * the same bundled `{daily, weekly, monthly}` payload regardless of which
+ * range the user has picked (see GitHub issue #150), so there's only ever
+ * one thing to cache per ticker.
  */
 
 import { readCachedValue, writeCachedValue } from "./marketDataCache.js";
@@ -10,11 +15,10 @@ import { readCachedValue, writeCachedValue } from "./marketDataCache.js";
 /**
  * @param {string} assetClass
  * @param {string} symbol
- * @param {string} range
  * @returns {string}
  */
-export function priceCacheKey(assetClass, symbol, range) {
-  return `${assetClass.toLowerCase()}:${symbol.toUpperCase()}:prices:${range}`;
+export function priceCacheKey(assetClass, symbol) {
+  return `${assetClass.toLowerCase()}:${symbol.toUpperCase()}:prices`;
 }
 
 /**

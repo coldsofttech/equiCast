@@ -19,6 +19,7 @@ import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingBuySellGauge from "./HoldingBuySellGauge.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
 import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
+import HoldingNewsSection from "./HoldingNewsSection.jsx";
 import HoldingTransactionsSection from "./HoldingTransactionsSection.jsx";
 import HoldingTickerSkeleton from "./HoldingTickerSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
@@ -27,6 +28,7 @@ import { useCurrentUser } from "../../api/useCurrentUser.js";
 import {
   getDividends,
   getMetrics,
+  getNews,
   getProfile,
   searchTickers,
   MARKET_PROFILE_BADGE_TONES,
@@ -44,8 +46,16 @@ import {
   writeCachedTransactionsPage,
 } from "../../utils/transactionsCache.js";
 import { formatCurrency, plTone } from "../sampleFinancials.js";
-import { formatSyncedDate } from "../holdingValuation.js";
-import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import {
+  computeHoldingValuation,
+  formatSyncedDate,
+  summarizeHoldingValuations,
+} from "../holdingValuation.js";
+import {
+  resolveFxRate,
+  rollupInstances,
+  selectRemainingDividendsThisYear,
+} from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
 /** Page size for every listTransactions call this page makes — matches
@@ -119,6 +129,7 @@ function HoldingTickerPage() {
   const [marketProfileStatus, setMarketProfileStatus] = useState("loading");
   const [marketMetrics, setMarketMetrics] = useState(null);
   const [marketDividends, setMarketDividends] = useState(null);
+  const [marketNews, setMarketNews] = useState(null);
   const [transactionsByHolding, setTransactionsByHolding] = useState({});
   const [isDataLoading, setIsDataLoading] = useState(true);
 
@@ -160,6 +171,45 @@ function HoldingTickerPage() {
   }, [accounts, ticker]);
 
   const isOwned = instances.length > 0;
+  // Total shares held across every instance of this ticker — holding.
+  // no_of_shares is already each mode's own net rollup figure (see
+  // equicast_core.transactions.compute_holding_rollup), so summing it
+  // across instances works the same for AVERAGE and TRANSACTION alike.
+  // Feeds HoldingDividendsSection's per-card total-value calculation.
+  const sharesOwned = instances.reduce(
+    (sum, instance) => sum + Number(instance.holding.no_of_shares ?? 0),
+    0
+  );
+  // This position's own recorded DIVIDEND transactions across every
+  // instance of this ticker, summed by date (a ticker split across
+  // several accounts can have a same-day DIVIDEND transaction in each) —
+  // each `amount_native` here is already the correct total for the shares
+  // actually held as of that date (see equicast_core.transactions.
+  // compute_new_dividend_transactions' running-balance math), so
+  // HoldingDividendChart plots these directly for an owned holding's
+  // history instead of raw per-share market data * today's share count,
+  // which would be wrong for any date before the most recent trade.
+  // Recomputes as transactionsByHolding fills in from its own effect
+  // below; empty in the meantime just falls back to the chart's own
+  // not-owned behavior for a render or two, not a lasting wrong answer.
+  const ownDividendsByDate = new Map();
+  for (const instance of instances) {
+    const transactions = transactionsByHolding[instance.holding.id]?.transactions ?? [];
+    for (const t of transactions) {
+      if (t.type !== "DIVIDEND" || !t.date || t.amount_native == null) continue;
+      ownDividendsByDate.set(t.date, (ownDividendsByDate.get(t.date) ?? 0) + Number(t.amount_native));
+    }
+  }
+  const ownFirstDividendDate =
+    ownDividendsByDate.size > 0
+      ? [...ownDividendsByDate.keys()].reduce((a, b) => (a < b ? a : b))
+      : null;
+  const ownDividendRecords = [...ownDividendsByDate.entries()].map(([date, amount]) => ({
+    ex_dividend_date: date,
+    payment_date: null,
+    price: amount,
+    status: "paid",
+  }));
 
   // Only needed when the ticker isn't held anywhere — an owned instance
   // already carries its asset class. `location.state?.assetClass` (set by
@@ -216,7 +266,12 @@ function HoldingTickerPage() {
       .catch((err) => ({ status: err.status === 404 ? "missing" : "error", profile: null }));
 
     const metricsPromise = getMetrics(api, assetClass, ticker).catch(() => null);
-    const dividendsPromise = getDividends(api, assetClass, ticker).catch(() => null);
+    // fx has no dividends concept (see api/market.js's getDividends jsdoc) —
+    // skip the request entirely rather than hitting the endpoint just to
+    // discard the result.
+    const dividendsPromise =
+      assetClass === "fx" ? Promise.resolve(null) : getDividends(api, assetClass, ticker).catch(() => null);
+    const newsPromise = getNews(api, assetClass, ticker).catch(() => null);
 
     // Page 1 (50 items, most-recent-date-first — see backend/transactions/
     // views.py's TransactionListView.get) per instance, IndexedDB-cached so
@@ -242,13 +297,14 @@ function HoldingTickerPage() {
         )
       : Promise.resolve([]);
 
-    Promise.all([profilePromise, metricsPromise, dividendsPromise, transactionsPromise]).then(
-      ([profileResult, metrics, dividends, transactionsResults]) => {
+    Promise.all([profilePromise, metricsPromise, dividendsPromise, newsPromise, transactionsPromise]).then(
+      ([profileResult, metrics, dividends, news, transactionsResults]) => {
         if (cancelled) return;
         setMarketProfileStatus(profileResult.status);
         setMarketProfile(profileResult.profile);
         setMarketMetrics(metrics);
         setMarketDividends(dividends);
+        setMarketNews(news);
         const map = {};
         for (const result of transactionsResults) {
           map[result.holdingId] = result.error
@@ -336,26 +392,34 @@ function HoldingTickerPage() {
   // in place this drops every cached page for the holding and re-fetches
   // page 1 plus the holding itself fresh — the same "write straight back to
   // the source of truth" approach useAccounts.js's setAccounts uses.
+  //
+  // getHolding must resolve *before* listTransactions fires, not in
+  // parallel with it: in AVERAGE mode, getHolding's server-side enrichment
+  // runs sync_dividends_for_holdings first (backend/holdings/views.py's
+  // _enrich_holding), which can auto-create a new DIVIDEND transaction as
+  // a side effect before returning the holding's recomputed
+  // dividends_native. A listTransactions call racing alongside it can read
+  // page 1 before that write lands, so the stat updates but the new
+  // DIVIDEND is missing from the list until the next fetch.
   const refreshHoldingAfterMutation = (holdingId) => {
     clearCachedTransactionsForHolding(holdingId);
-    return Promise.all([
-      listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE }),
-      getHolding(api, holdingId),
-    ]).then(([page, holding]) => {
-      writeCachedTransactionsPage(holdingId, 1, page);
-      setTransactionsByHolding((prev) => ({
-        ...prev,
-        [holdingId]: {
-          holdingId,
-          transactions: page.results,
-          count: page.count,
-          next: page.next,
-          page: 1,
-          error: false,
-        },
-      }));
-      setCachedAccounts((current) => replaceHoldingInAccounts(current, holding));
-    });
+    return getHolding(api, holdingId).then((holding) =>
+      listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE }).then((page) => {
+        writeCachedTransactionsPage(holdingId, 1, page);
+        setTransactionsByHolding((prev) => ({
+          ...prev,
+          [holdingId]: {
+            holdingId,
+            transactions: page.results,
+            count: page.count,
+            next: page.next,
+            page: 1,
+            error: false,
+          },
+        }));
+        setCachedAccounts((current) => replaceHoldingInAccounts(current, holding));
+      })
+    );
   };
 
   const handleCreateTransaction = (holdingId, fields) =>
@@ -509,73 +573,87 @@ function HoldingTickerPage() {
               });
 
               const totals = rollupInstances(instanceFinancials, currentPriceNative);
-              const totalsTone = plTone(totals.plPct ?? 0);
               avgPriceNative = totals.shares > 0 ? totals.invested / totals.shares : null;
 
-              // Total invested/Profit-loss are shown in the user's own default
-              // currency (fxRate converts nativeCurrency -> defaultCurrency —
-              // see resolveFxRate), not the holding's native currency: a GBP
-              // account holding a USD stock should read in GBP here, same
-              // reasoning as HoldingInstancesTable's own default-currency
-              // column. Profit/loss % needs no conversion, being currency-free.
-              // When there's no market profile at all (marketProfileStatus ===
-              // "missing"), nativeCurrency is null, so there's nothing to
-              // convert from/to — shown as a plain currency-less number
-              // instead of blocking forever on an fx lookup the page never
-              // even attempts in that case (see the fxRate effect above).
-              const totalsLoading = nativeCurrency != null && fxState === "loading";
-              const totalsCurrency = nativeCurrency == null ? null : defaultCurrency;
-              const investedDefault =
-                nativeCurrency == null ? totals.invested : fxRate != null ? totals.invested * fxRate : null;
-              const currentValueDefault =
-                totals.currentValue == null
-                  ? null
-                  : nativeCurrency == null
-                    ? totals.currentValue
-                    : fxRate != null
-                      ? totals.currentValue * fxRate
-                      : null;
-              const plValueDefault =
-                totals.plValue == null
-                  ? null
-                  : nativeCurrency == null
-                    ? totals.plValue
-                    : fxRate != null
-                      ? totals.plValue * fxRate
-                      : null;
-              const dividendsDefault =
-                nativeCurrency == null
-                  ? totals.dividendsNative
-                  : fxRate != null
-                    ? totals.dividendsNative * fxRate
-                    : null;
+              // Value/Invested/Profit-loss/Dividends are shown in the user's
+              // own default currency using each holding's own current_price/
+              // invested/dividends — already converted server-side (see
+              // equicast_core.client.MarketDataClient.enrich_holdings) — via
+              // the same computeHoldingValuation/summarizeHoldingValuations
+              // AccountDetailPage/PieDetailPage use, rather than this page
+              // separately re-fetching marketProfile.day_close and its own
+              // fx rate and converting client-side. That independent
+              // computation could land on a different price/fx snapshot than
+              // whatever the accounts/pies fetch had already enriched each
+              // holding with, so the exact same holding could show a
+              // different Value/Invested/P&L depending on whether you were
+              // looking at it from this page or from its account/pie page.
+              const holdingsForTicker = instances.map((instance) => instance.holding);
+              const valuations = holdingsForTicker.map(computeHoldingValuation);
+              const defaultTotals = summarizeHoldingValuations(holdingsForTicker, valuations);
+              const totalsTone = plTone(defaultTotals.plPct);
+              const totalsCurrency = defaultCurrency;
+              const investedDefault = defaultTotals.invested;
+              const currentValueDefault = defaultTotals.currentValue;
+              const plValueDefault = defaultTotals.plValue;
+              const dividendsDefault = defaultTotals.dividends;
+
+              // "This year so far" / "Expected by year end" hint — the
+              // Income/Dividends tile's own value above is the lifetime
+              // total, which says nothing about this year's pace. Earned
+              // so far reads each DIVIDEND transaction's own already-
+              // converted `amount` (resolved at the historical rate for
+              // its own date, more accurate than reconverting with
+              // today's rate); the remaining estimate reuses the same
+              // native-currency fxRate/sharesOwned this page already
+              // resolves for HoldingInstancesTable, applied to whatever
+              // declared/estimated payouts still fall before Dec 31 (see
+              // selectRemainingDividendsThisYear) — "today's rate" being
+              // the only sensible one for a payout that hasn't happened,
+              // same reasoning HoldingDividendsSection's own FX resolution
+              // documents.
+              const currentYear = new Date().getFullYear();
+              const thisYearPrefix = `${currentYear}-`;
+              let earnedThisYear = 0;
+              let earnedThisYearUnresolved = false;
+              for (const instance of instances) {
+                for (const t of transactionsByHolding[instance.holding.id]?.transactions ?? []) {
+                  if (t.type !== "DIVIDEND" || !t.date?.startsWith(thisYearPrefix)) continue;
+                  if (t.amount == null) {
+                    earnedThisYearUnresolved = true;
+                    continue;
+                  }
+                  earnedThisYear += Number(t.amount);
+                }
+              }
+              const remainingThisYearNative = selectRemainingDividendsThisYear(
+                marketDividends?.dividends ?? []
+              ).reduce((sum, record) => sum + record.price * totals.shares, 0);
+              const expectedByYearEnd =
+                !earnedThisYearUnresolved && fxRate != null
+                  ? earnedThisYear + remainingThisYearNative * fxRate
+                  : null;
 
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
                     label="Value"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : currentValueDefault != null ? (
+                      currentValueDefault != null ? (
                         <Balance>{formatMoney(currentValueDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
                       )
                     }
                     hint={
-                      totalsLoading ? (
-                        "…"
-                      ) : (
-                        <>
-                          Invested{" "}
-                          {investedDefault != null ? (
-                            <Balance>{formatMoney(investedDefault, totalsCurrency)}</Balance>
-                          ) : (
-                            "—"
-                          )}
-                        </>
-                      )
+                      <>
+                        Invested{" "}
+                        {investedDefault != null ? (
+                          <Balance>{formatMoney(investedDefault, totalsCurrency)}</Balance>
+                        ) : (
+                          "—"
+                        )}
+                      </>
                     }
                     tone={totalsTone}
                   />
@@ -596,9 +674,7 @@ function HoldingTickerPage() {
                   <StatTile
                     label="Profit / loss"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : plValueDefault != null ? (
+                      plValueDefault != null ? (
                         <Balance>
                           {plValueDefault >= 0 ? "+" : "-"}
                           {formatMoney(Math.abs(plValueDefault), totalsCurrency)}
@@ -607,19 +683,25 @@ function HoldingTickerPage() {
                         "—"
                       )
                     }
-                    hint={totals.plPct != null ? `${totals.plPct >= 0 ? "+" : "-"}${Math.abs(totals.plPct).toFixed(1)}%` : "—"}
+                    hint={`${defaultTotals.plPct >= 0 ? "+" : "-"}${Math.abs(defaultTotals.plPct).toFixed(1)}%`}
                     tone={totalsTone}
                     hintTone={totalsTone}
                   />
                   <StatTile
-                    label="Dividends"
+                    label="Income / Dividends"
                     value={
-                      totalsLoading ? (
-                        "…"
-                      ) : dividendsDefault != null ? (
+                      dividendsDefault != null ? (
                         <Balance>{formatMoney(dividendsDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
+                      )
+                    }
+                    hint={
+                      expectedByYearEnd != null && (
+                        <>
+                          Year {currentYear}: <Balance>{formatMoney(earnedThisYear, totalsCurrency)}</Balance>/
+                          <Balance>{formatMoney(expectedByYearEnd, totalsCurrency)}</Balance>
+                        </>
                       )
                     }
                   />
@@ -663,12 +745,20 @@ function HoldingTickerPage() {
 
           <HoldingBuySellGauge marketMetrics={marketMetrics} />
 
+          <HoldingNewsSection news={marketNews} />
+
           <div className="ec-account-columns">
             <HoldingStatsPanel marketProfile={marketProfile} marketMetrics={marketMetrics} />
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 
-          <HoldingDividendsSection dividends={marketDividends} />
+          <HoldingDividendsSection
+            dividends={marketDividends}
+            sharesOwned={sharesOwned}
+            defaultCurrency={userProfile?.default_currency ?? null}
+            ownFirstDividendDate={ownFirstDividendDate}
+            ownDividendRecords={ownDividendRecords}
+          />
 
           {isOwned && (
             <HoldingTransactionsSection
@@ -676,6 +766,7 @@ function HoldingTickerPage() {
               transactionsByHolding={transactionsByHolding}
               transactionType={userProfile?.transaction_type ?? "AVERAGE"}
               nativeCurrency={marketProfile?.currency ?? null}
+              defaultCurrency={userProfile?.default_currency ?? null}
               onCreateTransaction={handleCreateTransaction}
               onUpdateTransaction={handleUpdateTransaction}
               onDeleteTransaction={handleDeleteTransaction}

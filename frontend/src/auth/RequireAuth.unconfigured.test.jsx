@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { MemoryRouter } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
 import RequireAuth from "./RequireAuth.jsx";
 
@@ -16,9 +17,11 @@ afterEach(() => {
 describe("RequireAuth (Auth0 not configured)", () => {
   it("shows a not-configured message without ever calling useAuth0", () => {
     render(
-      <RequireAuth>
-        <div>secret</div>
-      </RequireAuth>
+      <MemoryRouter>
+        <RequireAuth>
+          <div>secret</div>
+        </RequireAuth>
+      </MemoryRouter>
     );
 
     expect(screen.getByRole("alert")).toHaveTextContent(/auth0 isn't configured/i);

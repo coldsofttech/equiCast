@@ -10,6 +10,20 @@
   font-size: var(--ec-fs-12);
 }
 
+.ec-landing-foot-links {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-16);
+}
+
+.ec-landing-foot-links a {
+  color: var(--ec-text-subtle);
+}
+
+.ec-landing-foot-links a:hover {
+  color: var(--ec-text-muted);
+}
+
 /* ----- Disclaimer ----- */
 .ec-disclaimer {
   padding: var(--ec-s-24) var(--ec-s-32);

@@ -1,0 +1,13 @@
+.ec-settings-fx-warmup-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ec-s-12);
+}
+
+.ec-settings-fx-warmup-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-6);
+  font-size: var(--ec-fs-13);
+  color: var(--ec-text);
+}

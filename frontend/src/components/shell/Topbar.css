@@ -39,3 +39,19 @@
 .ec-topbar-currency i {
   font-size: var(--ec-fs-13);
 }
+
+.ec-offline-banner {
+  position: sticky;
+  top: var(--ec-topbar-h);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-8) var(--ec-s-16);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-warning-soft-text);
+  background: var(--ec-warning-soft);
+  border-bottom: 1px solid var(--ec-divider);
+}
