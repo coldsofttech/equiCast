@@ -624,6 +624,48 @@ class TransactionListViewTests(TestCase):
             date="2026-01-15",
             type="BUY",
         )
+        mock_client.rewind_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2026-01-15"
+        )
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_does_not_rewind_the_watermark_for_an_average_mode_buy(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        """GitHub issue #124's rewind is TRANSACTION-mode-only — AVERAGE
+        mode's single BUY has no share-count timeline to reopen."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = AVERAGE_PROFILE
+        mock_market_data_client.get_profile.return_value = None
+        mock_client.create_transaction.return_value = AVERAGE_TRANSACTION
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "average_price_native": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_client.rewind_dividends_synced_through.assert_not_called()
 
     @patch("transactions.views._market_data_client")
     @patch("transactions.views._profile_client")
@@ -1169,6 +1211,57 @@ class TransactionDetailViewTests(TestCase):
             dividends=0.0,
         )
 
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_rewinds_the_watermark_for_a_transaction_mode_buy(
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_client, mock_profile_client
+    ) -> None:
+        """GitHub issue #124: deleting a TRANSACTION-mode BUY/SELL changes
+        the share-count timeline for every payout after it, the same as
+        creating one does."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_transaction.return_value = BUY_TRANSACTION
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_client.list_transactions.return_value = []
+
+        response = self.client.delete(
+            reverse("transactions-detail", args=["h-1", "t-2"]), **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_client.rewind_dividends_synced_through.assert_called_once_with(
+            "auth0|abc123", "h-1", "2026-01-15"
+        )
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_does_not_rewind_for_a_dividend_transaction(
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_client, mock_profile_client
+    ) -> None:
+        """Deleting an auto-created DIVIDEND is the lasting correction
+        issue #123's watermark exists for — it must never itself trigger a
+        rewind, or the very payout the user just deleted would come right
+        back on the next sync."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_transaction.return_value = DIVIDEND_TRANSACTION
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_client.list_transactions.return_value = []
+
+        response = self.client.delete(
+            reverse("transactions-detail", args=["h-1", "t-3"]), **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_client.rewind_dividends_synced_through.assert_not_called()
+
     @patch("transactions.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
@@ -1186,15 +1279,11 @@ class TransactionDetailViewTests(TestCase):
 
 
 class SyncDividendsForHoldingsTests(TestCase):
-    """GitHub issue #123 — called directly by accounts/pies/holdings
-    views.py's own _enrich_holdings/_enrich_holding, not through an HTTP
-    endpoint of its own, so these call the function directly rather than
-    going through self.client."""
-
-    def test_returns_holdings_unchanged_for_a_transaction_mode_profile(self) -> None:
-        result = sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], TRANSACTION_PROFILE)
-
-        self.assertEqual(result, [ACCOUNT_HOLDING])
+    """GitHub issues #123 (AVERAGE mode) and #124 (TRANSACTION mode) —
+    called directly by accounts/pies/holdings views.py's own
+    _enrich_holdings/_enrich_holding, not through an HTTP endpoint of its
+    own, so these call the function directly rather than going through
+    self.client."""
 
     @patch("transactions.views._client")
     def test_skips_watchlist_and_fx_holdings_without_touching_transactions(
@@ -1269,5 +1358,59 @@ class SyncDividendsForHoldingsTests(TestCase):
         mock_holdings_client.update_holding_financials.assert_called_once()
         mock_client.advance_dividends_synced_through.assert_called_once_with(
             "auth0|abc123", "h-1", "2026-03-01"
+        )
+        self.assertEqual(result, [refreshed_holding])
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    def test_creates_a_transaction_mode_dividend_using_the_shares_held_on_ex_date(
+        self, mock_client, mock_holdings_client, mock_market_data_client
+    ) -> None:
+        """GitHub issue #124: TRANSACTION mode's full BUY/SELL history
+        means the correct share count for a payout depends on the running
+        balance as of its own ex-date, not a single fixed BUY quantity —
+        here 10 bought then 4 sold nets 6 shares held by the ex-date."""
+        buy = {**BUY_TRANSACTION, "id": "t-buy", "no_of_shares": 10, "date": "2026-01-01"}
+        sell = {
+            **BUY_TRANSACTION,
+            "id": "t-sell",
+            "type": "SELL",
+            "no_of_shares": 4,
+            "date": "2026-02-01",
+        }
+        mock_client.list_transactions.side_effect = [[buy, sell], [buy, sell, DIVIDEND_TRANSACTION]]
+        mock_client.get_dividends_synced_through.return_value = None
+        mock_market_data_client.get_dividends.return_value = {
+            "ticker": "AAPL",
+            "currency": "USD",
+            "last_updated": "2026-03-01",
+            "dividends": [
+                {
+                    "ex_dividend_date": "2026-03-01",
+                    "payment_date": None,
+                    "price": 0.5,
+                    "status": "paid",
+                }
+            ],
+        }
+        mock_market_data_client.get_profile.return_value = {"currency": "USD"}
+        mock_market_data_client.get_fx_rate_on_date.return_value = 1.25
+        refreshed_holding = {**ACCOUNT_HOLDING, "dividends_native": 3.0, "dividends": 3.75}
+        mock_holdings_client.update_holding_financials.return_value = refreshed_holding
+
+        result = sync_dividends_for_holdings("auth0|abc123", [ACCOUNT_HOLDING], TRANSACTION_PROFILE)
+
+        mock_client.create_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "TRANSACTION",
+            amount_native=3.0,
+            date="2026-03-01",
+            type="DIVIDEND",
+            fx_rate=1.25,
+            average_price=None,
+            price=None,
+            amount=3.75,
         )
         self.assertEqual(result, [refreshed_holding])

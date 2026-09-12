@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- TRANSACTION-mode holdings now also auto-record their paid dividend
+  history as `DIVIDEND` transactions (GitHub issue #124, extending #123's
+  AVERAGE-mode version) — but backfilled across the whole trade history
+  rather than only from "now" forward: `compute_new_dividend_transactions`
+  (`equicast_core.transactions`) gained a `mode` parameter, and
+  TRANSACTION mode's share count for a payout is now the running
+  `BUY`/`SELL` balance as of that payout's own ex-date (a new
+  `_transaction_mode_shares_at` helper), not a single fixed quantity — so
+  a payout from years ago backfills correctly using the whole history,
+  and one landing while the balance is exactly zero (fully sold by then)
+  is skipped rather than recorded for $0.
+
+  A `BUY`/`SELL` created or deleted with a date on or before the
+  holding's `dividends_synced_through` watermark now rewinds it (new
+  `TransactionsClient.rewind_dividends_synced_through`, called from
+  `TransactionListView.post`/`TransactionDetailView.delete`) — a
+  backdated trade changes the share-count timeline for every payout after
+  it, so the reopened range needs a full recheck with the corrected
+  history (an ordinary new-today trade, after the watermark, leaves it
+  untouched). Same as issue #123, an already-created `DIVIDEND`
+  transaction's amount is never rewritten once it exists — a stale amount
+  from a since-added/removed trade is corrected by the user, by hand,
+  same as any dividend.
+
 - AVERAGE-mode holdings now auto-record their paid dividend history as
   `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
   mode's own version, issue #124), rather than requiring the user to

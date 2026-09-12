@@ -15,7 +15,7 @@ import {
   resolveFxRateOnDate,
   selectNetShares,
   selectPositionEntry,
-  selectRecentTradeTransactions,
+  selectRecentTransactions,
 } from "./holdingFinancials.js";
 
 /** A complete "YYYY-MM-DD" with a plausible year — guards the FX
@@ -54,6 +54,7 @@ function averageTypeMeta(type) {
 const TRADE_TYPE_META = {
   BUY: { icon: "bi-cart-plus", label: "Buy", tone: "success" },
   SELL: { icon: "bi-cart-dash", label: "Sell", tone: "danger" },
+  DIVIDEND: { icon: "bi-cash-coin", label: "Dividend", tone: "info" },
 };
 
 function tradeTypeMeta(type) {
@@ -105,6 +106,7 @@ function TransactionForm({
   transactionType = "AVERAGE",
   mode,
   instances,
+  transactionsByHolding = {},
   initialValues,
   nativeCurrency,
   defaultCurrency,
@@ -119,6 +121,19 @@ function TransactionForm({
   const [shares, setShares] = useState(initialValues?.no_of_shares ?? "");
   const isAverageBuy = type === "BUY" && transactionType === "AVERAGE";
   const priceFieldKey = isAverageBuy ? "average_price_native" : "price_native";
+  // TRANSACTION mode: a new BUY/SELL dated on or before this holding's
+  // latest recorded trade reopens the auto-dividend watermark (see
+  // TransactionsClient.rewind_dividends_synced_through) the same way
+  // backdating an AVERAGE-mode BUY does — warn the same way here too.
+  const isTransactionTrade =
+    mode === "create" && transactionType === "TRANSACTION" && (type === "BUY" || type === "SELL");
+  const latestTradeDate = isTransactionTrade
+    ? (transactionsByHolding[holdingId]?.transactions ?? [])
+        .filter((t) => t.type === "BUY" || t.type === "SELL")
+        .reduce((latest, t) => (t.date && (!latest || t.date > latest) ? t.date : latest), null)
+    : null;
+  const isBackdatedTrade =
+    isTransactionTrade && latestTradeDate != null && isCompleteDate(date) && date <= latestTradeDate;
   const [price, setPrice] = useState(initialValues?.[priceFieldKey] ?? "");
   const [amount, setAmount] = useState(initialValues?.amount_native ?? "");
   // `initialValues.fx_rate` (when editing) is always stored native→default
@@ -182,6 +197,14 @@ function TransactionForm({
         <Alert tone="info">
           Changing the date or no of shares here rebuilds this holding&rsquo;s dividend history from
           scratch — any dividend you edited or deleted by hand will be regenerated. Review it
+          afterward if that&rsquo;s not what you want.
+        </Alert>
+      )}
+      {isBackdatedTrade && (
+        <Alert tone="info">
+          This is dated on or before your latest recorded trade for this holding, so it rebuilds
+          this holding&rsquo;s whole dividend history from scratch against the corrected share
+          count — any dividend you edited or deleted by hand will be regenerated. Review it
           afterward if that&rsquo;s not what you want.
         </Alert>
       )}
@@ -354,31 +377,39 @@ function AverageEntryCard({ transaction, nativeCurrency, defaultCurrency, onEdit
   );
 }
 
-/** One BUY/SELL trade record's total value, in native currency — shares *
- * price, mirroring averageEntryTotal's BUY case. */
+/** One BUY/SELL/DIVIDEND record's total value, in native currency — shares
+ * * price for a trade, mirroring averageEntryTotal's BUY case, or the cash
+ * amount for a DIVIDEND, mirroring its DIVIDEND case. */
 function tradeEntryTotal(transaction) {
-  return Number(transaction.no_of_shares) * Number(transaction.price_native);
+  return transaction.type === "DIVIDEND"
+    ? Number(transaction.amount_native)
+    : Number(transaction.no_of_shares) * Number(transaction.price_native);
 }
 
 /** Same total as `tradeEntryTotal`, but in the user's default currency —
- * mirrors `averageEntryTotalConverted`'s reasoning, just off `price`
+ * mirrors `averageEntryTotalConverted`'s reasoning, just off `price`/`amount`
  * instead of `average_price`/`amount`. `null` when `fx_rate` couldn't be
  * resolved for this entry. */
 function tradeEntryTotalConverted(transaction) {
+  if (transaction.type === "DIVIDEND") {
+    return transaction.amount != null ? Number(transaction.amount) : null;
+  }
   if (transaction.price == null) return null;
   return Number(transaction.no_of_shares) * Number(transaction.price);
 }
 
-/** One BUY/SELL entry in the top-N list for TRANSACTION-mode holdings — same
- * single-row layout AverageEntryCard uses (icon-only type badge, date,
- * no of shares, FX rate, native value, converted value, actions), so both
- * modes' transactions panels read the same way. FX rate/native value only
- * show when this holding's native currency differs from the user's
- * default, same gate AverageEntryCard uses. Deletable (the only way to
- * correct a mistaken entry, since these records are immutable — no edit)
- * via `onDelete`. */
-function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, onDelete }) {
-  const meta = tradeTypeMeta(transaction.type);
+/** One BUY/SELL/DIVIDEND entry in the top-N list for TRANSACTION-mode
+ * holdings — same single-row layout AverageEntryCard uses (icon-only type
+ * badge, date, no of shares, FX rate, native value, converted value,
+ * actions), so both modes' transactions panels read the same way. FX
+ * rate/native value only show when this holding's native currency differs
+ * from the user's default, same gate AverageEntryCard uses. A BUY/SELL is
+ * immutable — delete-only, via `onDelete` — same as AVERAGE mode's own
+ * DIVIDEND is a user-correctable fact regardless of mode, so it's editable
+ * too (`onEdit`), same as AVERAGE mode's own DIVIDEND rows. */
+function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, onEdit, onDelete }) {
+  const type = transaction.type;
+  const meta = tradeTypeMeta(type);
   const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
   const fxRate = showFx ? displayFxRate(transaction) : null;
   const convertedTotal = showFx ? tradeEntryTotalConverted(transaction) : null;
@@ -392,7 +423,7 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
         {formatTransactionDate(transaction.date)}
         {location && <span className="ec-transaction-card-location"> · {location}</span>}
       </span>
-      <span className="ec-transaction-row-shares">{transaction.no_of_shares}</span>
+      <span className="ec-transaction-row-shares">{type === "DIVIDEND" ? "—" : transaction.no_of_shares}</span>
       {showFx && (
         <span className="ec-transaction-row-fx">
           {fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}
@@ -407,6 +438,11 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
         </Balance>
       )}
       <div className="ec-table-actions">
+        {type === "DIVIDEND" && (
+          <button type="button" className="ec-icon-btn" aria-label="Edit transaction" onClick={onEdit}>
+            <i className="bi bi-pencil" aria-hidden="true" />
+          </button>
+        )}
         <button
           type="button"
           className="ec-icon-btn ec-icon-btn--danger"
@@ -433,19 +469,19 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
  *   Buy" only offers instances that don't already have a BUY recorded (one
  *   per holding, see equicast_core.transactions); "Add Dividend" offers
  *   every instance, since dividends are uncapped.
- * - TRANSACTION: header actions "Add Buy"/"Add Sell"/"See all", up to
- *   MAX_RECENT_TRANSACTIONS most recent BUY/SELL rows (same
- *   `ec-transaction-row-list`/`ec-transaction-row-card` layout AVERAGE-mode's
- *   top-5 list uses — see `TradeRowCard`) merged across every instance of
- *   this ticker, plus a "See all" drawer with the full history table.
- *   Records are immutable once created (no edit — mirrors
- *   equicast_core.transactions), but deletable, same as an AVERAGE-mode
- *   entry — the only way to correct a mistaken one. "Add Sell" only offers
- *   instances with net shares > 0 recorded (see `selectNetShares`); "Add
- *   Buy" offers every instance, since TRANSACTION-mode BUYs are uncapped.
- *   Auto-populating a TRANSACTION-mode dividend from market data is planned
- *   as a separate scheduled job, not built here (see the parked
- *   auto-populate feature).
+ * - TRANSACTION: header actions "Add Buy"/"Add Sell"/"Add Dividend"/"See
+ *   all", up to MAX_RECENT_TRANSACTIONS most recent BUY/SELL/DIVIDEND rows
+ *   (same `ec-transaction-row-list`/`ec-transaction-row-card` layout
+ *   AVERAGE-mode's top-5 list uses — see `TradeRowCard`) merged across
+ *   every instance of this ticker, plus a "See all" drawer with the full
+ *   history table. BUY/SELL are immutable once created (no edit — mirrors
+ *   equicast_core.transactions) but deletable; DIVIDEND is editable and
+ *   deletable in both modes alike, same as an AVERAGE-mode entry — a
+ *   dividend is a user-correctable fact regardless of mode, including the
+ *   ones GitHub issue #124's auto-dividend sync creates on the user's
+ *   behalf. "Add Sell" only offers instances with net shares > 0 recorded
+ *   (see `selectNetShares`); "Add Buy"/"Add Dividend" offer every instance,
+ *   since TRANSACTION-mode BUYs and dividends are both uncapped.
  *
  * `instances`/`transactionsByHolding` are already fetched at the page
  * level (see HoldingTickerPage.jsx) — this component takes them as props
@@ -730,13 +766,18 @@ function HoldingTransactionsSection({
       location: instance.location,
     }))
   );
-  const recent = selectRecentTradeTransactions(allTransactions.map((entry) => entry.transaction));
+  const recent = selectRecentTransactions(allTransactions.map((entry) => entry.transaction));
   const recentWithContext = recent.map((transaction) => {
     const match = allTransactions.find((entry) => entry.transaction.id === transaction.id);
     return { transaction, holdingId: match?.holdingId, location: match?.location };
   });
   const fullHistory = [...allTransactions]
-    .filter((entry) => entry.transaction.type === "BUY" || entry.transaction.type === "SELL")
+    .filter(
+      (entry) =>
+        entry.transaction.type === "BUY" ||
+        entry.transaction.type === "SELL" ||
+        entry.transaction.type === "DIVIDEND"
+    )
     .sort((a, b) => (b.transaction.date ?? "").localeCompare(a.transaction.date ?? ""));
   const sellEligibleInstances = validInstances.filter(
     (instance) =>
@@ -754,6 +795,9 @@ function HoldingTransactionsSection({
           <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-sell")}>
             Add Sell
           </button>
+          <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-dividend")}>
+            Add Dividend
+          </button>
           <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("see-all")}>
             See all
           </button>
@@ -769,6 +813,7 @@ function HoldingTransactionsSection({
               nativeCurrency={nativeCurrency}
               defaultCurrency={defaultCurrency}
               location={showLocation ? location : null}
+              onEdit={() => setDrawer({ kind: "edit", holdingId, transaction })}
               onDelete={() => setDeleting({ holdingId, transactionId: transaction.id })}
             />
           ))}
@@ -783,6 +828,7 @@ function HoldingTransactionsSection({
           transactionType="TRANSACTION"
           mode="create"
           instances={validInstances}
+          transactionsByHolding={transactionsByHolding}
           nativeCurrency={nativeCurrency}
           defaultCurrency={defaultCurrency}
           onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
@@ -797,6 +843,7 @@ function HoldingTransactionsSection({
             transactionType="TRANSACTION"
             mode="create"
             instances={sellEligibleInstances}
+            transactionsByHolding={transactionsByHolding}
             nativeCurrency={nativeCurrency}
             defaultCurrency={defaultCurrency}
             onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
@@ -806,6 +853,42 @@ function HoldingTransactionsSection({
           <p className="ec-chart-caption">
             None of your holdings for this ticker have any shares recorded to sell.
           </p>
+        )}
+      </Drawer>
+
+      <Drawer open={drawer === "add-dividend"} onClose={closeDrawer} title="Add Dividend">
+        <TransactionForm
+          type="DIVIDEND"
+          transactionType="TRANSACTION"
+          mode="create"
+          instances={validInstances}
+          transactionsByHolding={transactionsByHolding}
+          nativeCurrency={nativeCurrency}
+          defaultCurrency={defaultCurrency}
+          onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
+          onCancel={closeDrawer}
+        />
+      </Drawer>
+
+      <Drawer
+        open={Boolean(drawer && drawer.kind === "edit")}
+        onClose={closeDrawer}
+        title="Edit Dividend"
+      >
+        {drawer?.kind === "edit" && (
+          <TransactionForm
+            type="DIVIDEND"
+            transactionType="TRANSACTION"
+            mode="edit"
+            instances={[]}
+            initialValues={drawer.transaction}
+            nativeCurrency={nativeCurrency}
+            defaultCurrency={defaultCurrency}
+            onSubmit={(holdingId, fields) =>
+              onUpdateTransaction(drawer.holdingId, drawer.transaction.id, fields).then(closeDrawer)
+            }
+            onCancel={closeDrawer}
+          />
         )}
       </Drawer>
 
@@ -838,9 +921,13 @@ function HoldingTransactionsSection({
                     </Badge>
                   </td>
                   <td>{formatTransactionDate(transaction.date)}</td>
-                  <td>{transaction.no_of_shares}</td>
+                  <td>{transaction.type === "DIVIDEND" ? "—" : transaction.no_of_shares}</td>
                   <td>
-                    <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
+                    {transaction.type === "DIVIDEND" ? (
+                      "—"
+                    ) : (
+                      <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
+                    )}
                   </td>
                   {showFx && (
                     <td>{fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}</td>
@@ -860,6 +947,16 @@ function HoldingTransactionsSection({
                   {showLocation && <td>{location}</td>}
                   <td>
                     <div className="ec-table-actions">
+                      {transaction.type === "DIVIDEND" && (
+                        <button
+                          type="button"
+                          className="ec-icon-btn"
+                          aria-label="Edit transaction"
+                          onClick={() => setDrawer({ kind: "edit", holdingId, transaction })}
+                        >
+                          <i className="bi bi-pencil" aria-hidden="true" />
+                        </button>
+                      )}
                       <button
                         type="button"
                         className="ec-icon-btn ec-icon-btn--danger"

@@ -289,36 +289,39 @@ def _refresh_holding_rollup(user_id: str, holding_id: str, mode: str) -> None:
 def sync_dividends_for_holdings(
     user_id: str, holdings: list[dict[str, Any]], profile: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """Auto-create `DIVIDEND` transactions for every `AVERAGE`-mode holding
-    in `holdings` from its paid dividend history (GitHub issue #123 — a
-    base for `TRANSACTION`-mode's own version, issue #124), returning
-    `holdings` with each synced holding's rollup (`dividends_native`/
-    `dividends`, alongside the rest of `compute_holding_rollup`'s fields)
-    refreshed in place. Called from accounts/pies/holdings views.py's own
-    `_enrich_holdings`/`_enrich_holding` — the same point each already
-    resolves the caller's profile for market-data enrichment — so a
-    holding's dividends stay caught up on every read, without the user
-    manually recording each payout.
+    """Auto-create `DIVIDEND` transactions for every holding in `holdings`
+    from its paid dividend history — AVERAGE mode (GitHub issue #123) and
+    TRANSACTION mode (issue #124) alike, `profile["transaction_type"]`
+    picking which share-count basis `compute_new_dividend_transactions`
+    uses — returning `holdings` with each synced holding's rollup
+    (`dividends_native`/`dividends`, alongside the rest of
+    `compute_holding_rollup`'s fields) refreshed in place. Called from
+    accounts/pies/holdings views.py's own `_enrich_holdings`/
+    `_enrich_holding` — the same point each already resolves the caller's
+    profile for market-data enrichment — so a holding's dividends stay
+    caught up on every read, without the user manually recording each
+    payout.
 
-    A no-op (returns `holdings` unchanged) for a `TRANSACTION`-mode user.
     Per-holding, skips anything `resolve_transaction_mode` wouldn't allow a
     transaction against at all (a watchlist holding, or an fx holding) —
     same eligibility rule, applied directly since there's no request here
     to build an error `Response` from — and anything
-    `compute_new_dividend_transactions` finds nothing new for (no `BUY` on
-    record yet, no market-data dividend history, or nothing since the
-    holding's `dividends_synced_through` watermark).
+    `compute_new_dividend_transactions` finds nothing new for (no
+    `BUY`/`SELL` on record yet, no market-data dividend history, or
+    nothing since the holding's `dividends_synced_through` watermark).
 
     Every payout `compute_new_dividend_transactions` even considers —
-    created here, or skipped as pre-`BUY` — advances that watermark via
+    created here, or skipped as pre-history — advances that watermark via
     `TransactionsClient.advance_dividends_synced_through`, regardless of
     whether anything was actually created this call. This is what makes
     deleting an auto-created `DIVIDEND` transaction a lasting correction:
     without it, the next sync would see the payout as "missing" again
-    (nothing recorded for its ex-date) and recreate it right back."""
-    if profile["transaction_type"] != "AVERAGE":
-        return holdings
-
+    (nothing recorded for its ex-date) and recreate it right back. In
+    TRANSACTION mode, a backdated `BUY`/`SELL` (issue #124's "past
+    adjustments") reopens part of that watermark instead — see
+    `TransactionListView.post`/`TransactionDetailView.delete`'s calls to
+    `TransactionsClient.rewind_dividends_synced_through`."""
+    mode = profile["transaction_type"]
     synced: list[dict[str, Any]] = []
     for holding in holdings:
         if (
@@ -334,7 +337,9 @@ def sync_dividends_for_holdings(
         )
         dividends = dividends_data["dividends"] if dividends_data else []
         synced_through = _client.get_dividends_synced_through(user_id, holding["id"])
-        new_entries = compute_new_dividend_transactions(existing, dividends, synced_through)
+        new_entries = compute_new_dividend_transactions(
+            existing, dividends, synced_through, mode=mode
+        )
 
         for entry in new_entries:
             fields = resolve_converted_amounts(
@@ -347,7 +352,7 @@ def sync_dividends_for_holdings(
                 },
             )
             try:
-                _client.create_transaction(user_id, holding["id"], "AVERAGE", **fields)
+                _client.create_transaction(user_id, holding["id"], mode, **fields)
             except (TransactionAmountError, TransactionLimitExceededError):
                 continue
 
@@ -360,7 +365,7 @@ def sync_dividends_for_holdings(
             continue
 
         transactions = _client.list_transactions(user_id, holding_id=holding["id"])
-        rollup = compute_holding_rollup(transactions, "AVERAGE")
+        rollup = compute_holding_rollup(transactions, mode)
         try:
             holding = _holdings_client.update_holding_financials(user_id, holding["id"], **rollup)
         except HoldingNotFoundError:
@@ -446,6 +451,15 @@ class TransactionListView(APIView):
             return Response(
                 {"detail": "Sell quantity exceeds net shares recorded for this holding."},
                 status=409,
+            )
+        # GitHub issue #124: a TRANSACTION-mode BUY/SELL changes the
+        # running share-count timeline compute_new_dividend_transactions
+        # uses for every payout after it — reopen the dividend sync
+        # watermark if this one landed inside the range already synced,
+        # so a backdated trade's "past adjustments" actually get picked up.
+        if mode == "TRANSACTION" and fields["type"] in ("BUY", "SELL"):
+            _client.rewind_dividends_synced_through(
+                request.user.user_id, holding_id, fields["date"]
             )
         _refresh_holding_rollup(request.user.user_id, holding_id, mode)
         return Response(transaction, status=201)
@@ -540,6 +554,13 @@ class TransactionDetailView(APIView):
 
     def delete(self, request: Request, holding_id: str, transaction_id: str) -> Response:
         user_id = request.user.user_id
+        # Fetched before deleting purely to learn its type/date for the
+        # GitHub issue #124 rewind check below — TransactionNotFoundError
+        # here means the same 404 the plain delete would have raised.
+        try:
+            transaction = _client.get_transaction(user_id, holding_id, transaction_id)
+        except TransactionNotFoundError:
+            return Response(status=404)
         try:
             _client.delete_transaction(user_id, holding_id, transaction_id)
         except TransactionNotFoundError:
@@ -550,5 +571,11 @@ class TransactionDetailView(APIView):
         except HoldingNotFoundError:
             return Response(status=204)
         profile = _profile_client.get_or_create_profile(user_id)
-        _refresh_holding_rollup(user_id, holding_id, profile["transaction_type"])
+        mode = profile["transaction_type"]
+        # Same reasoning as TransactionListView.post's rewind call — a
+        # deleted TRANSACTION-mode BUY/SELL changes the share-count
+        # timeline just as much as a created one does.
+        if mode == "TRANSACTION" and transaction["type"] in ("BUY", "SELL"):
+            _client.rewind_dividends_synced_through(user_id, holding_id, transaction["date"])
+        _refresh_holding_rollup(user_id, holding_id, mode)
         return Response(status=204)

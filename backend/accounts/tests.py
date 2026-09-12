@@ -73,6 +73,8 @@ class AccountListViewTests(TestCase):
         mock_profile_client.get_or_create_profile.assert_not_called()
         mock_market_data_client.enrich_holdings.assert_not_called()
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("accounts.views._market_data_client")
     @patch("accounts.views._profile_client")
     @patch("accounts.views._holdings_client")
@@ -89,8 +91,18 @@ class AccountListViewTests(TestCase):
         mock_holdings_client,
         mock_profile_client,
         mock_market_data_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        # sync_dividends_for_holdings (GitHub issues #123/#124) runs for
+        # every mode now — no-op here since there's nothing recorded and
+        # no market-data dividend history, so this stays an enrichment/
+        # nesting test, not a dividend-sync one (see
+        # SyncDividendsForHoldingsTests, transactions/tests.py).
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
         pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
         pie_holding = {
             "id": "h-1",
@@ -98,6 +110,7 @@ class AccountListViewTests(TestCase):
             "asset_class": "etf",
             "pie_id": "pie-1",
             "account_id": None,
+            "watchlist_id": None,
         }
         direct_holding = {
             "id": "h-2",
@@ -105,6 +118,7 @@ class AccountListViewTests(TestCase):
             "asset_class": "stock",
             "pie_id": None,
             "account_id": "acc-1",
+            "watchlist_id": None,
         }
         enriched_pie_holding = {
             **pie_holding, "current_price_native": 450.0, "current_price": 450.0
@@ -115,9 +129,6 @@ class AccountListViewTests(TestCase):
         mock_client.list_accounts.return_value = [ACCOUNT]
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — see SyncDividendsForHoldingsTests
-        # (transactions/tests.py) for that sync's own coverage.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "GBP",
@@ -268,6 +279,8 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
     @patch("accounts.views._market_data_client")
     @patch("accounts.views._profile_client")
     @patch("accounts.views._holdings_client")
@@ -284,8 +297,13 @@ class AccountDetailViewTests(TestCase):
         mock_holdings_client,
         mock_profile_client,
         mock_market_data_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
         mock_client.get_account.return_value = ACCOUNT
         pie = {"id": "pie-1", "account_id": "acc-1", "name": "Core ETFs"}
         pie_holding = {
@@ -294,6 +312,7 @@ class AccountDetailViewTests(TestCase):
             "asset_class": "etf",
             "pie_id": "pie-1",
             "account_id": None,
+            "watchlist_id": None,
         }
         direct_holding = {
             "id": "h-2",
@@ -301,6 +320,7 @@ class AccountDetailViewTests(TestCase):
             "asset_class": "stock",
             "pie_id": None,
             "account_id": "acc-1",
+            "watchlist_id": None,
         }
         enriched_pie_holding = {
             **pie_holding, "current_price_native": 450.0, "current_price": 450.0
@@ -310,9 +330,6 @@ class AccountDetailViewTests(TestCase):
         }
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
-        # TRANSACTION mode so sync_dividends_for_holdings (GitHub issue
-        # #123) is a no-op here — see SyncDividendsForHoldingsTests
-        # (transactions/tests.py) for that sync's own coverage.
         mock_profile_client.get_or_create_profile.return_value = {
             "transaction_type": "TRANSACTION",
             "default_currency": "GBP",
