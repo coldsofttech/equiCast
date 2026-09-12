@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  availableForecastRanges,
+  availablePastRanges,
   formatDividendFrequency,
   formatPercent,
   formatPrice,
@@ -8,6 +10,7 @@ import {
   resolveFxRateOnDate,
   rollupInstances,
   selectDividendHistory,
+  selectRemainingDividendsThisYear,
   selectUpcomingDividends,
   selectUpcomingDividendsInRange,
 } from "./holdingFinancials.js";
@@ -308,6 +311,44 @@ describe("selectUpcomingDividends", () => {
   });
 });
 
+describe("selectRemainingDividendsThisYear", () => {
+  function isoDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function record(status, exDividendDate, overrides = {}) {
+    return {
+      ticker: "AAPL",
+      currency: "USD",
+      ex_dividend_date: exDividendDate,
+      payment_date: null,
+      price: 0.26,
+      status,
+      last_updated: "2026-08-30T09:00:00+00:00",
+      source: status === "estimated" ? "equicast" : "yfinance",
+      ...overrides,
+    };
+  }
+
+  it("includes an upcoming record due before the end of this year", () => {
+    const dividends = [record("declared", isoDate(10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual(dividends);
+  });
+
+  it("excludes a record due next year", () => {
+    const nextYear = new Date().getFullYear() + 1;
+    const dividends = [record("estimated", `${nextYear}-01-15`)];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
+  });
+
+  it("excludes paid/past records, same as selectUpcomingDividends", () => {
+    const dividends = [record("paid", isoDate(-10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
+  });
+});
+
 describe("selectUpcomingDividendsInRange", () => {
   function isoDateFromNow(days) {
     const date = new Date();
@@ -397,21 +438,39 @@ describe("selectDividendHistory", () => {
       { ...paidRecord(0.1), status: "estimated" },
     ];
 
-    expect(selectDividendHistory(dividends, "max")).toEqual([dividends[0]]);
+    expect(selectDividendHistory(dividends, "10y")).toEqual([dividends[0]]);
   });
 
   it("sorts ascending by ex-dividend date", () => {
     const older = paidRecord(2);
     const newer = paidRecord(0.5);
 
-    expect(selectDividendHistory([newer, older], "max")).toEqual([older, newer]);
+    expect(selectDividendHistory([newer, older], "10y")).toEqual([older, newer]);
   });
 
-  it("max returns every paid record, regardless of age", () => {
+  it("10y returns every paid record within the last 10 years", () => {
     const dividends = [paidRecord(1), paidRecord(9)];
-    expect(selectDividendHistory(dividends, "max")).toEqual(
+    expect(selectDividendHistory(dividends, "10y")).toEqual(
       [...dividends].sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date))
     );
+  });
+
+  it("sinceDate raises the floor when later than the range's own cutoff", () => {
+    const withinRange = paidRecord(2);
+    const beforeSince = paidRecord(4);
+
+    const result = selectDividendHistory([withinRange, beforeSince], "10y", isoDateYearsAgo(3));
+
+    expect(result).toEqual([withinRange]);
+  });
+
+  it("sinceDate has no effect when earlier than the range's own cutoff", () => {
+    const withinRange = paidRecord(0.5);
+    const outsideRange = paidRecord(1.5);
+
+    const result = selectDividendHistory([withinRange, outsideRange], "1y", isoDateYearsAgo(9));
+
+    expect(result).toEqual([withinRange]);
   });
 
   it("trims to the given range", () => {
@@ -426,5 +485,55 @@ describe("selectDividendHistory", () => {
   it("returns an empty array when nothing falls in range", () => {
     const dividends = [paidRecord(9)];
     expect(selectDividendHistory(dividends, "1y")).toEqual([]);
+  });
+});
+
+describe("availablePastRanges", () => {
+  function yearsAgoIso(years) {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() - years);
+    return date.toISOString().slice(0, 10);
+  }
+
+  it("returns every preset when earliestDate is unknown", () => {
+    expect(availablePastRanges(null).map((r) => r.id)).toEqual(["1y", "2y", "3y", "5y", "10y"]);
+  });
+
+  it("returns every preset when earliestDate predates all of them", () => {
+    expect(availablePastRanges(yearsAgoIso(20)).map((r) => r.id)).toEqual([
+      "1y",
+      "2y",
+      "3y",
+      "5y",
+      "10y",
+    ]);
+  });
+
+  it("drops presets past the first one that already reaches earliestDate", () => {
+    expect(availablePastRanges(yearsAgoIso(3)).map((r) => r.id)).toEqual(["1y", "2y", "3y"]);
+  });
+
+  it("always keeps at least the smallest preset", () => {
+    expect(availablePastRanges(yearsAgoIso(0.1)).map((r) => r.id)).toEqual(["1y"]);
+  });
+});
+
+describe("availableForecastRanges", () => {
+  function yearsFromNowIso(years) {
+    const date = new Date();
+    date.setFullYear(date.getFullYear() + years);
+    return date.toISOString().slice(0, 10);
+  }
+
+  it("returns every preset when latestForecastDate is unknown", () => {
+    expect(availableForecastRanges(null).map((r) => r.id)).toEqual(["1y", "2y", "3y", "5y", "10y"]);
+  });
+
+  it("drops presets past the first one that already reaches latestForecastDate", () => {
+    expect(availableForecastRanges(yearsFromNowIso(2)).map((r) => r.id)).toEqual(["1y", "2y"]);
+  });
+
+  it("always keeps at least the smallest preset", () => {
+    expect(availableForecastRanges(yearsFromNowIso(0.1)).map((r) => r.id)).toEqual(["1y"]);
   });
 });

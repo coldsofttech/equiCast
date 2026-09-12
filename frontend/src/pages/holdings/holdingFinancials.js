@@ -419,11 +419,33 @@ export function selectUpcomingDividends(dividends, limit = MAX_UPCOMING_DIVIDEND
 }
 
 /**
- * Every range the "See all" drawer's past-dividends chart offers - the
- * same long-horizon tail of market.js's PRICE_RANGES the price chart uses
- * (1y/2y/3y/5y/10y/max), minus the short ranges (5d/1m/6m/ytd) that don't
- * apply here: dividend payouts are sparse discrete events, not a daily
- * series, so a short window would show at most one or two bars.
+ * Every declared/estimated record from `dividends` still due before the
+ * current calendar year ends — same dedup rule as `selectUpcomingDividends`
+ * (a declared record wins over an overlapping estimated one), just
+ * windowed to "the rest of this year" instead of capped by count. Feeds
+ * the Income/Dividends stat tile's "expected by year end" hint: earned so
+ * far this year (the position's own DIVIDEND transactions) plus whatever
+ * this returns (scaled by today's share count) is the full-year estimate.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @returns {import("../../api/market.js").DividendRecord[]}
+ */
+export function selectRemainingDividendsThisYear(dividends) {
+  const yearEnd = `${new Date().getFullYear()}-12-31`;
+  return selectUpcomingDividends(dividends, Infinity).filter(
+    (record) => record.ex_dividend_date <= yearEnd
+  );
+}
+
+/**
+ * Every range the "See all" drawer's dividend chart offers on its past
+ * (history) side - the same long-horizon tail of market.js's PRICE_RANGES
+ * the price chart uses (1y/2y/3y/5y/10y), minus the short ranges
+ * (5d/1m/6m/ytd) that don't apply here: dividend payouts are sparse
+ * discrete events, not a daily series, so a short window would show at
+ * most one or two points. No "MAX": `availablePastRanges` below already
+ * folds "show everything" into whichever preset first reaches the real
+ * earliest date, so a separate id for the same thing would be redundant.
  */
 export const DIVIDEND_HISTORY_RANGES = [
   { id: "1y", label: "1Y" },
@@ -431,40 +453,73 @@ export const DIVIDEND_HISTORY_RANGES = [
   { id: "3y", label: "3Y" },
   { id: "5y", label: "5Y" },
   { id: "10y", label: "10Y" },
-  { id: "max", label: "MAX" },
 ];
+
+/** `cutoff` years before/after `today` (sign of `direction`), as a plain
+ * "YYYY-MM-DD" — shared by `availablePastRanges`/`availableForecastRanges`
+ * (deciding which range buttons are worth showing at all) and
+ * `selectDividendHistory`/`selectUpcomingDividendsInRange` (the actual
+ * filter cutoff for a chosen range). */
+function yearsFromToday(years, direction) {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() + direction * years);
+  return date.toISOString().slice(0, 10);
+}
+
+/**
+ * Which of `DIVIDEND_HISTORY_RANGES` are worth offering at all, given
+ * `earliestDate` (the real earliest ex-dividend date this chart could ever
+ * show — the ticker's own first paid dividend when the holding isn't
+ * owned, or this position's own first received dividend when it is —
+ * `null` while that's still unresolved skips filtering entirely, showing
+ * every preset). A preset whose own cutoff already reaches back on/before
+ * `earliestDate` would show the exact same data as any larger preset — so
+ * only the *first* (smallest) preset that reaches that far is kept, as the
+ * de facto "show everything" option, and every larger one past it is
+ * dropped as redundant (GitHub request: "if the holding itself doesn't
+ * have 10Y history, 10Y doesn't make sense"). Always returns at least one
+ * range. */
+export function availablePastRanges(earliestDate) {
+  if (!earliestDate) return DIVIDEND_HISTORY_RANGES;
+  const kept = [];
+  for (const range of DIVIDEND_HISTORY_RANGES) {
+    kept.push(range);
+    const cutoff = yearsFromToday(Number.parseInt(range.id, 10), -1);
+    if (cutoff <= earliestDate) break;
+  }
+  return kept;
+}
 
 /**
  * `dividends`' `"paid"` (already-happened) records only, ascending by
  * ex-dividend date, trimmed to `rangeId` (one of `DIVIDEND_HISTORY_RANGES`'
- * ids) - `"max"` returns every paid record, unfiltered. Unlike
- * `getPrices`' server-side range trimming, this filters client-side: the
- * whole dividend history is already in one small `GET .../dividends/`
- * response (see market.js's DividendsResponse), not worth a second
- * round trip just to change the chart's window.
+ * ids). `sinceDate` (this position's own first received dividend, when
+ * owned) raises the floor further when it's later than `rangeId`'s own
+ * cutoff — e.g. a "10Y" pick still never shows anything before a position
+ * that's only 2 years old. Unlike `getPrices`' server-side range trimming,
+ * this filters client-side: the whole dividend history is already in one
+ * small `GET .../dividends/` response (see market.js's DividendsResponse),
+ * not worth a second round trip just to change the chart's window.
  *
  * @param {import("../../api/market.js").DividendRecord[]} dividends
  * @param {string} rangeId
+ * @param {string|null} [sinceDate]
  * @returns {import("../../api/market.js").DividendRecord[]}
  */
-export function selectDividendHistory(dividends, rangeId) {
+export function selectDividendHistory(dividends, rangeId, sinceDate = null) {
   const paid = dividends
     .filter((record) => record.status === "paid")
     .sort((a, b) => a.ex_dividend_date.localeCompare(b.ex_dividend_date));
-  if (rangeId === "max") return paid;
 
-  const years = Number.parseInt(rangeId, 10);
-  const cutoff = new Date();
-  cutoff.setFullYear(cutoff.getFullYear() - years);
-  const cutoffIsoDate = cutoff.toISOString().slice(0, 10);
-  return paid.filter((record) => record.ex_dividend_date >= cutoffIsoDate);
+  const rangeCutoff = yearsFromToday(Number.parseInt(rangeId, 10), -1);
+  const floor = sinceDate && sinceDate > rangeCutoff ? sinceDate : rangeCutoff;
+  return paid.filter((record) => record.ex_dividend_date >= floor);
 }
 
 /**
- * Every range the "See all" drawer's Upcoming tab offers - same
- * 1Y/2Y/3Y/5Y/10Y tail as `DIVIDEND_HISTORY_RANGES`, minus "MAX": a
- * forecast never projects past `equicast_forecasting.dividends`' own
- * 10-year horizon, so "no cap" would be identical to "10Y" here.
+ * Every range the "See all" drawer's forecast overlay offers - same
+ * 1Y/2Y/3Y/5Y/10Y tail as `DIVIDEND_HISTORY_RANGES`, just projecting
+ * forward from today instead of back from it.
  */
 export const UPCOMING_DIVIDEND_RANGES = [
   { id: "1y", label: "1Y" },
@@ -473,6 +528,25 @@ export const UPCOMING_DIVIDEND_RANGES = [
   { id: "5y", label: "5Y" },
   { id: "10y", label: "10Y" },
 ];
+
+/**
+ * Which of `UPCOMING_DIVIDEND_RANGES` are worth offering, mirroring
+ * `availablePastRanges` in the opposite direction: `latestForecastDate`
+ * (the furthest-out declared/estimated ex-dividend date this ticker's
+ * market data actually reaches — `null` skips filtering) caps how far a
+ * forecast could ever usefully extend, since `equicast_forecasting.
+ * dividends` itself never projects past its own ~10-year horizon anyway.
+ * Always returns at least one range. */
+export function availableForecastRanges(latestForecastDate) {
+  if (!latestForecastDate) return UPCOMING_DIVIDEND_RANGES;
+  const kept = [];
+  for (const range of UPCOMING_DIVIDEND_RANGES) {
+    kept.push(range);
+    const cutoff = yearsFromToday(Number.parseInt(range.id, 10), 1);
+    if (cutoff >= latestForecastDate) break;
+  }
+  return kept;
+}
 
 /**
  * Every upcoming (declared/estimated) record from `dividends` due on or

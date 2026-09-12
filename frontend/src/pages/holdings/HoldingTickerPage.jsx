@@ -51,7 +51,11 @@ import {
   formatSyncedDate,
   summarizeHoldingValuations,
 } from "../holdingValuation.js";
-import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import {
+  resolveFxRate,
+  rollupInstances,
+  selectRemainingDividendsThisYear,
+} from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
 /** Page size for every listTransactions call this page makes — matches
@@ -167,6 +171,45 @@ function HoldingTickerPage() {
   }, [accounts, ticker]);
 
   const isOwned = instances.length > 0;
+  // Total shares held across every instance of this ticker — holding.
+  // no_of_shares is already each mode's own net rollup figure (see
+  // equicast_core.transactions.compute_holding_rollup), so summing it
+  // across instances works the same for AVERAGE and TRANSACTION alike.
+  // Feeds HoldingDividendsSection's per-card total-value calculation.
+  const sharesOwned = instances.reduce(
+    (sum, instance) => sum + Number(instance.holding.no_of_shares ?? 0),
+    0
+  );
+  // This position's own recorded DIVIDEND transactions across every
+  // instance of this ticker, summed by date (a ticker split across
+  // several accounts can have a same-day DIVIDEND transaction in each) —
+  // each `amount_native` here is already the correct total for the shares
+  // actually held as of that date (see equicast_core.transactions.
+  // compute_new_dividend_transactions' running-balance math), so
+  // HoldingDividendChart plots these directly for an owned holding's
+  // history instead of raw per-share market data * today's share count,
+  // which would be wrong for any date before the most recent trade.
+  // Recomputes as transactionsByHolding fills in from its own effect
+  // below; empty in the meantime just falls back to the chart's own
+  // not-owned behavior for a render or two, not a lasting wrong answer.
+  const ownDividendsByDate = new Map();
+  for (const instance of instances) {
+    const transactions = transactionsByHolding[instance.holding.id]?.transactions ?? [];
+    for (const t of transactions) {
+      if (t.type !== "DIVIDEND" || !t.date || t.amount_native == null) continue;
+      ownDividendsByDate.set(t.date, (ownDividendsByDate.get(t.date) ?? 0) + Number(t.amount_native));
+    }
+  }
+  const ownFirstDividendDate =
+    ownDividendsByDate.size > 0
+      ? [...ownDividendsByDate.keys()].reduce((a, b) => (a < b ? a : b))
+      : null;
+  const ownDividendRecords = [...ownDividendsByDate.entries()].map(([date, amount]) => ({
+    ex_dividend_date: date,
+    payment_date: null,
+    price: amount,
+    status: "paid",
+  }));
 
   // Only needed when the ticker isn't held anywhere — an owned instance
   // already carries its asset class. `location.state?.assetClass` (set by
@@ -555,6 +598,42 @@ function HoldingTickerPage() {
               const plValueDefault = defaultTotals.plValue;
               const dividendsDefault = defaultTotals.dividends;
 
+              // "This year so far" / "Expected by year end" hint — the
+              // Income/Dividends tile's own value above is the lifetime
+              // total, which says nothing about this year's pace. Earned
+              // so far reads each DIVIDEND transaction's own already-
+              // converted `amount` (resolved at the historical rate for
+              // its own date, more accurate than reconverting with
+              // today's rate); the remaining estimate reuses the same
+              // native-currency fxRate/sharesOwned this page already
+              // resolves for HoldingInstancesTable, applied to whatever
+              // declared/estimated payouts still fall before Dec 31 (see
+              // selectRemainingDividendsThisYear) — "today's rate" being
+              // the only sensible one for a payout that hasn't happened,
+              // same reasoning HoldingDividendsSection's own FX resolution
+              // documents.
+              const currentYear = new Date().getFullYear();
+              const thisYearPrefix = `${currentYear}-`;
+              let earnedThisYear = 0;
+              let earnedThisYearUnresolved = false;
+              for (const instance of instances) {
+                for (const t of transactionsByHolding[instance.holding.id]?.transactions ?? []) {
+                  if (t.type !== "DIVIDEND" || !t.date?.startsWith(thisYearPrefix)) continue;
+                  if (t.amount == null) {
+                    earnedThisYearUnresolved = true;
+                    continue;
+                  }
+                  earnedThisYear += Number(t.amount);
+                }
+              }
+              const remainingThisYearNative = selectRemainingDividendsThisYear(
+                marketDividends?.dividends ?? []
+              ).reduce((sum, record) => sum + record.price * totals.shares, 0);
+              const expectedByYearEnd =
+                !earnedThisYearUnresolved && fxRate != null
+                  ? earnedThisYear + remainingThisYearNative * fxRate
+                  : null;
+
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
@@ -609,12 +688,20 @@ function HoldingTickerPage() {
                     hintTone={totalsTone}
                   />
                   <StatTile
-                    label="Dividends"
+                    label="Income / Dividends"
                     value={
                       dividendsDefault != null ? (
                         <Balance>{formatMoney(dividendsDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
+                      )
+                    }
+                    hint={
+                      expectedByYearEnd != null && (
+                        <>
+                          Year {currentYear}: <Balance>{formatMoney(earnedThisYear, totalsCurrency)}</Balance>/
+                          <Balance>{formatMoney(expectedByYearEnd, totalsCurrency)}</Balance>
+                        </>
                       )
                     }
                   />
@@ -665,7 +752,13 @@ function HoldingTickerPage() {
             <HoldingAboutSection marketProfile={marketProfile} />
           </div>
 
-          <HoldingDividendsSection dividends={marketDividends} />
+          <HoldingDividendsSection
+            dividends={marketDividends}
+            sharesOwned={sharesOwned}
+            defaultCurrency={userProfile?.default_currency ?? null}
+            ownFirstDividendDate={ownFirstDividendDate}
+            ownDividendRecords={ownDividendRecords}
+          />
 
           {isOwned && (
             <HoldingTransactionsSection
