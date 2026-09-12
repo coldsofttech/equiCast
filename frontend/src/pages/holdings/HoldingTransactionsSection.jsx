@@ -178,6 +178,13 @@ function TransactionForm({
   return (
     <form onSubmit={handleSubmit} className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
+      {mode === "edit" && isAverageBuy && (
+        <Alert tone="info">
+          Changing the date or no of shares here rebuilds this holding&rsquo;s dividend history from
+          scratch — any dividend you edited or deleted by hand will be regenerated. Review it
+          afterward if that&rsquo;s not what you want.
+        </Alert>
+      )}
       {mode === "create" && (
         <SelectField
           id="transaction-holding"

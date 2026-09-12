@@ -9,6 +9,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- AVERAGE-mode holdings now auto-record their paid dividend history as
+  `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
+  mode's own version, issue #124), rather than requiring the user to
+  hand-enter every payout. New `equicast_core.transactions.
+  compute_new_dividend_transactions` turns each `"paid"` entry from
+  `MarketDataClient.get_dividends` not yet recorded into `{date,
+  amount_native}` (shares × per-share payout, using the holding's single
+  `BUY` position — nothing before that `BUY`'s own date qualifies, since
+  there's no share count on record to anchor an earlier payout to); new
+  `sync_dividends_for_holdings` (`backend/transactions/views.py`) turns
+  those into real transactions via `TransactionsClient.create_transaction`
+  and refreshes the holding's rollup. Runs from `GET /api/accounts/`,
+  `/api/accounts/<id>/`, `/api/pies/`, `/api/pies/<id>/`, and
+  `/api/holdings/` (list and detail) — the same point each already
+  resolves the caller's profile for market-data enrichment — so a
+  holding's dividends stay caught up on every read. A no-op for
+  TRANSACTION-mode users, watchlist/fx holdings, or a holding with no
+  `BUY` on record yet.
+
+  Each holding tracks a new `dividends_synced_through` watermark
+  (persisted alongside its transactions, `TransactionsClient.
+  get_dividends_synced_through`/`advance_dividends_synced_through`,
+  advanced via new `equicast_core.transactions.latest_paid_dividend_date`)
+  — every payout a sync even considers, created or skipped as pre-`BUY`,
+  moves it forward, and `create_transaction`/`update_transaction`/
+  `delete_transaction` always carry it forward untouched. Without this, a
+  payout the user deleted would look "missing" again — nothing recorded
+  for its ex-date — and the very next `GET` would just recreate it;
+  deleting an auto-created dividend is now a lasting correction.
+
 - TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
   (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
   previously this mode was read-only, only ever populated by whatever

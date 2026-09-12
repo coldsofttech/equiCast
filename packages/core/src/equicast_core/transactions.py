@@ -330,6 +330,83 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
     }
 
 
+def compute_new_dividend_transactions(
+    existing_transactions: list[dict[str, Any]],
+    dividends: list[dict[str, Any]],
+    synced_through: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return `[{date, amount_native}, ...]` for every `"paid"` entry in
+    `dividends` (see `MarketDataClient.get_dividends`) not yet recorded
+    against `existing_transactions` — the AVERAGE-mode auto-dividend
+    feature (GitHub issue #123): rather than requiring the user to
+    hand-enter every payout, the caller (see
+    `backend/transactions/views.py.sync_dividends_for_holdings`) turns each
+    of these into a real `DIVIDEND` transaction via `create_transaction`.
+
+    `[]` whenever `existing_transactions` has no `BUY` (or legacy
+    type-`None`) position on record — with no share count to anchor to,
+    there's nothing reasonable to multiply a payout by. A payout dated
+    before that `BUY` is skipped outright, same "no way to add past
+    history, only future" reasoning as the module docstring — AVERAGE
+    mode's single `BUY` entry is the only share count ever on record, so
+    that same count is used for every qualifying payout regardless of how
+    much later it was paid (there's no `SELL` in this mode to have changed
+    it since).
+
+    `synced_through` (the holding's `dividends_synced_through` watermark —
+    see `TransactionsClient.get_dividends_synced_through`/
+    `latest_paid_dividend_date`) skips any payout on or before it
+    regardless of whether it's still recorded — this is what makes
+    deleting an auto-created `DIVIDEND` transaction a lasting correction
+    rather than something the very next sync undoes: once a payout has
+    been considered at all, it's never reconsidered, deleted or not.
+    `existing_transactions`' own `DIVIDEND` dates are still checked too
+    (`[]` if `synced_through` is `None`, e.g. before this holding's first
+    sync ever ran) — belt-and-suspenders against a payout the user entered
+    by hand before any sync watermark existed."""
+    buy = next((t for t in existing_transactions if t["type"] in ("BUY", None)), None)
+    if buy is None or not buy.get("date") or not buy.get("no_of_shares"):
+        return []
+    shares = Decimal(str(buy["no_of_shares"]))
+    recorded_dates = {
+        t["date"] for t in existing_transactions if t["type"] == "DIVIDEND" and t.get("date")
+    }
+
+    new_entries: list[dict[str, Any]] = []
+    for dividend in dividends:
+        if dividend.get("status") != "paid":
+            continue
+        ex_date = dividend.get("ex_dividend_date")
+        per_share = dividend.get("price")
+        if not ex_date or per_share is None:
+            continue
+        if ex_date < buy["date"] or ex_date in recorded_dates:
+            continue
+        if synced_through is not None and ex_date <= synced_through:
+            continue
+        new_entries.append(
+            {"date": ex_date, "amount_native": float(shares * Decimal(str(per_share)))}
+        )
+    return new_entries
+
+
+def latest_paid_dividend_date(dividends: list[dict[str, Any]], current: str | None) -> str | None:
+    """Return the more recent of `current` and the latest `"paid"`
+    `ex_dividend_date` in `dividends` — the new `dividends_synced_through`
+    watermark `sync_dividends_for_holdings` (backend/transactions/views.py,
+    GitHub issue #123) advances a holding to after every sync, via
+    `TransactionsClient.advance_dividends_synced_through`. `None` when
+    `dividends` has no dated `"paid"` entry and `current` is also `None`
+    (this holding has never had a paid payout on record at all)."""
+    paid_dates = [
+        d["ex_dividend_date"]
+        for d in dividends
+        if d.get("status") == "paid" and d.get("ex_dividend_date")
+    ]
+    candidates = paid_dates + ([current] if current else [])
+    return max(candidates) if candidates else None
+
+
 class TransactionsClient:
     """Reads and writes one user's transactions as one JSON object per
     holding in S3 — see module docstring for why, unlike every other Phase
@@ -356,17 +433,26 @@ class TransactionsClient:
     def _key(self, user_id: str, holding_id: str) -> str:
         return f"{self._prefix(user_id)}{holding_id}.json"
 
-    def _load(self, user_id: str, holding_id: str) -> tuple[list[dict[str, Any]], str | None]:
-        """Return `(transactions, etag)` for one holding. `etag` is `None`
-        if this holding has no transactions object yet, so the next write
-        knows to use `IfNoneMatch="*"` instead of `IfMatch` on a
-        nonexistent object."""
+    def _load(
+        self, user_id: str, holding_id: str
+    ) -> tuple[list[dict[str, Any]], str | None, str | None]:
+        """Return `(transactions, dividends_synced_through, etag)` for one
+        holding. `dividends_synced_through` is the AVERAGE-mode
+        auto-dividend feature's high-water mark (GitHub issue #123 — see
+        `get_dividends_synced_through`/`advance_dividends_synced_through`),
+        `None` if it's never been set. `etag` is `None` if this holding has
+        no transactions object yet, so the next write knows to use
+        `IfNoneMatch="*"` instead of `IfMatch` on a nonexistent object."""
         try:
             response = self._s3.get_object(Bucket=self._bucket, Key=self._key(user_id, holding_id))
         except self._s3.exceptions.NoSuchKey:
-            return [], None
+            return [], None, None
         body = json.loads(response["Body"].read())
-        return [_normalize(t) for t in body.get("transactions", [])], response["ETag"]
+        return (
+            [_normalize(t) for t in body.get("transactions", [])],
+            body.get("dividends_synced_through"),
+            response["ETag"],
+        )
 
     def _load_all(self, user_id: str) -> list[dict[str, Any]]:
         """Every transaction across all of the user's holdings — used only
@@ -388,12 +474,18 @@ class TransactionsClient:
         user_id: str,
         holding_id: str,
         transactions: list[dict[str, Any]],
+        dividends_synced_through: str | None,
         etag: str | None,
     ) -> None:
         kwargs: dict[str, Any] = {
             "Bucket": self._bucket,
             "Key": self._key(user_id, holding_id),
-            "Body": json.dumps({"transactions": transactions}).encode("utf-8"),
+            "Body": json.dumps(
+                {
+                    "transactions": transactions,
+                    "dividends_synced_through": dividends_synced_through,
+                }
+            ).encode("utf-8"),
             "ContentType": "application/json",
         }
         if etag is None:
@@ -421,7 +513,7 @@ class TransactionsClient:
         legacy record predating the mandatory `date` field never matches
         a `year`/`date_from`/`date_to` filter."""
         if holding_id is not None:
-            transactions, _ = self._load(user_id, holding_id)
+            transactions, _, _ = self._load(user_id, holding_id)
         else:
             transactions = self._load_all(user_id)
 
@@ -444,7 +536,7 @@ class TransactionsClient:
         """Return the transaction matching `transaction_id` within
         `holding_id`'s file, raising `TransactionNotFoundError` if no such
         transaction exists."""
-        transactions, _ = self._load(user_id, holding_id)
+        transactions, _, _ = self._load(user_id, holding_id)
         transaction = next((t for t in transactions if t["id"] == transaction_id), None)
         if transaction is None:
             raise TransactionNotFoundError(
@@ -507,7 +599,7 @@ class TransactionsClient:
             _validate_positive_amount(fx_rate, "fx_rate")
 
         for _ in range(_MAX_CONFLICT_RETRIES):
-            existing, etag = self._load(user_id, holding_id)
+            existing, dividends_synced_through, etag = self._load(user_id, holding_id)
 
             shares = None
             if type == "DIVIDEND":
@@ -568,7 +660,9 @@ class TransactionsClient:
                 "updated_at": now,
             }
             try:
-                self._save(user_id, holding_id, [*existing, transaction], etag)
+                self._save(
+                    user_id, holding_id, [*existing, transaction], dividends_synced_through, etag
+                )
             except self._s3.exceptions.ClientError as exc:
                 if self._is_conflict(exc):
                     continue
@@ -597,9 +691,23 @@ class TransactionsClient:
         native/converted split (`average_price`/`amount` here are the
         already-resolved converted figures — the caller recomputes them
         from the patched native value/date/`fx_rate` and passes them all
-        in together, the same as `create_transaction`)."""
+        in together, the same as `create_transaction`).
+
+        Patching an AVERAGE-mode `BUY`'s `date` or `no_of_shares` drops
+        every auto-created `DIVIDEND` on file and rewinds
+        `dividends_synced_through` to `None`, so the next
+        `sync_dividends_for_holdings` (backend/transactions/views.py)
+        rebuilds the whole dividend history fresh against the updated
+        anchor/share count instead of leaving stale amounts (computed
+        against the old share count) or a gap of newly-eligible payouts a
+        backdated `date` opened up but the old watermark had already
+        skipped past. This also un-does any dividend the user previously
+        deleted by hand or edited — same tradeoff as the module docstring's
+        "only future, not past" reasoning: an edit here is treated as a
+        correction significant enough to re-derive everything from, not a
+        surgical patch."""
         for _ in range(_MAX_CONFLICT_RETRIES):
-            transactions, etag = self._load(user_id, holding_id)
+            transactions, dividends_synced_through, etag = self._load(user_id, holding_id)
             index = next((i for i, t in enumerate(transactions) if t["id"] == transaction_id), None)
             if index is None:
                 raise TransactionNotFoundError(
@@ -641,8 +749,13 @@ class TransactionsClient:
                 "updated_at": datetime.now(UTC).isoformat(),
             }
             transactions[index] = updated
+            if mode == "AVERAGE" and record_type in ("BUY", None) and (
+                "date" in fields or "no_of_shares" in fields
+            ):
+                transactions = [t for t in transactions if t["type"] != "DIVIDEND"]
+                dividends_synced_through = None
             try:
-                self._save(user_id, holding_id, transactions, etag)
+                self._save(user_id, holding_id, transactions, dividends_synced_through, etag)
             except self._s3.exceptions.ClientError as exc:
                 if self._is_conflict(exc):
                     continue
@@ -655,16 +768,25 @@ class TransactionsClient:
     def delete_transaction(self, user_id: str, holding_id: str, transaction_id: str) -> None:
         """Remove the transaction matching `transaction_id` from
         `holding_id`'s file, raising `TransactionNotFoundError` if no such
-        transaction exists."""
+        transaction exists.
+
+        Deliberately leaves `dividends_synced_through` untouched — deleting
+        a `DIVIDEND` transaction that the AVERAGE-mode auto-dividend
+        feature (GitHub issue #123) created must not make that payout look
+        unsynced again, or the very next `GET /api/accounts/`/`/api/pies/`/
+        `/api/holdings/` would just recreate it (see
+        `sync_dividends_for_holdings`, backend/transactions/views.py) —
+        deleting is meant to be a lasting correction, undone only by the
+        user re-adding it by hand."""
         for _ in range(_MAX_CONFLICT_RETRIES):
-            transactions, etag = self._load(user_id, holding_id)
+            transactions, dividends_synced_through, etag = self._load(user_id, holding_id)
             remaining = [t for t in transactions if t["id"] != transaction_id]
             if len(remaining) == len(transactions):
                 raise TransactionNotFoundError(
                     f"No transaction '{transaction_id}' for holding '{holding_id}'."
                 )
             try:
-                self._save(user_id, holding_id, remaining, etag)
+                self._save(user_id, holding_id, remaining, dividends_synced_through, etag)
             except self._s3.exceptions.ClientError as exc:
                 if self._is_conflict(exc):
                     continue
@@ -692,9 +814,46 @@ class TransactionsClient:
         every other method on this client."""
         removed = 0
         for holding_id in holding_ids:
-            transactions, _ = self._load(user_id, holding_id)
+            transactions, _, _ = self._load(user_id, holding_id)
             if not transactions:
                 continue
             removed += len(transactions)
             self._s3.delete_object(Bucket=self._bucket, Key=self._key(user_id, holding_id))
         return removed
+
+    def get_dividends_synced_through(self, user_id: str, holding_id: str) -> str | None:
+        """Return `holding_id`'s `dividends_synced_through` watermark (see
+        `_load`), `None` if it's never been set — read by
+        `sync_dividends_for_holdings` (backend/transactions/views.py) before
+        deciding which paid payouts (GitHub issue #123) still need
+        creating."""
+        return self._load(user_id, holding_id)[1]
+
+    def advance_dividends_synced_through(
+        self, user_id: str, holding_id: str, through_date: str
+    ) -> None:
+        """Raise `holding_id`'s `dividends_synced_through` watermark to
+        `through_date` if it's more recent than what's on record (a no-op
+        otherwise — `through_date` arrives from
+        `latest_paid_dividend_date`, which already folds in the existing
+        watermark, so this is only ever a no-op when nothing changed
+        between load and here). Called once per holding after
+        `sync_dividends_for_holdings` finishes creating whatever new
+        `DIVIDEND` transactions a sync turned up, so a payout already
+        considered — created, or skipped as pre-`BUY` — is never
+        re-examined even after the user deletes the resulting transaction
+        (see `delete_transaction`)."""
+        for _ in range(_MAX_CONFLICT_RETRIES):
+            transactions, current, etag = self._load(user_id, holding_id)
+            if current is not None and current >= through_date:
+                return
+            try:
+                self._save(user_id, holding_id, transactions, through_date, etag)
+            except self._s3.exceptions.ClientError as exc:
+                if self._is_conflict(exc):
+                    continue
+                raise
+            return
+        raise RuntimeError(
+            f"Too many conflicting writes to transactions for holding '{holding_id}'."
+        )
