@@ -51,7 +51,11 @@ import {
   formatSyncedDate,
   summarizeHoldingValuations,
 } from "../holdingValuation.js";
-import { resolveFxRate, rollupInstances } from "./holdingFinancials.js";
+import {
+  resolveFxRate,
+  rollupInstances,
+  selectRemainingDividendsThisYear,
+} from "./holdingFinancials.js";
 import "./HoldingTickerPage.css";
 
 /** Page size for every listTransactions call this page makes — matches
@@ -594,6 +598,42 @@ function HoldingTickerPage() {
               const plValueDefault = defaultTotals.plValue;
               const dividendsDefault = defaultTotals.dividends;
 
+              // "This year so far" / "Expected by year end" hint — the
+              // Income/Dividends tile's own value above is the lifetime
+              // total, which says nothing about this year's pace. Earned
+              // so far reads each DIVIDEND transaction's own already-
+              // converted `amount` (resolved at the historical rate for
+              // its own date, more accurate than reconverting with
+              // today's rate); the remaining estimate reuses the same
+              // native-currency fxRate/sharesOwned this page already
+              // resolves for HoldingInstancesTable, applied to whatever
+              // declared/estimated payouts still fall before Dec 31 (see
+              // selectRemainingDividendsThisYear) — "today's rate" being
+              // the only sensible one for a payout that hasn't happened,
+              // same reasoning HoldingDividendsSection's own FX resolution
+              // documents.
+              const currentYear = new Date().getFullYear();
+              const thisYearPrefix = `${currentYear}-`;
+              let earnedThisYear = 0;
+              let earnedThisYearUnresolved = false;
+              for (const instance of instances) {
+                for (const t of transactionsByHolding[instance.holding.id]?.transactions ?? []) {
+                  if (t.type !== "DIVIDEND" || !t.date?.startsWith(thisYearPrefix)) continue;
+                  if (t.amount == null) {
+                    earnedThisYearUnresolved = true;
+                    continue;
+                  }
+                  earnedThisYear += Number(t.amount);
+                }
+              }
+              const remainingThisYearNative = selectRemainingDividendsThisYear(
+                marketDividends?.dividends ?? []
+              ).reduce((sum, record) => sum + record.price * totals.shares, 0);
+              const expectedByYearEnd =
+                !earnedThisYearUnresolved && fxRate != null
+                  ? earnedThisYear + remainingThisYearNative * fxRate
+                  : null;
+
               statGrid = (
                 <div className="ec-stat-grid">
                   <StatTile
@@ -648,12 +688,20 @@ function HoldingTickerPage() {
                     hintTone={totalsTone}
                   />
                   <StatTile
-                    label="Dividends"
+                    label="Income / Dividends"
                     value={
                       dividendsDefault != null ? (
                         <Balance>{formatMoney(dividendsDefault, totalsCurrency)}</Balance>
                       ) : (
                         "—"
+                      )
+                    }
+                    hint={
+                      expectedByYearEnd != null && (
+                        <>
+                          Year {currentYear}: <Balance>{formatMoney(earnedThisYear, totalsCurrency)}</Balance>/
+                          <Balance>{formatMoney(expectedByYearEnd, totalsCurrency)}</Balance>
+                        </>
                       )
                     }
                   />

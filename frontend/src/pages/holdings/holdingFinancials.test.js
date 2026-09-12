@@ -10,6 +10,7 @@ import {
   resolveFxRateOnDate,
   rollupInstances,
   selectDividendHistory,
+  selectRemainingDividendsThisYear,
   selectUpcomingDividends,
   selectUpcomingDividendsInRange,
 } from "./holdingFinancials.js";
@@ -307,6 +308,44 @@ describe("selectUpcomingDividends", () => {
     const result = selectUpcomingDividends(dividends, Infinity);
 
     expect(result).toEqual([dividends[1], dividends[2], dividends[3], dividends[0]]);
+  });
+});
+
+describe("selectRemainingDividendsThisYear", () => {
+  function isoDate(daysFromNow) {
+    const date = new Date();
+    date.setDate(date.getDate() + daysFromNow);
+    return date.toISOString().slice(0, 10);
+  }
+
+  function record(status, exDividendDate, overrides = {}) {
+    return {
+      ticker: "AAPL",
+      currency: "USD",
+      ex_dividend_date: exDividendDate,
+      payment_date: null,
+      price: 0.26,
+      status,
+      last_updated: "2026-08-30T09:00:00+00:00",
+      source: status === "estimated" ? "equicast" : "yfinance",
+      ...overrides,
+    };
+  }
+
+  it("includes an upcoming record due before the end of this year", () => {
+    const dividends = [record("declared", isoDate(10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual(dividends);
+  });
+
+  it("excludes a record due next year", () => {
+    const nextYear = new Date().getFullYear() + 1;
+    const dividends = [record("estimated", `${nextYear}-01-15`)];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
+  });
+
+  it("excludes paid/past records, same as selectUpcomingDividends", () => {
+    const dividends = [record("paid", isoDate(-10))];
+    expect(selectRemainingDividendsThisYear(dividends)).toEqual([]);
   });
 });
 

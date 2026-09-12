@@ -419,6 +419,25 @@ export function selectUpcomingDividends(dividends, limit = MAX_UPCOMING_DIVIDEND
 }
 
 /**
+ * Every declared/estimated record from `dividends` still due before the
+ * current calendar year ends — same dedup rule as `selectUpcomingDividends`
+ * (a declared record wins over an overlapping estimated one), just
+ * windowed to "the rest of this year" instead of capped by count. Feeds
+ * the Income/Dividends stat tile's "expected by year end" hint: earned so
+ * far this year (the position's own DIVIDEND transactions) plus whatever
+ * this returns (scaled by today's share count) is the full-year estimate.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @returns {import("../../api/market.js").DividendRecord[]}
+ */
+export function selectRemainingDividendsThisYear(dividends) {
+  const yearEnd = `${new Date().getFullYear()}-12-31`;
+  return selectUpcomingDividends(dividends, Infinity).filter(
+    (record) => record.ex_dividend_date <= yearEnd
+  );
+}
+
+/**
  * Every range the "See all" drawer's dividend chart offers on its past
  * (history) side - the same long-horizon tail of market.js's PRICE_RANGES
  * the price chart uses (1y/2y/3y/5y/10y), minus the short ranges
