@@ -15,7 +15,7 @@ import "./ImportPage.css";
  */
 function ImportUploadStep({ onParsed, onCancel }) {
   const api = useApi();
-  const [preset, setPreset] = useState("trading212");
+  const [preset, setPreset] = useState("generic");
   const [file, setFile] = useState(null);
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -40,11 +40,11 @@ function ImportUploadStep({ onParsed, onCancel }) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="ec-form ec-import-step">
+    <form onSubmit={handleSubmit} className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
       <SelectField id="import-preset" label="Source" value={preset} onChange={handlePresetChange}>
-        <option value="trading212">Trading 212 export</option>
         <option value="generic">Generic CSV</option>
+        <option value="trading212">Trading 212 export</option>
       </SelectField>
 
       {preset === "trading212" ? (

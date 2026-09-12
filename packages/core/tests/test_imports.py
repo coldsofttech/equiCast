@@ -4,6 +4,7 @@ import pytest
 from equicast_core.imports import (
     PRESETS,
     ImportParseError,
+    InvalidRow,
     ParsedRow,
     parse_generic_csv,
     parse_trading212_csv,
@@ -35,6 +36,7 @@ class TestParseTrading212Csv:
         result = parse_trading212_csv(file)
 
         assert result.rows_skipped == 0
+        assert result.invalid_rows == []
         assert [row.type for row in result.rows] == ["BUY", "SELL"]
         buy = result.rows[0]
         assert buy == ParsedRow(
@@ -90,7 +92,7 @@ class TestParseTrading212Csv:
         with pytest.raises(ImportParseError, match="Time \\(UTC\\)"):
             parse_trading212_csv(file)
 
-    def test_raises_import_parse_error_for_non_positive_shares(self) -> None:
+    def test_non_positive_shares_is_collected_as_invalid_not_raised(self) -> None:
         file = _csv(
             f"""
             {TRADING212_HEADER}
@@ -98,8 +100,35 @@ class TestParseTrading212Csv:
             """.replace("            ", "")
         )
 
-        with pytest.raises(ImportParseError, match="No. of shares"):
-            parse_trading212_csv(file)
+        result = parse_trading212_csv(file)
+
+        assert result.rows == []
+        assert result.invalid_rows == [
+            InvalidRow(row_number=2, ticker="AAPL", reason="Row 2: No. of shares must be positive, got '0'.")
+        ]
+
+    def test_a_bad_row_does_not_abort_parsing_the_rest_of_the_file(self) -> None:
+        """Reproduces a real Trading 212 export: a `Market sell` for a
+        fractional share cashed out after a corporate action (e.g. an
+        ISIN swap from a stock acquisition) reports `Price / share` as
+        `0E-10` — this row is dropped into `invalid_rows`, but every valid
+        row around it (including ones after it) still parses."""
+        file = _csv(
+            f"""
+            {TRADING212_HEADER}
+            Market buy,2024-03-01 14:32:10,US0378331005,AAPL,Apple Inc.,EOF001,10,148.0,USD,0.79,,USD,1480.00,USD,,,,
+            Market sell,2024-06-05 11:36:23,GB0031215220,CCL,Carnival,EOF002,0.1218194200,0E-10,GBX,,-2.51,GBP,0.00,GBP,,,,
+            Market buy,2024-07-01 09:00:00,US0378331005,AAPL,Apple Inc.,EOF003,5,150.0,USD,0.80,,USD,750.00,USD,,,,
+            """.replace("            ", "")
+        )
+
+        result = parse_trading212_csv(file)
+
+        assert [row.external_id for row in result.rows] == ["EOF001", "EOF003"]
+        assert len(result.invalid_rows) == 1
+        assert result.invalid_rows[0].row_number == 3
+        assert result.invalid_rows[0].ticker == "CCL"
+        assert "Price / share" in result.invalid_rows[0].reason
 
     def test_exchange_rate_is_none_when_blank(self) -> None:
         file = _csv(
@@ -126,6 +155,7 @@ class TestParseGenericCsv:
         result = parse_generic_csv(file)
 
         assert result.rows_skipped == 0
+        assert result.invalid_rows == []
         assert result.rows[0] == ParsedRow(
             external_id="manual-1",
             date="2024-01-10",
@@ -155,16 +185,21 @@ class TestParseGenericCsv:
         assert result.rows[0].external_id is None
         assert result.rows[0].fx_rate is None
 
-    def test_raises_for_invalid_type(self) -> None:
+    def test_invalid_type_is_collected_as_invalid_not_raised(self) -> None:
         file = _csv(
             """
             date,ticker,type,no_of_shares,price_native
             2024-01-10,VOD,DIVIDEND,50,1.3
+            2024-01-11,BARC,BUY,20,2.5
             """.replace("            ", "")
         )
 
-        with pytest.raises(ImportParseError, match="BUY or SELL"):
-            parse_generic_csv(file)
+        result = parse_generic_csv(file)
+
+        assert [row.ticker for row in result.rows] == ["BARC"]
+        assert len(result.invalid_rows) == 1
+        assert result.invalid_rows[0].ticker == "VOD"
+        assert "BUY or SELL" in result.invalid_rows[0].reason
 
     def test_raises_for_missing_required_column(self) -> None:
         file = _csv("date,ticker,type,no_of_shares\n2024-01-10,VOD,BUY,50\n")

@@ -15,7 +15,17 @@ other non-trade rows are dropped by the parser itself (see
 `equicast_core.imports` module docstring): equicast already auto-backfills
 DIVIDEND transactions from paid-dividend history once a BUY/SELL position
 exists (`sync_dividends_for_holdings`), so importing a broker's own
-dividend rows would double-count them.
+dividend rows would double-count them. A row that looked like a BUY/SELL
+but couldn't be parsed (most commonly a real Trading 212 `Market sell` for
+a fractional share cashed out after a corporate action, reported with a
+`Price / share` of `0E-10`) never aborts the whole file — it's surfaced in
+the preview response's `invalid_rows` instead (see
+`equicast_core.imports.InvalidRow`), same principle as
+`sync_dividends_for_holdings`. Corporate-action row types Trading 212 can
+export (stock splits, spin-offs, stock acquisitions/ISIN changes,
+share-based dividends) are recognized-but-not-trades — silently skipped,
+counted in `rows_skipped` — rather than actually modeled as position
+changes; see the transaction-import follow-up GitHub issues for each.
 
 Matching an imported row to equicast's instrument catalog is ticker-based
 only for now (`MarketDataClient.get_profile`) — ISIN-based matching (a
@@ -337,6 +347,10 @@ class ImportPreviewView(APIView):
                 "preset": preset,
                 "mode": mode,
                 "rows_skipped": parsed.rows_skipped,
+                "invalid_rows": [
+                    {"row": row.row_number, "ticker": row.ticker, "reason": row.reason}
+                    for row in parsed.invalid_rows
+                ],
                 "groups": groups,
             }
         )

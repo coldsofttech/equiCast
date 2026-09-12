@@ -203,11 +203,26 @@ export function deleteTransaction(api, holdingId, transactionId) {
  */
 
 /**
+ * One row that read as a BUY/SELL attempt but couldn't be parsed (most
+ * commonly a non-positive price — a real Trading 212 export can report a
+ * fractional share cashed out after a corporate action, e.g. an ISIN swap,
+ * as a `Market sell` with `Price / share` of `0E-10`). Never silently
+ * dropped and never aborts the rest of the file — see
+ * backend/transactions/import_views.py's ImportPreviewView.
+ *
+ * @typedef {Object} ImportInvalidRow
+ * @property {number} row - 1-indexed line number in the uploaded file (the header is row 1).
+ * @property {string|null} ticker
+ * @property {string} reason
+ */
+
+/**
  * @typedef {Object} ImportPreview
  * @property {string} preset
  * @property {"AVERAGE"|"TRANSACTION"} mode
  * @property {number} rows_skipped - rows in the file that weren't BUY/SELL (dividends,
  *   interest, deposits, ...) and were dropped before parsing even reached a ticker group.
+ * @property {ImportInvalidRow[]} invalid_rows - BUY/SELL attempts that couldn't be parsed.
  * @property {ImportGroup[]} groups
  */
 

@@ -14,6 +14,21 @@ parse time, not downstream — equicast already auto-backfills DIVIDEND
 transactions once a BUY/SELL position exists (see
 `equicast_core.transactions.compute_new_dividend_transactions`), so
 importing a broker's own dividend rows would double-count them.
+
+A row that reads as a BUY/SELL action but carries unusable data (most
+commonly a non-positive price — Trading 212 reports a fractional share
+cashed out after a corporate action, e.g. a post-acquisition ISIN swap or a
+stock split, as a real `Market sell` with `Price / share` of `0E-10`) is
+never allowed to abort parsing the rest of the file — it's collected as an
+`InvalidRow` instead, so one bad row out of thousands doesn't cost the user
+their whole import. Only a structural problem with the file itself (a
+required column missing entirely) raises `ImportParseError` and aborts the
+whole parse — that's a wrong-preset/wrong-file situation, not a row-level
+one. Corporate-action row types (stock splits, spin-offs, stock
+acquisitions/ISIN changes, share-based dividends) are recognized-but-
+not-trades today — silently dropped, counted in `rows_skipped` — rather
+than actually modeled; see the transaction-import follow-up GitHub issues
+for each.
 """
 
 from __future__ import annotations
@@ -69,15 +84,33 @@ class ParsedRow:
 
 
 @dataclass(frozen=True)
+class InvalidRow:
+    """One row that read as a BUY/SELL action but had data that couldn't be
+    turned into a `ParsedRow` (most commonly a non-positive price/share
+    count — see module docstring) — collected instead of aborting the rest
+    of the file, and instead of being silently folded into
+    `ParseResult.rows_skipped` (which means something different: a row that
+    was never a trade attempt in the first place, e.g. a dividend)."""
+
+    row_number: int
+    ticker: str | None
+    reason: str
+
+
+@dataclass(frozen=True)
 class ParseResult:
-    """A preset parser's full output: the BUY/SELL rows it extracted, plus
-    how many rows in the file were read but not yielded as one (dividends,
-    interest, deposits, currency conversions, ...) — `rows_skipped` exists
-    purely so the import preview can tell the user "N rows were ignored"
-    without the caller re-reading the file itself."""
+    """A preset parser's full output: the BUY/SELL rows it successfully
+    extracted; `rows_skipped`, how many rows in the file were read but
+    never a BUY/SELL attempt at all (dividends, interest, deposits,
+    corporate actions, ...) — exists purely so the import preview can tell
+    the user "N rows were ignored" without the caller re-reading the file
+    itself; and `invalid_rows`, every BUY/SELL attempt that couldn't be
+    parsed (see `InvalidRow`) — always reported, never silently dropped,
+    so the user can see exactly which rows didn't make it in and why."""
 
     rows: list[ParsedRow]
     rows_skipped: int
+    invalid_rows: list[InvalidRow]
 
 
 _TRADING212_REQUIRED_COLUMNS = (
@@ -151,14 +184,19 @@ def parse_trading212_csv(file: IO[Any]) -> ParseResult:
 
     `Action` is matched case-insensitively by substring: containing "buy"
     -> BUY, "sell" -> SELL, anything else (Dividend, Interest, Deposit,
-    Withdrawal, Currency conversion, ...) is dropped and counted in
-    `ParseResult.rows_skipped` — only BUY/SELL orders are ever yielded as a
-    `ParsedRow`."""
+    Withdrawal, Currency conversion, a corporate action like Stock split/
+    Spin off/Stock acquisition/Stock dividends, ...) is dropped and counted
+    in `ParseResult.rows_skipped` — only BUY/SELL orders are ever yielded as
+    a `ParsedRow`. A row matched as BUY/SELL whose data can't be parsed
+    (see `_build_trading212_row`) is collected into `ParseResult.invalid_rows`
+    instead — see module docstring for why this never aborts the rest of
+    the file."""
     reader = _dict_reader(file)
     _check_columns(reader.fieldnames, _TRADING212_REQUIRED_COLUMNS, "trading212")
 
     rows: list[ParsedRow] = []
     skipped = 0
+    invalid: list[InvalidRow] = []
     for row_number, row in enumerate(reader, start=2):  # header is row 1
         action = (row.get("Action") or "").strip().lower()
         if "buy" in action:
@@ -169,87 +207,105 @@ def parse_trading212_csv(file: IO[Any]) -> ParseResult:
             skipped += 1
             continue
 
-        time_value = _clean(row.get("Time (UTC)"))
-        if time_value is None:
-            raise ImportParseError(f"Row {row_number}: missing Time (UTC).")
-        date = time_value.split(" ")[0].split("T")[0]
-
         ticker = _clean(row.get("Ticker"))
-        if ticker is None:
-            raise ImportParseError(f"Row {row_number}: missing Ticker.")
+        try:
+            rows.append(_build_trading212_row(row_number, row, row_type, ticker))
+        except ImportParseError as exc:
+            invalid.append(InvalidRow(row_number=row_number, ticker=ticker, reason=str(exc)))
+    return ParseResult(rows=rows, rows_skipped=skipped, invalid_rows=invalid)
 
-        rows.append(
-            ParsedRow(
-                external_id=_clean(row.get("ID")),
-                date=date,
-                type=row_type,
-                ticker=ticker,
-                asset_class=None,
-                isin=_clean(row.get("ISIN")),
-                name=_clean(row.get("Name")),
-                no_of_shares=_parse_positive_float(
-                    row.get("No. of shares"), "No. of shares", row_number
-                ),
-                price_native=_parse_positive_float(
-                    row.get("Price / share"), "Price / share", row_number
-                ),
-                currency=_clean(row.get("Currency (Price / share)")),
-                fx_rate=_parse_optional_float(row.get("Exchange rate")),
-                raw=dict(row),
-            )
-        )
-    return ParseResult(rows=rows, rows_skipped=skipped)
+
+def _build_trading212_row(
+    row_number: int, row: dict[str, str], row_type: str, ticker: str | None
+) -> ParsedRow:
+    """Build one `ParsedRow` from a Trading 212 row already matched as
+    BUY/SELL, raising `ImportParseError` (caught by the caller, see
+    `parse_trading212_csv`) for anything that can't be turned into a usable
+    trade — a missing `Time (UTC)`/`Ticker`, or a non-positive
+    `No. of shares`/`Price / share` (the fractional-share-cashed-out-after-
+    a-corporate-action case a real export can carry — see module
+    docstring)."""
+    time_value = _clean(row.get("Time (UTC)"))
+    if time_value is None:
+        raise ImportParseError(f"Row {row_number}: missing Time (UTC).")
+    date = time_value.split(" ")[0].split("T")[0]
+
+    if ticker is None:
+        raise ImportParseError(f"Row {row_number}: missing Ticker.")
+
+    return ParsedRow(
+        external_id=_clean(row.get("ID")),
+        date=date,
+        type=row_type,
+        ticker=ticker,
+        asset_class=None,
+        isin=_clean(row.get("ISIN")),
+        name=_clean(row.get("Name")),
+        no_of_shares=_parse_positive_float(row.get("No. of shares"), "No. of shares", row_number),
+        price_native=_parse_positive_float(row.get("Price / share"), "Price / share", row_number),
+        currency=_clean(row.get("Currency (Price / share)")),
+        fx_rate=_parse_optional_float(row.get("Exchange rate")),
+        raw=dict(row),
+    )
 
 
 def parse_generic_csv(file: IO[Any]) -> ParseResult:
     """Parse equicast's own minimal generic-CSV schema —
     `date, ticker, type, no_of_shares, price_native` required;
-    `asset_class, currency, fx_rate, external_id` optional. `type` must be
-    exactly "BUY" or "SELL" (case-insensitive) — unlike the Trading 212
-    preset, an unrecognized type here is a parse error rather than a
-    silently-dropped row, since there's no broker-specific set of "other"
-    transaction kinds to expect in a file the user built by hand."""
+    `asset_class, currency, fx_rate, external_id` optional. Every row is
+    treated as a BUY/SELL attempt (there's no broker-specific set of
+    "other" transaction kinds to expect in a file the user built by hand,
+    unlike the Trading 212 preset) — `rows_skipped` is always 0 for this
+    preset; a row with an invalid `type` (not "BUY"/"SELL") or otherwise
+    unusable data (see `_build_generic_row`) is collected into
+    `ParseResult.invalid_rows` instead of aborting the rest of the file."""
     reader = _dict_reader(file)
     _check_columns(reader.fieldnames, _GENERIC_REQUIRED_COLUMNS, "generic")
 
     rows: list[ParsedRow] = []
-    skipped = 0
+    invalid: list[InvalidRow] = []
     for row_number, row in enumerate(reader, start=2):
-        date = _clean(row.get("date"))
-        if date is None:
-            raise ImportParseError(f"Row {row_number}: missing date.")
-
         ticker = _clean(row.get("ticker"))
-        if ticker is None:
-            raise ImportParseError(f"Row {row_number}: missing ticker.")
+        try:
+            rows.append(_build_generic_row(row_number, row, ticker))
+        except ImportParseError as exc:
+            invalid.append(InvalidRow(row_number=row_number, ticker=ticker, reason=str(exc)))
+    return ParseResult(rows=rows, rows_skipped=0, invalid_rows=invalid)
 
-        row_type = (row.get("type") or "").strip().upper()
-        if row_type not in ("BUY", "SELL"):
-            raise ImportParseError(
-                f"Row {row_number}: type must be BUY or SELL, got {row.get('type')!r}."
-            )
 
-        rows.append(
-            ParsedRow(
-                external_id=_clean(row.get("external_id")),
-                date=date,
-                type=row_type,
-                ticker=ticker,
-                asset_class=_clean(row.get("asset_class")),
-                isin=None,
-                name=None,
-                no_of_shares=_parse_positive_float(
-                    row.get("no_of_shares"), "no_of_shares", row_number
-                ),
-                price_native=_parse_positive_float(
-                    row.get("price_native"), "price_native", row_number
-                ),
-                currency=_clean(row.get("currency")),
-                fx_rate=_parse_optional_float(row.get("fx_rate")),
-                raw=dict(row),
-            )
+def _build_generic_row(row_number: int, row: dict[str, str], ticker: str | None) -> ParsedRow:
+    """Build one `ParsedRow` from a generic-CSV row, raising
+    `ImportParseError` (caught by the caller, see `parse_generic_csv`) for
+    anything that can't be turned into a usable trade — a missing
+    `date`/`ticker`, an invalid `type`, or a non-positive
+    `no_of_shares`/`price_native`."""
+    date = _clean(row.get("date"))
+    if date is None:
+        raise ImportParseError(f"Row {row_number}: missing date.")
+
+    if ticker is None:
+        raise ImportParseError(f"Row {row_number}: missing ticker.")
+
+    row_type = (row.get("type") or "").strip().upper()
+    if row_type not in ("BUY", "SELL"):
+        raise ImportParseError(
+            f"Row {row_number}: type must be BUY or SELL, got {row.get('type')!r}."
         )
-    return ParseResult(rows=rows, rows_skipped=skipped)
+
+    return ParsedRow(
+        external_id=_clean(row.get("external_id")),
+        date=date,
+        type=row_type,
+        ticker=ticker,
+        asset_class=_clean(row.get("asset_class")),
+        isin=None,
+        name=None,
+        no_of_shares=_parse_positive_float(row.get("no_of_shares"), "no_of_shares", row_number),
+        price_native=_parse_positive_float(row.get("price_native"), "price_native", row_number),
+        currency=_clean(row.get("currency")),
+        fx_rate=_parse_optional_float(row.get("fx_rate")),
+        raw=dict(row),
+    )
 
 
 #: Registry of import presets — `backend/transactions/import_views.py`

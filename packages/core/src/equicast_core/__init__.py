@@ -29,6 +29,7 @@ from equicast_core.holdings import (
 from equicast_core.imports import (
     PRESETS,
     ImportParseError,
+    InvalidRow,
     ParsedRow,
     ParseResult,
 )
@@ -85,6 +86,7 @@ __all__ = [
     "HoldingsClient",
     "PRESETS",
     "ImportParseError",
+    "InvalidRow",
     "ParsedRow",
     "ParseResult",
     "MAX_TRANSACTIONS_FOR_HOLDING",

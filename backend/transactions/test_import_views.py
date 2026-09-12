@@ -176,6 +176,73 @@ class ImportPreviewViewTests(TestCase):
     @patch("transactions.import_views._profile_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
+    def test_post_reports_an_unparseable_row_without_aborting_the_rest_of_the_file(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_client,
+        mock_accounts_client,
+        mock_holdings_client,
+        mock_market_data_client,
+        mock_views_market_data_client,
+    ) -> None:
+        """Reproduces a real Trading 212 export: a `Market sell` for a
+        fractional share cashed out after a corporate action reports
+        `Price / share` as `0E-10`. That row must not take down the rest
+        of an otherwise-large import — it's surfaced in `invalid_rows`
+        instead, and the valid rows around it still parse."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        mock_accounts_client.list_accounts.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
+        mock_market_data_client.get_profile.return_value = {"name": "Carnival", "currency": "GBP"}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_client.list_transactions.return_value = []
+
+        header = (
+            "Action,Time (UTC),ISIN,Ticker,Name,ID,No. of shares,Price / share,"
+            "Currency (Price / share),Exchange rate,Result,Currency (Result),Total,"
+            "Currency (Total),Stamp duty reserve tax,Currency (Stamp duty reserve tax),"
+            "Currency conversion fee,Currency (Currency conversion fee)\n"
+        )
+        rows = (
+            "Market buy,2024-03-01 14:32:10,GB0031215220,CCL,Carnival,EOF001,10,148.0,"
+            "GBP,,,,1480.00,GBP,,,,\n"
+            "Market sell,2024-06-05 11:36:23,GB0031215220,CCL,Carnival,EOF002,0.1218194200,"
+            "0E-10,GBX,,-2.51,GBP,0.00,GBP,,,,\n"
+        )
+        upload = SimpleUploadedFile(
+            "trading212.csv", (header + rows).encode(), content_type="text/csv"
+        )
+
+        response = self.client.post(
+            reverse("transactions-import-preview"),
+            data={"preset": "trading212", "file": upload},
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(len(body["invalid_rows"]), 1)
+        self.assertEqual(body["invalid_rows"][0]["row"], 3)
+        self.assertEqual(body["invalid_rows"][0]["ticker"], "CCL")
+        self.assertIn("Price / share", body["invalid_rows"][0]["reason"])
+        # The valid BUY row survives even though a later row in the same
+        # file was invalid.
+        self.assertEqual(body["groups"][0]["rows"][0]["external_id"], "EOF001")
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._market_data_client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._accounts_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
     def test_preview_flags_average_mode_holdings_that_already_have_a_position(
         self,
         mock_jwks_client,

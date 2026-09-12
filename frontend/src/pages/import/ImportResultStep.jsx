@@ -22,7 +22,7 @@ const STATUS_LABEL = {
  * outcome individually rather than a single pass/fail banner. */
 function ImportResultStep({ results, onDone }) {
   return (
-    <div className="ec-form ec-import-step">
+    <div className="ec-form">
       <ul className="ec-import-results">
         {results.map((result) => (
           <li key={`${result.ticker}-${result.holding_id ?? "none"}`}>

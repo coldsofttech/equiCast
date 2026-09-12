@@ -1,5 +1,6 @@
 import { useState } from "react";
 import Card from "../../components/core/Card.jsx";
+import Badge from "../../components/core/Badge.jsx";
 import { SelectField, TextField } from "../../components/core/Field.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
@@ -79,6 +80,21 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
     updateSelection(ticker, { targetType, targetId, allocationPct: "" });
   };
 
+  // Split into two clearly separated sections — ready-to-import first, then
+  // needs-mapping — rather than one flat list in file order, so the
+  // handful of tickers that need attention aren't scattered somewhere the
+  // user has to scroll through hundreds of already-fine rows to find (a
+  // real Trading 212 export can have 100+ distinct tickers). Based on the
+  // *live* selection state, not the static preview.resolved, so a group
+  // moves into "ready" the moment its ticker is remapped rather than
+  // staying stuck in "needs mapping" until the next preview. Alphabetical
+  // within each section for the same scanning reason.
+  const sortedGroups = [...preview.groups].sort((a, b) => a.ticker.localeCompare(b.ticker));
+  const readyGroups = sortedGroups.filter((group) => Boolean(selections[group.ticker].assetClass));
+  const needsMappingGroups = sortedGroups.filter(
+    (group) => !selections[group.ticker].assetClass
+  );
+
   const handleCommit = () => {
     const payload = preview.groups
       .map((group) => ({ group, selection: selections[group.ticker] }))
@@ -113,106 +129,132 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
       .finally(() => setIsCommitting(false));
   };
 
+  const renderGroupCard = (group) => {
+    const selection = selections[group.ticker];
+    const canInclude = Boolean(selection.assetClass);
+
+    return (
+      <Card key={group.ticker} className="ec-import-group">
+        <label className="ec-import-group-header">
+          <input
+            type="checkbox"
+            checked={selection.include}
+            disabled={!canInclude}
+            onChange={() => updateSelection(group.ticker, { include: !selection.include })}
+          />
+          <span className="ec-import-group-ticker">{selection.ticker}</span>
+          {group.name && <span className="ec-import-group-name">{group.name}</span>}
+          <span className="ec-import-group-rows-count">{group.rows.length} row(s)</span>
+        </label>
+
+        {!canInclude && (
+          <div className="ec-import-group-remap">
+            <Alert tone="danger">
+              Couldn&rsquo;t match &ldquo;{group.ticker}&rdquo; to equicast&rsquo;s catalog —
+              search for the right one to include it:
+            </Alert>
+            <TickerSearchField onSelect={(result) => handleRemap(group.ticker, result)} />
+          </div>
+        )}
+
+        {selection.include && (
+          <div className="ec-import-group-body">
+            {group.mode_preview && (
+              <p className="ec-import-group-summary">
+                Net {group.mode_preview.no_of_shares} share(s)
+                {group.mode_preview.average_price_native != null &&
+                  ` @ avg ${group.mode_preview.average_price_native.toFixed(2)}`}
+              </p>
+            )}
+
+            <SelectField
+              id={`import-target-${group.ticker}`}
+              label="Import into"
+              value={targetKey(selection.targetType, selection.targetId)}
+              onChange={(event) => handleTargetChange(group.ticker, event.target.value)}
+            >
+              {group.existing_holdings.map((holding) => (
+                <option key={holding.id} value={targetKey("existing_holding", holding.id)}>
+                  {holding.account_name ?? "Pie holding"} — existing
+                  {holding.already_has_position ? ", will extend position" : ""}
+                  {holding.duplicate_count > 0
+                    ? `, ${holding.duplicate_count} row(s) already imported`
+                    : ""}
+                </option>
+              ))}
+              <option value="" disabled>
+                — new holding in —
+              </option>
+              {targets.map((target) => (
+                <option key={targetKey(target.type, target.id)} value={targetKey(target.type, target.id)}>
+                  {target.label}
+                </option>
+              ))}
+            </SelectField>
+
+            {selection.targetType === "pie" && (
+              <TextField
+                id={`import-allocation-${group.ticker}`}
+                label="Allocation % in this pie"
+                type="number"
+                min="0.01"
+                max="100"
+                step="0.01"
+                value={selection.allocationPct}
+                onChange={(event) =>
+                  updateSelection(group.ticker, { allocationPct: event.target.value })
+                }
+                hint="Leave blank if this pie has no holdings yet — it becomes 100% automatically."
+              />
+            )}
+          </div>
+        )}
+      </Card>
+    );
+  };
+
   return (
-    <div className="ec-form ec-import-step">
+    <div className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
       {preview.rows_skipped > 0 && (
         <Alert tone="info">
           {preview.rows_skipped} row(s) in the file weren&rsquo;t buy/sell orders (dividends,
-          interest, ...) and were ignored.
+          interest, stock splits/spin-offs/other corporate actions, ...) and were ignored.
+        </Alert>
+      )}
+      {preview.invalid_rows.length > 0 && (
+        <Alert tone="danger">
+          {preview.invalid_rows.length} row(s) couldn&rsquo;t be imported and were skipped:
+          <ul className="ec-import-invalid-rows">
+            {preview.invalid_rows.map((row) => (
+              <li key={row.row}>
+                Row {row.row}
+                {row.ticker ? ` (${row.ticker})` : ""}: {row.reason}
+              </li>
+            ))}
+          </ul>
         </Alert>
       )}
 
-      <div className="ec-import-groups">
-        {preview.groups.map((group) => {
-          const selection = selections[group.ticker];
-          const canInclude = Boolean(selection.assetClass);
-
-          return (
-            <Card key={group.ticker} className="ec-import-group">
-              <label className="ec-import-group-header">
-                <input
-                  type="checkbox"
-                  checked={selection.include}
-                  disabled={!canInclude}
-                  onChange={() =>
-                    updateSelection(group.ticker, { include: !selection.include })
-                  }
-                />
-                <span className="ec-import-group-ticker">{selection.ticker}</span>
-                {group.name && <span className="ec-import-group-name">{group.name}</span>}
-                <span className="ec-import-group-rows-count">{group.rows.length} row(s)</span>
-              </label>
-
-              {!canInclude && (
-                <div className="ec-import-group-remap">
-                  <Alert tone="danger">
-                    Couldn&rsquo;t match &ldquo;{group.ticker}&rdquo; to equicast&rsquo;s catalog —
-                    search for the right one to include it:
-                  </Alert>
-                  <TickerSearchField onSelect={(result) => handleRemap(group.ticker, result)} />
-                </div>
-              )}
-
-              {selection.include && (
-                <div className="ec-import-group-body">
-                  {group.mode_preview && (
-                    <p className="ec-import-group-summary">
-                      Net {group.mode_preview.no_of_shares} share(s)
-                      {group.mode_preview.average_price_native != null &&
-                        ` @ avg ${group.mode_preview.average_price_native.toFixed(2)}`}
-                    </p>
-                  )}
-
-                  <SelectField
-                    id={`import-target-${group.ticker}`}
-                    label="Import into"
-                    value={targetKey(selection.targetType, selection.targetId)}
-                    onChange={(event) => handleTargetChange(group.ticker, event.target.value)}
-                  >
-                    {group.existing_holdings.map((holding) => (
-                      <option
-                        key={holding.id}
-                        value={targetKey("existing_holding", holding.id)}
-                      >
-                        {holding.account_name ?? "Pie holding"} — existing
-                        {holding.already_has_position ? ", will extend position" : ""}
-                        {holding.duplicate_count > 0
-                          ? `, ${holding.duplicate_count} row(s) already imported`
-                          : ""}
-                      </option>
-                    ))}
-                    <option value="" disabled>
-                      — new holding in —
-                    </option>
-                    {targets.map((target) => (
-                      <option key={targetKey(target.type, target.id)} value={targetKey(target.type, target.id)}>
-                        {target.label}
-                      </option>
-                    ))}
-                  </SelectField>
-
-                  {selection.targetType === "pie" && (
-                    <TextField
-                      id={`import-allocation-${group.ticker}`}
-                      label="Allocation % in this pie"
-                      type="number"
-                      min="0.01"
-                      max="100"
-                      step="0.01"
-                      value={selection.allocationPct}
-                      onChange={(event) =>
-                        updateSelection(group.ticker, { allocationPct: event.target.value })
-                      }
-                      hint="Leave blank if this pie has no holdings yet — it becomes 100% automatically."
-                    />
-                  )}
-                </div>
-              )}
-            </Card>
-          );
-        })}
+      <div className="ec-section-head">
+        <h2 className="ec-section-title">Ready to import</h2>
+        <Badge tone="success">{readyGroups.length}</Badge>
       </div>
+      {readyGroups.length === 0 ? (
+        <p className="ec-loading">Nothing resolved yet — map a ticker below to include it.</p>
+      ) : (
+        <div className="ec-import-groups">{readyGroups.map(renderGroupCard)}</div>
+      )}
+
+      {needsMappingGroups.length > 0 && (
+        <>
+          <div className="ec-section-head ec-import-section-head-gap">
+            <h2 className="ec-section-title">Needs ticker mapping</h2>
+            <Badge tone="warning">{needsMappingGroups.length}</Badge>
+          </div>
+          <div className="ec-import-groups">{needsMappingGroups.map(renderGroupCard)}</div>
+        </>
+      )}
 
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isCommitting}>

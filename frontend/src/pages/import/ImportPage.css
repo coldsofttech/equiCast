@@ -1,8 +1,10 @@
-/** Caps each step's width to a readable column — a plain `.ec-form` would
- * otherwise stretch to the full `.ec-page` width now that this is a page
- * rather than a centered Modal. */
-.ec-import-step {
-  max-width: 640px;
+.ec-import-section-head-gap {
+  margin-top: var(--ec-s-24);
+}
+
+.ec-import-invalid-rows {
+  margin: var(--ec-s-8) 0 0;
+  padding-left: var(--ec-s-20);
 }
 
 .ec-import-groups {
