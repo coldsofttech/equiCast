@@ -1,16 +1,19 @@
-import { Link } from "react-router-dom";
-import Logo from "../components/brand/Logo.jsx";
+import { useAuth0 } from "@auth0/auth0-react";
 import Button from "../components/core/Button.jsx";
+import AppShell from "../components/shell/AppShell.jsx";
+import PublicHeader from "../components/shell/PublicHeader.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import { openCookiePreferences } from "../components/cookies/CookieBanner.jsx";
 import "./CookiePolicyPage.css";
 
+const LAST_UPDATED = "Last updated 10 September 2026.";
+
 /**
  * Public — not behind RequireAuth (see App.jsx) — since a visitor has to
  * be able to read this before ever signing in, from the same cookie
- * banner shown on the logged-out sign-in screen. Standalone layout (no
- * AppShell/Topbar, which assumes a signed-in profile) for the same reason
- * the error pages are standalone — see components/errors/ErrorPage.jsx.
+ * banner shown on the logged-out sign-in screen. Same two-layout split as
+ * PrivacyPolicyPage: `PublicHeader` when signed out, real `AppShell` with
+ * `stickyTitle`/`narrow` when signed in.
  *
  * Every item named below is real — grounded in what equiCast's own code
  * actually stores (localStorage for theme/hide-balances/the cookie choice
@@ -21,18 +24,10 @@ import "./CookiePolicyPage.css";
  * review before being relied on.
  */
 function CookiePolicyPage() {
-  return (
-    <div className="ec-cookiepolicy">
-      <header className="ec-cookiepolicy-head">
-        <Link to="/" className="ec-cookiepolicy-logo-link" aria-label="Go to equiCast">
-          <Logo />
-        </Link>
-      </header>
+  const { isAuthenticated } = useAuth0();
 
-      <main className="ec-cookiepolicy-body">
-        <h1>Cookie Policy</h1>
-        <p className="ec-cookiepolicy-updated">Last updated 10 September 2026.</p>
-
+  const content = (
+    <>
         <p>
           This page explains what equiCast stores on your device, why, and how to change your
           mind. It covers cookies in the everyday sense (small values a website asks your browser
@@ -96,6 +91,25 @@ function CookiePolicyPage() {
           </a>
           .
         </p>
+    </>
+  );
+
+  if (isAuthenticated) {
+    return (
+      <AppShell title="Cookie Policy" subtitle={LAST_UPDATED} stickyTitle narrow footer={<SiteFooter />}>
+        <div className="ec-cookiepolicy-body ec-cookiepolicy-body--shell">{content}</div>
+      </AppShell>
+    );
+  }
+
+  return (
+    <div className="ec-cookiepolicy">
+      <PublicHeader />
+
+      <main className="ec-cookiepolicy-body">
+        <h1>Cookie Policy</h1>
+        <p className="ec-cookiepolicy-updated">{LAST_UPDATED}</p>
+        {content}
       </main>
 
       <SiteFooter />

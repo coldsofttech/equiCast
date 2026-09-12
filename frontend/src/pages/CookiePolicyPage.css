@@ -5,21 +5,23 @@
   background: var(--ec-bg);
 }
 
-.ec-cookiepolicy-head {
-  padding: var(--ec-s-24) var(--ec-s-24) 0;
-}
-
-.ec-cookiepolicy-logo-link {
-  display: inline-flex;
-  text-decoration: none;
-}
-
 .ec-cookiepolicy-body {
   flex: 1;
   width: 100%;
   max-width: 680px;
   margin: 0 auto;
   padding: var(--ec-s-32) var(--ec-s-24) var(--ec-s-40);
+}
+
+/* Inside AppShell (signed-in view), the title/subtitle sit flush against
+   AppShell's own .ec-page padding — override the standalone layout's
+   auto-centering/own padding so this body's text starts at that same left
+   edge instead of re-centering itself within a wider column and visibly
+   drifting right of the title. */
+.ec-cookiepolicy-body--shell {
+  max-width: 680px;
+  margin: 0;
+  padding: 0;
 }
 
 .ec-cookiepolicy-body h1 {
