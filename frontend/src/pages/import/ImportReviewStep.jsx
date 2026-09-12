@@ -7,6 +7,8 @@ import Alert from "../../components/core/Alert.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import { useApi } from "../../api/useApi.js";
 import { commitImport } from "../../api/transactions.js";
+import { clearCachedAccounts } from "../../api/useAccounts.js";
+import { clearCachedTransactionsForHolding } from "../../utils/transactionsCache.js";
 import "./ImportPage.css";
 
 /** `{type, id}` -> the `value` a target `<select>` option/selection uses —
@@ -124,7 +126,27 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
     setIsCommitting(true);
     setError(null);
     commitImport(api, payload)
-      .then((response) => onCommitted(response.results))
+      .then((response) =>
+        // The cached accounts tree (useAccounts.js) and each touched
+        // holding's cached transaction pages are what HoldingTickerPage/
+        // AccountsListPage/etc. actually render from — commitImport
+        // changes holdings/transactions entirely server-side, so without
+        // this the import "succeeds" but every page still shows
+        // pre-import data (no invested/shares/dividends) until something
+        // else happens to invalidate the cache. A full accounts refetch
+        // (rather than merging results in-place) is simplest and correct
+        // here since a single import can create brand-new holdings in
+        // several different accounts/pies at once, not just update ones
+        // already in the cached tree. Awaited (not fire-and-forget) so a
+        // fast "Done" click can't navigate before the IndexedDB deletes
+        // land and race a stale read.
+        Promise.all([
+          clearCachedAccounts(),
+          ...response.results
+            .filter((result) => result.holding_id)
+            .map((result) => clearCachedTransactionsForHolding(result.holding_id)),
+        ]).then(() => onCommitted(response.results))
+      )
       .catch((err) => setError(err.message ?? "Import failed."))
       .finally(() => setIsCommitting(false));
   };
