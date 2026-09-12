@@ -1,3 +1,4 @@
+import logging
 from typing import Any
 
 from django.conf import settings
@@ -13,6 +14,8 @@ from equicast_core import (
     TransactionsClient,
     UserProfileClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.pagination import PageNumberPagination
@@ -20,6 +23,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
+logger = logging.getLogger(__name__)
 
 #: Asset classes transactions are allowed against — fx holdings never carry
 #: transactions (see module docstring in equicast_core.transactions).
@@ -284,6 +289,178 @@ def _refresh_holding_rollup(user_id: str, holding_id: str, mode: str) -> None:
         pass
 
 
+def sync_dividends_for_holdings(
+    user_id: str, holdings: list[dict[str, Any]], profile: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """Auto-create `DIVIDEND` transactions for every holding in `holdings`
+    from its paid dividend history — AVERAGE mode (GitHub issue #123) and
+    TRANSACTION mode (issue #124) alike, `profile["transaction_type"]`
+    picking which share-count basis `compute_new_dividend_transactions`
+    uses — returning `holdings` with each synced holding's rollup
+    (`dividends_native`/`dividends`, alongside the rest of
+    `compute_holding_rollup`'s fields) refreshed in place. Called from
+    accounts/pies/holdings views.py's own `_enrich_holdings`/
+    `_enrich_holding` — the same point each already resolves the caller's
+    profile for market-data enrichment — so a holding's dividends stay
+    caught up on every read, without the user manually recording each
+    payout.
+
+    Per-holding, skips anything `resolve_transaction_mode` wouldn't allow a
+    transaction against at all (a watchlist holding, or an fx holding) —
+    same eligibility rule, applied directly since there's no request here
+    to build an error `Response` from — and anything
+    `compute_new_dividend_transactions` finds nothing new for (no
+    `BUY`/`SELL` on record yet, no market-data dividend history, or
+    nothing since the holding's `dividends_synced_through` watermark).
+
+    Every payout `compute_new_dividend_transactions` even considers —
+    created here, or skipped as pre-history — advances that watermark via
+    `TransactionsClient.advance_dividends_synced_through`, *provided every
+    `create_transaction` call this pass actually succeeded* — this is what
+    makes deleting an auto-created `DIVIDEND` transaction a lasting
+    correction: without it, the next sync would see the payout as "missing"
+    again (nothing recorded for its ex-date) and recreate it right back.
+    But advancing the watermark unconditionally — even when a create
+    genuinely failed (`TransactionAmountError`/`TransactionLimitExceededError`,
+    caught below) — would silently and *permanently* lock that holding out
+    of ever syncing the failed payout (or anything after it, once the
+    watermark covers those dates too): every future call would see
+    `ex_date <= synced_through` and skip it forever, with no created
+    transaction to show for it. So the watermark only advances when nothing
+    failed this pass; a partial failure leaves it exactly where it was, and
+    the next sync retries the whole batch — already-created entries are
+    naturally skipped via `recorded_dates`, so only the ones that actually
+    failed (or are newly eligible) get reattempted. In TRANSACTION mode, a
+    backdated `BUY`/`SELL` (issue #124's "past adjustments") reopens part of
+    an already-advanced watermark instead — see
+    `TransactionListView.post`/`TransactionDetailView.delete`'s calls to
+    `TransactionsClient.rewind_dividends_synced_through`.
+
+    Two concurrent calls syncing the same holding (two browser tabs, or
+    React StrictMode's double-effect-mount in dev — this is the exact race
+    that surfaced both bugs this and the next paragraph document) can make
+    `create_transaction`'s own optimistic-concurrency retry
+    (`_MAX_CONFLICT_RETRIES`) genuinely exhaust and raise a `RuntimeError`,
+    since both callers are racing to write the same holding's transactions
+    file. Every step for one holding — the reads, the create loop, the
+    watermark advance — is wrapped in its own `try/except Exception`, so a
+    `RuntimeError` (or anything else unexpected) here is logged and this
+    holding is simply left for the next sync, rather than propagating out
+    of the whole function and silently abandoning every holding still left
+    in `holdings` (accounts/pies/holdings views.py's callers never see this
+    partial-failure — they get every other holding's fully up-to-date
+    result back regardless).
+
+    The same race can otherwise let two concurrent calls both decide the
+    same payout is new (neither has written it yet when each checks) and
+    both call `create_transaction` for it — silently doubling that
+    dividend rather than losing it. Each auto-created payout is given a
+    synthetic `external_id` (`f"dividend:{ex_dividend_date}"`, unique per
+    holding since it's scoped to one holding's transactions file), and
+    `create_transaction` itself rejects a second transaction sharing an
+    `external_id` (re-checked fresh on every conflict-retry attempt, not
+    just once) — so whichever of the two racing calls loses the write
+    raises `TransactionAlreadyExistsError` on its own retry instead of
+    creating a duplicate; that's treated as a success here, not a failure,
+    since the payout genuinely exists now."""
+    mode = profile["transaction_type"]
+    synced: list[dict[str, Any]] = []
+    for holding in holdings:
+        if (
+            holding["watchlist_id"] is not None
+            or holding["asset_class"] not in TRANSACTABLE_ASSET_CLASSES
+        ):
+            synced.append(holding)
+            continue
+
+        try:
+            new_entries = _sync_dividends_for_one_holding(user_id, holding, mode, profile)
+        except Exception:
+            logger.exception(
+                "sync_dividends_for_holdings: unexpected error syncing holding '%s' (%s); "
+                "leaving it for the next sync",
+                holding["id"],
+                holding.get("ticker"),
+            )
+            synced.append(holding)
+            continue
+
+        if not new_entries:
+            synced.append(holding)
+            continue
+
+        transactions = _client.list_transactions(user_id, holding_id=holding["id"])
+        rollup = compute_holding_rollup(transactions, mode)
+        try:
+            holding = _holdings_client.update_holding_financials(user_id, holding["id"], **rollup)
+        except HoldingNotFoundError:
+            pass
+        synced.append(holding)
+    return synced
+
+
+def _sync_dividends_for_one_holding(
+    user_id: str, holding: dict[str, Any], mode: str, profile: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The per-holding body of `sync_dividends_for_holdings`'s loop,
+    factored out so that function can wrap it in one `try/except` per
+    holding — see that function's docstring for why. Returns whatever
+    `compute_new_dividend_transactions` found (`[]` when there was nothing
+    new), regardless of how many of those actually got created; the
+    watermark itself only ever advances when every create this pass
+    succeeded, same "all or nothing" reasoning either way."""
+    existing = _client.list_transactions(user_id, holding_id=holding["id"])
+    dividends_data = _market_data_client.get_dividends(holding["asset_class"], holding["ticker"])
+    dividends = dividends_data["dividends"] if dividends_data else []
+    synced_through = _client.get_dividends_synced_through(user_id, holding["id"])
+    new_entries = compute_new_dividend_transactions(existing, dividends, synced_through, mode=mode)
+
+    all_created = True
+    for entry in new_entries:
+        fields = resolve_converted_amounts(
+            holding,
+            profile["default_currency"],
+            {
+                "amount_native": entry["amount_native"],
+                "date": entry["date"],
+                "type": "DIVIDEND",
+            },
+        )
+        try:
+            _client.create_transaction(
+                user_id,
+                holding["id"],
+                mode,
+                external_id=f"dividend:{entry['date']}",
+                **fields,
+            )
+        except TransactionAlreadyExistsError:
+            # A concurrent sync for this same holding (two browser tabs, a
+            # frontend effect double-firing) already created this exact
+            # payout — see TransactionsClient.create_transaction's
+            # external_id dedup. Nothing missing, so this doesn't count
+            # against all_created.
+            continue
+        except (TransactionAmountError, TransactionLimitExceededError, RuntimeError) as exc:
+            all_created = False
+            logger.warning(
+                "sync_dividends_for_holdings: failed to create DIVIDEND for holding "
+                "'%s' (%s) on %s: %s",
+                holding["id"],
+                holding.get("ticker"),
+                entry["date"],
+                exc,
+            )
+            continue
+
+    if all_created:
+        new_watermark = latest_paid_dividend_date(dividends, synced_through)
+        if new_watermark is not None and new_watermark != synced_through:
+            _client.advance_dividends_synced_through(user_id, holding["id"], new_watermark)
+
+    return new_entries
+
+
 class TransactionListView(APIView):
     authentication_classes = [Auth0JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -361,6 +538,15 @@ class TransactionListView(APIView):
             return Response(
                 {"detail": "Sell quantity exceeds net shares recorded for this holding."},
                 status=409,
+            )
+        # GitHub issue #124: a TRANSACTION-mode BUY/SELL changes the
+        # running share-count timeline compute_new_dividend_transactions
+        # uses for every payout after it — reopen the dividend sync
+        # watermark if this one landed inside the range already synced,
+        # so a backdated trade's "past adjustments" actually get picked up.
+        if mode == "TRANSACTION" and fields["type"] in ("BUY", "SELL"):
+            _client.rewind_dividends_synced_through(
+                request.user.user_id, holding_id, fields["date"]
             )
         _refresh_holding_rollup(request.user.user_id, holding_id, mode)
         return Response(transaction, status=201)
@@ -455,6 +641,13 @@ class TransactionDetailView(APIView):
 
     def delete(self, request: Request, holding_id: str, transaction_id: str) -> Response:
         user_id = request.user.user_id
+        # Fetched before deleting purely to learn its type/date for the
+        # GitHub issue #124 rewind check below — TransactionNotFoundError
+        # here means the same 404 the plain delete would have raised.
+        try:
+            transaction = _client.get_transaction(user_id, holding_id, transaction_id)
+        except TransactionNotFoundError:
+            return Response(status=404)
         try:
             _client.delete_transaction(user_id, holding_id, transaction_id)
         except TransactionNotFoundError:
@@ -465,5 +658,11 @@ class TransactionDetailView(APIView):
         except HoldingNotFoundError:
             return Response(status=204)
         profile = _profile_client.get_or_create_profile(user_id)
-        _refresh_holding_rollup(user_id, holding_id, profile["transaction_type"])
+        mode = profile["transaction_type"]
+        # Same reasoning as TransactionListView.post's rewind call — a
+        # deleted TRANSACTION-mode BUY/SELL changes the share-count
+        # timeline just as much as a created one does.
+        if mode == "TRANSACTION" and transaction["type"] in ("BUY", "SELL"):
+            _client.rewind_dividends_synced_through(user_id, holding_id, transaction["date"])
+        _refresh_holding_rollup(user_id, holding_id, mode)
         return Response(status=204)

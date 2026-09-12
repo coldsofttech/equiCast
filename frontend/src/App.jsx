@@ -7,6 +7,7 @@ import AccountDetailPage from "./pages/accounts/AccountDetailPage.jsx";
 import PieDetailPage from "./pages/pies/PieDetailPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
 import HoldingTickerPage from "./pages/holdings/HoldingTickerPage.jsx";
+import ImportPage from "./pages/import/ImportPage.jsx";
 import NotFoundPage from "./pages/errors/NotFoundPage.jsx";
 import TermsAndConditionsPage from "./pages/TermsAndConditionsPage.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
@@ -31,6 +32,7 @@ function App() {
           <Route path="/accounts/:accountId/pies/:pieId" element={<PieDetailPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/holdings/:ticker" element={<HoldingTickerPage />} />
+          <Route path="/import" element={<ImportPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

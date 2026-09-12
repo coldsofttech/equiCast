@@ -9,6 +9,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- TRANSACTION-mode holdings now also auto-record their paid dividend
+  history as `DIVIDEND` transactions (GitHub issue #124, extending #123's
+  AVERAGE-mode version) — but backfilled across the whole trade history
+  rather than only from "now" forward: `compute_new_dividend_transactions`
+  (`equicast_core.transactions`) gained a `mode` parameter, and
+  TRANSACTION mode's share count for a payout is now the running
+  `BUY`/`SELL` balance as of that payout's own ex-date (a new
+  `_transaction_mode_shares_at` helper), not a single fixed quantity — so
+  a payout from years ago backfills correctly using the whole history,
+  and one landing while the balance is exactly zero (fully sold by then)
+  is skipped rather than recorded for $0.
+
+  A `BUY`/`SELL` created or deleted with a date on or before the
+  holding's `dividends_synced_through` watermark now rewinds it (new
+  `TransactionsClient.rewind_dividends_synced_through`, called from
+  `TransactionListView.post`/`TransactionDetailView.delete`) — a
+  backdated trade changes the share-count timeline for every payout after
+  it, so the reopened range needs a full recheck with the corrected
+  history (an ordinary new-today trade, after the watermark, leaves it
+  untouched). Same as issue #123, an already-created `DIVIDEND`
+  transaction's amount is never rewritten once it exists — a stale amount
+  from a since-added/removed trade is corrected by the user, by hand,
+  same as any dividend.
+
+- AVERAGE-mode holdings now auto-record their paid dividend history as
+  `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
+  mode's own version, issue #124), rather than requiring the user to
+  hand-enter every payout. New `equicast_core.transactions.
+  compute_new_dividend_transactions` turns each `"paid"` entry from
+  `MarketDataClient.get_dividends` not yet recorded into `{date,
+  amount_native}` (shares × per-share payout, using the holding's single
+  `BUY` position — nothing before that `BUY`'s own date qualifies, since
+  there's no share count on record to anchor an earlier payout to); new
+  `sync_dividends_for_holdings` (`backend/transactions/views.py`) turns
+  those into real transactions via `TransactionsClient.create_transaction`
+  and refreshes the holding's rollup. Runs from `GET /api/accounts/`,
+  `/api/accounts/<id>/`, `/api/pies/`, `/api/pies/<id>/`, and
+  `/api/holdings/` (list and detail) — the same point each already
+  resolves the caller's profile for market-data enrichment — so a
+  holding's dividends stay caught up on every read. A no-op for
+  TRANSACTION-mode users, watchlist/fx holdings, or a holding with no
+  `BUY` on record yet.
+
+  Each holding tracks a new `dividends_synced_through` watermark
+  (persisted alongside its transactions, `TransactionsClient.
+  get_dividends_synced_through`/`advance_dividends_synced_through`,
+  advanced via new `equicast_core.transactions.latest_paid_dividend_date`)
+  — every payout a sync even considers, created or skipped as pre-`BUY`,
+  moves it forward, and `create_transaction`/`update_transaction`/
+  `delete_transaction` always carry it forward untouched. Without this, a
+  payout the user deleted would look "missing" again — nothing recorded
+  for its ex-date — and the very next `GET` would just recreate it;
+  deleting an auto-created dividend is now a lasting correction.
+
 - TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
   (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
   previously this mode was read-only, only ever populated by whatever

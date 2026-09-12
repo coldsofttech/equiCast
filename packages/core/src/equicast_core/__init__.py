@@ -26,6 +26,13 @@ from equicast_core.holdings import (
     HoldingNotFoundError,
     HoldingsClient,
 )
+from equicast_core.imports import (
+    PRESETS,
+    ImportParseError,
+    InvalidRow,
+    ParsedRow,
+    ParseResult,
+)
 from equicast_core.pies import (
     MAX_PIES,
     PieLimitExceededError,
@@ -42,6 +49,8 @@ from equicast_core.transactions import (
     TransactionNotFoundError,
     TransactionsClient,
     compute_holding_rollup,
+    compute_new_dividend_transactions,
+    latest_paid_dividend_date,
 )
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
@@ -75,6 +84,11 @@ __all__ = [
     "HoldingLimitExceededError",
     "HoldingNotFoundError",
     "HoldingsClient",
+    "PRESETS",
+    "ImportParseError",
+    "InvalidRow",
+    "ParsedRow",
+    "ParseResult",
     "MAX_TRANSACTIONS_FOR_HOLDING",
     "TRANSACTION_ACTIONS",
     "InsufficientSharesError",
@@ -84,6 +98,8 @@ __all__ = [
     "TransactionNotFoundError",
     "TransactionsClient",
     "compute_holding_rollup",
+    "compute_new_dividend_transactions",
+    "latest_paid_dividend_date",
     "ASSET_CLASSES",
     "DEFAULT_CACHE_TTL_SECONDS",
     "DEFAULT_PRICE_RANGE",
