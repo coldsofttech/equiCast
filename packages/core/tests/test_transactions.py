@@ -1025,7 +1025,34 @@ class TestDividendsSyncedThroughWatermark:
 
         assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
 
-    def test_update_transaction_preserves_an_existing_watermark(self, s3_client) -> None:
+    def test_update_transaction_preserves_the_watermark_when_neither_date_nor_shares_change(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", average_price_native=110
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+
+    def test_update_transaction_resets_the_watermark_when_no_of_shares_changes(
+        self, s3_client
+    ) -> None:
+        """A share-count correction changes every already-synced DIVIDEND's
+        amount (no_of_shares * per_share, computed at sync time) — rewinding
+        the watermark to None lets the next sync_dividends_for_holdings
+        rebuild the whole history against the corrected count."""
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
             "auth0|abc123",
@@ -1042,7 +1069,59 @@ class TestDividendsSyncedThroughWatermark:
             "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", no_of_shares=20
         )
 
-        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) == "2026-03-01"
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_update_transaction_resets_the_watermark_when_date_changes(self, s3_client) -> None:
+        """Backdating the BUY can open up payouts between the new and old
+        date that an already-advanced watermark had already skipped past —
+        rewinding to None lets them be reconsidered."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", date="2025-11-01"
+        )
+
+        assert client.get_dividends_synced_through("auth0|abc123", HOLDING_ID) is None
+
+    def test_update_transaction_drops_auto_created_dividends_when_shares_change(
+        self, s3_client
+    ) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        buy = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        client.update_transaction(
+            "auth0|abc123", HOLDING_ID, buy["id"], "AVERAGE", no_of_shares=20
+        )
+
+        remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
+        assert [t["type"] for t in remaining] == ["BUY"]
 
     def test_delete_transaction_preserves_an_existing_watermark(self, s3_client) -> None:
         """The exact regression this feature exists to prevent: deleting an

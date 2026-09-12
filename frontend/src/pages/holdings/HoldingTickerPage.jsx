@@ -349,26 +349,34 @@ function HoldingTickerPage() {
   // in place this drops every cached page for the holding and re-fetches
   // page 1 plus the holding itself fresh — the same "write straight back to
   // the source of truth" approach useAccounts.js's setAccounts uses.
+  //
+  // getHolding must resolve *before* listTransactions fires, not in
+  // parallel with it: in AVERAGE mode, getHolding's server-side enrichment
+  // runs sync_dividends_for_holdings first (backend/holdings/views.py's
+  // _enrich_holding), which can auto-create a new DIVIDEND transaction as
+  // a side effect before returning the holding's recomputed
+  // dividends_native. A listTransactions call racing alongside it can read
+  // page 1 before that write lands, so the stat updates but the new
+  // DIVIDEND is missing from the list until the next fetch.
   const refreshHoldingAfterMutation = (holdingId) => {
     clearCachedTransactionsForHolding(holdingId);
-    return Promise.all([
-      listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE }),
-      getHolding(api, holdingId),
-    ]).then(([page, holding]) => {
-      writeCachedTransactionsPage(holdingId, 1, page);
-      setTransactionsByHolding((prev) => ({
-        ...prev,
-        [holdingId]: {
-          holdingId,
-          transactions: page.results,
-          count: page.count,
-          next: page.next,
-          page: 1,
-          error: false,
-        },
-      }));
-      setCachedAccounts((current) => replaceHoldingInAccounts(current, holding));
-    });
+    return getHolding(api, holdingId).then((holding) =>
+      listTransactions(api, { holdingId, page: 1, pageSize: TRANSACTIONS_PAGE_SIZE }).then((page) => {
+        writeCachedTransactionsPage(holdingId, 1, page);
+        setTransactionsByHolding((prev) => ({
+          ...prev,
+          [holdingId]: {
+            holdingId,
+            transactions: page.results,
+            count: page.count,
+            next: page.next,
+            page: 1,
+            error: false,
+          },
+        }));
+        setCachedAccounts((current) => replaceHoldingInAccounts(current, holding));
+      })
+    );
   };
 
   const handleCreateTransaction = (holdingId, fields) =>

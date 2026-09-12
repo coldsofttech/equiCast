@@ -759,7 +759,21 @@ class TransactionsClient:
         native/converted split (`average_price`/`amount` here are the
         already-resolved converted figures — the caller recomputes them
         from the patched native value/date/`fx_rate` and passes them all
-        in together, the same as `create_transaction`)."""
+        in together, the same as `create_transaction`).
+
+        Patching an AVERAGE-mode `BUY`'s `date` or `no_of_shares` drops
+        every auto-created `DIVIDEND` on file and rewinds
+        `dividends_synced_through` to `None`, so the next
+        `sync_dividends_for_holdings` (backend/transactions/views.py)
+        rebuilds the whole dividend history fresh against the updated
+        anchor/share count instead of leaving stale amounts (computed
+        against the old share count) or a gap of newly-eligible payouts a
+        backdated `date` opened up but the old watermark had already
+        skipped past. This also un-does any dividend the user previously
+        deleted by hand or edited — same tradeoff as the module docstring's
+        "only future, not past" reasoning: an edit here is treated as a
+        correction significant enough to re-derive everything from, not a
+        surgical patch."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             transactions, dividends_synced_through, etag = self._load(user_id, holding_id)
             index = next((i for i, t in enumerate(transactions) if t["id"] == transaction_id), None)
@@ -803,6 +817,11 @@ class TransactionsClient:
                 "updated_at": datetime.now(UTC).isoformat(),
             }
             transactions[index] = updated
+            if mode == "AVERAGE" and record_type in ("BUY", None) and (
+                "date" in fields or "no_of_shares" in fields
+            ):
+                transactions = [t for t in transactions if t["type"] != "DIVIDEND"]
+                dividends_synced_through = None
             try:
                 self._save(user_id, holding_id, transactions, dividends_synced_through, etag)
             except self._s3.exceptions.ClientError as exc:
