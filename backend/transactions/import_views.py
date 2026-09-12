@@ -72,6 +72,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
+
 from transactions.views import (
     TRANSACTABLE_ASSET_CLASSES,
     _refresh_holding_rollup,
@@ -236,6 +237,11 @@ class ImportPreviewView(APIView):
         try:
             parsed = parser(upload)
         except ImportParseError as exc:
+            # str(exc) is safe here, unlike the other except blocks in this
+            # module: ImportParseError's message is built entirely from a
+            # row number plus known field names/the user's own uploaded
+            # value (equicast_core.imports) — never internal state or a
+            # stack trace. lgtm[py/stack-trace-exposure]
             return Response({"detail": str(exc)}, status=400)
 
         user_id = request.user.user_id
@@ -262,7 +268,9 @@ class ImportPreviewView(APIView):
             synthetic_rows = []
             row_payload = []
             for row in rows:
-                synthetic, effective_fx = _synthetic_trade(ticker, asset_class, default_currency, row)
+                synthetic, effective_fx = _synthetic_trade(
+                    ticker, asset_class, default_currency, row
+                )
                 synthetic_rows.append(synthetic)
                 row_payload.append(
                     {
@@ -274,7 +282,9 @@ class ImportPreviewView(APIView):
                         "fx_rate": effective_fx,
                     }
                 )
-            mode_preview = compute_holding_rollup(synthetic_rows, "TRANSACTION") if resolved else None
+            mode_preview = (
+                compute_holding_rollup(synthetic_rows, "TRANSACTION") if resolved else None
+            )
 
             candidate_holdings = [
                 h
@@ -475,7 +485,9 @@ def _commit_average_mode(
     existing_transactions = _client.list_transactions(user_id, holding_id=holding_id)
     existing_buy = next((t for t in existing_transactions if t["type"] in ("BUY", None)), None)
 
-    synthetic_rows = [_synthetic_trade(ticker, asset_class, default_currency, row)[0] for row in rows]
+    synthetic_rows = [
+        _synthetic_trade(ticker, asset_class, default_currency, row)[0] for row in rows
+    ]
     row_dates = [row["date"] for row in rows]
 
     if existing_buy is None:
@@ -491,8 +503,11 @@ def _commit_average_mode(
                 average_price=rollup["average_price"],
                 date=min(row_dates),
             )
-        except (TransactionAmountError, TransactionLimitExceededError) as exc:
-            return {"status": "error", "detail": str(exc)}
+        except (TransactionAmountError, TransactionLimitExceededError):
+            return {
+                "status": "error",
+                "detail": "Unable to create a position from the imported rows.",
+            }
         return {
             "status": "created",
             "created_count": len(rows),
@@ -528,8 +543,11 @@ def _commit_average_mode(
             date=new_date,
             fx_rate=None,
         )
-    except TransactionAmountError as exc:
-        return {"status": "error", "detail": str(exc)}
+    except TransactionAmountError:
+        return {
+            "status": "error",
+            "detail": "Unable to update the existing position with the imported rows.",
+        }
     return {
         "status": "created",
         "created_count": len(rows),
@@ -554,7 +572,9 @@ def _commit_transaction_mode(
     payload's possibly-stale duplicate flags) so a repeat/overlapping
     import skips rows it already recorded instead of duplicating them."""
     existing_transactions = _client.list_transactions(user_id, holding_id=holding_id)
-    existing_external_ids = {t["external_id"] for t in existing_transactions if t.get("external_id")}
+    existing_external_ids = {
+        t["external_id"] for t in existing_transactions if t.get("external_id")
+    }
 
     ordered_rows = sorted(rows, key=lambda r: r.get("date") or "")
     created_count = 0
@@ -580,8 +600,14 @@ def _commit_transaction_mode(
                 fx_rate=effective_fx,
                 external_id=external_id,
             )
-        except (TransactionAmountError, InsufficientSharesError, TransactionLimitExceededError) as exc:
-            errors.append({"date": row.get("date"), "external_id": external_id, "detail": str(exc)})
+        except (TransactionAmountError, InsufficientSharesError, TransactionLimitExceededError):
+            errors.append(
+                {
+                    "date": row.get("date"),
+                    "external_id": external_id,
+                    "detail": "Unable to import this row.",
+                }
+            )
             continue
 
         created_count += 1
@@ -625,7 +651,12 @@ def _commit_selection(
     rows = selection.get("rows")
 
     if not ticker or asset_class not in TRANSACTABLE_ASSET_CLASSES:
-        return {"ticker": ticker, "holding_id": None, "status": "error", "detail": "Invalid ticker/asset_class."}
+        return {
+            "ticker": ticker,
+            "holding_id": None,
+            "status": "error",
+            "detail": "Invalid ticker/asset_class.",
+        }
     rows_error = _validate_commit_rows(rows)
     if rows_error is not None:
         return {"ticker": ticker, "holding_id": None, "status": "error", "detail": rows_error}
@@ -640,12 +671,19 @@ def _commit_selection(
         AccountNotFoundError,
         PieNotFoundError,
         ValueError,
-    ) as exc:
-        return {"ticker": ticker, "holding_id": None, "status": "error", "detail": str(exc)}
+    ):
+        return {
+            "ticker": ticker,
+            "holding_id": None,
+            "status": "error",
+            "detail": "Unable to resolve the import target for this selection.",
+        }
 
     holding_id = holding["id"]
     if mode == "AVERAGE":
-        result = _commit_average_mode(user_id, holding_id, ticker, asset_class, default_currency, rows)
+        result = _commit_average_mode(
+            user_id, holding_id, ticker, asset_class, default_currency, rows
+        )
     else:
         result = _commit_transaction_mode(
             user_id, holding_id, ticker, asset_class, default_currency, rows
@@ -674,6 +712,7 @@ class ImportCommitView(APIView):
         default_currency = profile["default_currency"]
 
         results = [
-            _commit_selection(user_id, mode, default_currency, selection) for selection in selections
+            _commit_selection(user_id, mode, default_currency, selection)
+            for selection in selections
         ]
         return Response({"results": results})
