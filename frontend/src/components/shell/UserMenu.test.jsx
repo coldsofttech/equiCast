@@ -113,7 +113,7 @@ describe("UserMenu", () => {
 
     render(<UserMenu />);
     fireEvent.click(screen.getByRole("button", { name: /account/i }));
-    fireEvent.click(screen.getByRole("menuitem", { name: "Import transactions" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import Transactions" }));
 
     expect(navigate).toHaveBeenCalledWith("/import");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();

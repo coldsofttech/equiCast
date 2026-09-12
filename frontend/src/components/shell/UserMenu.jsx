@@ -154,7 +154,7 @@ function UserMenu({ profile, onProfileUpdate }) {
             }}
           >
             <i className="bi bi-upload" aria-hidden="true" />
-            Import transactions
+            Import Transactions
           </button>
           <button
             type="button"
