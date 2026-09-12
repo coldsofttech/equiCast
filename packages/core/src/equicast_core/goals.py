@@ -132,11 +132,16 @@ class GoalsClient:
     ) -> None:
         """Raise `GoalMappingConflictError` if any of `account_ids`/
         `pie_ids` is already referenced by a goal other than `goal_id`
-        (`None` on create, since there's no self to exclude yet)."""
+        (`None` on create, since there's no self to exclude yet). An
+        `achieved` goal's own mapping is skipped — it's done drawing on
+        those accounts/pies, so they're free for a new or other goal to
+        claim."""
         account_id_set = set(account_ids)
         pie_id_set = set(pie_ids)
         for other in goals:
             if other["id"] == goal_id:
+                continue
+            if other["status"] == "achieved":
                 continue
             clash = account_id_set & set(other["account_ids"]) or pie_id_set & set(other["pie_ids"])
             if clash:
@@ -178,7 +183,9 @@ class GoalsClient:
         for _ in range(_MAX_CONFLICT_RETRIES):
             goals, etag = self._load(user_id)
             if len(goals) >= self._max_goals:
-                raise GoalLimitExceededError(f"User '{user_id}' already has {self._max_goals} goals.")
+                raise GoalLimitExceededError(
+                    f"User '{user_id}' already has {self._max_goals} goals."
+                )
             self._check_mapping_conflict(goals, None, account_ids, pie_ids)
 
             now = datetime.now(UTC).isoformat()

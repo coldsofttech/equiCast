@@ -8,8 +8,9 @@ import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
-import GoalProgressBar from "../../components/goals/GoalProgressBar.jsx";
+import GoalProgressRing from "../../components/goals/GoalProgressRing.jsx";
 import GoalForm from "./GoalForm.jsx";
+import GoalsListSkeleton from "./GoalsListSkeleton.jsx";
 import { computeGoalProgress, useGoalAchievementSync } from "./goalFinancials.js";
 import { GOAL_PURPOSE_BADGE_TONES, GOAL_PURPOSE_ICONS, GOAL_PURPOSE_LABELS } from "../../config/goalPurposes.js";
 import { formatCurrency } from "../sampleFinancials.js";
@@ -25,11 +26,14 @@ const FALLBACK_CURRENCY = "USD";
 /** ids already mapped to a goal other than `excludeGoalId` — feeds
  * GoalForm's mapping picker so a claimed account/pie can't be double-
  * mapped (the backend also enforces this, see backend/goals/views.py, but
- * disabling it in the picker avoids a round-trip 409). */
+ * disabling it in the picker avoids a round-trip 409). An `achieved`
+ * goal's own mapping is skipped — same "done drawing on those, free to
+ * reclaim" reasoning as the backend's own `_check_mapping_conflict`. */
 function claimedIds(goals, excludeGoalId, field) {
   const ids = new Set();
   for (const goal of goals) {
     if (goal.id === excludeGoalId) continue;
+    if (goal.status === "achieved") continue;
     for (const id of goal[field] ?? []) ids.add(id);
   }
   return ids;
@@ -39,13 +43,31 @@ function purposeLabel(goal) {
   return goal.purpose === "other" ? goal.custom_purpose || "Other" : GOAL_PURPOSE_LABELS[goal.purpose];
 }
 
+/** Names of every account/pie a goal is mapped to (`goal.account_ids`/
+ * `pie_ids`, resolved against the already-cached accounts tree), for the
+ * table's "Account/Pie" column — same resolution goalFinancials.js's
+ * computeGoalProgress does, just collecting names instead of holdings. */
+function associatedNames(goal, accounts) {
+  const accountIds = new Set(goal.account_ids ?? []);
+  const pieIds = new Set(goal.pie_ids ?? []);
+  const names = [];
+  for (const account of accounts) {
+    if (accountIds.has(account.id)) names.push(account.name);
+    for (const pie of account.pies ?? []) {
+      if (pieIds.has(pie.id)) names.push(pie.name);
+    }
+  }
+  return names;
+}
+
 /**
  * The goals management page: a table (same shape as AccountsListPage) with
  * add/edit/delete per row, each backed by a side Drawer/ConfirmDialog.
  * Goals have no nested children/detail page, so unlike accounts a row
  * click does nothing — edit/delete icons are the only row actions.
  *
- * Shows `active` goals by default; "See all" reveals `achieved` ones too
+ * Shows `active` goals by default; the "Show Achieved"/"Hide Achieved" switch
+ * reveals `achieved` ones too
  * (they're hidden by default once achieved — see goalFinancials.js's
  * useGoalAchievementSync, which this page also runs so a goal crossing its
  * target while this page is open flips status immediately).
@@ -143,7 +165,7 @@ function GoalsListPage() {
         )
       }
     >
-      {isLoading && <p className="ec-loading">Loading…</p>}
+      {isLoading && <GoalsListSkeleton />}
       {loadError && <Alert tone="danger">{loadError}</Alert>}
 
       {!isLoading && !loadError && goals.length === 0 && (
@@ -162,74 +184,103 @@ function GoalsListPage() {
         <>
           <div className="ec-section-head">
             <span />
-            <Button variant="secondary" onClick={() => setShowAll((v) => !v)}>
-              {showAll ? "Show active only" : "See all"}
-            </Button>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={showAll}
+              className="ec-goal-achieved-toggle"
+              onClick={() => setShowAll((v) => !v)}
+            >
+              <span className="ec-goal-achieved-toggle-track">
+                <span className="ec-goal-achieved-toggle-thumb" />
+              </span>
+              <span className="ec-goal-achieved-toggle-label">
+                {showAll ? "Hide Achieved" : "Show Achieved"}
+              </span>
+            </button>
           </div>
 
-          <div className="ec-table-wrap">
-            <table className="ec-table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Purpose</th>
-                  <th>Progress</th>
-                  <th>Target date</th>
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {visibleGoals.map((goal) => {
-                  const { currentValue, progressPct, isAchieved } = computeGoalProgress(goal, accounts);
-                  return (
-                    <tr key={goal.id}>
-                      <td>
-                        <div className="ec-table-name-cell">
-                          <IconBadge icon={GOAL_PURPOSE_ICONS[goal.purpose]} defaultIcon="flag-fill" size={28} />
-                          <div>
-                            <div className="ec-table-name">{goal.name}</div>
-                            <div className="ec-table-desc">
-                              {formatCurrency(currentValue, defaultCurrency)} of{" "}
-                              {formatCurrency(goal.target_amount, defaultCurrency)}
+          {visibleGoals.length === 0 && (
+            <EmptyState
+              title="No active goals"
+              description="Set a goal and map accounts or pies to it to track progress toward it."
+              action={
+                <Button variant="primary" onClick={() => setIsCreateOpen(true)}>
+                  New goal
+                </Button>
+              }
+            />
+          )}
+
+          {visibleGoals.length > 0 && (
+            <div className="ec-table-wrap">
+              <table className="ec-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Purpose</th>
+                    <th>Account/Pie</th>
+                    <th>Progress</th>
+                    <th>Target date</th>
+                    <th aria-label="Actions" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleGoals.map((goal) => {
+                    const { currentValue, progressPct, isAchieved } = computeGoalProgress(goal, accounts);
+                    return (
+                      <tr key={goal.id}>
+                        <td>
+                          <div className="ec-table-name-cell">
+                            <IconBadge icon={GOAL_PURPOSE_ICONS[goal.purpose]} defaultIcon="flag-fill" size={28} />
+                            <div>
+                              <div className="ec-table-name">{goal.name}</div>
+                              <div className="ec-table-desc">
+                                {formatCurrency(currentValue, defaultCurrency)} of{" "}
+                                {formatCurrency(goal.target_amount, defaultCurrency)}
+                              </div>
                             </div>
                           </div>
-                        </div>
-                      </td>
-                      <td>
-                        <Badge tone={goal.status === "achieved" ? "success" : GOAL_PURPOSE_BADGE_TONES[goal.purpose]}>
-                          {goal.status === "achieved" ? "Achieved" : purposeLabel(goal)}
-                        </Badge>
-                      </td>
-                      <td style={{ minWidth: 140 }}>
-                        <GoalProgressBar pct={progressPct} achieved={isAchieved} />
-                      </td>
-                      <td>{goal.target_date ?? "—"}</td>
-                      <td>
-                        <div className="ec-table-actions">
-                          <button
-                            type="button"
-                            className="ec-icon-btn"
-                            aria-label={`Edit ${goal.name}`}
-                            onClick={() => setEditingGoal(goal)}
+                        </td>
+                        <td>
+                          <Badge
+                            tone={goal.status === "achieved" ? "success" : GOAL_PURPOSE_BADGE_TONES[goal.purpose]}
                           >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            className="ec-icon-btn ec-icon-btn--danger"
-                            aria-label={`Delete ${goal.name}`}
-                            onClick={() => setDeletingGoal(goal)}
-                          >
-                            <i className="bi bi-trash" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                            {goal.status === "achieved" ? "Achieved" : purposeLabel(goal)}
+                          </Badge>
+                        </td>
+                        <td>{associatedNames(goal, accounts).join(", ") || "—"}</td>
+                        <td>
+                          <GoalProgressRing pct={progressPct} achieved={isAchieved} />
+                        </td>
+                        <td>{goal.target_date ?? "—"}</td>
+                        <td>
+                          <div className="ec-table-actions">
+                            <button
+                              type="button"
+                              className="ec-icon-btn"
+                              aria-label={`Edit ${goal.name}`}
+                              onClick={() => setEditingGoal(goal)}
+                            >
+                              <i className="bi bi-pencil" aria-hidden="true" />
+                            </button>
+                            <button
+                              type="button"
+                              className="ec-icon-btn ec-icon-btn--danger"
+                              aria-label={`Delete ${goal.name}`}
+                              onClick={() => setDeletingGoal(goal)}
+                            >
+                              <i className="bi bi-trash" aria-hidden="true" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </>
       )}
 

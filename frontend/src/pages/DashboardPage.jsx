@@ -23,10 +23,10 @@ import { useGoalAchievementSync } from "./goals/goalFinancials.js";
 import { hasWarmedFxRates, warmFxRates } from "../utils/fxWarmup.js";
 import { getSessionGreeting } from "../utils/greeting.js";
 import AppLoadingScreen from "./AppLoadingScreen.jsx";
-import DashboardSkeleton, { DashboardGreetingSkeleton } from "./DashboardSkeleton.jsx";
+import DashboardSkeleton, { DashboardGreetingSkeleton, DashboardGoalsSkeleton } from "./DashboardSkeleton.jsx";
 import "./goals/Goals.css";
 
-/** How many active goals the dashboard widget shows before "See all" is
+/** How many active goals the dashboard widget shows before "View all goals" is
  * the only way to see the rest — keeps the widget to a glance-able size
  * regardless of MAX_GOALS. */
 const DASHBOARD_GOALS_LIMIT = 4;
@@ -65,7 +65,10 @@ const DASHBOARD_GOALS_LIMIT = 4;
  * Below the accounts grid, a Goals widget (see GoalCard.jsx) shows every
  * `active` goal as a card with its live client-side progress (see
  * goals/goalFinancials.js) — achieved goals drop out of this view, visible
- * only via the "See all" link through to GoalsListPage.
+ * only via the "View all goals" link through to GoalsListPage.
+ * DashboardGoalsSkeleton fills its place while useGoals() is loading, gated
+ * separately from the accounts grid's own loading state since the two
+ * fetches resolve independently.
  */
 function DashboardPage() {
   const api = useApi();
@@ -173,7 +176,7 @@ function DashboardPage() {
       subtitle="Every account you're tracking, at a glance."
       actions={
         accounts.length > 0 && (
-          <Button variant="primary" onClick={() => navigate("/accounts")}>
+          <Button variant="primary" style={{ minWidth: "168px" }} onClick={() => navigate("/accounts")}>
             View all accounts
           </Button>
         )
@@ -217,50 +220,52 @@ function DashboardPage() {
         />
       </Drawer>
 
-      {!isGoalsLoading && (
-        <>
-          <div className="ec-section-head">
-            <h2 className="ec-section-title">Goals</h2>
-            {goals.length > 0 && (
-              <Button variant="secondary" onClick={() => navigate("/goals")}>
-                See all
-              </Button>
-            )}
-          </div>
+      <div className="ec-section-head" style={{ marginTop: "var(--ec-s-24)" }}>
+        <h2 className="ec-section-title">Goals</h2>
+        {!isGoalsLoading && goals.length > 0 && (
+          <Button variant="primary" style={{ minWidth: "168px" }} onClick={() => navigate("/goals")}>
+            View all goals
+          </Button>
+        )}
+      </div>
 
-          {activeGoals.length === 0 && (
-            <EmptyState
-              title="No active goals"
-              description="Set a goal and map accounts or pies to it to track progress toward it."
-              action={
-                <Button variant="primary" onClick={() => setIsGoalCreateOpen(true)}>
-                  Set a goal
-                </Button>
-              }
+      {isGoalsLoading && <DashboardGoalsSkeleton />}
+
+      {!isGoalsLoading && activeGoals.length === 0 && (
+        <EmptyState
+          title="No active goals"
+          description="Set a goal and map accounts or pies to it to track progress toward it."
+          action={
+            <Button variant="primary" onClick={() => setIsGoalCreateOpen(true)}>
+              Set a goal
+            </Button>
+          }
+        />
+      )}
+
+      {!isGoalsLoading && activeGoals.length > 0 && (
+        <div className="ec-account-grid">
+          {activeGoals.slice(0, DASHBOARD_GOALS_LIMIT).map((goal) => (
+            <GoalCard
+              key={goal.id}
+              goal={goal}
+              accounts={accounts}
+              defaultCurrency={profile?.default_currency}
+              onClick={() => navigate("/goals")}
             />
-          )}
-
-          {activeGoals.length > 0 && (
-            <div className="ec-account-grid">
-              {activeGoals.slice(0, DASHBOARD_GOALS_LIMIT).map((goal) => (
-                <GoalCard
-                  key={goal.id}
-                  goal={goal}
-                  accounts={accounts}
-                  defaultCurrency={profile?.default_currency}
-                  onClick={() => navigate("/goals")}
-                />
-              ))}
-            </div>
-          )}
-        </>
+          ))}
+        </div>
       )}
 
       <Drawer open={isGoalCreateOpen} onClose={closeGoalCreate} title="New goal">
         <GoalForm
           accounts={accounts}
-          claimedAccountIds={new Set(goals.flatMap((goal) => goal.account_ids ?? []))}
-          claimedPieIds={new Set(goals.flatMap((goal) => goal.pie_ids ?? []))}
+          claimedAccountIds={
+            new Set(goals.filter((goal) => goal.status !== "achieved").flatMap((goal) => goal.account_ids ?? []))
+          }
+          claimedPieIds={
+            new Set(goals.filter((goal) => goal.status !== "achieved").flatMap((goal) => goal.pie_ids ?? []))
+          }
           onSubmit={handleGoalCreate}
           onCancel={closeGoalCreate}
           isSubmitting={isGoalSaving}

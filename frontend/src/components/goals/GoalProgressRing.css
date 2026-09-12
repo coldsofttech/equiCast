@@ -1,0 +1,3 @@
+.ec-goal-progress-ring circle {
+  transition: stroke-dasharray 0.2s ease;
+}

@@ -155,6 +155,17 @@ def test_update_goal_raises_when_remapping_to_another_goals_account(s3_client) -
         client.update_goal("auth0|abc123", second["id"], account_ids=["acc-1"])
 
 
+def test_update_goal_allows_remapping_to_an_achieved_goals_account(s3_client) -> None:
+    client = GoalsClient(BUCKET, s3_client=s3_client)
+    first = _create(client, "auth0|abc123", name="first", account_ids=["acc-1"])
+    client.update_goal("auth0|abc123", first["id"], status="achieved")
+    second = _create(client, "auth0|abc123", name="second", account_ids=["acc-2"])
+
+    updated = client.update_goal("auth0|abc123", second["id"], account_ids=["acc-1"])
+
+    assert updated["account_ids"] == ["acc-1"]
+
+
 def test_delete_goal_removes_it(s3_client) -> None:
     client = GoalsClient(BUCKET, s3_client=s3_client)
     goal = _create(client, "auth0|abc123")
