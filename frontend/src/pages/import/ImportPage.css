@@ -1,0 +1,56 @@
+/** Caps each step's width to a readable column — a plain `.ec-form` would
+ * otherwise stretch to the full `.ec-page` width now that this is a page
+ * rather than a centered Modal. */
+.ec-import-step {
+  max-width: 640px;
+}
+
+.ec-import-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-12);
+}
+
+.ec-import-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  cursor: pointer;
+}
+
+.ec-import-group-ticker {
+  font-weight: 600;
+}
+
+.ec-import-group-name {
+  color: var(--ec-text-muted);
+}
+
+.ec-import-group-rows-count {
+  margin-left: auto;
+  color: var(--ec-text-muted);
+  font-size: 0.85em;
+}
+
+.ec-import-group-remap,
+.ec-import-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-12);
+}
+
+.ec-import-group-summary {
+  color: var(--ec-text-muted);
+  font-size: 0.9em;
+  margin: 0;
+}
+
+.ec-import-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}

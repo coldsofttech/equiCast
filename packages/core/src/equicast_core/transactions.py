@@ -175,6 +175,7 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     transaction.setdefault("price_native", None)
     transaction.setdefault("amount_native", None)
     transaction.setdefault("fx_rate", None)
+    transaction.setdefault("external_id", None)
     return transaction
 
 
@@ -628,6 +629,7 @@ class TransactionsClient:
         amount_native: Any = None,
         amount: Any = None,
         fx_rate: Any = None,
+        external_id: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -644,7 +646,14 @@ class TransactionsClient:
         resolve that conversion (auto-resolved or user-overridden — the
         caller's call, see module docstring) — stored unconditionally,
         regardless of `type`, unlike the other monetary fields above which
-        are `None`'d out for the types they don't apply to.
+        are `None`'d out for the types they don't apply to. `external_id` is
+        an opaque caller-supplied identifier (e.g. a broker's own row/order
+        id from a transaction import) stored the same unconditional way as
+        `fx_rate` — `None` for a hand-entered/API-created transaction.
+        `update_transaction` never allows patching it, so once set it's
+        immutable for the life of the record; this is what lets a caller use
+        it for import dedup (skip a re-imported row whose `external_id`
+        already exists) without it ever drifting from the original import.
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
@@ -722,6 +731,7 @@ class TransactionsClient:
                 "amount_native": amount_native if type == "DIVIDEND" else None,
                 "amount": amount if type == "DIVIDEND" else None,
                 "fx_rate": fx_rate,
+                "external_id": external_id,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -759,7 +769,11 @@ class TransactionsClient:
         native/converted split (`average_price`/`amount` here are the
         already-resolved converted figures — the caller recomputes them
         from the patched native value/date/`fx_rate` and passes them all
-        in together, the same as `create_transaction`).
+        in together, the same as `create_transaction`). `external_id` is
+        deliberately absent from both allowed sets — it's immutable once set
+        by `create_transaction`, so an import's dedup check can always trust
+        it against the original import rather than a value that could have
+        drifted since.
 
         Patching an AVERAGE-mode `BUY`'s `date` or `no_of_shares` drops
         every auto-created `DIVIDEND` on file and rewinds

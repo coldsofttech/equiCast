@@ -105,4 +105,17 @@ describe("UserMenu", () => {
     expect(navigate).toHaveBeenCalledWith("/accounts");
     expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   });
+
+  it("navigates to /import and closes the panel from the account menu", () => {
+    mockUser({ name: "Ada Lovelace", email: "ada@example.com" });
+    const navigate = vi.fn();
+    vi.mocked(useNavigate).mockReturnValue(navigate);
+
+    render(<UserMenu />);
+    fireEvent.click(screen.getByRole("button", { name: /account/i }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Import transactions" }));
+
+    expect(navigate).toHaveBeenCalledWith("/import");
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  });
 });
