@@ -84,15 +84,18 @@ function PrivacyPolicyPage() {
 
         <h2>Who we share it with</h2>
         <p>
-          equiCast shares data with exactly two outside parties, both because the app can't
-          function without them: <a href="https://auth0.com/privacy">Auth0</a> (authentication —
-          receives your login credentials directly, never equiCast) and AWS (hosting — stores the
-          data described above). Market, dividend, and corporate-events data flows the other
-          direction only — equiCast reads published data from Yahoo Finance (via the open-source{" "}
-          <code>yfinance</code> library) to value your holdings; none of your own account or
-          transaction data is ever sent to Yahoo Finance or any other market-data source. equiCast
-          runs no analytics or advertising services today, and never sells, rents, or otherwise
-          trades your data to any third party.
+          equiCast shares data with three outside parties, each because the app can't function
+          (or, for analytics, can't measure its own usage) without them:{" "}
+          <a href="https://auth0.com/privacy">Auth0</a> (authentication — receives your login
+          credentials directly, never equiCast), AWS (hosting — stores the data described above),
+          and, only if you've opted in via the cookie banner,{" "}
+          <a href="https://policies.google.com/privacy">Google Analytics</a> (usage measurement —
+          see the <a href="/cookie-policy">Cookie Policy</a> for exactly what it tracks). Market,
+          dividend, and corporate-events data flows the other direction only — equiCast reads
+          published data from Yahoo Finance (via the open-source <code>yfinance</code> library) to
+          value your holdings; none of your own account or transaction data is ever sent to Yahoo
+          Finance or any other market-data source. equiCast runs no advertising services, and never
+          sells, rents, or otherwise trades your data to any third party.
         </p>
 
         <h2>Deleting your data</h2>

@@ -43,7 +43,7 @@ const CATEGORIES = [
     label: "Analytics",
     locked: false,
     description:
-      "equiCast doesn't use analytics or advertising cookies today. This is here for if that ever changes — off by default, and only ever on if you turn it on.",
+      "Google Analytics — page views plus a few key actions like signing in, searching and creating an account, portfolio or transaction. Off by default; starts and stops immediately when you flip this, no refresh needed.",
   },
 ];
 

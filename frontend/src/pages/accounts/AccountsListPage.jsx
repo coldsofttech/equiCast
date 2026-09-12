@@ -14,6 +14,7 @@ import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
 import { createAccount, deleteAccount, updateAccount } from "../../api/accounts.js";
 import { DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
+import { trackEvent } from "../../utils/analytics.js";
 
 /** True once an account has pies/holdings that a plain delete would refuse (see accounts/views.py). */
 function needsForce(account) {
@@ -56,6 +57,7 @@ function AccountsListPage() {
       .then((account) => {
         setAccounts((current) => [...current, account]);
         closeCreate();
+        trackEvent("account_created", { account_type: account.account_type });
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't create the account."))
       .finally(() => setIsSaving(false));

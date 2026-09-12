@@ -28,6 +28,11 @@
       over any .env.local, so no file is needed just for local dev - letting
       you log in for real through the frontend and obtain a genuine
       Auth0-issued token end to end.
+    - Google Analytics is entirely optional - pass -GaMeasurementId (or
+      export $env:GA_MEASUREMENT_ID first) so analytics.js's gtag.js
+      actually loads locally, same VITE_GA_MEASUREMENT_ID env-var-over-
+      .env.local precedence as Auth0 above (see docs/analytics-setup.md).
+      Leave it unset and analytics.js simply no-ops - nothing to warn about.
     - The backend runs via `manage.py runserver`, the same Django app
       `equicast_api.lambda_handler.handler` wraps in prod - Lambda/API
       Gateway themselves aren't part of this loop, so iteration stays
@@ -139,6 +144,8 @@
 .EXAMPLE
   .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app -Auth0ClientId <client-id>
 .EXAMPLE
+  .\scripts\local-dev.ps1 -StartFrontend -GaMeasurementId G-XXXXXXXXXX
+.EXAMPLE
   .\scripts\local-dev.ps1 -Stop
 #>
 
@@ -154,6 +161,7 @@ param(
     [string]$Auth0Domain = $env:AUTH0_DOMAIN,
     [string]$Auth0Audience = $env:AUTH0_AUDIENCE,
     [string]$Auth0ClientId = $env:AUTH0_CLIENT_ID,
+    [string]$GaMeasurementId = $env:GA_MEASUREMENT_ID,
     [string]$Region = "eu-west-1",
     [string]$MarketDataBucket = "equicast-market-data-dev",
     [string]$UserDataBucket = "equicast-user-data-dev",
@@ -424,6 +432,13 @@ if ($StartFrontend) {
         $env:VITE_AUTH0_DOMAIN = $Auth0Domain
         $env:VITE_AUTH0_CLIENT_ID = $Auth0ClientId
         $env:VITE_AUTH0_AUDIENCE = $Auth0Audience
+    }
+
+    # Optional, unlike Auth0 above - analytics.js no-ops entirely (no GA
+    # script ever loads) when this is unset, so there's nothing to warn
+    # about. Same env-var-over-.env.local precedence as Auth0.
+    if ($GaMeasurementId) {
+        $env:VITE_GA_MEASUREMENT_ID = $GaMeasurementId
     }
 }
 

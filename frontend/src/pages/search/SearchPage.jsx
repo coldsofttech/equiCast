@@ -11,6 +11,7 @@ import SearchSkeleton from "./SearchSkeleton.jsx";
 import { useApi } from "../../api/useApi.js";
 import { searchTickers } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
+import { trackEvent } from "../../utils/analytics.js";
 import "./SearchPage.css";
 
 const PAGE_SIZE = 25;
@@ -81,6 +82,7 @@ function SearchPage() {
         setPage(1);
         setTotalPages(response.total_pages);
         setCount(response.count);
+        trackEvent("search", { search_term: query });
       })
       .catch((err) => {
         if (!cancelled) setLoadError(err.message ?? "Search failed.");

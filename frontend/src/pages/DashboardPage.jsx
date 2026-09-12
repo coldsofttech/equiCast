@@ -22,6 +22,7 @@ import { createGoal } from "../api/goals.js";
 import { useGoalAchievementSync } from "./goals/goalFinancials.js";
 import { hasWarmedFxRates, warmFxRates } from "../utils/fxWarmup.js";
 import { getSessionGreeting } from "../utils/greeting.js";
+import { trackEvent } from "../utils/analytics.js";
 import AppLoadingScreen from "./AppLoadingScreen.jsx";
 import DashboardSkeleton, { DashboardGreetingSkeleton, DashboardGoalsSkeleton } from "./DashboardSkeleton.jsx";
 import "./goals/Goals.css";
@@ -147,6 +148,7 @@ function DashboardPage() {
       .then((account) => {
         setAccounts((current) => [...current, account]);
         closeCreate();
+        trackEvent("account_created", { account_type: account.account_type });
       })
       .catch((err) => setSaveError(err.message ?? "Couldn't create the account."))
       .finally(() => setIsSaving(false));
