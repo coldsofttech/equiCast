@@ -171,6 +171,40 @@ class PricesView(APIView):
         return Response(prices)
 
 
+class FxRateView(APIView):
+    """The historical FX rate between two currencies on a given date —
+    wraps `MarketDataClient.get_fx_rate_on_date` unchanged. Used by the
+    transaction form to show/default the rate a BUY/SELL/DIVIDEND would
+    otherwise auto-resolve server-side (see backend/transactions/views.py's
+    `resolve_converted_amounts`), letting the user preview and override it
+    before submitting, and by the frontend's login-time warm-up (GitHub
+    issue #149) to pre-read the relevant currency pairs' parquet files
+    into this process's cache ahead of any real transaction entry.
+
+    Not nested under `<asset_class>/<symbol>/` like the views above —
+    this is currency-pair-shaped, not ticker-shaped."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request: Request, from_currency: str, to_currency: str) -> Response:
+        date = request.query_params.get("date")
+        if not date:
+            return Response({"detail": "Missing query param: date."}, status=400)
+
+        from_currency = from_currency.upper()
+        to_currency = to_currency.upper()
+        rate = _client.get_fx_rate_on_date(from_currency, to_currency, date)
+        if rate is None:
+            return Response(
+                {"detail": f"No FX rate for {from_currency}/{to_currency} on or before {date}."},
+                status=404,
+            )
+        return Response(
+            {"from_currency": from_currency, "to_currency": to_currency, "date": date, "rate": rate}
+        )
+
+
 class SearchView(APIView):
     """Ticker/name search across every asset class's published catalog
     (see `equicast_core.catalog`) — not a live scan of the bucket, so

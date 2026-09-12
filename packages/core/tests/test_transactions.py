@@ -62,11 +62,35 @@ class TestCreateAverageTransaction:
         assert transaction["price"] is None
         assert transaction["amount_native"] is None
         assert transaction["amount"] is None
+        assert transaction["fx_rate"] is None
         assert transaction["date"] == "2026-01-15"
         assert transaction["type"] == "BUY"
         assert transaction["created_at"] == transaction["updated_at"]
         assert client.list_transactions("auth0|abc123", holding_id=HOLDING_ID) == [transaction]
         assert client.list_transactions("auth0|abc123") == [transaction]
+
+    def test_create_stores_the_effective_fx_rate_whether_auto_resolved_or_overridden(
+        self, s3_client
+    ) -> None:
+        """The core client itself doesn't distinguish "auto-resolved" from
+        "user override" — that decision is the caller's (backend/
+        transactions/views.py's resolve_converted_amounts); this just
+        stores whatever `fx_rate` it's given, unconditionally."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            average_price=125,
+            fx_rate=1.25,
+            date="2026-01-15",
+        )
+
+        assert transaction["fx_rate"] == 1.25
 
     def test_create_raises_for_non_positive_no_of_shares(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
@@ -326,6 +350,7 @@ class TestCreateTransactionModeTransaction:
             no_of_shares=10,
             price_native=152.5,
             price=121.85,
+            fx_rate=0.799,
             date="2026-01-15",
             type="BUY",
         )
@@ -333,6 +358,7 @@ class TestCreateTransactionModeTransaction:
         assert transaction["no_of_shares"] == 10
         assert transaction["price_native"] == 152.5
         assert transaction["price"] == 121.85
+        assert transaction["fx_rate"] == 0.799
         assert transaction["date"] == "2026-01-15"
         assert transaction["type"] == "BUY"
         assert transaction["average_price_native"] is None
@@ -656,6 +682,7 @@ class TestLegacyRecordNormalization:
         assert transaction["average_price_native"] is None
         assert transaction["price_native"] is None
         assert transaction["amount_native"] is None
+        assert transaction["fx_rate"] is None
 
 
 class TestGetTransaction:
@@ -855,6 +882,63 @@ class TestUpdateTransaction:
         assert updated["amount_native"] == 20
         assert updated["amount"] == 16
         assert updated["date"] == "2026-03-02"
+
+    def test_update_allows_fx_rate_on_an_average_buy_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            average_price=80,
+            fx_rate=0.8,
+            date="2026-01-15",
+        )
+
+        updated = client.update_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            transaction["id"],
+            "AVERAGE",
+            fx_rate=0.82,
+            average_price=82,
+        )
+
+        assert updated["fx_rate"] == 0.82
+        assert updated["average_price"] == 82
+
+    def test_update_allows_fx_rate_on_a_dividend_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
+            amount_native=42.10, fx_rate=0.9, date="2026-03-01"
+        )
+
+        updated = client.update_transaction(
+            "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", fx_rate=0.91
+        )
+
+        assert updated["fx_rate"] == 0.91
+
+    def test_update_rejects_fx_rate_on_a_transaction_mode_buy_sell_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            no_of_shares=10,
+            price_native=100,
+            fx_rate=0.8,
+            date="2026-01-01",
+            type="BUY",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "TRANSACTION", fx_rate=0.85
+            )
 
 
 class TestDeleteTransaction:

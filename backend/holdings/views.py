@@ -1,3 +1,5 @@
+from typing import Any
+
 from django.conf import settings
 from equicast_core import (
     AccountNotFoundError,
@@ -73,6 +75,29 @@ _transactions_client = TransactionsClient(
 #: "transaction" path below — identity/views.py holds the client actually
 #: used for profile CRUD.
 _profile_client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
+
+
+def _enrich_holding(user_id: str, holding: dict[str, Any]) -> dict[str, Any]:
+    """Resolve `user_id`'s `default_currency` and delegate to
+    `MarketDataClient.enrich_holdings` for the same catalog-backed
+    current_price_native/current_price (and name/sector/industry/website/
+    market_cap) merge accounts/views.py's/pies/views.py's own
+    `_enrich_holdings` apply to every holding a *list* endpoint returns —
+    see that method's docstring for what it fills in and why.
+
+    `HoldingDetailView.get` is the one holding-returning endpoint that
+    previously skipped this: `refreshHoldingAfterMutation` (frontend
+    HoldingTickerPage.jsx) re-fetches a holding straight from here after
+    every transaction create/update/delete and merges it back into the
+    cached accounts tree, clobbering whatever `current_price` an earlier
+    accounts/pies fetch had already enriched it with. Without this,
+    `computeHoldingValuation` (holdingValuation.js) then has no live price
+    to value the position at and falls back to its own cost basis — Value
+    reading identical to Invested (flat P&L) right after any mutation,
+    until a full accounts refetch re-enriches it."""
+    return _market_data_client.enrich_holdings(
+        [holding], _profile_client.get_or_create_profile(user_id)["default_currency"]
+    )[0]
 
 
 class HoldingListView(APIView):
@@ -238,7 +263,7 @@ class HoldingDetailView(APIView):
             holding = _client.get_holding(request.user.user_id, holding_id)
         except HoldingNotFoundError:
             return Response(status=404)
-        return Response(holding)
+        return Response(_enrich_holding(request.user.user_id, holding))
 
     def delete(self, request: Request, holding_id: str) -> Response:
         try:

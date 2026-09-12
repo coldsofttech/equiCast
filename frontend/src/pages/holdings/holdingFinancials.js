@@ -1,4 +1,4 @@
-import { getProfile } from "../../api/market.js";
+import { getPrices, getProfile } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
 
 /**
@@ -89,6 +89,40 @@ export function formatPercent(fraction, digits = 1) {
  */
 export function formatRatio(value, digits = 2) {
   return value != null ? value.toFixed(digits) : null;
+}
+
+/**
+ * An FX rate as a "1:1" ratio using each side's real currency symbol (e.g.
+ * "£1 : $1.2734"), matching how brokerage apps like Trading 212/Chip quote
+ * a rate — rather than a bare unlabeled number, which reads ambiguously
+ * once you're not sure which currency it's even rate-per-1-unit-of.
+ * `baseCurrency` is the "1" side (see HoldingTransactionsSection.jsx's
+ * `displayFxRate` — the default→native direction the transaction form
+ * itself shows/accepts), `quoteCurrency` the side `rate` is quoted in.
+ * `null` when `rate` is unset.
+ *
+ * @param {number|null|undefined} rate
+ * @param {string} baseCurrency
+ * @param {string} quoteCurrency
+ * @returns {string|null}
+ */
+export function formatFxRatio(rate, baseCurrency, quoteCurrency) {
+  if (rate == null) return null;
+  const base = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: baseCurrency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(1);
+  const quote = new Intl.NumberFormat(undefined, {
+    style: "currency",
+    currency: quoteCurrency,
+    currencyDisplay: "narrowSymbol",
+    minimumFractionDigits: 4,
+    maximumFractionDigits: 4,
+  }).format(rate);
+  return `${base} : ${quote}`;
 }
 
 /**
@@ -223,6 +257,74 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
     if (typeof rate === "number" && rate > 0) return 1 / rate;
   } catch {
     // Neither pair is published for this currency combination.
+  }
+
+  return null;
+}
+
+/** The latest bar with `bar.date <= date` across `history`'s three
+ * segments (`daily`/`weekly`/`monthly` — see api/market.js's PriceSeries),
+ * checked in that order since it's the most precise available: an older
+ * `date` simply won't have any `daily`/`weekly` bar at or before it (both
+ * only cover a recent window), falling through to `monthly`'s full
+ * history. Mirrors the backend's own "nearest trading day on or before"
+ * semantics (equicast_core.client.get_price_on_date/get_fx_rate_on_date),
+ * just computed client-side against an already-fetched series instead of
+ * a network call per date. `null` if no segment has anything that old. */
+function findCloseOnOrBefore(history, date) {
+  for (const bars of [history?.daily, history?.weekly, history?.monthly]) {
+    if (!bars || bars.length === 0) continue;
+    let candidate = null;
+    for (const bar of bars) {
+      if (bar.date > date) break;
+      candidate = bar;
+    }
+    if (candidate) return candidate.close;
+  }
+  return null;
+}
+
+/**
+ * Resolves the historical FX rate from `fromCurrency` to `toCurrency` as of
+ * `date` (the nearest published trading day on or before it) — the "1
+ * fromCurrency = X toCurrency" rate a transaction dated `date` would
+ * convert at. Unlike `resolveFxRate` above (a *current* rate, off the
+ * profile endpoint's `day_close`), this is entirely resolved from each
+ * pair's own bundled price history (`getPrices`, already IndexedDB-cached
+ * same-day — see priceCache.js) via `findCloseOnOrBefore`: one fetch per
+ * pair per day covers every date a user might pick, rather than a network
+ * round trip per date. Tries the direct pair first, then the inverted pair
+ * (taking its reciprocal) if that's what's published instead, same
+ * fallback `resolveFxRate` uses. Never throws — any failure (no pair
+ * published, a network error, nothing that far back in either pair's
+ * history) resolves to `null` so a caller can show "—" instead of
+ * blocking on this lookup.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string|null|undefined} fromCurrency
+ * @param {string|null|undefined} toCurrency
+ * @param {string|null|undefined} date - "YYYY-MM-DD"
+ * @returns {Promise<number|null>}
+ */
+export async function resolveFxRateOnDate(api, fromCurrency, toCurrency, date) {
+  if (!fromCurrency || !toCurrency || !date) return null;
+  if (fromCurrency === toCurrency) return 1;
+
+  try {
+    const direct = await getPrices(api, "fx", `${fromCurrency}${toCurrency}`);
+    const rate = findCloseOnOrBefore(direct, date);
+    if (typeof rate === "number" && rate > 0) return rate;
+  } catch {
+    // No direct pair published — fall through and try the inverted one.
+  }
+
+  try {
+    const inverted = await getPrices(api, "fx", `${toCurrency}${fromCurrency}`);
+    const rate = findCloseOnOrBefore(inverted, date);
+    if (typeof rate === "number" && rate > 0) return 1 / rate;
+  } catch {
+    // Neither pair is published for this currency combination, or neither
+    // has anything published as far back as `date`.
   }
 
   return null;

@@ -5,6 +5,7 @@ import {
   formatPrice,
   formatRatio,
   resolveFxRate,
+  resolveFxRateOnDate,
   rollupInstances,
   selectDividendHistory,
   selectUpcomingDividends,
@@ -116,6 +117,90 @@ describe("resolveFxRate", () => {
     const api = vi.fn().mockRejectedValue(new Error("404"));
 
     await expect(resolveFxRate(api, "USD", "GBP")).resolves.toBeNull();
+  });
+});
+
+describe("resolveFxRateOnDate", () => {
+  it("short-circuits to 1 when the two currencies match", async () => {
+    const api = vi.fn();
+    await expect(resolveFxRateOnDate(api, "USD", "USD", "2026-01-15")).resolves.toBe(1);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("returns null when either currency or the date is unknown", async () => {
+    const api = vi.fn();
+    await expect(resolveFxRateOnDate(api, null, "USD", "2026-01-15")).resolves.toBeNull();
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", null)).resolves.toBeNull();
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("finds the latest daily bar on or before the given date", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [
+        { date: "2026-01-10", close: 1.25 },
+        { date: "2026-01-14", close: 1.27 },
+        { date: "2026-01-20", close: 1.3 },
+      ],
+      weekly: [],
+      monthly: [],
+    });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15");
+
+    expect(api).toHaveBeenCalledWith("/market/fx/GBPUSD/prices/");
+    expect(rate).toBe(1.27);
+  });
+
+  it("falls through to monthly bars for a date older than daily/weekly cover", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [{ date: "2026-01-10", close: 1.27 }],
+      weekly: [{ date: "2025-06-01", close: 1.24 }],
+      monthly: [
+        { date: "2020-01-01", close: 1.31 },
+        { date: "2021-01-01", close: 1.35 },
+      ],
+    });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2021-06-01");
+
+    expect(rate).toBe(1.35);
+  });
+
+  it("falls back to the inverted pair, taking its reciprocal", async () => {
+    const api = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("404"))
+      .mockResolvedValueOnce({
+        ticker: "USDGBP",
+        daily: [{ date: "2026-01-14", close: 0.8 }],
+        weekly: [],
+        monthly: [],
+      });
+
+    const rate = await resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15");
+
+    expect(api).toHaveBeenNthCalledWith(1, "/market/fx/GBPUSD/prices/");
+    expect(api).toHaveBeenNthCalledWith(2, "/market/fx/USDGBP/prices/");
+    expect(rate).toBeCloseTo(1.25);
+  });
+
+  it("resolves to null when neither pair has anything published that far back", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [{ date: "2026-01-10", close: 1.27 }],
+      weekly: [],
+      monthly: [],
+    });
+
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", "2020-01-01")).resolves.toBeNull();
+  });
+
+  it("resolves to null when neither pair is published at all", async () => {
+    const api = vi.fn().mockRejectedValue(new Error("404"));
+
+    await expect(resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15")).resolves.toBeNull();
   });
 });
 

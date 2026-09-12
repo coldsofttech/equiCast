@@ -19,7 +19,7 @@ def dynamodb_resource():
         yield resource
 
 
-def test_get_or_create_profile_creates_with_default_currency_on_first_login(
+def test_get_or_create_profile_creates_with_defaults_on_first_login(
     dynamodb_resource,
 ) -> None:
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -30,6 +30,7 @@ def test_get_or_create_profile_creates_with_default_currency_on_first_login(
         "user_id": "auth0|new-user",
         "default_currency": "GBP",
         "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|new-user"})["Item"]
     assert stored == profile
@@ -40,7 +41,8 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
         Item={
             "user_id": "auth0|existing",
             "default_currency": "EUR",
-            "transaction_type": "TRANSACTION"
+            "transaction_type": "TRANSACTION",
+            "fx_warmup_currencies": ["EUR"],
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -51,10 +53,59 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
         "user_id": "auth0|existing",
         "default_currency": "EUR",
         "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["EUR"],
     }
 
 
 def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "fx_warmup_currencies": ["EUR"],
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["EUR"],
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_get_or_create_profile_backfills_fx_warmup_currencies_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION",
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_get_or_create_profile_backfills_both_fields_when_neither_is_present(
     dynamodb_resource,
 ) -> None:
     dynamodb_resource.Table(TABLE).put_item(
@@ -68,9 +119,8 @@ def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_
         "user_id": "auth0|existing",
         "default_currency": "EUR",
         "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
     }
-    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
-    assert stored == profile
 
 
 def test_get_or_create_profile_returns_winner_on_concurrent_create_race(dynamodb_resource) -> None:
@@ -96,7 +146,12 @@ def test_get_or_create_profile_returns_winner_on_concurrent_create_race(dynamodb
 
 def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> None:
     dynamodb_resource.Table(TABLE).put_item(
-        Item={"user_id": "auth0|existing", "default_currency": "GBP", "transaction_type": "AVERAGE"}
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "GBP",
+            "transaction_type": "AVERAGE",
+            "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
 
@@ -106,6 +161,7 @@ def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> 
         "user_id": "auth0|existing",
         "default_currency": "EUR",
         "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -120,12 +176,18 @@ def test_update_default_currency_creates_profile_first_if_missing(dynamodb_resou
         "user_id": "auth0|new-user",
         "default_currency": "INR",
         "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
     }
 
 
 def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> None:
     dynamodb_resource.Table(TABLE).put_item(
-        Item={"user_id": "auth0|existing", "default_currency": "GBP", "transaction_type": "AVERAGE"}
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "GBP",
+            "transaction_type": "AVERAGE",
+            "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
 
@@ -135,6 +197,7 @@ def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> 
         "user_id": "auth0|existing",
         "default_currency": "GBP",
         "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -149,4 +212,41 @@ def test_update_transaction_type_creates_profile_first_if_missing(dynamodb_resou
         "user_id": "auth0|new-user",
         "default_currency": "GBP",
         "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+    }
+
+
+def test_update_fx_warmup_currencies_updates_existing_profile(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "GBP",
+            "transaction_type": "AVERAGE",
+            "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_fx_warmup_currencies("auth0|existing", ["GBP", "INR"])
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "INR"],
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_update_fx_warmup_currencies_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_fx_warmup_currencies("auth0|new-user", ["INR"])
+
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["INR"],
     }

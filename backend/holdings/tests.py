@@ -430,6 +430,7 @@ class HoldingListViewTests(TestCase):
             price=None,
             amount_native=None,
             amount=None,
+            fx_rate=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -571,18 +572,40 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 401)
 
+    @patch("holdings.views._profile_client")
+    @patch("holdings.views._market_data_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_returns_the_holding(self, mock_jwks_client, mock_decode, mock_client) -> None:
+    def test_get_returns_the_enriched_holding(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_market_data_client,
+        mock_profile_client,
+    ) -> None:
+        # A holding fetched directly (as opposed to via an accounts/pies
+        # list, which enriches every holding it returns) must still come
+        # back with current_price/current_price_native filled in - this is
+        # what refreshHoldingAfterMutation (HoldingTickerPage.jsx) re-fetches
+        # after every transaction create/update/delete and merges straight
+        # back into the cached accounts tree, so an un-enriched holding here
+        # would clobber whatever an earlier accounts/pies fetch had already
+        # enriched it with (Value reading as flat/equal to Invested right
+        # after any mutation, until a full accounts refetch fixed it).
         _authenticate(mock_jwks_client, mock_decode)
         mock_client.get_holding.return_value = HOLDING
+        mock_profile_client.get_or_create_profile.return_value = {"default_currency": "GBP"}
+        enriched = {**HOLDING, "current_price_native": 150.0, "current_price": 120.0}
+        mock_market_data_client.enrich_holdings.return_value = [enriched]
 
         response = self.client.get(reverse("holdings-detail", args=["h-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), HOLDING)
+        self.assertEqual(response.json(), enriched)
         mock_client.get_holding.assert_called_once_with("auth0|abc123", "h-1")
+        mock_market_data_client.enrich_holdings.assert_called_once_with([HOLDING], "GBP")
 
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")

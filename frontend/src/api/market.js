@@ -491,3 +491,14 @@ export async function getPrices(api, assetClass, symbol) {
   writeCachedPrices(cacheKey, result);
   return result;
 }
+
+// The historical (as of a given date) FX rate a transaction form needs is
+// resolved entirely client-side, from an fx pair's own bundled price
+// history (getPrices below, already IndexedDB-cached) — see
+// holdingFinancials.js's resolveFxRateOnDate. There's deliberately no
+// per-date network lookup here: GET /api/market/fx-rate/... (backend
+// FxRateView) still exists and is what the backend's own
+// resolve_converted_amounts auto-resolves against at submission time, but
+// nothing in the frontend calls it directly any more — a per-keystroke
+// network request for whatever partial date a native <input type="date">
+// happened to report was exactly the problem this replaced.
