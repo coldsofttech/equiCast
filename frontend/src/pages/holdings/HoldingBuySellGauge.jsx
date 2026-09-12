@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { formatPercent } from "./holdingFinancials.js";
 
@@ -10,6 +11,14 @@ import { formatPercent } from "./holdingFinancials.js";
  * side's percentage labeled above it — same is-up/is-down (green/red)
  * convention HoldingCagrSection's bars use.
  *
+ * Each segment also grows in from 0% width on load rather than appearing
+ * at its final size — `revealed` starts false on every fresh
+ * `marketMetrics`, then flips true on the next frame so there's an actual
+ * 0 -> final-width change for `.ec-buysell-bar-segment`'s `transition:
+ * width` (HoldingTickerPage.css) to animate, same pattern
+ * HoldingCagrSection/PieCagrSection use for their own bars (GitHub issue
+ * #174).
+ *
  * This is a technical proxy for order-flow sentiment derived from price and
  * volume action over the trailing year (Chaikin Money Flow's own
  * money-flow-multiplier — see the caption below), not literal buy/sell
@@ -20,6 +29,15 @@ import { formatPercent } from "./holdingFinancials.js";
  * @param {{ marketMetrics: import("../../api/market.js").MarketMetrics|null }} props
  */
 function HoldingBuySellGauge({ marketMetrics }) {
+  const [revealed, setRevealed] = useState(false);
+
+  useEffect(() => {
+    if (!marketMetrics) return undefined;
+    setRevealed(false);
+    const frame = requestAnimationFrame(() => setRevealed(true));
+    return () => cancelAnimationFrame(frame);
+  }, [marketMetrics]);
+
   const buyersPct = marketMetrics?.buyers_pct;
   const sellersPct = marketMetrics?.sellers_pct;
   if (buyersPct == null || sellersPct == null) return null;
@@ -36,8 +54,14 @@ function HoldingBuySellGauge({ marketMetrics }) {
         <span className="ec-buysell-value is-up">{formatPercent(buyersPct, 0)}</span>
       </div>
       <div className="ec-buysell-bar-track">
-        <div className="ec-buysell-bar-segment is-down" style={{ width: `${sellersPct * 100}%` }} />
-        <div className="ec-buysell-bar-segment is-up" style={{ width: `${buyersPct * 100}%` }} />
+        <div
+          className="ec-buysell-bar-segment is-down"
+          style={{ width: revealed ? `${sellersPct * 100}%` : "0%" }}
+        />
+        <div
+          className="ec-buysell-bar-segment is-up"
+          style={{ width: revealed ? `${buyersPct * 100}%` : "0%" }}
+        />
       </div>
 
       <p className="ec-chart-caption">

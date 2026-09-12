@@ -69,6 +69,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- `HoldingBuySellGauge`'s stacked sellers/buyers bar now grows in from 0%
+  on load instead of appearing at its final width (GitHub issue #174) —
+  same `revealed`-state pattern `HoldingCagrSection`/`PieCagrSection`
+  already use for their own bars: starts at 0%, flips to the real width
+  on the next frame so `.ec-buysell-bar-segment`'s new `transition: width`
+  (`HoldingTickerPage.css`) has an actual change to animate.
+
 - `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
   returns one bundled `{ticker, currency, last_updated, daily, weekly,
   monthly}` response instead of defaulting to `range="max"`'s single
