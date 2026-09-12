@@ -26,6 +26,13 @@ from equicast_core.holdings import (
     HoldingNotFoundError,
     HoldingsClient,
 )
+from equicast_core.imports import (
+    PRESETS,
+    ImportParseError,
+    InvalidRow,
+    ParsedRow,
+    ParseResult,
+)
 from equicast_core.pies import (
     MAX_PIES,
     PieLimitExceededError,
@@ -77,6 +84,11 @@ __all__ = [
     "HoldingLimitExceededError",
     "HoldingNotFoundError",
     "HoldingsClient",
+    "PRESETS",
+    "ImportParseError",
+    "InvalidRow",
+    "ParsedRow",
+    "ParseResult",
     "MAX_TRANSACTIONS_FOR_HOLDING",
     "TRANSACTION_ACTIONS",
     "InsufficientSharesError",

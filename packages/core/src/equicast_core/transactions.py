@@ -130,7 +130,11 @@ class TransactionNotFoundError(Exception):
 
 class TransactionAlreadyExistsError(Exception):
     """Raised by `create_transaction` for a second `BUY`-type record
-    against an AVERAGE-mode holding — use `update_transaction` instead."""
+    against an AVERAGE-mode holding (use `update_transaction` instead), or
+    for a second transaction sharing an already-recorded `external_id` —
+    the latter is the race-safe half of import dedup and
+    `sync_dividends_for_holdings`'s own auto-created-payout dedup, see
+    `create_transaction`'s docstring."""
 
 
 class TransactionAmountError(Exception):
@@ -175,6 +179,7 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     transaction.setdefault("price_native", None)
     transaction.setdefault("amount_native", None)
     transaction.setdefault("fx_rate", None)
+    transaction.setdefault("external_id", None)
     return transaction
 
 
@@ -628,6 +633,7 @@ class TransactionsClient:
         amount_native: Any = None,
         amount: Any = None,
         fx_rate: Any = None,
+        external_id: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -644,14 +650,32 @@ class TransactionsClient:
         resolve that conversion (auto-resolved or user-overridden — the
         caller's call, see module docstring) — stored unconditionally,
         regardless of `type`, unlike the other monetary fields above which
-        are `None`'d out for the types they don't apply to.
+        are `None`'d out for the types they don't apply to. `external_id` is
+        an opaque caller-supplied identifier (e.g. a broker's own row/order
+        id from a transaction import, or `sync_dividends_for_holdings`'
+        synthetic `f"dividend:{ex_dividend_date}"` for an auto-created
+        payout) stored the same unconditional way as `fx_rate` — `None` for
+        a hand-entered/API-created transaction. `update_transaction` never
+        allows patching it, so once set it's immutable for the life of the
+        record. Whenever it's given, this method itself guards against a
+        second record ever sharing it — re-read fresh on every conflict-
+        retry attempt (not just checked once up front), so two callers
+        racing to create the same logical transaction concurrently (two
+        browser tabs, or a frontend effect double-firing) can't both
+        succeed: whichever loses the underlying write race sees the
+        winner's record on its own retry and raises instead of creating a
+        duplicate. Import dedup (skip a re-imported row whose `external_id`
+        already exists) is the caller-side half of this — this method is
+        what makes that check race-safe rather than just a best-effort
+        pre-check.
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
         `average_price_native`/`price_native`/`amount_native` (whichever
         `type` requires); `TransactionAlreadyExistsError` for a second
-        `BUY` against an `AVERAGE`-mode holding — use `update_transaction`
-        instead; `TransactionLimitExceededError` past
+        `BUY` against an `AVERAGE`-mode holding (use `update_transaction`
+        instead) or for a second transaction sharing an already-recorded
+        `external_id`; `TransactionLimitExceededError` past
         `max_transactions_for_holding`; and `InsufficientSharesError` for a
         `SELL` that would take the holding's net recorded shares below
         zero.
@@ -668,6 +692,14 @@ class TransactionsClient:
 
         for _ in range(_MAX_CONFLICT_RETRIES):
             existing, dividends_synced_through, etag = self._load(user_id, holding_id)
+
+            if external_id is not None and any(
+                t.get("external_id") == external_id for t in existing
+            ):
+                raise TransactionAlreadyExistsError(
+                    f"A transaction with external_id '{external_id}' already exists for "
+                    f"holding '{holding_id}'."
+                )
 
             shares = None
             if type == "DIVIDEND":
@@ -722,6 +754,7 @@ class TransactionsClient:
                 "amount_native": amount_native if type == "DIVIDEND" else None,
                 "amount": amount if type == "DIVIDEND" else None,
                 "fx_rate": fx_rate,
+                "external_id": external_id,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -759,7 +792,11 @@ class TransactionsClient:
         native/converted split (`average_price`/`amount` here are the
         already-resolved converted figures — the caller recomputes them
         from the patched native value/date/`fx_rate` and passes them all
-        in together, the same as `create_transaction`).
+        in together, the same as `create_transaction`). `external_id` is
+        deliberately absent from both allowed sets — it's immutable once set
+        by `create_transaction`, so an import's dedup check can always trust
+        it against the original import rather than a value that could have
+        drifted since.
 
         Patching an AVERAGE-mode `BUY`'s `date` or `no_of_shares` drops
         every auto-created `DIVIDEND` on file and rewinds
