@@ -89,15 +89,36 @@ const STATUS_LABEL = { paid: "Paid", declared: "Declared", estimated: "Estimated
  * the native figure kept in the hover tooltip alongside it; native-only
  * otherwise, same fallback `DividendCard` uses.
  *
+ * Plotted amounts are per-share only when `sharesOwned` is 0 (nothing to
+ * total up). Once owned, the historical segment reads straight off
+ * `ownDividendRecords` — this position's own recorded DIVIDEND
+ * transactions, each already the correct total for whatever share count
+ * applied on that date, not today's count applied retroactively — while
+ * the forecast segment (always raw per-share market data; a declared/
+ * estimated payout never has a real transaction yet) is scaled by
+ * *today's* `sharesOwned`, the best available estimate for a payout that
+ * hasn't happened. See the `points`/`nativeAmount` construction below.
+ *
  * @param {{
  *   dividends: import("../../api/market.js").DividendRecord[],
  *   currency: string|null,
  *   defaultCurrency: string|null,
  *   fxRate: number|null,
  *   ownFirstDividendDate: string|null,
+ *   ownDividendRecords?: import("../../api/market.js").DividendRecord[],
+ *   sharesOwned?: number,
  * }} props
  */
-function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ownFirstDividendDate }) {
+function HoldingDividendChart({
+  dividends,
+  currency,
+  defaultCurrency,
+  fxRate,
+  ownFirstDividendDate,
+  ownDividendRecords = [],
+  sharesOwned = 0,
+}) {
+  const isOwned = sharesOwned > 0;
   const [chartType, setChartType] = useState("line");
   const [showForecast, setShowForecast] = useState(false);
   const [hoverIndex, setHoverIndex] = useState(null);
@@ -158,10 +179,24 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
     setRevision((r) => r + 1);
   };
 
+  // An owned holding's history comes from its own recorded DIVIDEND
+  // transactions, not raw per-share market data — each one's amount_native
+  // is already the correct total for whatever share count applied on that
+  // date (see equicast_core.transactions.compute_new_dividend_transactions'
+  // running-balance math for TRANSACTION mode, or the single average count
+  // for AVERAGE mode), so no further scaling is needed here. A not-owned
+  // ticker has no such transactions at all, so it still reads the raw
+  // per-share market history — nothing owned to total up.
+  const historySource = isOwned ? ownDividendRecords : dividends;
   const historyRecords = useMemo(
-    () => selectDividendHistory(dividends, effectivePastRangeId, ownFirstDividendDate),
-    [dividends, effectivePastRangeId, ownFirstDividendDate]
+    () => selectDividendHistory(historySource, effectivePastRangeId, ownFirstDividendDate),
+    [historySource, effectivePastRangeId, ownFirstDividendDate]
   );
+  // The forecast side is always raw per-share market data (declared/
+  // estimated payouts never have a real transaction yet), scaled by
+  // *today's* share count when owned — the best available estimate for a
+  // payout that hasn't happened, same "today's rate, not a historical one"
+  // reasoning HoldingDividendsSection's own FX resolution already uses.
   const forecastRecords = useMemo(
     () =>
       showForecast ? selectUpcomingDividendsInRange(dividends, effectiveForecastRangeId) : [],
@@ -170,19 +205,23 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
 
   const showConverted = fxRate != null && defaultCurrency && currency !== defaultCurrency;
   const displayCurrency = showConverted ? defaultCurrency : currency;
-  const toDisplay = (nativePrice) => (showConverted ? nativePrice * fxRate : nativePrice);
+  const toDisplay = (nativeAmount) => (showConverted ? nativeAmount * fxRate : nativeAmount);
 
   const points = useMemo(
     () => [
-      ...historyRecords.map((r) => ({ ...r, isForecast: false })),
-      ...forecastRecords.map((r) => ({ ...r, isForecast: true })),
+      ...historyRecords.map((r) => ({ ...r, isForecast: false, nativeAmount: r.price })),
+      ...forecastRecords.map((r) => ({
+        ...r,
+        isForecast: true,
+        nativeAmount: isOwned ? r.price * sharesOwned : r.price,
+      })),
     ],
-    [historyRecords, forecastRecords]
+    [historyRecords, forecastRecords, isOwned, sharesOwned]
   );
   const hasData = points.length > 0;
 
   const maxAmount = useMemo(
-    () => (hasData ? Math.max(...points.map((p) => toDisplay(p.price))) : 1),
+    () => (hasData ? Math.max(...points.map((p) => toDisplay(p.nativeAmount))) : 1),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [points, showConverted, fxRate]
   );
@@ -204,23 +243,35 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
   // one) so it reads as a continuation of the same series rather than a
   // disconnected second line — same idea as HoldingPriceChart's own
   // comparison overlay always being date-aligned with the main series.
+  // Both segments read `.nativeAmount` off `points` (built above) rather
+  // than each record's own raw `.price`, since that's already the correct
+  // per-segment figure — the historical total as recorded, or today's-
+  // share-count-scaled forecast — not a bare per-share rate.
   const historyEndIndex = historyRecords.length - 1;
-  const historyPath = historyRecords
-    .map((r, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(toDisplay(r.price))}`)
+  const historyPoints = points.slice(0, historyRecords.length);
+  const forecastPoints = points.slice(historyRecords.length);
+  const historyPath = historyPoints
+    .map((p, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(toDisplay(p.nativeAmount))}`)
     .join(" ");
   const areaPath =
     historyRecords.length > 0
       ? `${historyPath} L${xFor(historyEndIndex)},${bottomY} L${xFor(0)},${bottomY} Z`
       : "";
-  const forecastPath = forecastRecords
-    .map((r, i) => {
+  // `historyEndIndex >= 0` means `forecastLeadIn` below already opens the
+  // path with its own "M" at the last historical point, so this segment's
+  // own first point must be an "L" (line to) to stay on that same subpath
+  // — a second "M" here would start a disconnected subpath instead,
+  // leaving a visible gap between the historical and forecast lines.
+  const forecastPath = forecastPoints
+    .map((p, i) => {
       const index = historyEndIndex >= 0 ? historyEndIndex + 1 + i : i;
-      return `${i === 0 ? "M" : "L"}${xFor(index)},${yFor(toDisplay(r.price))}`;
+      const command = i === 0 && historyEndIndex < 0 ? "M" : "L";
+      return `${command}${xFor(index)},${yFor(toDisplay(p.nativeAmount))}`;
     })
     .join(" ");
   const forecastLeadIn =
     forecastRecords.length > 0 && historyEndIndex >= 0
-      ? `M${xFor(historyEndIndex)},${yFor(toDisplay(historyRecords[historyEndIndex].price))} `
+      ? `M${xFor(historyEndIndex)},${yFor(toDisplay(historyPoints[historyEndIndex].nativeAmount))} `
       : "";
   // Closes the same forecastLeadIn+forecastPath line into a filled area,
   // same shape `areaPath` closes historyPath into — down to the axis at
@@ -273,6 +324,15 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
     el.style.strokeDashoffset = "0";
   }, [revision, historyPath]);
 
+  // Same left-to-right draw-in as the main line above, timing-wise
+  // (ec-chart-compare-clip's own `transition: width 0.6s ease-out` matches
+  // ec-chart-line's `transition: stroke-dashoffset 0.6s ease-out` exactly)
+  // but via a growing clip-path rect rather than the main line's stroke-
+  // dasharray/dashoffset trick — this line keeps a real "4 3" dasharray
+  // the whole time (ec-pchart-compare-line), this just reveals
+  // progressively more of it; the dasharray trick would flatten that
+  // pattern into one solid dash instead, same reasoning
+  // HoldingPriceChart's own compare-line overlay documents.
   useLayoutEffect(() => {
     const el = forecastClipRectRef.current;
     if (!el) return;
@@ -282,7 +342,7 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
     el.style.transitionProperty = "";
     el.setAttribute("width", String(Math.max(plotWidth, 0)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [revision, forecastPath]);
+  }, [revision, forecastLeadIn, forecastPath]);
 
   if (!hasData) {
     return <p className="ec-chart-caption">No dividend history to show for this range.</p>;
@@ -390,6 +450,7 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
                 <clipPath id={forecastClipId}>
                   <rect
                     ref={forecastClipRectRef}
+                    className="ec-chart-compare-clip"
                     x={PADDING_LEFT}
                     y={PADDING_TOP}
                     width={plotWidth}
@@ -426,9 +487,11 @@ function HoldingDividendChart({ dividends, currency, defaultCurrency, fxRate, ow
               year: "numeric",
             })}
           </span>
-          <Balance>{formatPrice(toDisplay(hovered.price), displayCurrency)}</Balance>
+          <Balance>{formatPrice(toDisplay(hovered.nativeAmount), displayCurrency)}</Balance>
           {showConverted && (
-            <span className="ec-dividend-native-amount">({formatPrice(hovered.price, currency)})</span>
+            <span className="ec-dividend-native-amount">
+              ({formatPrice(hovered.nativeAmount, currency)})
+            </span>
           )}
           <span>{STATUS_LABEL[hovered.status]}</span>
         </div>

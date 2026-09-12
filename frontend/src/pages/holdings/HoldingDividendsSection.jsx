@@ -96,6 +96,7 @@ function DividendCard({ card, currency, sharesOwned, defaultCurrency, fxRate }) 
  *   sharesOwned?: number,
  *   defaultCurrency?: string|null,
  *   ownFirstDividendDate?: string|null,
+ *   ownDividendRecords?: import("../../api/market.js").DividendRecord[],
  * }} props `sharesOwned` — total shares held across every instance of this
  *   ticker (0 or omitted when not owned) — scales each card's headline
  *   amount from a per-share payout to that payout's total value for the
@@ -106,13 +107,18 @@ function DividendCard({ card, currency, sharesOwned, defaultCurrency, fxRate }) 
  *   tiles above. `ownFirstDividendDate` — this position's own earliest
  *   recorded DIVIDEND transaction date, when owned — anchors the "See
  *   all" chart's history to "since you started receiving payouts" instead
- *   of the ticker's own listed history; see HoldingDividendChart.jsx.
+ *   of the ticker's own listed history. `ownDividendRecords` — this
+ *   position's own recorded DIVIDEND transactions (already the correct
+ *   total for whatever share count applied on each date, not a flat
+ *   per-share rate) — the chart's actual history data source when owned;
+ *   see HoldingDividendChart.jsx.
  */
 function HoldingDividendsSection({
   dividends,
   sharesOwned = 0,
   defaultCurrency = null,
   ownFirstDividendDate = null,
+  ownDividendRecords = [],
 }) {
   const api = useApi();
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -176,6 +182,8 @@ function HoldingDividendsSection({
           defaultCurrency={defaultCurrency}
           fxRate={fxRate}
           ownFirstDividendDate={ownFirstDividendDate}
+          ownDividendRecords={ownDividendRecords}
+          sharesOwned={sharesOwned}
         />
       </Drawer>
     </Card>

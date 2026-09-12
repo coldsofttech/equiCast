@@ -176,21 +176,36 @@ function HoldingTickerPage() {
     (sum, instance) => sum + Number(instance.holding.no_of_shares ?? 0),
     0
   );
-  // This position's own earliest recorded DIVIDEND transaction date across
-  // every instance of this ticker, or null once nothing's owned/nothing's
-  // been received yet — feeds HoldingDividendChart's "since first
-  // dividend" history anchor for an owned holding. Recomputes as
-  // transactionsByHolding fills in from its own effect below; null in the
-  // meantime just falls back to the chart's own not-owned behavior for a
-  // render or two, not a lasting wrong answer.
-  const ownFirstDividendDate = instances.reduce((earliest, instance) => {
-    const dividendDates = (transactionsByHolding[instance.holding.id]?.transactions ?? [])
-      .filter((t) => t.type === "DIVIDEND" && t.date)
-      .map((t) => t.date);
-    const instanceEarliest = dividendDates.length > 0 ? dividendDates.reduce((a, b) => (a < b ? a : b)) : null;
-    if (instanceEarliest == null) return earliest;
-    return earliest == null || instanceEarliest < earliest ? instanceEarliest : earliest;
-  }, null);
+  // This position's own recorded DIVIDEND transactions across every
+  // instance of this ticker, summed by date (a ticker split across
+  // several accounts can have a same-day DIVIDEND transaction in each) —
+  // each `amount_native` here is already the correct total for the shares
+  // actually held as of that date (see equicast_core.transactions.
+  // compute_new_dividend_transactions' running-balance math), so
+  // HoldingDividendChart plots these directly for an owned holding's
+  // history instead of raw per-share market data * today's share count,
+  // which would be wrong for any date before the most recent trade.
+  // Recomputes as transactionsByHolding fills in from its own effect
+  // below; empty in the meantime just falls back to the chart's own
+  // not-owned behavior for a render or two, not a lasting wrong answer.
+  const ownDividendsByDate = new Map();
+  for (const instance of instances) {
+    const transactions = transactionsByHolding[instance.holding.id]?.transactions ?? [];
+    for (const t of transactions) {
+      if (t.type !== "DIVIDEND" || !t.date || t.amount_native == null) continue;
+      ownDividendsByDate.set(t.date, (ownDividendsByDate.get(t.date) ?? 0) + Number(t.amount_native));
+    }
+  }
+  const ownFirstDividendDate =
+    ownDividendsByDate.size > 0
+      ? [...ownDividendsByDate.keys()].reduce((a, b) => (a < b ? a : b))
+      : null;
+  const ownDividendRecords = [...ownDividendsByDate.entries()].map(([date, amount]) => ({
+    ex_dividend_date: date,
+    payment_date: null,
+    price: amount,
+    status: "paid",
+  }));
 
   // Only needed when the ticker isn't held anywhere — an owned instance
   // already carries its asset class. `location.state?.assetClass` (set by
@@ -694,6 +709,7 @@ function HoldingTickerPage() {
             sharesOwned={sharesOwned}
             defaultCurrency={userProfile?.default_currency ?? null}
             ownFirstDividendDate={ownFirstDividendDate}
+            ownDividendRecords={ownDividendRecords}
           />
 
           {isOwned && (
