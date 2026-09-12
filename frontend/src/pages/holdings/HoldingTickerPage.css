@@ -420,20 +420,24 @@
 }
 
 .ec-buysell-bar-track {
-  display: flex;
+  position: relative;
   height: 10px;
   border-radius: var(--ec-r-pill);
   overflow: hidden;
   background: var(--ec-border);
 }
 
-/** Grows from 0% out to its real width on load rather than appearing at
- * full size — see HoldingBuySellGauge's own `revealed` state, which
- * renders width: 0% for one frame before flipping to the real value so
- * there's an actual change for this transition to animate (same pattern
- * `.ec-cagr-bar-segment` uses). */
+/** Fixed at its final left/width (the split sits at sellers_pct from the
+ * first frame) and instead reveals via `scaleX` from 0 -> 1, each side
+ * scaling outward from the sellers/buyers boundary — see
+ * HoldingBuySellGauge's own `revealed` state, which renders scaleX(0) for
+ * one frame before flipping to scaleX(1) so there's an actual change for
+ * this transition to animate. */
 .ec-buysell-bar-segment {
-  transition: width 0.6s ease-out;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transition: transform 0.6s ease-out;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -444,10 +448,12 @@
 
 .ec-buysell-bar-segment.is-up {
   background: var(--ec-success);
+  transform-origin: left;
 }
 
 .ec-buysell-bar-segment.is-down {
   background: var(--ec-danger);
+  transform-origin: right;
 }
 
 .ec-holding-about-row {

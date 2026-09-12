@@ -56,11 +56,19 @@ function HoldingBuySellGauge({ marketMetrics }) {
       <div className="ec-buysell-bar-track">
         <div
           className="ec-buysell-bar-segment is-down"
-          style={{ width: revealed ? `${sellersPct * 100}%` : "0%" }}
+          style={{
+            left: 0,
+            width: `${sellersPct * 100}%`,
+            transform: revealed ? "scaleX(1)" : "scaleX(0)",
+          }}
         />
         <div
           className="ec-buysell-bar-segment is-up"
-          style={{ width: revealed ? `${buyersPct * 100}%` : "0%" }}
+          style={{
+            left: `${sellersPct * 100}%`,
+            width: `${buyersPct * 100}%`,
+            transform: revealed ? "scaleX(1)" : "scaleX(0)",
+          }}
         />
       </div>
 
