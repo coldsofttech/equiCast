@@ -280,7 +280,7 @@ function AccountDetailPage() {
           hintTone={totalsTone}
         />
         <StatTile
-          label="Dividends so far"
+          label="Income / Dividends"
           value={<Balance>{formatCurrency(totals.dividends, currency)}</Balance>}
         />
       </div>

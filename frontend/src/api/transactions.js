@@ -146,3 +146,150 @@ export function deleteTransaction(api, holdingId, transactionId) {
     api(`/transactions/${holdingId}/${transactionId}/`, { method: "DELETE" })
   );
 }
+
+/**
+ * One imported BUY/SELL row, as returned by `previewImport` and echoed
+ * back (verbatim, or with the user's edits) as part of a `commitImport`
+ * selection's `rows`.
+ *
+ * @typedef {Object} ImportRow
+ * @property {string|null} external_id - the broker's own row/order id when the source
+ *   provides one (e.g. Trading 212's `ID` column) — used server-side to skip an
+ *   already-imported row on a repeat upload (TRANSACTION mode only).
+ * @property {string} date - "YYYY-MM-DD".
+ * @property {"BUY"|"SELL"} type
+ * @property {number} no_of_shares
+ * @property {number} price_native
+ * @property {number|null} fx_rate - the source's own per-row exchange rate when provided,
+ *   else equicast's own historical FX rate resolved for `date` — `null` if neither resolved.
+ */
+
+/**
+ * One ticker equicast could match against an existing holding, as returned
+ * by `previewImport`.
+ *
+ * @typedef {Object} ImportExistingHolding
+ * @property {string} id
+ * @property {string|null} account_id
+ * @property {string|null} account_name - set for an account-direct holding, `null` for a pie holding.
+ * @property {string|null} pie_id
+ * @property {string|null} pie_name - set for a pie holding, `null` for an account-direct one.
+ * @property {string|null} pie_account_name - the pie's own parent account's name, set alongside
+ *   `pie_name` — e.g. an "ISA" account's "FutureFund" pie.
+ * @property {boolean} already_has_position - AVERAGE mode only: true if this holding
+ *   already has a BUY on record, so committing into it *extends* the position rather
+ *   than creating a new one — see `combined_preview`.
+ * @property {{no_of_shares: number, average_price_native: number|null, average_price: number|null}|null} combined_preview -
+ *   only set when `already_has_position` is true: the resulting position if the import
+ *   is committed against this holding.
+ * @property {number} duplicate_count - TRANSACTION mode: how many of this group's rows
+ *   already exist on this holding (matched by `external_id`) and would be skipped.
+ */
+
+/**
+ * One ticker group parsed from the uploaded file, as returned by
+ * `previewImport`.
+ *
+ * @typedef {Object} ImportGroup
+ * @property {string} ticker
+ * @property {string|null} asset_class - `null` if the ticker didn't resolve against the
+ *   market-data catalog (`resolved` is false) — the review screen should let the user
+ *   remap it (see `TickerSearchField`).
+ * @property {boolean} resolved
+ * @property {string|null} name
+ * @property {string|null} isin - from the source file, when it carries one (e.g. Trading 212) —
+ *   not currently used for matching, see GitHub issue #191.
+ * @property {ImportExistingHolding[]} existing_holdings
+ * @property {{no_of_shares: number, average_price_native: number|null, average_price: number|null}|null} mode_preview -
+ *   the net position this group's rows alone would produce, regardless of target.
+ * @property {ImportRow[]} rows
+ */
+
+/**
+ * One row that read as a BUY/SELL attempt but couldn't be parsed (most
+ * commonly a non-positive price — a real Trading 212 export can report a
+ * fractional share cashed out after a corporate action, e.g. an ISIN swap,
+ * as a `Market sell` with `Price / share` of `0E-10`). Never silently
+ * dropped and never aborts the rest of the file — see
+ * backend/transactions/import_views.py's ImportPreviewView.
+ *
+ * @typedef {Object} ImportInvalidRow
+ * @property {number} row - 1-indexed line number in the uploaded file (the header is row 1).
+ * @property {string|null} ticker
+ * @property {string} reason
+ */
+
+/**
+ * @typedef {Object} ImportPreview
+ * @property {string} preset
+ * @property {"AVERAGE"|"TRANSACTION"} mode
+ * @property {number} rows_skipped - rows in the file that weren't BUY/SELL (dividends,
+ *   interest, deposits, ...) and were dropped before parsing even reached a ticker group.
+ * @property {ImportInvalidRow[]} invalid_rows - BUY/SELL attempts that couldn't be parsed.
+ * @property {ImportGroup[]} groups
+ */
+
+/**
+ * POST /api/transactions/import/preview/ — stateless: parses `file` under
+ * `preset` ("generic" or "trading212") and resolves it against the user's
+ * holdings/catalog, but creates nothing. See backend/transactions/
+ * import_views.py's ImportPreviewView.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {File} file
+ * @param {"generic"|"trading212"} preset
+ * @returns {Promise<ImportPreview>}
+ */
+export function previewImport(api, file, preset) {
+  const body = new FormData();
+  body.set("file", file);
+  body.set("preset", preset);
+  return /** @type {Promise<ImportPreview>} */ (
+    api("/transactions/import/preview/", { method: "POST", body })
+  );
+}
+
+/**
+ * One group's worth of rows to actually import, as sent to `commitImport`.
+ *
+ * @typedef {Object} ImportSelection
+ * @property {string} ticker
+ * @property {string} asset_class
+ * @property {{type: "existing_holding"|"account"|"pie", id: string, allocation_pct?: number}} target -
+ *   `allocation_pct` is required when `type` is "pie" and the pie already has holdings
+ *   (equicast computes the first-holding case as 100% itself).
+ * @property {ImportRow[]} rows - the checked/edited subset of a group's rows to import.
+ */
+
+/**
+ * One selection's outcome, as returned by `commitImport`.
+ *
+ * @typedef {Object} ImportResult
+ * @property {string} ticker
+ * @property {string|null} holding_id - `null` only when `status` is "error" and the
+ *   target itself couldn't be resolved/created.
+ * @property {"created"|"partial"|"skipped"|"error"} status
+ * @property {number} [created_count]
+ * @property {number} [skipped_duplicate_count]
+ * @property {{date: string, external_id: string|null, detail: string}[]} [errors] - TRANSACTION
+ *   mode only: per-row failures that didn't abort the rest of this selection's rows.
+ * @property {string|null} [detail] - a human-readable summary (e.g. "Extended existing
+ *   position: 2 -> 5 shares.") or the error message when `status` is "error".
+ */
+
+/**
+ * POST /api/transactions/import/commit/ — bulk-creates (and, where needed,
+ * creates the holdings for) the reviewed `selections`. Each selection is
+ * processed independently server-side — one failing never aborts the rest
+ * of the batch, see backend/transactions/import_views.py's
+ * ImportCommitView.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {ImportSelection[]} selections
+ * @returns {Promise<{results: ImportResult[]}>}
+ */
+export function commitImport(api, selections) {
+  return /** @type {Promise<{results: ImportResult[]}>} */ (
+    api("/transactions/import/commit/", { method: "POST", body: { selections } })
+  );
+}

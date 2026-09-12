@@ -67,6 +67,7 @@ class TestCreateAverageTransaction:
         assert transaction["amount_native"] is None
         assert transaction["amount"] is None
         assert transaction["fx_rate"] is None
+        assert transaction["external_id"] is None
         assert transaction["date"] == "2026-01-15"
         assert transaction["type"] == "BUY"
         assert transaction["created_at"] == transaction["updated_at"]
@@ -95,6 +96,25 @@ class TestCreateAverageTransaction:
         )
 
         assert transaction["fx_rate"] == 1.25
+
+    def test_create_stores_the_caller_supplied_external_id(self, s3_client) -> None:
+        """`external_id` (e.g. a broker's own row/order id from a
+        transaction import) is stored unconditionally, the same as
+        `fx_rate` — `None` when the caller doesn't supply one."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+            external_id="t212-order-42",
+        )
+
+        assert transaction["external_id"] == "t212-order-42"
 
     def test_create_raises_for_non_positive_no_of_shares(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
@@ -943,6 +963,113 @@ class TestUpdateTransaction:
             client.update_transaction(
                 "auth0|abc123", HOLDING_ID, transaction["id"], "TRANSACTION", fx_rate=0.85
             )
+
+    def test_update_rejects_external_id_on_an_average_buy_record(self, s3_client) -> None:
+        """`external_id` is immutable once set by `create_transaction` —
+        omitted from every `update_transaction` allowed-fields set, an
+        import's dedup check can always trust it against the original
+        import."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+            external_id="t212-order-42",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                transaction["id"],
+                "AVERAGE",
+                external_id="t212-order-99",
+            )
+
+
+class TestCreateTransactionExternalIdDedup:
+    """A second `create_transaction` call sharing an `external_id` must be
+    rejected — this is what makes concurrent callers race-safe (e.g. two
+    browser tabs, or a frontend effect double-firing, both independently
+    deciding the same auto-created dividend payout is new — see
+    backend/transactions/views.py's sync_dividends_for_holdings)."""
+
+    def test_a_second_transaction_with_the_same_external_id_is_rejected(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+
+        with pytest.raises(TransactionAlreadyExistsError):
+            client.create_transaction(
+                "auth0|abc123",
+                HOLDING_ID,
+                "TRANSACTION",
+                type="DIVIDEND",
+                amount_native=5.0,
+                date="2026-03-01",
+                external_id="dividend:2026-03-01",
+            )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 1
+
+    def test_a_none_external_id_never_collides_with_itself(self, s3_client) -> None:
+        """`external_id=None` (every hand-entered/API-created transaction)
+        must never trip the dedup check against other `None`-external_id
+        records — only a real, matching, non-`None` id counts."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+        )
+
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
+
+    def test_different_external_ids_both_succeed(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            date="2026-03-01",
+            external_id="dividend:2026-03-01",
+        )
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=6.0,
+            date="2026-06-01",
+            external_id="dividend:2026-06-01",
+        )
+
+        assert len(client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)) == 2
 
 
 class TestDeleteTransaction:

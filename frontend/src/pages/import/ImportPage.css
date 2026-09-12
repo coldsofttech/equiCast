@@ -1,0 +1,83 @@
+.ec-import-section + .ec-import-section {
+  margin-top: var(--ec-s-24);
+}
+
+.ec-import-section summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.ec-import-section summary::-webkit-details-marker,
+.ec-import-section summary::marker {
+  display: none;
+  content: "";
+}
+
+.ec-import-section-chevron {
+  margin-left: auto;
+  color: var(--ec-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.ec-import-section[open] .ec-import-section-chevron {
+  transform: rotate(180deg);
+}
+
+.ec-import-section .ec-import-groups {
+  margin-top: var(--ec-s-12);
+}
+
+.ec-import-invalid-rows {
+  margin: var(--ec-s-8) 0 0;
+  padding-left: var(--ec-s-20);
+}
+
+.ec-import-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-12);
+}
+
+.ec-import-group-header {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  cursor: pointer;
+}
+
+.ec-import-group-ticker {
+  font-weight: 600;
+}
+
+.ec-import-group-name {
+  color: var(--ec-text-muted);
+}
+
+.ec-import-group-rows-count {
+  margin-left: auto;
+  color: var(--ec-text-muted);
+  font-size: 0.85em;
+}
+
+.ec-import-group-remap,
+.ec-import-group-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-12);
+}
+
+.ec-import-group-summary {
+  color: var(--ec-text-muted);
+  font-size: 0.9em;
+  margin: 0;
+}
+
+.ec-import-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
