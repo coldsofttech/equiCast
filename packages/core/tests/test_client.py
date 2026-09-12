@@ -2,6 +2,7 @@ import json
 import time
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
+from typing import Any
 from unittest.mock import MagicMock
 
 import boto3
@@ -208,6 +209,7 @@ def test_get_news_returns_ticker_last_updated_and_articles(s3_client) -> None:
 
     result = client.get_news("stock", "aapl")
 
+    assert result is not None
     assert result["ticker"] == "AAPL"
     assert result["last_updated"] == "2026-08-30T09:05:00+00:00"
     assert [row["id"] for row in result["news"]] == ["newer", "older"]
@@ -228,6 +230,7 @@ def test_get_news_uses_requested_symbol_not_a_ticker_field_on_the_rows(s3_client
 
     result = client.get_news("benchmark", "SP500")
 
+    assert result is not None
     assert result["ticker"] == "SP500"
     assert result["news"][0]["ticker"] == "^GSPC"
 
@@ -251,6 +254,7 @@ def test_get_news_last_updated_is_the_freshest_row(s3_client) -> None:
 
     result = client.get_news("stock", "AAPL")
 
+    assert result is not None
     assert result["last_updated"] == "2026-08-30T09:05:00+00:00"
 
 
@@ -267,7 +271,9 @@ def test_get_profile_decodes_a_json_encoded_ceos_string(s3_client) -> None:
     )
     client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-    assert client.get_profile("stock", "AAPL")["ceos"] == ceos
+    result = client.get_profile("stock", "AAPL")
+    assert result is not None
+    assert result["ceos"] == ceos
 
 
 def test_get_profile_leaves_a_missing_ceos_field_untouched(s3_client) -> None:
@@ -397,6 +403,7 @@ def test_get_dividends_declared_row_with_no_payment_date_yet(s3_client) -> None:
 
     result = client.get_dividends("stock", "AAPL")
 
+    assert result is not None
     assert result["dividends"][0]["payment_date"] is None
 
 
@@ -473,6 +480,7 @@ def test_get_events_combines_history_and_current(s3_client) -> None:
 
     result = client.get_events("stock", "aapl")
 
+    assert result is not None
     assert result["ticker"] == "AAPL"
     assert result["last_updated"] == "2026-08-30T09:00:01+00:00"
     assert [e["event_type"] for e in result["events"]] == ["earnings", "rating"]
@@ -494,6 +502,7 @@ def test_get_events_sorted_chronologically(s3_client) -> None:
 
     result = client.get_events("stock", "AAPL")
 
+    assert result is not None
     assert [e["date"] for e in result["events"]] == ["2026-01-30", "2026-06-09"]
 
 
@@ -507,6 +516,7 @@ def test_get_events_history_only_no_current(s3_client) -> None:
 
     result = client.get_events("stock", "AAPL")
 
+    assert result is not None
     assert len(result["events"]) == 1
 
 
@@ -953,7 +963,7 @@ class TestGetCatalog:
         _put_catalog(s3_client, "stock", rows)
         client = MarketDataClient(BUCKET, s3_client=s3_client)
 
-        expected = {field.name: None for field in CATALOG_SCHEMA}
+        expected: dict[str, Any] = {field.name: None for field in CATALOG_SCHEMA}
         expected.update(rows[0])
         assert client.get_catalog("stock") == [expected]
 
@@ -1467,7 +1477,9 @@ class TestParquetCache:
             Body=_parquet_bytes([{"ticker": "AAPL", "name": "Something else entirely"}]),
         )
 
-        assert client.get_profile("stock", "AAPL")["name"] == "Something else entirely"
+        result = client.get_profile("stock", "AAPL")
+        assert result is not None
+        assert result["name"] == "Something else entirely"
 
     def test_cache_expires_after_its_ttl(self, s3_client) -> None:
         s3_client.put_object(
@@ -1485,7 +1497,9 @@ class TestParquetCache:
         )
         time.sleep(0.1)
 
-        assert client.get_profile("stock", "AAPL")["name"] == "Something else entirely"
+        result = client.get_profile("stock", "AAPL")
+        assert result is not None
+        assert result["name"] == "Something else entirely"
 
     def test_cache_is_shared_across_client_instances(self, s3_client) -> None:
         # backend/*/views.py each construct their own independent

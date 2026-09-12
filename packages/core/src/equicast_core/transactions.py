@@ -609,7 +609,13 @@ class TransactionsClient:
             if record_type == "DIVIDEND":
                 allowed = {"date", "amount_native", "amount", "fx_rate"}
             elif mode == "AVERAGE" and record_type in ("BUY", None):
-                allowed = {"date", "no_of_shares", "average_price_native", "average_price", "fx_rate"}
+                allowed = {
+                    "date",
+                    "no_of_shares",
+                    "average_price_native",
+                    "average_price",
+                    "fx_rate",
+                }
             else:
                 raise ValueError(
                     f"Transaction '{transaction_id}' is a TRANSACTION-mode BUY/SELL record — "

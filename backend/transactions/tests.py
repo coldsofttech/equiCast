@@ -1127,7 +1127,13 @@ class TransactionDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), updated)
         mock_client.update_transaction.assert_called_once_with(
-            "auth0|abc123", "h-1", "t-3", "TRANSACTION", amount_native=50.0, amount=None, fx_rate=None
+            "auth0|abc123",
+            "h-1",
+            "t-3",
+            "TRANSACTION",
+            amount_native=50.0,
+            amount=None,
+            fx_rate=None,
         )
 
     @patch("transactions.views._profile_client")

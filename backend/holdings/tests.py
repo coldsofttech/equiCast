@@ -578,7 +578,12 @@ class HoldingDetailViewTests(TestCase):
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_get_returns_the_enriched_holding(
-        self, mock_jwks_client, mock_decode, mock_client, mock_market_data_client, mock_profile_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_market_data_client,
+        mock_profile_client,
     ) -> None:
         # A holding fetched directly (as opposed to via an accounts/pies
         # list, which enriches every holding it returns) must still come

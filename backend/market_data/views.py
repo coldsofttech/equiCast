@@ -192,14 +192,16 @@ class FxRateView(APIView):
         if not date:
             return Response({"detail": "Missing query param: date."}, status=400)
 
-        rate = _client.get_fx_rate_on_date(from_currency.upper(), to_currency.upper(), date)
+        from_currency = from_currency.upper()
+        to_currency = to_currency.upper()
+        rate = _client.get_fx_rate_on_date(from_currency, to_currency, date)
         if rate is None:
             return Response(
-                {"detail": f"No FX rate for {from_currency.upper()}/{to_currency.upper()} on or before {date}."},
+                {"detail": f"No FX rate for {from_currency}/{to_currency} on or before {date}."},
                 status=404,
             )
         return Response(
-            {"from_currency": from_currency.upper(), "to_currency": to_currency.upper(), "date": date, "rate": rate}
+            {"from_currency": from_currency, "to_currency": to_currency, "date": date, "rate": rate}
         )
 
 

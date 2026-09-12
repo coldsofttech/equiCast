@@ -190,7 +190,7 @@ class MarketDataClient:
         bucket: str,
         s3_client: Any = None,
         region_name: str | None = None,
-        cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+        cache_ttl_seconds: float = DEFAULT_CACHE_TTL_SECONDS,
     ) -> None:
         self._bucket = bucket
         self._s3 = s3_client or boto3.client("s3", region_name=region_name)

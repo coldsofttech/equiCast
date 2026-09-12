@@ -82,7 +82,9 @@ class UserProfileClient:
                 response = self._table.update_item(
                     Key={"user_id": user_id},
                     UpdateExpression="SET " + ", ".join(f"{attr} = :{attr}" for attr in backfill),
-                    ExpressionAttributeValues={f":{attr}": value for attr, value in backfill.items()},
+                    ExpressionAttributeValues={
+                        f":{attr}": value for attr, value in backfill.items()
+                    },
                     ReturnValues="ALL_NEW",
                 )
                 return dict(response["Attributes"])

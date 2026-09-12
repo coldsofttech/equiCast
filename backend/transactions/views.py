@@ -72,7 +72,13 @@ UPDATABLE_FIELDS = {"no_of_shares", "average_price_native", "date", "amount_nati
 #: carry (a controlled `<input type="number">` posts its value as a string)
 #: — coerced via `_coerce_numeric_fields` right after `build_transaction_fields`/
 #: `TransactionDetailView.patch` accept the raw payload.
-_NUMERIC_FIELDS = {"no_of_shares", "average_price_native", "price_native", "amount_native", "fx_rate"}
+_NUMERIC_FIELDS = {
+    "no_of_shares",
+    "average_price_native",
+    "price_native",
+    "amount_native",
+    "fx_rate",
+}
 
 
 def _coerce_numeric_fields(fields: dict[str, Any]) -> dict[str, Any]:
