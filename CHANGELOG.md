@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Missing-ISIN GitHub issue notification (GitHub issue #215):
+  `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog` job now reads
+  the freshly-built `catalog/<asset_class>.parquet`'s `isin` column (see
+  `equicast_core.catalog`) and, via new `.github/scripts/find_missing_isin.py`
+  and `.github/scripts/sync-missing-isin-issue.sh`, opens/updates/closes a
+  single persistent GitHub issue per pipeline ("Stock ingestion: tickers
+  missing ISIN" / "ETF ingestion: tickers missing ISIN") listing any ticker
+  with no ISIN on record, so you can add an `isin`/`tax_domicile` override
+  to `stocks.prod.yaml`/`etfs.prod.yaml`. Uses GitHub's own issue
+  notification emails rather than a separate email/SMTP integration.
 - UK tax fields (GitHub issue #94), v1 logic only — nothing beyond what's
   described here is applied yet (no withholding is actually deducted from
   recorded dividend amounts):
