@@ -51,6 +51,8 @@ class TestParseTrading212Csv:
             price_native=148.0,
             currency="USD",
             fx_rate=1 / 0.79,
+            sdrt=None,
+            fx_fee=None,
             raw=buy.raw,
         )
 
@@ -70,10 +72,11 @@ class TestParseTrading212Csv:
         assert result.rows[0].type == "BUY"
         assert result.rows_skipped == 2
 
-    def test_ignores_stamp_duty_and_conversion_fee_columns(self) -> None:
-        """These columns exist in a real export but aren't modeled
-        anywhere in equicast's transaction shape — parsing must not choke
-        on their presence, and nothing in `ParsedRow` surfaces them."""
+    def test_parses_stamp_duty_and_conversion_fee_columns(self) -> None:
+        """GitHub issues #100/#101: these columns map to ParsedRow.sdrt/
+        fx_fee at face value — their `Currency (...)` counterparts are
+        read into `raw` only, not used for a conversion (see module
+        docstring)."""
         file = _csv(
             f"""
             {TRADING212_HEADER}
@@ -84,7 +87,22 @@ class TestParseTrading212Csv:
         result = parse_trading212_csv(file)
 
         assert len(result.rows) == 1
-        assert not hasattr(result.rows[0], "stamp_duty_reserve_tax")
+        assert result.rows[0].sdrt == 0.63
+        assert result.rows[0].fx_fee == 0.15
+        assert result.rows[0].raw["Currency (Stamp duty reserve tax)"] == "GBP"
+
+    def test_blank_stamp_duty_and_conversion_fee_columns_parse_as_none(self) -> None:
+        file = _csv(
+            f"""
+            {TRADING212_HEADER}
+            Market buy,2024-03-01 14:32:10,US0378331005,AAPL,Apple Inc.,EOF123,10,148.0,USD,0.79,,USD,1480.00,USD,,,,
+            """.replace("            ", "")
+        )
+
+        result = parse_trading212_csv(file)
+
+        assert result.rows[0].sdrt is None
+        assert result.rows[0].fx_fee is None
 
     def test_raises_import_parse_error_for_missing_required_columns(self) -> None:
         file = _csv("Action,Ticker\nMarket buy,AAPL\n")
@@ -104,7 +122,11 @@ class TestParseTrading212Csv:
 
         assert result.rows == []
         assert result.invalid_rows == [
-            InvalidRow(row_number=2, ticker="AAPL", reason="Row 2: No. of shares must be positive, got '0'.")
+            InvalidRow(
+                row_number=2,
+                ticker="AAPL",
+                reason="Row 2: No. of shares must be positive, got '0'.",
+            )
         ]
 
     def test_a_bad_row_does_not_abort_parsing_the_rest_of_the_file(self) -> None:
@@ -189,6 +211,8 @@ class TestParseGenericCsv:
             price_native=1.2,
             currency="GBP",
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             raw=result.rows[0].raw,
         )
 
@@ -227,6 +251,19 @@ class TestParseGenericCsv:
 
         with pytest.raises(ImportParseError, match="price_native"):
             parse_generic_csv(file)
+
+    def test_parses_optional_sdrt_and_fx_fee_columns(self) -> None:
+        file = _csv(
+            """
+            date,ticker,type,no_of_shares,price_native,sdrt,fx_fee
+            2024-01-10,VOD,BUY,100,1.2,7.5,0.15
+            """.replace("            ", "")
+        )
+
+        result = parse_generic_csv(file)
+
+        assert result.rows[0].sdrt == 7.5
+        assert result.rows[0].fx_fee == 0.15
 
 
 def test_presets_registry_contains_both_presets() -> None:

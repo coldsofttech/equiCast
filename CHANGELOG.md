@@ -9,6 +9,89 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Optional `sdrt` (UK Stamp Duty Reserve Tax, GitHub issue #100) and
+  `fx_fee` (currency-conversion fee, GitHub issue #101) fields on
+  transactions — both already in the user's default currency, unlike every
+  other monetary field, which is native/converted. `sdrt` applies to a BUY
+  only; `fx_fee` to a BUY or SELL. Superseded an earlier, more complex plan
+  (ISIN-prefix-based incorporation detection with a Companies House lookup
+  for SDRT; a platform-rate estimation fallback for FX fee) — brokers like
+  Trading 212 already report both directly per transaction, so equicast now
+  just captures whatever the user/import provides and skips the field
+  entirely when it isn't, rather than estimating.
+  `TransactionsClient.create_transaction`/`update_transaction`
+  (`equicast_core.transactions`) gained both fields (a new
+  `_validate_nonnegative_amount` allows `0`, unlike every other amount
+  field here, since "no fee/tax charged" is a common real value);
+  `compute_holding_rollup` subtracts a BUY's `sdrt`/`fx_fee` from its
+  contribution to `invested`/`average_price` (the *converted* figures
+  only) — a SELL's `fx_fee` is stored but not netted into anything, since
+  this rollup tracks the open position's cost basis, not realized
+  proceeds. `equicast_core.imports`' `ParsedRow` carries both too, parsed
+  from Trading 212's `Stamp duty reserve tax`/`Currency conversion fee`
+  columns (their `Currency (...)` counterparts are read into `raw` only,
+  not used for a conversion — deliberately simpler than the `fx_rate`/
+  native-price handling) or the generic CSV preset's optional `sdrt`/
+  `fx_fee` columns. `backend/transactions/views.py`/`import_views.py`
+  thread both through manual entry and both import paths (CSV and Trading
+  212) alike. Not applied to ETFs — the UK abolished SDRT on UK-domiciled
+  ETF shares in 2014.
+
+  `/holdings/:id`'s Transactions panel (`HoldingTransactionsSection.jsx`)
+  also picked up GitHub issue #201 in the same pass: the old "Add Buy"/
+  "Add Sell"/"Add Dividend"/"See all" row of buttons is now a single "Add"
+  icon button plus "See all", with `TransactionForm` itself gaining a
+  "Transaction type" dropdown (shown right after the account selector,
+  offering Buy/Dividend for AVERAGE accounts or Buy/Sell/Dividend for
+  TRANSACTION accounts) and optional SDRT/FX fee inputs. The account
+  dropdown is no longer pre-filtered by per-type eligibility (e.g. an
+  AVERAGE-mode holding that already has a BUY) — picking an invalid
+  combination now surfaces as the form's own error message from the
+  backend's existing validation instead, simplifying the component
+  considerably.
+
+- The Transactions panel's "See all" drawer (GitHub issue #181) now
+  renders the same row-card layout (`AverageEntryCard`/`TradeRowCard`)
+  the top-5 recent-activity list already uses, instead of a `<table>` —
+  `AverageEntryCard` gained the `location` prop `TradeRowCard` already had
+  so both work in either list. Both cards also now show a `SDRT
+  £x.xx, FX fee £x.xx` line (new `transactionFeesLabel` helper) whenever
+  either is set, so `sdrt`/`fx_fee` (see above) are visible somewhere
+  beyond the add/edit form.
+
+- Transaction import (CSV/Trading 212) now matches a row to equicast's
+  catalog by `isin` first when the row has one — an exact, case-insensitive
+  match across the stock/etf catalogs via a new
+  `backend/transactions/import_views._find_by_isin` — falling back to the
+  existing ticker-based resolution only when there's no ISIN or it doesn't
+  match (GitHub issue #191). Ticker symbols aren't globally unique across
+  exchanges/asset classes the way an ISIN is, so a row can now resolve
+  correctly even when its own reported ticker wouldn't have matched
+  equicast's catalog on its own. A row that resolves by neither is still
+  left for the user to map by hand during preview review, same as before.
+
+- A footer disclaimer (`SiteFooter.jsx`) noting that figures imported from
+  a trading app or personal tracker may not match equicast's exactly —
+  those tools are typically more mature on taxation/fees and generally
+  show live prices, versus equicast's intentionally delayed, long-term-
+  focused data.
+
+### Fixed
+
+- Removing a holding from a pie (via the pie drawer's reallocation) could
+  crash `PieDetailPage` with `Cannot read properties of undefined (reading
+  'currentValue')` in `PieCagrSection`. Its metrics-fetch effect never
+  reset `metricsByHolding` before re-fetching when the `holdings` prop
+  changed, so the component briefly rendered the *old* (longer)
+  `metricsByHolding` against the already-updated, shorter `valuations`
+  array — `weightedPortfolioMetric` (`PieBenchmarkRating.jsx`) indexes
+  both positionally, so the mismatch crashed on the out-of-range index.
+  Now resets to `null` synchronously when `holdings` changes (mirroring
+  `PieBenchmarkRating`'s own `setStatus("loading")` reset, which already
+  avoided this exact race). `weightedPortfolioMetric` itself also now
+  skips a missing `valuations[i]` instead of crashing, as a second line of
+  defense against the same class of mismatch.
+
 - ISIN capture for stock/etf ingestion (`feat/isin`): `StockClient.profile()`/
   `ETFClient.profile()` now include an `isin` field, sourced from
   yfinance's `Ticker.isin` lookup via a new `DatafeedClient.get_isin()` (`null`

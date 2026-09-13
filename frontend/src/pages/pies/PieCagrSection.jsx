@@ -51,6 +51,12 @@ function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
 
   useEffect(() => {
     let cancelled = false;
+    // Reset before fetching, not just on set — otherwise a `holdings` change
+    // (e.g. removing a holding from the pie) briefly renders stale
+    // metricsByHolding (old length/order) against the already-updated
+    // `valuations` prop (new length/order), and weightedPortfolioMetric
+    // indexes both positionally, crashing on the mismatch.
+    setMetricsByHolding(null);
     Promise.all(holdings.map((h) => getMetrics(api, h.asset_class, h.ticker).catch(() => null))).then(
       (results) => {
         if (!cancelled) setMetricsByHolding(results);

@@ -44,6 +44,16 @@ before it ever reaches a `ParsedRow`. Getting this backwards silently
 produces a converted figure off by a factor of `rate²` instead of an
 outright error, which is why it's handled once here rather than trusted to
 each caller.
+
+`ParsedRow.sdrt`/`fx_fee` (GitHub issues #100/#101) are read at face value
+from Trading 212's `Stamp duty reserve tax`/`Currency conversion fee`
+columns, taken as already being in the user's default currency — their
+`Currency (...)` companion columns are read into `raw` only, not used for
+a conversion, since equicast has no reliable way to know whether that
+reported currency actually differs from the user's own default currency
+(deliberately simpler than the `fx_rate`/native-price handling above; see
+GitHub issue #100/#101 discussion for why no incorporation/Companies-House
+lookup or estimation-fallback path exists here).
 """
 
 from __future__ import annotations
@@ -95,6 +105,8 @@ class ParsedRow:
     price_native: float
     currency: str | None
     fx_rate: float | None
+    sdrt: float | None
+    fx_fee: float | None
     raw: dict[str, str]
 
 
@@ -137,6 +149,8 @@ _TRADING212_REQUIRED_COLUMNS = (
     "Currency (Price / share)",
     "Exchange rate",
     "ID",
+    "Stamp duty reserve tax",
+    "Currency conversion fee",
 )
 
 _GENERIC_REQUIRED_COLUMNS = ("date", "ticker", "type", "no_of_shares", "price_native")
@@ -204,10 +218,10 @@ def parse_trading212_csv(file: IO[Any]) -> ParseResult:
     so this checks only the subset of headers this parser actually relies
     on and raises `ImportParseError` naming what's missing rather than
     guessing at a renamed/reordered export. `Stamp duty reserve tax` /
-    `Currency conversion fee` (and their `Currency (...)` counterparts) are
-    present in a real export but read as part of each row's raw data only —
-    nothing in equicast's transaction shape models a trading fee/tax
-    separately from the traded price, so they're never used.
+    `Currency conversion fee` map to `ParsedRow.sdrt`/`fx_fee` (GitHub
+    issues #100/#101); their `Currency (...)` counterparts are read into
+    each row's raw data only — see module docstring for why they're not
+    used for a conversion.
 
     `Action` is matched case-insensitively by substring: containing "buy"
     -> BUY, "sell" -> SELL, anything else (Dividend, Interest, Deposit,
@@ -272,6 +286,8 @@ def _build_trading212_row(
         price_native=_parse_positive_float(row.get("Price / share"), "Price / share", row_number),
         currency=_clean(row.get("Currency (Price / share)")),
         fx_rate=_invert_rate(_parse_optional_float(row.get("Exchange rate"))),
+        sdrt=_parse_optional_float(row.get("Stamp duty reserve tax")),
+        fx_fee=_parse_optional_float(row.get("Currency conversion fee")),
         raw=dict(row),
     )
 
@@ -279,7 +295,7 @@ def _build_trading212_row(
 def parse_generic_csv(file: IO[Any]) -> ParseResult:
     """Parse equicast's own minimal generic-CSV schema —
     `date, ticker, type, no_of_shares, price_native` required;
-    `asset_class, currency, fx_rate, external_id` optional. Every row is
+    `asset_class, currency, fx_rate, sdrt, fx_fee, external_id` optional. Every row is
     treated as a BUY/SELL attempt (there's no broker-specific set of
     "other" transaction kinds to expect in a file the user built by hand,
     unlike the Trading 212 preset) — `rows_skipped` is always 0 for this
@@ -331,6 +347,8 @@ def _build_generic_row(row_number: int, row: dict[str, str], ticker: str | None)
         price_native=_parse_positive_float(row.get("price_native"), "price_native", row_number),
         currency=_clean(row.get("currency")),
         fx_rate=_parse_optional_float(row.get("fx_rate")),
+        sdrt=_parse_optional_float(row.get("sdrt")),
+        fx_fee=_parse_optional_float(row.get("fx_fee")),
         raw=dict(row),
     )
 

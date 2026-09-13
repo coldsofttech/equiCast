@@ -62,6 +62,8 @@ _DIVIDEND_FIELDS = {
         "average_price",
         "price",
         "amount",
+        "sdrt",
+        "fx_fee",
     },
 }
 
@@ -69,8 +71,19 @@ _DIVIDEND_FIELDS = {
 #: #149 — the only non-native field a caller may ever submit, since it's
 #: an override, not a computed value); the converted counterpart is
 #: recomputed server-side whenever a native value, `date`, or `fx_rate`
-#: changes (see `TransactionDetailView.patch`).
-UPDATABLE_FIELDS = {"no_of_shares", "average_price_native", "date", "amount_native", "fx_rate"}
+#: changes (see `TransactionDetailView.patch`). `sdrt`/`fx_fee` (GitHub
+#: issues #100/#101) are already in the user's default currency (see
+#: `equicast_core.transactions.TransactionsClient.create_transaction`), so
+#: neither has a converted counterpart to recompute.
+UPDATABLE_FIELDS = {
+    "no_of_shares",
+    "average_price_native",
+    "date",
+    "amount_native",
+    "fx_rate",
+    "sdrt",
+    "fx_fee",
+}
 
 #: Monetary/quantity fields that must always be stored (and returned) as a
 #: JSON number, never whatever type the caller's request body happened to
@@ -83,6 +96,8 @@ _NUMERIC_FIELDS = {
     "price_native",
     "amount_native",
     "fx_rate",
+    "sdrt",
+    "fx_fee",
 }
 
 
@@ -121,6 +136,7 @@ class TransactionPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = "page_size"
     max_page_size = 200
+
 
 #: One shared client for the process, mirroring holdings/views.py's
 #: module-level _client pattern.
@@ -197,7 +213,13 @@ def build_transaction_fields(
     combination, always optional — unlike `average_price`/`price`/`amount`
     it's never in a shape's `disallowed` set, since it's a real caller-
     supplied override, not a server-computed value; see
-    `resolve_converted_amounts`."""
+    `resolve_converted_amounts`. `sdrt`/`fx_fee` (GitHub issues #100/#101)
+    are similar caller-supplied optionals, but type-gated rather than
+    accepted everywhere: `sdrt` only for `type == "BUY"` (stamp duty is a
+    buyer-only tax), `fx_fee` for `type in ("BUY", "SELL")` — checked here
+    rather than via `_FIELDS_BY_MODE`'s per-mode shape, since TRANSACTION
+    mode's one shape covers both BUY and SELL but only SELL should reject
+    `sdrt`."""
     allowed_types = {"BUY", "DIVIDEND"} if mode == "AVERAGE" else TRANSACTION_ACTIONS
     if data.get("type") not in allowed_types:
         return None, f"Invalid type '{data.get('type')}' for {mode} mode."
@@ -206,7 +228,12 @@ def build_transaction_fields(
     missing = shape["required"] - data.keys()
     if missing:
         return None, f"Missing field(s): {', '.join(sorted(missing))}."
-    present_disallowed = shape["disallowed"] & data.keys()
+    type_disallowed = set()
+    if data["type"] != "BUY":
+        type_disallowed.add("sdrt")
+    if data["type"] not in ("BUY", "SELL"):
+        type_disallowed.add("fx_fee")
+    present_disallowed = (shape["disallowed"] | type_disallowed) & data.keys()
     if present_disallowed:
         return None, f"Field(s) not applicable: {', '.join(sorted(present_disallowed))}."
 
@@ -217,6 +244,8 @@ def build_transaction_fields(
             "price_native": data.get("price_native"),
             "amount_native": data.get("amount_native"),
             "fx_rate": data.get("fx_rate"),
+            "sdrt": data.get("sdrt"),
+            "fx_fee": data.get("fx_fee"),
             "date": data.get("date"),
             "type": data.get("type"),
         }
@@ -516,8 +545,8 @@ class TransactionListView(APIView):
             return Response(
                 {
                     "detail": "no_of_shares/average_price_native/price_native/amount_native/"
-                    "fx_rate must be positive numbers, date is required, and type must be "
-                    "valid for this mode."
+                    "fx_rate/sdrt/fx_fee must be positive numbers, date is required, and type "
+                    "must be valid for this mode."
                 },
                 status=400,
             )
@@ -600,9 +629,7 @@ class TransactionDetailView(APIView):
             except TransactionNotFoundError:
                 return Response(status=404)
             native_key = (
-                "amount_native"
-                if existing["type"] == "DIVIDEND"
-                else "average_price_native"
+                "amount_native" if existing["type"] == "DIVIDEND" else "average_price_native"
             )
             converted_key = "amount" if existing["type"] == "DIVIDEND" else "average_price"
             merged = {
@@ -624,8 +651,8 @@ class TransactionDetailView(APIView):
         except TransactionAmountError:
             return Response(
                 {
-                    "detail": "no_of_shares/average_price_native/amount_native/fx_rate must "
-                    "be positive numbers."
+                    "detail": "no_of_shares/average_price_native/amount_native/fx_rate/sdrt/"
+                    "fx_fee must be positive numbers."
                 },
                 status=400,
             )

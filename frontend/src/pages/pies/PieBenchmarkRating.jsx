@@ -24,7 +24,11 @@ export function weightedPortfolioMetric(metricsByHolding, valuations, key) {
   metricsByHolding.forEach((metrics, i) => {
     const value = metrics?.[key];
     if (value == null) return;
-    const weight = valuations[i].currentValue;
+    // `valuations[i]` can be missing if the two arrays are momentarily out
+    // of sync (e.g. a holdings-list change mid-refetch) — skip rather than
+    // crash, same "just skip it" reasoning as a holding missing this metric.
+    const weight = valuations[i]?.currentValue;
+    if (weight == null) return;
     weightedSum += value * weight;
     totalWeight += weight;
   });

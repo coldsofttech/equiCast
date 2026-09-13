@@ -26,6 +26,12 @@
  * @property {number|null} fx_rate - the effective rate used to resolve every converted field
  *   above, whether auto-resolved or overridden — always present regardless of type, `null`
  *   when it couldn't be resolved.
+ * @property {number|null} sdrt - UK Stamp Duty Reserve Tax (GitHub issue #100), set only for a
+ *   BUY record. Already in the user's own default currency (never native) — unlike every other
+ *   monetary field above, this never goes through fx_rate conversion.
+ * @property {number|null} fx_fee - currency-conversion fee a broker deducted (GitHub issue
+ *   #101), set only for a BUY/SELL record. Same "already default-currency, no fx_rate
+ *   conversion" shape as sdrt above.
  * @property {string|null} date - "YYYY-MM-DD". Mandatory on every record created since the
  *   DIVIDEND type shipped; `null` only on a legacy AVERAGE-mode record predating it.
  * @property {"BUY"|"SELL"|"DIVIDEND"|null} type - "SELL" only under a TRANSACTION-mode
@@ -97,10 +103,13 @@ export function getTransaction(api, holdingId, transactionId) {
  * converted (non-`_native`) counterpart is always backend-resolved — never
  * submit it, see the Transaction typedef above. `fx_rate` is optional on
  * every type — omit it to auto-resolve the historical rate for `date`, or
- * supply it to override that resolution (GitHub issue #149).
+ * supply it to override that resolution (GitHub issue #149). `sdrt`
+ * (BUY only, GitHub issue #100) and `fx_fee` (BUY/SELL, GitHub issue #101)
+ * are both optional and already in the user's default currency — omit
+ * either to leave it unset rather than sending `0`.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ holding_id: string, type: "BUY"|"SELL"|"DIVIDEND", date: string, no_of_shares?: number, average_price_native?: number, price_native?: number, amount_native?: number, fx_rate?: number }} data
+ * @param {{ holding_id: string, type: "BUY"|"SELL"|"DIVIDEND", date: string, no_of_shares?: number, average_price_native?: number, price_native?: number, amount_native?: number, fx_rate?: number, sdrt?: number, fx_fee?: number }} data
  * @returns {Promise<Transaction>}
  */
 export function createTransaction(api, data) {
@@ -119,12 +128,16 @@ export function createTransaction(api, data) {
  * never submit it yourself. Omitting `fx_rate` from a patch that does
  * change the native value/date re-auto-resolves the rate fresh rather
  * than keeping an earlier override (GitHub issue #149) — resubmit
- * `fx_rate` alongside such a patch to keep a prior override.
+ * `fx_rate` alongside such a patch to keep a prior override. `sdrt`/
+ * `fx_fee` (an AVERAGE-mode BUY only — a TRANSACTION-mode BUY/SELL is
+ * immutable regardless) carry no such re-resolve behavior, since neither
+ * has an auto-resolved fallback to begin with; omitted from a patch simply
+ * leaves the existing value in place.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} holdingId
  * @param {string} transactionId
- * @param {{ no_of_shares?: number, average_price_native?: number, date?: string, amount_native?: number, fx_rate?: number }} fields
+ * @param {{ no_of_shares?: number, average_price_native?: number, date?: string, amount_native?: number, fx_rate?: number, sdrt?: number, fx_fee?: number }} fields
  * @returns {Promise<Transaction>}
  */
 export function updateTransaction(api, holdingId, transactionId, fields) {
@@ -162,6 +175,12 @@ export function deleteTransaction(api, holdingId, transactionId) {
  * @property {number} price_native
  * @property {number|null} fx_rate - the source's own per-row exchange rate when provided,
  *   else equicast's own historical FX rate resolved for `date` — `null` if neither resolved.
+ * @property {number|null} sdrt - UK Stamp Duty Reserve Tax read from the source file (GitHub
+ *   issue #100, e.g. Trading 212's `Stamp duty reserve tax` column), `null` if it didn't report
+ *   one. Only meaningful for a BUY row; already in the user's default currency.
+ * @property {number|null} fx_fee - currency-conversion fee read from the source file (GitHub
+ *   issue #101, e.g. Trading 212's `Currency conversion fee` column), `null` if it didn't report
+ *   one. Already in the user's default currency.
  */
 
 /**

@@ -36,6 +36,12 @@ its rate the human-facing way ("£1 = $1.34"); equicast automatically
 inverts it to the direction it stores internally, so you don't need to do
 anything about this yourself.
 
+Trading 212's own `Stamp duty reserve tax` and `Currency conversion fee`
+columns are also imported (GitHub issues #100/#101) — read at face value as
+already being in your account's default currency; their `Currency (...)`
+companion columns are for your own reference only and aren't used to
+convert anything.
+
 ## Generic CSV
 
 Build your own CSV with these columns:
@@ -50,17 +56,25 @@ Build your own CSV with these columns:
 | `asset_class`    | No       | `stock` or `etf` — helps equicast resolve the ticker |
 | `currency`       | No       | Informational only, not used to resolve FX           |
 | `fx_rate`        | No       | Overrides equicast's own historical FX lookup        |
+| `sdrt`           | No       | UK Stamp Duty Reserve Tax, in your default currency (BUY rows only) |
+| `fx_fee`         | No       | Currency-conversion fee, in your default currency    |
 | `external_id`    | No       | Your own identifier for the row, used for dedup      |
 
 `fx_rate`, if you supply it, must be in the **converted-per-native** direction — how many units of your default currency one unit of the instrument's native currency is worth (the same direction equicast stores/uses internally). This is the *opposite* of how brokers and FX quotes usually show a rate to a person ("£1 = $1.34") — if you have a rate quoted that way, invert it (`1 / rate`) before putting it in this column. The Trading 212 preset does this inversion for you automatically, since its export is quoted the human-facing way.
 
+`sdrt`/`fx_fee` (GitHub issues #100/#101), unlike every other monetary
+column here, are always in your own default currency, never the
+instrument's native currency — there's no conversion to do.
+
 ## Matching tickers
 
-equicast matches an imported row's ticker against its own market-data
-catalog. This is ticker-based only for now — a ticker that doesn't resolve
+equicast matches an imported row against its own market-data catalog by
+ISIN first when the row has one (Trading 212 exports always do) — ticker
+symbols aren't unique across exchanges/asset classes, so ISIN is the more
+reliable match. Only when there's no ISIN, or it doesn't resolve, does
+equicast fall back to matching by ticker. A row that resolves by neither
 (or resolves to the wrong instrument) can be corrected during review by
-searching for the right one. ISIN-based matching is a planned follow-up
-(the ticker/ISIN ambiguity this would resolve is tracked separately).
+searching for the right one.
 
 ## AVERAGE vs TRANSACTION accounts
 

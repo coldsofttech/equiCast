@@ -74,11 +74,16 @@ transaction is still recorded in that case, just without a converted
 figure.
 
 Every record has the same stable shape regardless of mode/type (all
-eleven of `no_of_shares`/`average_price_native`/`average_price`/
-`price_native`/`price`/`amount_native`/`amount`/`fx_rate`/`date`/`type`
-are always present, `None` where not applicable) — the same "stable shape
-rather than sometimes-absent keys" reasoning `HoldingsClient` uses for its
-three parent-id fields. `date` is mandatory on every record now — a
+thirteen of `no_of_shares`/`average_price_native`/`average_price`/
+`price_native`/`price`/`amount_native`/`amount`/`fx_rate`/`sdrt`/`fx_fee`/
+`date`/`type`/`external_id` are always present, `None` where not
+applicable) — the same "stable shape rather than sometimes-absent keys"
+reasoning `HoldingsClient` uses for its three parent-id fields. `sdrt`
+(GitHub issue #100) and `fx_fee` (GitHub issue #101) are unlike every
+other monetary field here: both are already in the user's default
+currency (never the holding's native currency), so neither has a `_native`
+counterpart or goes through `fx_rate` conversion — see
+`create_transaction`. `date` is mandatory on every record now — a
 legacy `AVERAGE`-mode record predating this may still have `date: None`;
 treated as "no date on record" rather than backfilled. `list_transactions`'s
 `year`/`date_from`/`date_to` filters skip any record whose `date` is
@@ -161,6 +166,21 @@ def _validate_positive_amount(value: Any, field_name: str) -> Decimal:
     return amount
 
 
+def _validate_nonnegative_amount(value: Any, field_name: str) -> Decimal:
+    """Same as `_validate_positive_amount`, but allows exactly `0` — for
+    `sdrt`/`fx_fee` (GitHub issues #100/#101), `0` is a real, common value
+    (most trades carry no stamp duty or no FX fee at all), unlike
+    `no_of_shares`/a price/an amount, where `0` would never describe an
+    actual trade."""
+    try:
+        amount = Decimal(str(value))
+    except InvalidOperation as exc:
+        raise TransactionAmountError(f"Invalid {field_name}: {value!r}.") from exc
+    if amount < 0:
+        raise TransactionAmountError(f"{field_name} must not be negative, got {value!r}.")
+    return amount
+
+
 def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     """Backfill keys introduced after a record may have already been
     written — `amount` (the `DIVIDEND` type), then the native/converted
@@ -180,6 +200,8 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     transaction.setdefault("amount_native", None)
     transaction.setdefault("fx_rate", None)
     transaction.setdefault("external_id", None)
+    transaction.setdefault("sdrt", None)
+    transaction.setdefault("fx_fee", None)
     return transaction
 
 
@@ -246,6 +268,15 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
     unresolvable" contract as everywhere else in this module) — a partial
     converted total would be misleading, not just incomplete.
 
+    A BUY's `sdrt`/`fx_fee` (GitHub issues #100/#101 — already in the
+    user's default currency, see `create_transaction`) are subtracted from
+    that BUY's contribution to `invested`/`average_price` (the *converted*
+    figures only — never `invested_native`/`average_price_native`, which
+    stay pure native trade value). A SELL's `fx_fee` is stored but not
+    netted into anything here — this rollup tracks the *open* position's
+    cost basis, not realized proceeds, and there's currently no realized-
+    P&L figure for it to reduce.
+
     A record from before the native/converted split (see
     `equicast_core.transactions._normalize`) has its `_native` field
     backfilled to `None`, with the original value still sitting under the
@@ -273,18 +304,18 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
         shares = Decimal(str(record["no_of_shares"]))
         is_legacy = record.get("average_price_native") is None
         native_raw = (
-            record.get("average_price")
-            if is_legacy else record.get("average_price_native")
+            record.get("average_price") if is_legacy else record.get("average_price_native")
         )
         avg_native = Decimal(str(native_raw)) if native_raw is not None else None
         avg_converted_raw = None if is_legacy else record.get("average_price")
+        fee_total = Decimal(str(record.get("sdrt") or 0)) + Decimal(str(record.get("fx_fee") or 0))
         return {
             "no_of_shares": float(shares),
             "average_price_native": float(avg_native) if avg_native is not None else None,
             "average_price": float(avg_converted_raw) if avg_converted_raw is not None else None,
             "invested_native": float(shares * avg_native) if avg_native is not None else 0,
             "invested": (
-                float(shares * Decimal(str(avg_converted_raw)))
+                float(shares * Decimal(str(avg_converted_raw)) - fee_total)
                 if avg_converted_raw is not None
                 else None
             ),
@@ -309,7 +340,10 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
             cost_native += qty * price_native
             price_converted = None if is_legacy else record.get("price")
             if converted_known and price_converted is not None:
-                cost_converted += qty * Decimal(str(price_converted))
+                fee_total = Decimal(str(record.get("sdrt") or 0)) + Decimal(
+                    str(record.get("fx_fee") or 0)
+                )
+                cost_converted += qty * Decimal(str(price_converted)) - fee_total
             else:
                 converted_known = False
         elif shares > 0:
@@ -634,6 +668,8 @@ class TransactionsClient:
         amount: Any = None,
         fx_rate: Any = None,
         external_id: Any = None,
+        sdrt: Any = None,
+        fx_fee: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -669,6 +705,18 @@ class TransactionsClient:
         what makes that check race-safe rather than just a best-effort
         pre-check.
 
+        `sdrt` (UK Stamp Duty Reserve Tax, GitHub issue #100) and `fx_fee`
+        (currency-conversion fee, GitHub issue #101) are both already in
+        the user's default currency (not the holding's native currency —
+        unlike every other monetary field here, so neither has a `_native`
+        counterpart or takes an `fx_rate` conversion), optional, and
+        `None`'d out for a type they don't apply to: `sdrt` only for `BUY`
+        (stamp duty is a buyer-only tax), `fx_fee` for `BUY`/`SELL` (a
+        broker can deduct it on either leg). Stored as given, not netted
+        into `price`/`average_price` here — `compute_holding_rollup`
+        subtracts both from a BUY's contribution to the *converted* cost
+        basis only (never `_native`, since they're not in that currency).
+
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
         `average_price_native`/`price_native`/`amount_native` (whichever
@@ -689,6 +737,10 @@ class TransactionsClient:
             raise TransactionAmountError("date is required.")
         if fx_rate is not None:
             _validate_positive_amount(fx_rate, "fx_rate")
+        if sdrt is not None:
+            _validate_nonnegative_amount(sdrt, "sdrt")
+        if fx_fee is not None:
+            _validate_nonnegative_amount(fx_fee, "fx_fee")
 
         for _ in range(_MAX_CONFLICT_RETRIES):
             existing, dividends_synced_through, etag = self._load(user_id, holding_id)
@@ -755,6 +807,8 @@ class TransactionsClient:
                 "amount": amount if type == "DIVIDEND" else None,
                 "fx_rate": fx_rate,
                 "external_id": external_id,
+                "sdrt": sdrt if type == "BUY" else None,
+                "fx_fee": fx_fee if type in ("BUY", "SELL") else None,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -828,6 +882,8 @@ class TransactionsClient:
                     "average_price_native",
                     "average_price",
                     "fx_rate",
+                    "sdrt",
+                    "fx_fee",
                 }
             else:
                 raise ValueError(
@@ -847,6 +903,10 @@ class TransactionsClient:
                 _validate_positive_amount(fields["amount_native"], "amount_native")
             if fields.get("fx_rate") is not None:
                 _validate_positive_amount(fields["fx_rate"], "fx_rate")
+            if fields.get("sdrt") is not None:
+                _validate_nonnegative_amount(fields["sdrt"], "sdrt")
+            if fields.get("fx_fee") is not None:
+                _validate_nonnegative_amount(fields["fx_fee"], "fx_fee")
 
             updated = {
                 **transactions[index],
@@ -854,8 +914,10 @@ class TransactionsClient:
                 "updated_at": datetime.now(UTC).isoformat(),
             }
             transactions[index] = updated
-            if mode == "AVERAGE" and record_type in ("BUY", None) and (
-                "date" in fields or "no_of_shares" in fields
+            if (
+                mode == "AVERAGE"
+                and record_type in ("BUY", None)
+                and ("date" in fields or "no_of_shares" in fields)
             ):
                 transactions = [t for t in transactions if t["type"] != "DIVIDEND"]
                 dividends_synced_through = None

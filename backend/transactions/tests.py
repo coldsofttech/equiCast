@@ -147,17 +147,13 @@ class TransactionListViewTests(TestCase):
     @patch("transactions.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
-    def test_get_paginates_at_50_per_page(
-        self, mock_jwks_client, mock_decode, mock_client
-    ) -> None:
+    def test_get_paginates_at_50_per_page(self, mock_jwks_client, mock_decode, mock_client) -> None:
         _authenticate(mock_jwks_client, mock_decode)
         records = [{**AVERAGE_TRANSACTION, "id": f"t-{i}", "date": "2026-01-01"} for i in range(60)]
         mock_client.list_transactions.return_value = records
 
         first_page = self.client.get(reverse("transactions-list"), **AUTH_HEADER)
-        second_page = self.client.get(
-            reverse("transactions-list"), {"page": "2"}, **AUTH_HEADER
-        )
+        second_page = self.client.get(reverse("transactions-list"), {"page": "2"}, **AUTH_HEADER)
 
         first_body = first_page.json()
         second_body = second_page.json()
@@ -326,6 +322,8 @@ class TransactionListViewTests(TestCase):
             price_native=None,
             amount_native=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-01-15",
             type="BUY",
             average_price=None,
@@ -430,6 +428,8 @@ class TransactionListViewTests(TestCase):
             amount_native=None,
             amount=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -487,6 +487,8 @@ class TransactionListViewTests(TestCase):
             amount_native=None,
             amount=None,
             fx_rate=0.8,
+            sdrt=None,
+            fx_fee=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -621,6 +623,8 @@ class TransactionListViewTests(TestCase):
             amount_native=None,
             amount=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-01-15",
             type="BUY",
         )
@@ -856,6 +860,8 @@ class TransactionListViewTests(TestCase):
             amount_native=42.10,
             amount=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-03-01",
             type="DIVIDEND",
         )
@@ -907,6 +913,8 @@ class TransactionListViewTests(TestCase):
             amount_native=42.10,
             amount=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-03-01",
             type="DIVIDEND",
         )

@@ -45,6 +45,13 @@ function SiteFooter() {
           your own research or consult a licensed financial advisor before making investment
           decisions.
         </p>
+        <p>
+          If you import holdings/transactions from a trading app or your own tracker, the
+          figures equiCast shows may not match that source exactly. Trading apps built for
+          intraday/active trading are typically more mature on the taxation, fees and charges
+          equiCast is still building out, and generally show live prices, whereas equiCast&rsquo;s
+          data is delayed by design (see above) for its long-term investment focus.
+        </p>
       </section>
     </>
   );

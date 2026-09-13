@@ -180,6 +180,79 @@ class ImportPreviewViewTests(TestCase):
     @patch("transactions.import_views._profile_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
+    def test_post_resolves_by_isin_when_the_raw_ticker_would_not_match(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_client,
+        mock_accounts_client,
+        mock_pies_client,
+        mock_holdings_client,
+        mock_market_data_client,
+        mock_views_market_data_client,
+    ) -> None:
+        """GitHub issue #191: a row's own ticker (as the broker spells it)
+        may not match equicast's catalog ticker at all, but its ISIN still
+        resolves it - ticker symbols aren't globally unique across
+        exchanges/asset classes the way an ISIN is."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        mock_accounts_client.list_accounts.return_value = []
+        mock_pies_client.list_pies.return_value = []
+        mock_holdings_client.list_holdings.return_value = []
+        mock_market_data_client.get_catalog.side_effect = lambda asset_class: (
+            [{"ticker": "AAPL", "isin": "US0378331005"}] if asset_class == "stock" else []
+        )
+        mock_market_data_client.get_profile.side_effect = lambda asset_class, ticker: (
+            {"name": "Apple Inc.", "currency": "USD"}
+            if ticker == "AAPL" and asset_class == "stock"
+            else None
+        )
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_client.list_transactions.return_value = []
+
+        header = (
+            "Action,Time (UTC),ISIN,Ticker,Name,ID,No. of shares,Price / share,"
+            "Currency (Price / share),Exchange rate,Result,Currency (Result),Total,"
+            "Currency (Total),Stamp duty reserve tax,Currency (Stamp duty reserve tax),"
+            "Currency conversion fee,Currency (Currency conversion fee)\n"
+        )
+        # "AAPL.L" is not a ticker equicast's catalog would resolve on its
+        # own - only the ISIN gets this row matched to the real AAPL.
+        rows = (
+            "Market buy,2024-03-01 14:32:10,US0378331005,AAPL.L,Apple Inc.,EOF001,10,148.0,"
+            "USD,,,,1480.00,USD,,,,\n"
+        )
+        upload = SimpleUploadedFile(
+            "trading212.csv", (header + rows).encode(), content_type="text/csv"
+        )
+
+        response = self.client.post(
+            reverse("transactions-import-preview"),
+            data={"preset": "trading212", "file": upload},
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        group = response.json()["groups"][0]
+        self.assertEqual(group["ticker"], "AAPL.L")
+        self.assertTrue(group["resolved"])
+        self.assertEqual(group["asset_class"], "stock")
+        self.assertEqual(group["name"], "Apple Inc.")
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._market_data_client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._pies_client")
+    @patch("transactions.import_views._accounts_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
     def test_post_reports_an_unparseable_row_without_aborting_the_rest_of_the_file(
         self,
         mock_jwks_client,
@@ -495,6 +568,94 @@ class ImportCommitViewTests(TestCase):
     @patch("transactions.views._market_data_client")
     @patch("transactions.import_views._client")
     @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._accounts_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_average_mode_sums_sdrt_and_fx_fee_across_the_imported_rows(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_accounts_client,
+        mock_holdings_client,
+        mock_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+    ) -> None:
+        """GitHub issues #100/#101: sdrt only applies to a BUY (matches
+        create_transaction's own type gate) - fx_fee applies to both, but
+        every row here is a BUY anyway."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "AVERAGE",
+            "default_currency": "GBP",
+        }
+        mock_accounts_client.get_account.return_value = {"id": "acc-1"}
+        new_holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_holdings_client.create_holding.return_value = new_holding
+        mock_client.list_transactions.return_value = []
+        mock_client.create_transaction.return_value = {"id": "t-1"}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = new_holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "account", "id": "acc-1"},
+                        "rows": [
+                            {
+                                "external_id": "t212-1",
+                                "date": "2024-01-10",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                                "sdrt": 5.0,
+                                "fx_fee": 1.5,
+                            },
+                            {
+                                "external_id": "t212-2",
+                                "date": "2024-02-10",
+                                "type": "BUY",
+                                "no_of_shares": 5,
+                                "price_native": 110.0,
+                                "fx_rate": None,
+                                "sdrt": 2.75,
+                                "fx_fee": None,
+                            },
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.create_transaction.assert_called_once()
+        _, kwargs = mock_client.create_transaction.call_args
+        self.assertEqual(kwargs["sdrt"], 7.75)
+        self.assertEqual(kwargs["fx_fee"], 1.5)
+
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
     @patch("transactions.import_views._profile_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
@@ -658,6 +819,81 @@ class ImportCommitViewTests(TestCase):
         )
         _, kwargs = mock_client.create_transaction.call_args
         self.assertEqual(kwargs["external_id"], "dup-2")
+
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_transaction_mode_passes_each_rows_own_sdrt_and_fx_fee(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_holdings_client,
+        mock_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+    ) -> None:
+        """GitHub issues #100/#101: unlike AVERAGE mode's summed cumulative
+        total, TRANSACTION mode is a per-row log - each row keeps its own
+        value, not a running total."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_holdings_client.get_holding.return_value = holding
+        mock_client.list_transactions.return_value = []
+        mock_client.create_transaction.return_value = {"id": "t-new"}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "existing_holding", "id": "h-1"},
+                        "rows": [
+                            {
+                                "external_id": "row-1",
+                                "date": "2024-01-01",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                                "sdrt": 5.0,
+                                "fx_fee": 1.5,
+                            }
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.create_transaction.assert_called_once()
+        _, kwargs = mock_client.create_transaction.call_args
+        self.assertEqual(kwargs["sdrt"], 5.0)
+        self.assertEqual(kwargs["fx_fee"], 1.5)
 
     @patch("transactions.views._holdings_client")
     @patch("transactions.views._client")
