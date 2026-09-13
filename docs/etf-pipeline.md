@@ -37,6 +37,23 @@ default `CMD` points at `config/etfs.dev.yaml`; `etf-ingestion.yml` never
 relies on that default — it resolves `dev`/`prod` itself and always passes
 `--tickers-json` explicitly.
 
+Each config entry is normally just a plain ticker string, but can instead be
+a `{ticker, isin}` mapping to manually override yfinance's ISIN lookup for
+that ticker (e.g. it came back empty, or wrong/outdated) — the override
+always wins over the fetched value:
+
+```yaml
+tickers:
+  - VOO
+  - ticker: QQQ
+    isin: US46090E1038
+```
+
+This shape survives being split into a `--tickers-json` matrix chunk (see
+`equicast_etf.plan._serialize_ticker`) and is understood by
+`equicast-forecasting`'s own standalone ticker loader too (it just discards
+the `isin`, having no use for it).
+
 **`profile()`, `prices()`, dividends (via `equicast-dividends`'
 `DividendsClient`), events (via `equicast-events`' `EventsClient`),
 risk/performance metrics (via `equicast-metrics`' `MetricsClient.metrics()`),
@@ -74,7 +91,9 @@ uv run equicast-etf --tickers-json '["VOO"]' --out ./output
 
 For each ticker this writes:
 
-- `etf=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
+- `etf=<TICKER>/profile.parquet` — one row: name, quote type, ISIN
+  (yfinance's `Ticker.isin` lookup, `null` when it has no ISIN on record —
+  overridable in `etfs.dev.yaml`/`etfs.prod.yaml`, see below), exchange,
   currency, description, category, fund family, website, beta, expense
   ratio, dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
   half_yearly/yearly/irregular/not_applicable, derived from dividend

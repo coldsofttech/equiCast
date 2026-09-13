@@ -47,6 +47,12 @@ class DatafeedClient:
             lambda: yf.Ticker(symbol).history(period=period, interval=interval), symbol
         )
 
+    def get_isin(self, symbol: str) -> str | None:
+        """Return `symbol`'s ISIN, or `None` if yfinance has none on record
+        (it reports the literal string "-" in that case)."""
+        isin = self._call(lambda: yf.Ticker(symbol).isin, symbol)
+        return isin if isin and isin != "-" else None
+
     def get_dividends(self, symbol: str) -> pd.Series:
         """Return `symbol`'s historical dividends: a Series of cash amount per
         share, indexed by ex-dividend date. yfinance has no payment-date data

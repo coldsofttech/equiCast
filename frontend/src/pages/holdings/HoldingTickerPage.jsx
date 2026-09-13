@@ -486,7 +486,11 @@ function HoldingTickerPage() {
       stickyTitle
       titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
       titleBadges={
-        marketProfile && (marketProfile.exchange || marketProfile.quote_type || marketProfile.last_updated) ? (
+        marketProfile &&
+        (marketProfile.exchange ||
+          marketProfile.quote_type ||
+          marketProfile.isin ||
+          marketProfile.last_updated) ? (
           <>
             {marketProfile.exchange && (
               <Badge tone={MARKET_PROFILE_BADGE_TONES.exchange}>
@@ -497,6 +501,9 @@ function HoldingTickerPage() {
               <Badge tone={MARKET_PROFILE_BADGE_TONES.quoteType}>
                 Quote type: {marketProfile.quote_type}
               </Badge>
+            )}
+            {marketProfile.isin && (
+              <Badge tone={MARKET_PROFILE_BADGE_TONES.isin}>ISIN: {marketProfile.isin}</Badge>
             )}
             {marketProfile.last_updated && formatSyncedDate(marketProfile.last_updated) && (
               <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>

@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- ISIN capture for stock/etf ingestion (`feat/isin`): `StockClient.profile()`/
+  `ETFClient.profile()` now include an `isin` field, sourced from
+  yfinance's `Ticker.isin` lookup via a new `DatafeedClient.get_isin()` (`null`
+  when yfinance has no ISIN on record). Propagated into the search catalog
+  (`equicast_core.catalog.build_catalog_rows`/`CATALOG_SCHEMA`) and into
+  `MarketDataClient.search()`, which now substring-matches `isin` alongside
+  `ticker`/`name`. `stocks.dev/prod.yaml` and `etfs.dev/prod.yaml` entries can
+  now be a `{ticker, isin}` mapping instead of a plain string, to manually
+  override yfinance's lookup for a given ticker — the override always wins,
+  and survives being split into a `--tickers-json` GitHub Actions matrix
+  chunk (`equicast_stock`/`equicast_etf`'s `plan.py`). `equicast-forecasting`'s
+  own standalone ticker loader was updated to accept (and discard) the same
+  `{ticker, isin}` shape, since it reads the same config files/matrix chunks.
+  `/holdings/:id` shows ISIN as a new badge next to Quote type, when present.
+  FX/benchmark and futures were deliberately left out of this pass — tracked
+  as follow-ups in GitHub issues #208 and #207 respectively.
+
 - "Watchlists" and "Goals" entries in the account menu (`UserMenu.jsx`,
   GitHub issue #170), each navigating to a new route (`/watchlists`,
   `/goals`). Neither has a real page yet — Watchlists' backend already

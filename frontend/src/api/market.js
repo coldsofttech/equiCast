@@ -433,6 +433,7 @@ export async function getEvents(api, assetClass, symbol) {
 export const MARKET_PROFILE_BADGE_TONES = {
   exchange: "neutral",
   quoteType: "accent",
+  isin: "purple",
   synced: "info",
 };
 

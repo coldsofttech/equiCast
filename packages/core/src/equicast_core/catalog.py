@@ -60,6 +60,7 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("region", pa.string()),
         pa.field("sector", pa.string()),
         pa.field("industry", pa.string()),
+        pa.field("isin", pa.string()),
         pa.field("last_updated", pa.string()),
     ]
 )
@@ -101,7 +102,8 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     either, and for fx, which has no such concept at all), and `last_updated` (every
     asset class's profile carries this field already, stamped by its own
     ingestion pipeline — see equicast_stock/etf/fx/benchmark's writers/
-    clients — so it round-trips here unchanged).
+    clients — so it round-trips here unchanged), and `isin` (stock/etf
+    profiles only; `None` for fx/benchmark, which don't carry one).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -123,6 +125,7 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "region": profile.get("region"),
                 "sector": profile.get("sector"),
                 "industry": profile.get("industry"),
+                "isin": profile.get("isin"),
                 "last_updated": profile.get("last_updated"),
             }
         )

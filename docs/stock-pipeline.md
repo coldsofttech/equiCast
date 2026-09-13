@@ -37,6 +37,23 @@ default `CMD` points at `config/stocks.dev.yaml`; `stock-ingestion.yml`
 never relies on that default — it resolves `dev`/`prod` itself and always
 passes `--tickers-json` explicitly.
 
+Each config entry is normally just a plain ticker string, but can instead be
+a `{ticker, isin}` mapping to manually override yfinance's ISIN lookup for
+that ticker (e.g. it came back empty, or wrong/outdated) — the override
+always wins over the fetched value:
+
+```yaml
+tickers:
+  - AAPL
+  - ticker: NVDA
+    isin: US67066G1040
+```
+
+This shape survives being split into a `--tickers-json` matrix chunk (see
+`equicast_stock.plan._serialize_ticker`) and is understood by
+`equicast-forecasting`'s own standalone ticker loader too (it just discards
+the `isin`, having no use for it).
+
 `profile()`, `prices()`, dividends (via `equicast-dividends`'
 `DividendsClient`), events (via `equicast-events`' `EventsClient`),
 `metrics()`/`fundamentals()` (via `equicast-metrics`), and news (via
@@ -70,7 +87,9 @@ uv run equicast-stock --tickers-json '["AAPL"]' --out ./output
 
 For each ticker this writes:
 
-- `stock=<TICKER>/profile.parquet` — one row: name, quote type, exchange,
+- `stock=<TICKER>/profile.parquet` — one row: name, quote type, ISIN
+  (yfinance's `Ticker.isin` lookup, `null` when it has no ISIN on record —
+  overridable in `stocks.dev.yaml`/`stocks.prod.yaml`, see below), exchange,
   currency, description, sector, industry, website, beta, payout ratio,
   dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
   half_yearly/yearly/irregular/not_applicable, derived from dividend

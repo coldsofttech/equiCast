@@ -27,6 +27,7 @@ profile = client.profile()
 #     "ticker": "AAPL",
 #     "name": "Apple Inc.",
 #     "quote_type": "EQUITY",
+#     "isin": "US0378331005",
 #     "exchange": "NMS",
 #     "currency": "USD",
 #     "description": "Apple Inc. designs, manufactures, and markets smartphones, ...",

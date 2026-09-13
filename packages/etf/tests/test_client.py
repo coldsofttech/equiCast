@@ -50,10 +50,11 @@ _FULL_INFO = {
 _HISTORY = pd.DataFrame({"Open": [588.29, 600.0, 709.39]})
 
 
-def _datafeed(info: dict, history: pd.DataFrame = _HISTORY) -> MagicMock:
+def _datafeed(info: dict, history: pd.DataFrame = _HISTORY, isin: str | None = None) -> MagicMock:
     datafeed = MagicMock()
     datafeed.get_info.return_value = info
     datafeed.get_history.return_value = history
+    datafeed.get_isin.return_value = isin
     return datafeed
 
 
@@ -73,7 +74,7 @@ def test_constructing_client_shows_yfinance_disclaimer_once(
 
 
 def test_profile_maps_yfinance_info_fields() -> None:
-    client = ETFClient("VOO", datafeed=_datafeed(_FULL_INFO))
+    client = ETFClient("VOO", datafeed=_datafeed(_FULL_INFO, isin="US9229083632"))
 
     profile = client.profile()
 
@@ -81,6 +82,7 @@ def test_profile_maps_yfinance_info_fields() -> None:
         "ticker": "VOO",
         "name": "Vanguard S&P 500 ETF",
         "quote_type": "ETF",
+        "isin": "US9229083632",
         "exchange": "PCX",
         "currency": "USD",
         "region": "US",

@@ -27,6 +27,7 @@ profile = client.profile()
 #     "ticker": "VOO",
 #     "name": "Vanguard S&P 500 ETF",
 #     "quote_type": "ETF",
+#     "isin": "US9229083632",
 #     "exchange": "PCX",
 #     "currency": "USD",
 #     "description": "The fund manager employs an indexing investment approach ...",

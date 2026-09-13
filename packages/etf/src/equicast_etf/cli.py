@@ -66,7 +66,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     source.add_argument("--config", type=Path, help="Path to an ETF tickers YAML config.")
     source.add_argument(
         "--tickers-json",
-        help="JSON array of ticker strings (e.g. one matrix chunk).",
+        help="JSON array of ticker strings, or {ticker, isin} objects for an ISIN override "
+        "(e.g. one matrix chunk).",
     )
     parser.add_argument(
         "--out", type=Path, required=True, help="Output directory for Parquet files."
@@ -112,6 +113,7 @@ def _profile_and_dividends_task(
     output_dir: Path,
     key: str,
     full_load: bool,
+    isin_override: str | None = None,
 ) -> list[Path]:
     """Write profile.parquet (with a `dividend_frequency` field derived from
     dividend history), dividend/current.parquet (plus
@@ -133,6 +135,8 @@ def _profile_and_dividends_task(
     logger.info("Fetching profile and dividends for %s (full_load=%s)", key, full_load)
     dividends = dividends_client.dividends(full_load=True)
     profile = {**client.profile(), "dividend_frequency": dividend_frequency(dividends)}
+    if isin_override is not None:
+        profile["isin"] = isin_override
     paths = [write_profile_parquet(profile, output_dir)]
 
     if full_load:
@@ -206,6 +210,7 @@ def run(
                 output_dir,
                 ticker.key,
                 full_load,
+                ticker.isin,
             )
         )
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))

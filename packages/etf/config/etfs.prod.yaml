@@ -8,6 +8,13 @@
 # list's length changes materially. Diversified across categories rather
 # than issuer: VOO/VTI (US equity, Vanguard), QQQ (large growth, Invesco),
 # AGG (bonds, iShares), GLD (commodity, State Street).
+#
+# Each entry is a plain ticker string, or a {ticker, isin} mapping to
+# manually override yfinance's ISIN lookup (e.g. it came back empty, or
+# wrong/outdated) — the override always wins over the fetched value. Leave
+# entries as plain strings unless an override is actually needed. Example:
+#   - ticker: VOO
+#     isin: US9229083632
 tickers:
   - VOO
   - QQQ

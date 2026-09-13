@@ -665,7 +665,7 @@ class MarketDataClient:
         }
 
     def get_price_on_date(
-            self, asset_class: str, symbol: str, on_date: str
+        self, asset_class: str, symbol: str, on_date: str
     ) -> dict[str, Any] | None:
         """Return `{date, close, currency}` for the nearest published
         trading day on or before `on_date` ("YYYY-MM-DD") — weekends/
@@ -696,7 +696,9 @@ class MarketDataClient:
             return None
         latest = max(eligible, key=lambda r: r["date"])
         return {
-            "date": latest["date"], "close": latest["close"], "currency": latest.get("currency")
+            "date": latest["date"],
+            "close": latest["close"],
+            "currency": latest.get("currency"),
         }
 
     def get_fx_rate_on_date(
@@ -792,9 +794,7 @@ class MarketDataClient:
                 catalogs[asset_class] = {
                     row["ticker"]: row for row in self.get_catalog(asset_class)
                 }
-        fx_catalog = catalogs.get("fx") or {
-            row["ticker"]: row for row in self.get_catalog("fx")
-        }
+        fx_catalog = catalogs.get("fx") or {row["ticker"]: row for row in self.get_catalog("fx")}
 
         rates: dict[str, float | None] = {}
         enriched = []
@@ -839,7 +839,8 @@ class MarketDataClient:
         industry: str | None = None,
     ) -> list[dict[str, Any]]:
         """Case-insensitive substring match of `query` against every
-        catalog row's `ticker` and `name`, across `asset_classes` (default:
+        catalog row's `ticker`, `name`, and `isin` (stock/etf only; always
+        `None` for fx/benchmark rows), across `asset_classes` (default:
         `DEFAULT_SEARCH_ASSET_CLASSES` — `benchmark` is scanned only when a
         caller explicitly asks for it, e.g. `asset_classes=["benchmark"]`;
         see that constant's docstring for why). Reads each scanned asset
@@ -880,7 +881,12 @@ class MarketDataClient:
             for row in self.get_catalog(asset_class):
                 ticker = row.get("ticker") or ""
                 name = row.get("name") or ""
-                if query_lower not in ticker.lower() and query_lower not in name.lower():
+                isin = row.get("isin") or ""
+                if (
+                    query_lower not in ticker.lower()
+                    and query_lower not in name.lower()
+                    and query_lower not in isin.lower()
+                ):
                     continue
                 if filter_by_market_cap:
                     market_cap = row.get("market_cap")

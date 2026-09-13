@@ -94,17 +94,19 @@ regardless of how recent the ticker is.
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
-— a small, pre-built `{ticker, name, type, current_price}` row per
+— a small, pre-built `{ticker, name, type, current_price, ..., isin}` row per
 configured ticker, published by each ingestion pipeline after a run (see
 `equicast_core.catalog` below), not derived from `profile.parquet` on the
-fly. `search()` reads each scanned asset class's catalog once via
-`get_catalog()` and does a case-insensitive substring match against
-`ticker`/`name` in memory — no per-ticker S3 reads, and no live bucket
-listing:
+fly. `isin` is only ever populated for stock/etf rows (always `None` for
+fx/benchmark, which don't carry one). `search()` reads each scanned asset
+class's catalog once via `get_catalog()` and does a case-insensitive
+substring match against `ticker`/`name`/`isin` in memory — no per-ticker S3
+reads, and no live bucket listing:
 
 ```python
 client.get_catalog("stock")
-# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5}, ...]
+# [{"ticker": "AAPL", "name": "Apple Inc.", "type": "stock", "current_price": 227.5,
+#   "isin": "US0378331005", ...}, ...]
 # or [] if this asset class has no catalog published yet
 
 client.search("v")
