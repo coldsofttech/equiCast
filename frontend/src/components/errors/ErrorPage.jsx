@@ -3,14 +3,14 @@ import Logo from "../brand/Logo.jsx";
 import "./ErrorPage.css";
 
 /**
- * Standalone full-page layout for AppErrorPage — the one error state that
- * genuinely can't assume AppShell's own Topbar is safe to render, since
- * ErrorBoundary catches a render crash *anywhere* in the tree, Topbar
- * included; re-rendering the very component that just crashed would loop.
- * NotFoundPage and ServiceUnavailablePage don't have that problem (both
- * only ever reached already signed in, past RequireAuth — see App.jsx/
- * DashboardPage) and render inside AppShell instead, keeping the normal
- * Topbar.
+ * Standalone full-page layout, with no Topbar/footer — used directly by
+ * AppErrorPage's own nested ErrorBoundary fallback, for the one case that
+ * genuinely can't assume AppShell's Topbar is safe to render: Topbar
+ * itself being what crashed. AppErrorPage normally renders AppShell (with
+ * the usual Topbar/SiteFooter, same as NotFoundPage/ServiceUnavailablePage)
+ * around its own icon/message/action, and only falls back to this bare
+ * layout if that inner AppShell/Topbar render throws too — see
+ * AppErrorPage.jsx.
  *
  * `icon` carries the page's own animated SVG (see AppErrorIcon.jsx);
  * title/message stay in the app's plain interface voice (what happened,

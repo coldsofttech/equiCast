@@ -34,4 +34,15 @@ describe("AppErrorPage", () => {
 
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
   });
+
+  it("keeps the normal Topbar and footer, same as NotFoundPage/ServiceUnavailablePage", () => {
+    render(
+      <MemoryRouter>
+        <AppErrorPage />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByLabelText("Search tickers")).toBeInTheDocument();
+    expect(screen.getByText(/equiCast/, { selector: ".ec-landing-foot-links span" })).toBeInTheDocument();
+  });
 });

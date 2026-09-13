@@ -3,6 +3,7 @@ import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import RequireAuth from "./auth/RequireAuth.jsx";
 import CookieBanner from "./components/cookies/CookieBanner.jsx";
 import ErrorBoundary from "./components/errors/ErrorBoundary.jsx";
+import AppErrorPage from "./pages/errors/AppErrorPage.jsx";
 import DashboardPage from "./pages/DashboardPage.jsx";
 import AccountsListPage from "./pages/accounts/AccountsListPage.jsx";
 import GoalsListPage from "./pages/goals/GoalsListPage.jsx";
@@ -30,7 +31,7 @@ function App() {
   }, [location]);
 
   return (
-    <ErrorBoundary>
+    <ErrorBoundary fallback={<AppErrorPage />}>
       <Routes>
         <Route path="/cookie-policy" element={<CookiePolicyPage />} />
         <Route path="/terms-and-conditions" element={<TermsAndConditionsPage />} />
