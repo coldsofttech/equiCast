@@ -161,7 +161,7 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
           <input
             type="checkbox"
             checked={selection.include}
-            disabled={!canInclude}
+            disabled={!canInclude || isCommitting}
             onChange={() => updateSelection(group.ticker, { include: !selection.include })}
           />
           <span className="ec-import-group-ticker">{selection.ticker}</span>
@@ -175,7 +175,10 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
               Couldn&rsquo;t match &ldquo;{group.ticker}&rdquo; to equicast&rsquo;s catalog —
               search for the right one to include it:
             </Alert>
-            <TickerSearchField onSelect={(result) => handleRemap(group.ticker, result)} />
+            <TickerSearchField
+              onSelect={(result) => handleRemap(group.ticker, result)}
+              disabled={isCommitting}
+            />
           </div>
         )}
 
@@ -194,6 +197,7 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
               label="Import into"
               value={targetKey(selection.targetType, selection.targetId)}
               onChange={(event) => handleTargetChange(group.ticker, event.target.value)}
+              disabled={isCommitting}
             >
               {group.existing_holdings.map((holding) => (
                 <option key={holding.id} value={targetKey("existing_holding", holding.id)}>
@@ -230,6 +234,7 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
                   updateSelection(group.ticker, { allocationPct: event.target.value })
                 }
                 hint="Leave blank if this pie has no holdings yet — it becomes 100% automatically."
+                disabled={isCommitting}
               />
             )}
           </div>

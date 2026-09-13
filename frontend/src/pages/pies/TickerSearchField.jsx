@@ -14,7 +14,7 @@ import "./TickerSearchField.css";
  * result calls `onSelect({ ticker, asset_class, name, website })` and
  * resets the field.
  */
-function TickerSearchField({ onSelect }) {
+function TickerSearchField({ onSelect, disabled = false }) {
   const api = useApi();
   const [query, setQuery] = useState("");
   const [results, setResults] = useState(null);
@@ -63,6 +63,7 @@ function TickerSearchField({ onSelect }) {
             }
           }}
           aria-label="Search ticker or name"
+          disabled={disabled}
         />
       </div>
 
@@ -85,6 +86,7 @@ function TickerSearchField({ onSelect }) {
                   type="button"
                   className="ec-ticker-search-result"
                   onClick={() => handleSelect(result)}
+                  disabled={disabled}
                 >
                   <AssetIcon website={result.website} size={16} />
                   <span className="ec-ticker-search-result-ticker">{result.ticker}</span>

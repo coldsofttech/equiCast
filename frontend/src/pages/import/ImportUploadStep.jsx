@@ -42,7 +42,13 @@ function ImportUploadStep({ onParsed, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
-      <SelectField id="import-preset" label="Source" value={preset} onChange={handlePresetChange}>
+      <SelectField
+        id="import-preset"
+        label="Source"
+        value={preset}
+        onChange={handlePresetChange}
+        disabled={isUploading}
+      >
         <option value="generic">Generic CSV</option>
         <option value="trading212">Trading212</option>
       </SelectField>
@@ -73,6 +79,7 @@ function ImportUploadStep({ onParsed, onCancel }) {
           accept=".csv"
           className="ec-input"
           onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+          disabled={isUploading}
         />
       </div>
 
