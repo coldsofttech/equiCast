@@ -33,6 +33,22 @@ DEFAULT_TRANSACTION_TYPE = "AVERAGE"
 #: own wrapper currency, not a ticker's real native/trading currency).
 DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"]
 
+#: Applied to a brand-new profile on first login (GitHub issue #94). v1 tax
+#: logic is UK-only, so "UK" is the only value the frontend/backend accept
+#: for now (see identity/views.py's TAX_RESIDENCIES) — stored as a real
+#: field, not left implicit, so the model already has a place to grow into
+#: once other residencies are supported.
+DEFAULT_TAX_RESIDENCY = "UK"
+
+#: Applied to a brand-new profile on first login (GitHub issue #94) — a
+#: user's own UK income tax band (see identity/views.py's
+#: INCOME_TAX_BANDS), self-declared rather than computed from income data
+#: equicast doesn't have. Governs the dividend/CGT tax rate a GIA holding's
+#: income is taxed at once outside the (per-user, never household-pooled)
+#: allowance; ISA/SIPP/LISA/JISA wrapper_types are unaffected regardless of
+#: band.
+DEFAULT_INCOME_TAX_BAND = "BASIC"
+
 
 class UserProfileClient:
     """Reads and upserts items in one DynamoDB user-profiles table."""
@@ -57,11 +73,12 @@ class UserProfileClient:
         """Return the profile item for `user_id`, creating it with
         `default_currency=DEFAULT_CURRENCY`/`transaction_type=
         DEFAULT_TRANSACTION_TYPE`/`fx_warmup_currencies=
-        DEFAULT_FX_WARMUP_CURRENCIES` if this is their first login — or,
-        for an existing profile that predates one or more of
-        `transaction_type`/`fx_warmup_currencies` (each introduced after
-        `default_currency`), backfilling just the missing attribute(s)
-        onto it.
+        DEFAULT_FX_WARMUP_CURRENCIES`/`tax_residency=DEFAULT_TAX_RESIDENCY`/
+        `income_tax_band=DEFAULT_INCOME_TAX_BAND` if this is their first
+        login — or, for an existing profile that predates one or more of
+        `transaction_type`/`fx_warmup_currencies`/`tax_residency`/
+        `income_tax_band` (each introduced after `default_currency`),
+        backfilling just the missing attribute(s) onto it.
 
         The create is a conditional put (`attribute_not_exists(user_id)`) so
         a concurrent first login can't clobber a profile the user has
@@ -75,6 +92,8 @@ class UserProfileClient:
                 for attr, default in (
                     ("transaction_type", DEFAULT_TRANSACTION_TYPE),
                     ("fx_warmup_currencies", DEFAULT_FX_WARMUP_CURRENCIES),
+                    ("tax_residency", DEFAULT_TAX_RESIDENCY),
+                    ("income_tax_band", DEFAULT_INCOME_TAX_BAND),
                 )
                 if attr not in item
             }
@@ -95,6 +114,8 @@ class UserProfileClient:
             "default_currency": DEFAULT_CURRENCY,
             "transaction_type": DEFAULT_TRANSACTION_TYPE,
             "fx_warmup_currencies": DEFAULT_FX_WARMUP_CURRENCIES,
+            "tax_residency": DEFAULT_TAX_RESIDENCY,
+            "income_tax_band": DEFAULT_INCOME_TAX_BAND,
         }
         try:
             self._table.put_item(
@@ -133,6 +154,38 @@ class UserProfileClient:
             Key={"user_id": user_id},
             UpdateExpression="SET transaction_type = :t",
             ExpressionAttributeValues={":t": transaction_type},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])
+
+    def update_tax_residency(self, user_id: str, tax_residency: str) -> dict[str, Any]:
+        """Set `user_id`'s tax_residency, creating their profile first
+        (get_or_create_profile) if this is called before their first login.
+        Whether this is a supported value ("UK" only, in this v1) is the
+        caller's job to check first — this client only knows about
+        profiles, the same way `update_transaction_type` leaves its own
+        value check to its caller."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET tax_residency = :r",
+            ExpressionAttributeValues={":r": tax_residency},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])
+
+    def update_income_tax_band(self, user_id: str, income_tax_band: str) -> dict[str, Any]:
+        """Set `user_id`'s income_tax_band, creating their profile first
+        (get_or_create_profile) if this is called before their first login.
+        Whether this is one of the supported bands is the caller's job to
+        check first — this client only knows about profiles, the same way
+        `update_transaction_type` leaves its own value check to its
+        caller."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression="SET income_tax_band = :b",
+            ExpressionAttributeValues={":b": income_tax_band},
             ReturnValues="ALL_NEW",
         )
         return dict(response["Attributes"])

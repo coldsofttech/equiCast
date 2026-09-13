@@ -48,6 +48,7 @@ class TestCreateHoldingAndListing:
         assert holding["account_id"] == ACCOUNT_ID
         assert holding["pie_id"] is None
         assert holding["watchlist_id"] is None
+        assert holding["tax_override_pct"] is None
         assert client.list_holdings("auth0|abc123") == [holding]
 
     def test_create_holding_under_watchlist_persists_and_returns_it(self, s3_client) -> None:
@@ -556,3 +557,40 @@ class TestHoldingRollupBackfill:
         assert holding["invested"] == 0
         assert holding["dividends_native"] == 0
         assert holding["dividends"] == 0
+        assert holding["tax_override_pct"] is None
+
+
+class TestUpdateHoldingTaxOverride:
+    """GitHub issue #94: a per-holding override of the withholding tax rate
+    MarketDataClient.enrich_holdings otherwise derives from the ticker's
+    tax_domicile."""
+
+    def test_sets_the_override_leaving_other_fields_untouched(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+        holding = client.create_holding(
+            "auth0|abc123", ticker="AAPL", asset_class="stock", account_id=ACCOUNT_ID
+        )
+
+        updated = client.update_holding_tax_override("auth0|abc123", holding["id"], 30)
+
+        assert updated["tax_override_pct"] == 30
+        assert updated["ticker"] == "AAPL"
+        assert updated["id"] == holding["id"]
+        assert client.get_holding("auth0|abc123", holding["id"]) == updated
+
+    def test_clears_the_override_with_none(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+        holding = client.create_holding(
+            "auth0|abc123", ticker="AAPL", asset_class="stock", account_id=ACCOUNT_ID
+        )
+        client.update_holding_tax_override("auth0|abc123", holding["id"], 30)
+
+        updated = client.update_holding_tax_override("auth0|abc123", holding["id"], None)
+
+        assert updated["tax_override_pct"] is None
+
+    def test_raises_for_unknown_holding(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+
+        with pytest.raises(HoldingNotFoundError):
+            client.update_holding_tax_override("auth0|abc123", "nope", 15)

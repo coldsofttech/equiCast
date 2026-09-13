@@ -38,21 +38,26 @@ relies on that default — it resolves `dev`/`prod` itself and always passes
 `--tickers-json` explicitly.
 
 Each config entry is normally just a plain ticker string, but can instead be
-a `{ticker, isin}` mapping to manually override yfinance's ISIN lookup for
-that ticker (e.g. it came back empty, or wrong/outdated) — the override
-always wins over the fetched value:
+a `{ticker, isin, tax_domicile}` mapping to manually override yfinance's
+ISIN lookup for that ticker (e.g. it came back empty, or wrong/outdated),
+this v1's UK-tax `tax_domicile` (GitHub issue #94 — normally derived from
+the ISIN itself, see below), or both — either override always wins over its
+derived/fetched value:
 
 ```yaml
 tickers:
   - VOO
   - ticker: QQQ
     isin: US46090E1038
+  - ticker: IWDA
+    isin: IE00B4L5Y983
+    tax_domicile: US # e.g. a fund domiciled elsewhere than its listing suggests
 ```
 
 This shape survives being split into a `--tickers-json` matrix chunk (see
 `equicast_etf.plan._serialize_ticker`) and is understood by
 `equicast-forecasting`'s own standalone ticker loader too (it just discards
-the `isin`, having no use for it).
+the `isin`/`tax_domicile`, having no use for either).
 
 **`profile()`, `prices()`, dividends (via `equicast-dividends`'
 `DividendsClient`), events (via `equicast-events`' `EventsClient`),
@@ -93,8 +98,13 @@ For each ticker this writes:
 
 - `etf=<TICKER>/profile.parquet` — one row: name, quote type, ISIN
   (yfinance's `Ticker.isin` lookup, `null` when it has no ISIN on record —
-  overridable in `etfs.dev.yaml`/`etfs.prod.yaml`, see below), exchange,
-  currency, description, category, fund family, website, beta, expense
+  overridable in `etfs.dev.yaml`/`etfs.prod.yaml`, see below), tax domicile
+  (GitHub issue #94 — `UK`/`US` derived from the ISIN's leading country
+  code via `equicast_etf.cli._derive_tax_domicile`, `null` for any other/
+  missing ISIN — overridable the same way as `isin`; this v1 only models
+  UK/US, since UK tax logic only knows a hardcoded UK=0%/US=15% dividend
+  withholding rate for those two), exchange, currency, description,
+  category, fund family, website, beta, expense
   ratio, dividend rate/yield, dividend frequency (weekly/monthly/quarterly/
   half_yearly/yearly/irregular/not_applicable, derived from dividend
   history — see [packages/dividends/README.md](../packages/dividends/README.md#dividend_frequency)),

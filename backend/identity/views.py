@@ -18,6 +18,18 @@ SUPPORTED_CURRENCIES = {"GBP", "USD", "INR", "EUR"}
 #: account/pie records transactions in the same shape.
 TRANSACTION_TYPES = {"AVERAGE", "TRANSACTION"}
 
+#: Valid values for a user's tax_residency (GitHub issue #94) — v1 tax logic
+#: is UK-only, so "UK" is the only accepted value for now; a wider set
+#: arrives once non-UK tax logic does.
+TAX_RESIDENCIES = {"UK"}
+
+#: Valid values for a user's income_tax_band (GitHub issue #94) — a
+#: self-declared UK income tax band, not computed from any income data
+#: equicast has. "NONE" covers a non-taxpayer (below the personal
+#: allowance). Always per-user, never household-pooled — see
+#: equicast_core.user_profiles.DEFAULT_INCOME_TAX_BAND.
+INCOME_TAX_BANDS = {"NONE", "BASIC", "HIGHER", "ADDITIONAL"}
+
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
 _client = UserProfileClient(settings.USER_PROFILES_TABLE, region_name=settings.AWS_REGION)
@@ -52,11 +64,13 @@ class MeView(APIView):
             "default_currency" not in request.data
             and "transaction_type" not in request.data
             and "fx_warmup_currencies" not in request.data
+            and "tax_residency" not in request.data
+            and "income_tax_band" not in request.data
         ):
             return Response(
                 {
-                    "detail": "Missing field: default_currency, transaction_type, or "
-                    "fx_warmup_currencies."
+                    "detail": "Missing field: default_currency, transaction_type, "
+                    "fx_warmup_currencies, tax_residency, or income_tax_band."
                 },
                 status=400,
             )
@@ -98,5 +112,19 @@ class MeView(APIView):
                     status=409,
                 )
             profile = _client.update_transaction_type(user_id, transaction_type)
+
+        if "tax_residency" in request.data:
+            tax_residency = request.data["tax_residency"]
+            if tax_residency not in TAX_RESIDENCIES:
+                return Response({"detail": f"Unknown tax_residency '{tax_residency}'."}, status=400)
+            profile = _client.update_tax_residency(user_id, tax_residency)
+
+        if "income_tax_band" in request.data:
+            income_tax_band = request.data["income_tax_band"]
+            if income_tax_band not in INCOME_TAX_BANDS:
+                return Response(
+                    {"detail": f"Unknown income_tax_band '{income_tax_band}'."}, status=400
+                )
+            profile = _client.update_income_tax_band(user_id, income_tax_band)
 
         return Response(profile)

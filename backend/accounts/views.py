@@ -30,6 +30,14 @@ REQUIRED_CREATE_FIELDS = {"name", "description", "account_type"}
 OPTIONAL_CREATE_FIELDS = {"icon"}
 UPDATABLE_FIELDS = {"name", "description", "account_type", "icon"}
 
+#: Valid values for account_type — a.k.a. wrapper_type (GitHub issue #94):
+#: which UK tax wrapper this account is. Previously free text (any string
+#: the caller sent); closed to these five now that tax logic needs to
+#: branch on it. SIPP only — not workplace/personal/DB pensions, which
+#: aren't self-directed at the holding level and so don't fit equicast's
+#: holding-based model.
+ACCOUNT_TYPES = {"ISA", "GIA", "SIPP", "LISA", "JISA"}
+
 #: One shared client for the process, mirroring market_data/views.py's
 #: module-level _client pattern.
 _client = AccountsClient(
@@ -153,13 +161,17 @@ class AccountListView(APIView):
                 {"detail": f"Missing field(s): {', '.join(sorted(missing))}."}, status=400
             )
 
+        account_type = request.data["account_type"]
+        if account_type not in ACCOUNT_TYPES:
+            return Response({"detail": f"Unknown account_type '{account_type}'."}, status=400)
+
         optional_fields = {k: v for k, v in request.data.items() if k in OPTIONAL_CREATE_FIELDS}
         try:
             account = _client.create_account(
                 request.user.user_id,
                 name=request.data["name"],
                 description=request.data["description"],
-                account_type=request.data["account_type"],
+                account_type=account_type,
                 **optional_fields,
             )
         except AccountAlreadyExistsError:
@@ -197,6 +209,11 @@ class AccountDetailView(APIView):
     def patch(self, request: Request, account_id: str) -> Response:
         user_id = request.user.user_id
         fields = {k: v for k, v in request.data.items() if k in UPDATABLE_FIELDS}
+
+        if "account_type" in fields and fields["account_type"] not in ACCOUNT_TYPES:
+            return Response(
+                {"detail": f"Unknown account_type '{fields['account_type']}'."}, status=400
+            )
 
         try:
             account = _client.update_account(user_id, account_id, **fields)

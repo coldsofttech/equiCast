@@ -1012,6 +1012,8 @@ class TestEnrichHoldings:
             "current_price_native": 450.0,
             "current_price": 450.0,
             "last_updated": "2026-08-30T09:00:00+00:00",
+            "tax_domicile": None,
+            "default_withholding_pct": None,
         }
 
     def test_converts_current_price_using_the_direct_fx_pair(self, s3_client) -> None:
@@ -1054,6 +1056,8 @@ class TestEnrichHoldings:
         assert enriched["current_price_native"] is None
         assert enriched["current_price"] is None
         assert enriched["last_updated"] is None
+        assert enriched["tax_domicile"] is None
+        assert enriched["default_withholding_pct"] is None
 
     def test_returns_none_current_price_when_no_fx_rate_is_published(self, s3_client) -> None:
         _put_catalog(
@@ -1066,6 +1070,48 @@ class TestEnrichHoldings:
 
         assert enriched["current_price_native"] == 190.0
         assert enriched["current_price"] is None
+
+    def test_merges_uk_tax_domicile_with_zero_default_withholding(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "stock",
+            [{"ticker": "HSBA", "currency": "GBP", "tax_domicile": "UK"}],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "HSBA", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "GBP")
+
+        assert enriched["tax_domicile"] == "UK"
+        assert enriched["default_withholding_pct"] == 0
+
+    def test_merges_us_tax_domicile_with_15_pct_default_withholding(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "stock",
+            [{"ticker": "AAPL", "currency": "USD", "tax_domicile": "US"}],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "AAPL", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "USD")
+
+        assert enriched["tax_domicile"] == "US"
+        assert enriched["default_withholding_pct"] == 15
+
+    def test_default_withholding_pct_is_none_for_an_unmodeled_domicile(self, s3_client) -> None:
+        _put_catalog(
+            s3_client,
+            "etf",
+            [{"ticker": "IWDA", "currency": "USD", "tax_domicile": "IE"}],
+        )
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "IWDA", "asset_class": "etf"}
+
+        [enriched] = client.enrich_holdings([holding], "USD")
+
+        assert enriched["tax_domicile"] == "IE"
+        assert enriched["default_withholding_pct"] is None
 
     def test_reads_each_distinct_asset_class_catalog_once(self, s3_client, monkeypatch) -> None:
         _put_catalog(

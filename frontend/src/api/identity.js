@@ -7,6 +7,12 @@
  *   warm-up pairs against `default_currency` (see utils/fxWarmup.js and
  *   GitHub issue #149) — user-editable in Settings, defaults to `["GBP",
  *   "USD", "EUR"]` on first login.
+ * @property {"UK"} tax_residency - GitHub issue #94. v1 tax logic is
+ *   UK-only, so "UK" is the only accepted value for now — defaults to it
+ *   on first login.
+ * @property {"NONE"|"BASIC"|"HIGHER"|"ADDITIONAL"} income_tax_band - GitHub
+ *   issue #94. Self-declared UK income tax band ("NONE" = non-taxpayer,
+ *   below the personal allowance) — defaults to "BASIC" on first login.
  */
 
 /**
@@ -69,5 +75,34 @@ export function updateTransactionType(api, transactionType) {
 export function updateFxWarmupCurrencies(api, currencies) {
   return /** @type {Promise<UserProfile>} */ (
     api("/identity/me/", { method: "PATCH", body: { fx_warmup_currencies: currencies } })
+  );
+}
+
+/**
+ * PATCH /api/identity/me/ — see MeView.patch. GitHub issue #94; v1 tax
+ * logic is UK-only, so "UK" is the only accepted value for now.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {"UK"} taxResidency
+ * @returns {Promise<UserProfile>}
+ */
+export function updateTaxResidency(api, taxResidency) {
+  return /** @type {Promise<UserProfile>} */ (
+    api("/identity/me/", { method: "PATCH", body: { tax_residency: taxResidency } })
+  );
+}
+
+/**
+ * PATCH /api/identity/me/ — see MeView.patch. GitHub issue #94 — a
+ * self-declared UK income tax band, always per-user (never
+ * household-pooled).
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {"NONE"|"BASIC"|"HIGHER"|"ADDITIONAL"} incomeTaxBand
+ * @returns {Promise<UserProfile>}
+ */
+export function updateIncomeTaxBand(api, incomeTaxBand) {
+  return /** @type {Promise<UserProfile>} */ (
+    api("/identity/me/", { method: "PATCH", body: { income_tax_band: incomeTaxBand } })
   );
 }

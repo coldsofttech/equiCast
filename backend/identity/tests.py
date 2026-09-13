@@ -204,6 +204,90 @@ class MeViewTests(TestCase):
     @patch("identity.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
+    def test_patch_updates_tax_residency(self, mock_jwks_client, mock_decode, mock_client) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_client.update_tax_residency.return_value = {
+            "user_id": "auth0|abc123",
+            "tax_residency": "UK",
+        }
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"tax_residency": "UK"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"user_id": "auth0|abc123", "tax_residency": "UK"})
+        mock_client.update_tax_residency.assert_called_once_with("auth0|abc123", "UK")
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_rejects_unsupported_tax_residency(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"tax_residency": "US"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_client.update_tax_residency.assert_not_called()
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_income_tax_band(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_client.update_income_tax_band.return_value = {
+            "user_id": "auth0|abc123",
+            "income_tax_band": "HIGHER",
+        }
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"income_tax_band": "HIGHER"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), {"user_id": "auth0|abc123", "income_tax_band": "HIGHER"})
+        mock_client.update_income_tax_band.assert_called_once_with("auth0|abc123", "HIGHER")
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_rejects_unsupported_income_tax_band(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+
+        response = self.client.patch(
+            reverse("me"),
+            data={"income_tax_band": "EXTREME"},
+            content_type="application/json",
+            HTTP_AUTHORIZATION="Bearer validtoken",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        mock_client.update_income_tax_band.assert_not_called()
+
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
     def test_patch_rejects_unsupported_currency(
         self, mock_jwks_client, mock_decode, mock_client
     ) -> None:

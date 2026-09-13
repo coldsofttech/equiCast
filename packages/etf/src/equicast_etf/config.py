@@ -13,6 +13,7 @@ import yaml
 class ETFTicker:
     ticker: str
     isin: str | None = None
+    tax_domicile: str | None = None
 
     @property
     def key(self) -> str:
@@ -20,16 +21,26 @@ class ETFTicker:
 
 
 def _tickers_from_raw(raw: list[str | dict]) -> list[ETFTicker]:
-    """Each entry is either a plain ticker string, or a `{ticker, isin}`
-    mapping for a ticker whose ISIN needs a manual override (yfinance's
-    lookup missed it, or returned a wrong/outdated value) — the override
-    always wins over the fetched value, see `ETFClient.profile`."""
+    """Each entry is either a plain ticker string, or a `{ticker, isin,
+    tax_domicile}` mapping for a ticker needing a manual override —
+    `isin` for when yfinance's lookup missed it or returned a wrong/
+    outdated value, `tax_domicile` for when the ticker's ISIN-derived
+    domicile (see `equicast_etf.cli._derive_tax_domicile`) isn't right
+    for this instrument (e.g. a fund domiciled somewhere other than its
+    listing/issuer country) — either override always wins over the
+    derived/fetched value, see `ETFClient.profile`/`cli._profile_and_dividends_task`."""
     tickers = []
     for entry in raw:
         if isinstance(entry, str):
             tickers.append(ETFTicker(ticker=entry.upper()))
         else:
-            tickers.append(ETFTicker(ticker=entry["ticker"].upper(), isin=entry.get("isin")))
+            tickers.append(
+                ETFTicker(
+                    ticker=entry["ticker"].upper(),
+                    isin=entry.get("isin"),
+                    tax_domicile=entry.get("tax_domicile"),
+                )
+            )
     return tickers
 
 

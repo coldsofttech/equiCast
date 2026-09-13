@@ -61,6 +61,7 @@ CATALOG_SCHEMA = pa.schema(
         pa.field("sector", pa.string()),
         pa.field("industry", pa.string()),
         pa.field("isin", pa.string()),
+        pa.field("tax_domicile", pa.string()),
         pa.field("last_updated", pa.string()),
     ]
 )
@@ -102,8 +103,11 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     either, and for fx, which has no such concept at all), and `last_updated` (every
     asset class's profile carries this field already, stamped by its own
     ingestion pipeline — see equicast_stock/etf/fx/benchmark's writers/
-    clients — so it round-trips here unchanged), and `isin` (stock/etf
-    profiles only; `None` for fx/benchmark, which don't carry one).
+    clients — so it round-trips here unchanged), `isin` (stock/etf
+    profiles only; `None` for fx/benchmark, which don't carry one), and
+    `tax_domicile` (GitHub issue #94 — stock/etf profiles only, either
+    that ticker's config override or derived from its `isin`; see
+    `equicast_stock.cli._derive_tax_domicile`).
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
     run, and no reliance on filesystem iteration order)."""
@@ -126,6 +130,7 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
                 "sector": profile.get("sector"),
                 "industry": profile.get("industry"),
                 "isin": profile.get("isin"),
+                "tax_domicile": profile.get("tax_domicile"),
                 "last_updated": profile.get("last_updated"),
             }
         )

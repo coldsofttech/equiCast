@@ -86,17 +86,22 @@ for how the cache itself works.
   returning `{count, page, page_size, total_pages, results}`
 - `GET /api/identity/me/` — requires a valid Auth0-issued Bearer token;
   returns the caller's profile (`user_id`, `default_currency`,
-  `transaction_type`), creating it with `default_currency: "GBP"`,
-  `transaction_type: "AVERAGE"` on first login
-- `PATCH /api/identity/me/` — updates `default_currency` and/or
-  `transaction_type` (a single setting governing how every holding across
-  every one of the caller's accounts/pies records transactions — see
-  `POST /api/transactions/` below); `transaction_type` is rejected with
-  `409` once the caller has any transaction recorded, across any holding
+  `transaction_type`, `tax_residency`, `income_tax_band`), creating it with
+  `default_currency: "GBP"`, `transaction_type: "AVERAGE"`,
+  `tax_residency: "UK"`, `income_tax_band: "BASIC"` on first login
+- `PATCH /api/identity/me/` — updates `default_currency`, `transaction_type`
+  (a single setting governing how every holding across every one of the
+  caller's accounts/pies records transactions — see
+  `POST /api/transactions/` below; rejected with `409` once the caller has
+  any transaction recorded, across any holding), `tax_residency` (GitHub
+  issue #94 — `"UK"` only, in this v1), and/or `income_tax_band`
+  (`"NONE"`/`"BASIC"`/`"HIGHER"`/`"ADDITIONAL"`, self-declared)
 - `GET /api/accounts/` — requires a valid Auth0-issued Bearer token; lists
   the caller's accounts
 - `POST /api/accounts/` — creates an account (`name`, `description`,
-  `account_type`); `409` once the caller has `MAX_ACCOUNTS`
+  `account_type` — one of `ISA`/`GIA`/`SIPP`/`LISA`/`JISA`, GitHub issue
+  #94); `400` for an unknown `account_type`; `409` once the caller has
+  `MAX_ACCOUNTS`
 - `GET /api/accounts/<id>/` — an account's details plus its nested `pies`
   (each with its own nested `holdings`) and the account's own direct
   `holdings`
@@ -150,10 +155,15 @@ for how the cache itself works.
   isn't created either (S3 has no cross-object transaction of its own, so
   this is a compensating delete rather than a real rollback)
 - `GET /api/holdings/<id>/` — a holding's details
+- `PATCH /api/holdings/<id>/` — sets `tax_override_pct` (GitHub issue #94 —
+  the only field a holding supports patching; every other field is
+  immutable, driven by its transactions instead), overriding the
+  withholding tax rate otherwise derived from the ticker's `tax_domicile`
+  (see `/api/market/...` below); `0`-`100` or `null` to clear the override;
+  `400` for anything else
 - `DELETE /api/holdings/<id>/` — deletes an account-direct or watchlist
   holding (`400` for a pie-scoped one — use the pie's batch endpoint
-  instead); no `PATCH` — a holding's fields are immutable. Cascades into
-  deleting the holding's own transactions
+  instead). Cascades into deleting the holding's own transactions
 - `GET /api/transactions/` — lists the caller's transactions; optional
   `?holding_id=`, `?year=`, `?date_from=`/`?date_to=` filters (a legacy
   record predating the mandatory `date` field never matches the date

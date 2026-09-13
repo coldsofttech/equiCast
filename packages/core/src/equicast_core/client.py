@@ -37,6 +37,14 @@ from equicast_core.catalog import catalog_key
 #: unfiltered search (TopbarSearch, SearchPage's "All types") scans.
 ASSET_CLASSES = ("fx", "stock", "etf", "benchmark")
 
+#: This v1's hardcoded dividend withholding tax rate by `tax_domicile`
+#: (GitHub issue #94) — UK companies withhold nothing on dividends at
+#: source, US ones withhold 15% for a UK-resident holder under the US-UK
+#: tax treaty. A domicile outside this map (or unset) isn't modeled yet —
+#: `enrich_holdings` leaves `default_withholding_pct` `None` for it, same
+#: as any other unresolved market-data field.
+DEFAULT_WITHHOLDING_PCT_BY_DOMICILE = {"UK": 0, "US": 15}
+
 #: Every asset class `search()` scans when no `asset_classes` filter is
 #: given, in a fixed order so results are grouped predictably rather than
 #: interleaved by whatever order a caller happened to pass filters in.
@@ -770,7 +778,14 @@ class MarketDataClient:
         (the catalog's own, i.e. that ticker's ingestion pipeline's last run
         — see `equicast_core.catalog.build_catalog_rows`), so a caller can
         derive current value/profit-loss, or a "Synced" date, without a
-        market-data round trip per ticker.
+        market-data round trip per ticker. Also merges `tax_domicile` (the
+        catalog's own, ISIN-derived value — see
+        `equicast_stock.cli._derive_tax_domicile`) and
+        `default_withholding_pct` (GitHub issue #94 — this v1's hardcoded
+        UK=0%/US=15% dividend withholding tax rate for that domicile, `None`
+        for an unmodeled/unknown domicile), so a caller can show the actual
+        rate that applies before any holding-level `tax_override_pct`
+        (stored on the holding itself, untouched here) overrides it.
 
         Reads each distinct asset class present in `holdings` once (via
         `get_catalog`), plus the `fx` catalog for currency conversion, so a
@@ -812,6 +827,7 @@ class MarketDataClient:
                 if current_price_native is not None and rate is not None
                 else None
             )
+            tax_domicile = row.get("tax_domicile") if row else None
             enriched.append(
                 {
                     **holding,
@@ -823,6 +839,12 @@ class MarketDataClient:
                     "current_price_native": current_price_native,
                     "current_price": current_price,
                     "last_updated": row.get("last_updated") if row else None,
+                    "tax_domicile": tax_domicile,
+                    "default_withholding_pct": (
+                        DEFAULT_WITHHOLDING_PCT_BY_DOMICILE.get(tax_domicile)
+                        if tax_domicile
+                        else None
+                    ),
                 }
             )
         return enriched

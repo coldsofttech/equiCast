@@ -2,10 +2,28 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-from equicast_etf.cli import run
+import pytest
+from equicast_etf.cli import _derive_tax_domicile, run
 
 
-def _fake_etf_client_factory(created: list[MagicMock] | None = None):
+@pytest.mark.parametrize(
+    ("isin", "expected"),
+    [
+        ("US46090E1038", "US"),
+        ("IE00B4L5Y983", None),  # unmodeled country
+        ("gb00b03mlx29", "UK"),  # case-insensitive
+        (None, None),
+        ("", None),
+    ],
+)
+def test_derive_tax_domicile(isin: str | None, expected: str | None) -> None:
+    assert _derive_tax_domicile(isin) == expected
+
+
+def _fake_etf_client_factory(
+    created: list[MagicMock] | None = None,
+    profile_overrides: dict[str, dict] | None = None,
+):
     def fake_etf_client(ticker: str, datafeed=None) -> MagicMock:
         client = MagicMock()
         client.symbol = ticker
@@ -13,6 +31,7 @@ def _fake_etf_client_factory(created: list[MagicMock] | None = None):
             "ticker": ticker,
             "name": f"{ticker} Trust",
             "quote_type": "ETF",
+            "isin": None,
             "exchange": "PCX",
             "currency": "USD",
             "description": f"{ticker} description.",
@@ -40,6 +59,7 @@ def _fake_etf_client_factory(created: list[MagicMock] | None = None):
             "inception_date": "2000-01-01T00:00:00+00:00",
             "last_updated": "2026-08-28T21:29:05+00:00",
             "source": "yfinance",
+            **(profile_overrides or {}).get(ticker, {}),
         }
         client.prices.return_value = [
             {
@@ -190,10 +210,14 @@ def _patch_clients(
     dividend_records: list[dict] | None = None,
     future_dividend_records: list[dict] | None = None,
     news_records: list[dict] | None = None,
+    etf_profile_overrides: dict[str, dict] | None = None,
 ):
     return (
         patch("equicast_etf.cli.DatafeedClient"),
-        patch("equicast_etf.cli.ETFClient", side_effect=_fake_etf_client_factory(etf_created)),
+        patch(
+            "equicast_etf.cli.ETFClient",
+            side_effect=_fake_etf_client_factory(etf_created, etf_profile_overrides),
+        ),
         patch(
             "equicast_etf.cli.DividendsClient",
             side_effect=_fake_dividends_client_factory(
@@ -234,6 +258,72 @@ def test_run_writes_profile_price_dividend_events_metrics_and_news_parquet_per_c
         assert (out_dir / f"etf={ticker}" / "events" / "current.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "metrics.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "news.parquet").exists()
+
+
+def test_run_applies_isin_override_to_profile(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "VOO", "isin": "US9229083632"}]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert profile["isin"].iloc[0] == "US9229083632"
+
+
+def test_run_derives_tax_domicile_from_isin_when_not_overridden(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients(etf_profile_overrides={"VOO": {"isin": "US9229083632"}})
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='["VOO"]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "US"
+
+
+def test_run_derives_tax_domicile_from_isin_override(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "ISF", "isin": "GB00B0CNH163"}]')
+
+    profile = pd.read_parquet(out_dir / "etf=ISF" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "UK"
+
+
+def test_run_tax_domicile_override_wins_over_isin_derived_value(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients(etf_profile_overrides={"VOO": {"isin": "US9229083632"}})
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "VOO", "tax_domicile": "OTHER"}]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "OTHER"
+
+
+def test_run_tax_domicile_is_none_for_an_unmodeled_isin_country(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "IWDA", "isin": "IE00B4L5Y983"}]')
+
+    profile = pd.read_parquet(out_dir / "etf=IWDA" / "profile.parquet")
+    assert pd.isna(profile["tax_domicile"].iloc[0])
+
+
+def test_run_tax_domicile_is_none_when_isin_is_unset(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='["VOO"]')
+
+    profile = pd.read_parquet(out_dir / "etf=VOO" / "profile.parquet")
+    assert pd.isna(profile["tax_domicile"].iloc[0])
 
 
 def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> None:

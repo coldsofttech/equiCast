@@ -9,6 +9,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- UK tax fields (GitHub issue #94), v1 logic only — nothing beyond what's
+  described here is applied yet (no withholding is actually deducted from
+  recorded dividend amounts):
+  - `wrapper_type`/`account_type` on an account is now a closed enum —
+    `ISA`/`GIA`/`SIPP`/`LISA`/`JISA` — validated in
+    `backend/accounts/views.py` (`ACCOUNT_TYPES`) instead of free text;
+    the frontend's `AccountForm` picker is a `<select>` of full names
+    (e.g. "Individual Savings Account (ISA)") instead of a
+    `<datalist>`-backed text field. SIPP only, not workplace/personal/DB
+    pensions — those aren't self-directed at the holding level.
+  - `tax_residency` (fixed to `"UK"` in v1) and `income_tax_band`
+    (`NONE`/`BASIC`/`HIGHER`/`ADDITIONAL`, self-declared, not computed
+    from income) on the user profile — new `UserProfileClient` defaults/
+    backfill/update methods, validated in `identity/views.py`
+    (`TAX_RESIDENCIES`/`INCOME_TAX_BANDS`), editable in `SettingsModal`.
+    Always per-user, never household-pooled, even once a future household
+    feature groups users for display.
+  - `tax_domicile`, ISIN-derived (`GB`→`UK`, `US`→`US`, else unset) by a
+    new `_derive_tax_domicile` in both `equicast_stock`/`equicast_etf`'s
+    `cli.py`, overridable per ticker via `stocks.yaml`/`etfs.yaml`
+    (`StockTicker`/`ETFTicker` gained a `tax_domicile` field alongside the
+    existing `isin` override, round-tripped through
+    `plan.py`'s matrix-chunk serialization the same way). Carried through
+    `equicast_core.catalog`'s catalog schema and merged into holdings by
+    `MarketDataClient.enrich_holdings`, alongside a computed
+    `default_withholding_pct` (this v1's hardcoded UK=0%/US=15% dividend
+    withholding tax by domicile — UK companies withhold nothing at
+    source; 15% is the US-UK treaty rate — `None` for any other/unset
+    domicile).
+  - `tax_override_pct` on a holding-in-account — overrides
+    `default_withholding_pct` per holding (e.g. no W-8BEN on file for that
+    account, so the real US rate is 30% not 15%). New
+    `HoldingsClient.update_holding_tax_override`, exposed as
+    `PATCH /api/holdings/<id>/` (0–100 or `null` to clear), editable
+    inline per row in `HoldingInstancesTable`'s new "WHT override %"
+    column (only calls the API when the blurred value actually changed).
+    `HoldingTickerPage` also shows a "Tax domicile" badge alongside ISIN.
+
+  Requires re-running the stock/etf ingestion pipeline (locally:
+  `local-dev.ps1 -SeedMarketData`) before `tax_domicile` appears on
+  existing market data. No migration for accounts whose `account_type`
+  predates the enum (e.g. an old free-text "Trading") — editing one now
+  requires picking a valid type.
+
 - Optional `sdrt` (UK Stamp Duty Reserve Tax, GitHub issue #100) and
   `fx_fee` (currency-conversion fee, GitHub issue #101) fields on
   transactions — both already in the user's default currency, unlike every

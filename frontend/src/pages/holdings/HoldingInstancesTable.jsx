@@ -19,6 +19,7 @@ import { formatPrice } from "./holdingFinancials.js";
  *   fxState: "loading"|"ok"|"unavailable",
  *   onDelete: (instance: object) => void,
  *   onRowClick: (instance: object) => void,
+ *   onTaxOverrideCommit: (instance: object, taxOverridePct: number|null) => void,
  * }} props
  */
 function HoldingInstancesTable({
@@ -29,7 +30,23 @@ function HoldingInstancesTable({
   fxState,
   onDelete,
   onRowClick,
+  onTaxOverrideCommit,
 }) {
+  const commitTaxOverride = (event, instance) => {
+    const current = instance.holding.tax_override_pct ?? null;
+    const raw = event.target.value.trim();
+    if (raw === "") {
+      if (current !== null) onTaxOverrideCommit(instance, null);
+      return;
+    }
+    const parsed = Number(raw);
+    if (Number.isNaN(parsed) || parsed < 0 || parsed > 100) {
+      event.target.value = current ?? "";
+      return;
+    }
+    if (parsed !== current) onTaxOverrideCommit(instance, parsed);
+  };
+
   return (
     <>
       <div className="ec-table-wrap">
@@ -40,6 +57,7 @@ function HoldingInstancesTable({
               <th>Avg price (native)</th>
               <th>Avg price{defaultCurrency ? ` (${defaultCurrency})` : ""}</th>
               <th>Location</th>
+              <th>WHT override %</th>
               <th aria-label="Actions" />
             </tr>
           </thead>
@@ -66,6 +84,27 @@ function HoldingInstancesTable({
                   )}
                 </td>
                 <td>{instance.location}</td>
+                <td onClick={(event) => event.stopPropagation()}>
+                  <input
+                    key={`${instance.holding.id}-${instance.holding.tax_override_pct}`}
+                    type="number"
+                    className="ec-input"
+                    min={0}
+                    max={100}
+                    step="0.1"
+                    defaultValue={instance.holding.tax_override_pct ?? ""}
+                    placeholder={
+                      instance.holding.default_withholding_pct != null
+                        ? String(instance.holding.default_withholding_pct)
+                        : "—"
+                    }
+                    aria-label={`Withholding tax override for this holding in ${instance.location}`}
+                    onBlur={(event) => commitTaxOverride(event, instance)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.target.blur();
+                    }}
+                  />
+                </td>
                 <td>
                   <div className="ec-table-actions">
                     <button

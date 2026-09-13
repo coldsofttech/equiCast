@@ -121,10 +121,14 @@ class AccountListViewTests(TestCase):
             "watchlist_id": None,
         }
         enriched_pie_holding = {
-            **pie_holding, "current_price_native": 450.0, "current_price": 450.0
+            **pie_holding,
+            "current_price_native": 450.0,
+            "current_price": 450.0,
         }
         enriched_direct_holding = {
-            **direct_holding, "current_price_native": 190.0, "current_price": 190.0
+            **direct_holding,
+            "current_price_native": 190.0,
+            "current_price": 190.0,
         }
         mock_client.list_accounts.return_value = [ACCOUNT]
         mock_pies_client.list_pies.return_value = [pie]
@@ -217,6 +221,20 @@ class AccountListViewTests(TestCase):
         response = self.client.post(
             reverse("accounts-list"),
             data={"name": "ISA"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_returns_400_for_unknown_account_type(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("accounts-list"),
+            data={"name": "ISA", "description": "", "account_type": "Trading"},
             content_type="application/json",
             **AUTH_HEADER,
         )
@@ -323,10 +341,14 @@ class AccountDetailViewTests(TestCase):
             "watchlist_id": None,
         }
         enriched_pie_holding = {
-            **pie_holding, "current_price_native": 450.0, "current_price": 450.0
+            **pie_holding,
+            "current_price_native": 450.0,
+            "current_price": 450.0,
         }
         enriched_direct_holding = {
-            **direct_holding, "current_price_native": 190.0, "current_price": 190.0
+            **direct_holding,
+            "current_price_native": 190.0,
+            "current_price": 190.0,
         }
         mock_pies_client.list_pies.return_value = [pie]
         mock_holdings_client.list_holdings.return_value = [pie_holding, direct_holding]
@@ -406,6 +428,22 @@ class AccountDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         mock_client.update_account.assert_called_once_with("auth0|abc123", "acc-1", icon="bank2")
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_400_for_unknown_account_type(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.patch(
+            reverse("accounts-detail", args=["acc-1"]),
+            data={"account_type": "Trading"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
 
     @patch("accounts.views._client")
     @patch("identity.authentication.jwt.decode")

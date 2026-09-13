@@ -53,11 +53,15 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def _serialize_ticker(ticker: StockTicker) -> str | dict:
-    """Plain ticker string when there's no ISIN override, else a
-    `{ticker, isin}` mapping — round-trips through `parse_stock_tickers_json`
-    (via `_tickers_from_raw`) so an override in the config survives being
-    split into a GitHub Actions matrix chunk."""
-    return {"ticker": ticker.ticker, "isin": ticker.isin} if ticker.isin else ticker.ticker
+    """Plain ticker string when there's no ISIN/tax_domicile override, else
+    a `{ticker, isin, tax_domicile}` mapping (only the overrides actually
+    set) — round-trips through `parse_stock_tickers_json` (via
+    `_tickers_from_raw`) so an override in the config survives being split
+    into a GitHub Actions matrix chunk."""
+    overrides = {
+        k: v for k, v in {"isin": ticker.isin, "tax_domicile": ticker.tax_domicile}.items() if v
+    }
+    return {"ticker": ticker.ticker, **overrides} if overrides else ticker.ticker
 
 
 def main() -> None:

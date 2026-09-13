@@ -435,6 +435,7 @@ export const MARKET_PROFILE_BADGE_TONES = {
   quoteType: "accent",
   isin: "purple",
   synced: "info",
+  taxDomicile: "warning",
 };
 
 /**

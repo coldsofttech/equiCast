@@ -1,7 +1,12 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
-import { updateDefaultCurrency, updateFxWarmupCurrencies } from "../../api/identity.js";
+import {
+  updateDefaultCurrency,
+  updateFxWarmupCurrencies,
+  updateIncomeTaxBand,
+  updateTaxResidency,
+} from "../../api/identity.js";
 import SettingsModal from "./SettingsModal.jsx";
 
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
@@ -9,6 +14,8 @@ vi.mock("../../api/identity.js", () => ({
   updateDefaultCurrency: vi.fn(),
   updateTransactionType: vi.fn(),
   updateFxWarmupCurrencies: vi.fn(),
+  updateTaxResidency: vi.fn(),
+  updateIncomeTaxBand: vi.fn(),
 }));
 
 afterEach(() => {
@@ -100,6 +107,48 @@ describe("SettingsModal", () => {
 
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated));
     expect(updateFxWarmupCurrencies).toHaveBeenCalledWith(expect.any(Function), ["GBP", "USD"]);
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it("pre-selects the profile's current income_tax_band, defaulting tax_residency to UK", () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+
+    render(
+      <SettingsModal
+        open
+        onClose={vi.fn()}
+        profile={{ default_currency: "GBP", income_tax_band: "HIGHER" }}
+        onSaved={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText("Tax residency")).toHaveValue("UK");
+    expect(screen.getByLabelText("Income tax band")).toHaveValue("HIGHER");
+  });
+
+  it("saves a changed income_tax_band selection", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    const updated = { user_id: "auth0|abc", income_tax_band: "ADDITIONAL" };
+    vi.mocked(updateIncomeTaxBand).mockResolvedValue(updated);
+    const onSaved = vi.fn();
+    const onClose = vi.fn();
+
+    render(
+      <SettingsModal
+        open
+        onClose={onClose}
+        profile={{ default_currency: "GBP", income_tax_band: "BASIC" }}
+        onSaved={onSaved}
+      />
+    );
+    fireEvent.change(screen.getByLabelText("Income tax band"), {
+      target: { value: "ADDITIONAL" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith(updated));
+    expect(updateIncomeTaxBand).toHaveBeenCalledWith(expect.any(Function), "ADDITIONAL");
+    expect(updateTaxResidency).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
   });
 });
