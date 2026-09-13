@@ -284,11 +284,12 @@ jobs:
             --bucket "${{ needs.plan.outputs.bucket }}"
 
       # GitHub issue #215: consolidate tickers with no ISIN on record and
-      # notify via a GitHub issue rather than a separate email integration
-      # (GitHub already emails watchers when an issue is opened/updated).
-      # Reads the catalog just uploaded above — it already carries each
-      # ticker's isin (see equicast_core.catalog) — rather than re-scanning
-      # every chunk's individual profile.parquet.
+      # notify via a persistent parent GitHub issue with one native
+      # sub-issue per missing ticker, rather than a separate email
+      # integration (GitHub already emails watchers when an issue is
+      # opened/updated). Reads the catalog just uploaded above — it
+      # already carries each ticker's isin (see equicast_core.catalog) —
+      # rather than re-scanning every chunk's individual profile.parquet.
       - name: Download the freshly-built catalog
         run: aws s3 cp "s3://${{ needs.plan.outputs.bucket }}/catalog/stock.parquet" catalog.parquet
 
@@ -306,5 +307,6 @@ jobs:
         run: |
           bash .github/scripts/sync-missing-isin-issue.sh \
             "Stock ingestion: tickers missing ISIN" \
+            "stock" \
             "packages/stock/config/stocks.prod.yaml" \
             "${{ steps.missing_isin.outputs.tickers }}"
