@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Account/pie price charts now plot a true since-inception reconstruction
+  instead of "what today's holdings would have been worth historically"
+  (GitHub issue #194): the blue line is point-in-time current value
+  (shares actually held on each date, valued at that date's own price) and
+  the new grey dashed line is point-in-time invested value (that position's
+  own running cost basis, reduced by average cost on a SELL) — both start
+  on the real date of the first BUY across the account's/pie's holdings and
+  run to today, so they move up and down together as positions build up,
+  get trimmed, and get re-priced over time. The old static "current price"
+  dashed reference line is gone — the blue line already is current value.
+  The date-range picker (`frontend/src/pages/priceRangeSlicing.js`'s new
+  `visibleRanges`) now only offers presets the actual investment history
+  could show (no "10Y" button for a 3-month-old position). A "compare
+  against" pie/account/benchmark is unaffected — it keeps the pre-existing
+  "today's shares" aggregate, with no invested/current overlay of its own.
+
 ### Added
 
 - Missing-ISIN GitHub issue notification (GitHub issue #215):

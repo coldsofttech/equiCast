@@ -281,6 +281,9 @@ const X_AXIS_MAX_TICKS = 6;
  * published) draws the same way, in the accent info color instead of grey
  * so it reads as a distinct marker from the avg-price line whenever the
  * two are both on-screen and don't coincide with the series' own last bar.
+ * Neither draws — nor shows its legend badge — once a comparison is active
+ * (pctMode), since a per-share price reference isn't meaningful on the %
+ * growth axis a comparison switches to.
  *
  * Picking a benchmark (not a holding/ticker) as the comparison also renders
  * HoldingBenchmarkRating below the chart — a real 0-100 rating derived
@@ -592,20 +595,8 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     return compareAlignedCloses.map((c) => c / first);
   }, [compareAlignedCloses]);
 
-  const avgRatio = useMemo(() => {
-    if (avgPrice == null || bars.length === 0) return null;
-    return avgPrice / bars[0].close;
-  }, [avgPrice, bars]);
-
-  const currentRatio = useMemo(() => {
-    if (currentPrice == null || bars.length === 0) return null;
-    return currentPrice / bars[0].close;
-  }, [currentPrice, bars]);
-
   const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
   const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
-  const avgLog = avgRatio != null ? Math.log(avgRatio) : null;
-  const currentLog = currentRatio != null ? Math.log(currentRatio) : null;
 
   // The legend's total-change badges stay in plain (linear) %, since "up
   // 27,918%" reads naturally there — only the chart's own y-positions use
@@ -617,15 +608,13 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
     if (pctMode) {
       const values = [...(mainLog ?? []), 0];
       if (compareLog) values.push(...compareLog);
-      if (avgLog != null) values.push(avgLog);
-      if (currentLog != null) values.push(currentLog);
       return { min: Math.min(...values), max: Math.max(...values) };
     }
     const values = bars.flatMap((b) => [b.high, b.low]);
     if (avgPrice != null) values.push(avgPrice);
     if (currentPrice != null) values.push(currentPrice);
     return { min: Math.min(...values), max: Math.max(...values) };
-  }, [bars, pctMode, mainLog, compareLog, avgLog, avgPrice, currentLog, currentPrice]);
+  }, [bars, pctMode, mainLog, compareLog, avgPrice, currentPrice]);
 
   const rangeSpan = max - min || 1;
   const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
@@ -861,13 +850,13 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                 </span>
               </span>
             )}
-            {avgPrice != null && (
+            {!pctMode && avgPrice != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
                 Avg buy price: <Balance>{formatPrice(avgPrice, seriesCurrency)}</Balance>
               </span>
             )}
-            {currentPrice != null && (
+            {!pctMode && currentPrice != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
                 Current price: <Balance>{formatPrice(currentPrice, seriesCurrency)}</Balance>
@@ -952,24 +941,6 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                       clipPath={`url(#${compareClipId})`}
                     />
                   </>
-                )}
-                {avgLog != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(avgLog)}
-                    y2={yFor(avgLog)}
-                    className="ec-chart-avg-line"
-                  />
-                )}
-                {currentLog != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(currentLog)}
-                    y2={yFor(currentLog)}
-                    className="ec-chart-current-line"
-                  />
                 )}
               </>
             ) : (

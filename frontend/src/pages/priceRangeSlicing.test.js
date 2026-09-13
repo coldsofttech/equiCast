@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { sliceForRange } from "./priceRangeSlicing.js";
+import { sliceForRange, visibleRanges } from "./priceRangeSlicing.js";
 
 function bar(date) {
   return { date, open: 1, high: 1, low: 1, close: 1 };
@@ -73,5 +73,52 @@ describe("sliceForRange", () => {
     const feb = { daily: [bar("2026-02-27"), bar("2026-02-28"), bar("2026-03-01")] };
     const result = sliceForRange(feb, "1m", new Date(2026, 2, 31));
     expect(result.map((b) => b.date)).toEqual(["2026-02-28", "2026-03-01"]);
+  });
+});
+
+describe("visibleRanges", () => {
+  const today = new Date(2026, 8, 13); // 2026-09-13
+
+  it("returns every range when earliestDate is unknown", () => {
+    expect(visibleRanges(null, today).map((r) => r.id)).toEqual([
+      "5d",
+      "1m",
+      "6m",
+      "ytd",
+      "1y",
+      "2y",
+      "3y",
+      "5y",
+      "10y",
+      "max",
+    ]);
+  });
+
+  it("keeps only up to the first preset that already covers a 3-month-old investment", () => {
+    // cutoff for 6m (2026-03-13) reaches back on/before 2026-06-13, so 6m is
+    // the "show everything" option and 1y/2y/3y/5y/10y are dropped.
+    const result = visibleRanges("2026-06-13", today);
+    expect(result.map((r) => r.id)).toEqual(["5d", "1m", "6m", "ytd", "max"]);
+  });
+
+  it("drops every month-based preset for an investment made days ago", () => {
+    const result = visibleRanges("2026-09-10", today);
+    expect(result.map((r) => r.id)).toEqual(["5d", "1m", "ytd", "max"]);
+  });
+
+  it("always includes 5d/ytd/max even for a decade-old investment", () => {
+    const result = visibleRanges("2015-01-01", today);
+    expect(result.map((r) => r.id)).toEqual([
+      "5d",
+      "1m",
+      "6m",
+      "ytd",
+      "1y",
+      "2y",
+      "3y",
+      "5y",
+      "10y",
+      "max",
+    ]);
   });
 });

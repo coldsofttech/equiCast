@@ -295,7 +295,6 @@ function PieDetailPage() {
         compareItemType="pie"
         fetchCompareHoldings={fetchCompareHoldings}
         investedTotal={totals.invested}
-        currentValueTotal={totals.currentValue}
         holdingValuations={holdingValuations}
       />
 
