@@ -27,10 +27,13 @@ share-based dividends) are recognized-but-not-trades — silently skipped,
 counted in `rows_skipped` — rather than actually modeled as position
 changes; see the transaction-import follow-up GitHub issues for each.
 
-Matching an imported row to equicast's instrument catalog is ticker-based
-only for now (`MarketDataClient.get_profile`) — ISIN-based matching (a
-Trading 212 row's `isin` is parsed but currently unused beyond display) is
-a deferred follow-up, see GitHub issue #191.
+Matching an imported row to equicast's instrument catalog tries `isin`
+first (an exact, case-insensitive match against the stock/etf catalogs —
+ticker symbols aren't globally unique across exchanges/asset classes,
+unlike an ISIN), falling back to ticker-based resolution otherwise (see
+`_resolve_asset_class`, GitHub issue #191) — a row that resolves by
+neither is left unresolved for the user to map by hand during preview
+review.
 
 An AVERAGE-mode target holding that already has a position is *extended*
 by a commit, not skipped or overwritten: the existing position and the
@@ -127,19 +130,51 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         "price_native": row.price_native,
         "currency": row.currency,
         "fx_rate": row.fx_rate,
+        # sdrt only ever applies to a BUY (stamp duty is a buyer-only tax) -
+        # gated here so a broker row that happened to report one on a SELL
+        # (shouldn't happen, but the column is read unconditionally by the
+        # parser) never reaches create_transaction's own gate as anything
+        # but None; fx_fee needs no such gate since ParsedRow.type is only
+        # ever BUY/SELL, both of which accept it.
+        "sdrt": row.sdrt if row.type == "BUY" else None,
+        "fx_fee": row.fx_fee,
     }
 
 
+def _find_by_isin(isin: str) -> tuple[str | None, dict[str, Any] | None]:
+    """Look up `isin` (exact, case-insensitive) across every transactable
+    asset class's catalog, returning `(asset_class, profile)` for the first
+    match or `(None, None)` if none — see `_resolve_asset_class`, GitHub
+    issue #191. Catalog rows carry `isin` for stock/etf only (see
+    `equicast_core.catalog`), so fx/benchmark never match here regardless."""
+    isin_upper = isin.upper()
+    for asset_class in ("stock", "etf"):
+        for row in _market_data_client.get_catalog(asset_class):
+            if row.get("isin") and row["isin"].upper() == isin_upper:
+                profile = _market_data_client.get_profile(asset_class, row["ticker"])
+                if profile is not None:
+                    return asset_class, profile
+    return None, None
+
+
 def _resolve_asset_class(
-    ticker: str, hint: str | None
+    ticker: str, hint: str | None, isin: str | None = None
 ) -> tuple[str | None, dict[str, Any] | None]:
-    """Resolve `ticker` against the market-data catalog, returning
-    `(asset_class, profile)` or `(None, None)` if nothing matches. Tries
-    `hint` first when it's a real transactable asset class (the generic CSV
-    preset supplies one; Trading 212 rows never do), then falls back to
-    every transactable asset class in a fixed order — this is what lets a
-    Trading 212 ticker resolve at all despite carrying no asset_class of its
-    own."""
+    """Resolve a row to `(asset_class, profile)`, or `(None, None)` if
+    nothing matches — left for the user to map by hand during preview
+    review (see docs/importing-transactions.md). GitHub issue #191: tries
+    `isin` first when the row has one (ticker symbols aren't globally
+    unique across exchanges/asset classes, unlike an ISIN), falling back to
+    ticker-based resolution otherwise — `hint` first when it's a real
+    transactable asset class (the generic CSV preset supplies one; Trading
+    212 rows never do), then every transactable asset class in a fixed
+    order, which is what lets a Trading 212 ticker resolve at all despite
+    carrying no asset_class of its own."""
+    if isin:
+        asset_class, profile = _find_by_isin(isin)
+        if profile is not None:
+            return asset_class, profile
+
     candidates = [hint] if hint in TRANSACTABLE_ASSET_CLASSES else []
     candidates += [ac for ac in ("stock", "etf") if ac not in candidates]
     for asset_class in candidates:
@@ -175,6 +210,8 @@ def _synthetic_trade(
         "price_native": row.get("price_native"),
         "price": resolved.get("price"),
         "date": row.get("date"),
+        "sdrt": row.get("sdrt"),
+        "fx_fee": row.get("fx_fee"),
     }
     return synthetic, resolved.get("fx_rate")
 
@@ -255,14 +292,18 @@ class ImportPreviewView(APIView):
 
         rows_by_ticker: dict[str, list[dict[str, Any]]] = {}
         hint_by_ticker: dict[str, str | None] = {}
+        isin_by_ticker: dict[str, str | None] = {}
         for parsed_row in parsed.rows:
             row = _row_to_dict(parsed_row)
             rows_by_ticker.setdefault(row["ticker"], []).append(row)
             hint_by_ticker.setdefault(row["ticker"], row["asset_class"])
+            isin_by_ticker.setdefault(row["ticker"], row["isin"])
 
         groups = []
         for ticker, rows in rows_by_ticker.items():
-            asset_class, market_profile = _resolve_asset_class(ticker, hint_by_ticker[ticker])
+            asset_class, market_profile = _resolve_asset_class(
+                ticker, hint_by_ticker[ticker], isin_by_ticker[ticker]
+            )
             resolved = market_profile is not None
 
             synthetic_rows = []
@@ -280,6 +321,8 @@ class ImportPreviewView(APIView):
                         "no_of_shares": row["no_of_shares"],
                         "price_native": row["price_native"],
                         "fx_rate": effective_fx,
+                        "sdrt": row["sdrt"],
+                        "fx_fee": row["fx_fee"],
                     }
                 )
             mode_preview = (
@@ -502,6 +545,8 @@ def _commit_average_mode(
                 average_price_native=rollup["average_price_native"],
                 average_price=rollup["average_price"],
                 date=min(row_dates),
+                sdrt=sum(row.get("sdrt") or 0 for row in rows),
+                fx_fee=sum(row.get("fx_fee") or 0 for row in rows),
             )
         except (TransactionAmountError, TransactionLimitExceededError):
             return {
@@ -532,6 +577,13 @@ def _commit_average_mode(
         # auto-created DIVIDENDs and rewinds dividends_synced_through (see
         # TransactionsClient.update_transaction) — exactly what's wanted,
         # so the next sync rebuilds from the new, possibly earlier, anchor.
+        # sdrt/fx_fee, unlike fx_rate, ARE carried forward and added to -
+        # existing_buy's own total plus these rows' totals - since they're
+        # a running cumulative sum, not a single derived rate; note
+        # existing_synth (above) deliberately omits sdrt/fx_fee when fed
+        # into compute_holding_rollup, since the prior fee effect is
+        # already baked into existing_buy's own (already fee-net)
+        # average_price - re-including it here would subtract it twice.
         _client.update_transaction(
             user_id,
             holding_id,
@@ -542,6 +594,8 @@ def _commit_average_mode(
             average_price=combined["average_price"],
             date=new_date,
             fx_rate=None,
+            sdrt=(existing_buy.get("sdrt") or 0) + sum(row.get("sdrt") or 0 for row in rows),
+            fx_fee=(existing_buy.get("fx_fee") or 0) + sum(row.get("fx_fee") or 0 for row in rows),
         )
     except TransactionAmountError:
         return {
@@ -599,6 +653,8 @@ def _commit_transaction_mode(
                 price=synthetic["price"],
                 fx_rate=effective_fx,
                 external_id=external_id,
+                sdrt=synthetic.get("sdrt"),
+                fx_fee=synthetic.get("fx_fee"),
             )
         except (TransactionAmountError, InsufficientSharesError, TransactionLimitExceededError):
             errors.append(

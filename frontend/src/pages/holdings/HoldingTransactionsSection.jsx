@@ -13,8 +13,6 @@ import {
   formatFxRatio,
   formatPrice,
   resolveFxRateOnDate,
-  selectNetShares,
-  selectPositionEntry,
   selectRecentTransactions,
 } from "./holdingFinancials.js";
 
@@ -62,17 +60,28 @@ function tradeTypeMeta(type) {
 }
 
 /** Date/no_of_shares/{average_price_native,price_native}/amount_native/
- * fx_rate form shared by "Add Buy", "Add Sell", "Add Dividend", and
- * editing an existing (mutable) entry — `type` picks which fields show,
- * `mode` picks whether an account/portfolio selector shows (only relevant
- * when creating: editing an existing entry never moves it to a different
- * holding) and whether this calls `onSubmit(holdingId, { type, ...fields })`
- * (create) or `onSubmit(holdingId, fields)` (edit, no `type` — immutable
- * once created). Sends the *native*-currency value the user typed, plus an
- * optional `fx_rate` (GitHub issue #149) — the backend resolves/stores the
- * converted (default-currency) figure itself either way (see
- * equicast_core.transactions module docstring), so this form never
- * computes or displays a converted value, only the rate used to get there.
+ * fx_rate/sdrt/fx_fee form shared by the single unified "Add transaction"
+ * drawer and editing an existing (mutable) entry (GitHub issue #201
+ * collapsed the old separate "Add Buy"/"Add Sell"/"Add Dividend" actions
+ * into one "Add" icon button + this form's own "Transaction type"
+ * dropdown). In create mode, `allowedTypes` (more than one entry renders
+ * that dropdown) picks which type the user can choose, defaulting to
+ * `allowedTypes[0]`; a fixed `type` is used instead when editing (no
+ * dropdown — the type is immutable). `mode` also picks whether an
+ * account/portfolio selector shows (only relevant when creating: editing
+ * an existing entry never moves it to a different holding) and whether
+ * this calls `onSubmit(holdingId, { type, ...fields })` (create) or
+ * `onSubmit(holdingId, fields)` (edit, no `type`). Sends the
+ * *native*-currency value the user typed, plus an optional `fx_rate`
+ * (GitHub issue #149) — the backend resolves/stores the converted
+ * (default-currency) figure itself either way (see equicast_core.transactions
+ * module docstring), so this form never computes or displays a converted
+ * value, only the rate used to get there. `sdrt` (BUY only, GitHub issue
+ * #100) and `fx_fee` (BUY/SELL, GitHub issue #101) are unlike every other
+ * monetary field here: both already in the user's default currency, so
+ * neither goes through `fx_rate` conversion, and both are optional —
+ * omitted from the payload entirely when left blank rather than sent as
+ * `0`.
  *
  * `transactionType` (the user's global AVERAGE/TRANSACTION setting) only
  * matters for a BUY: an AVERAGE-mode BUY is the holding's one
@@ -102,7 +111,8 @@ function tradeTypeMeta(type) {
  * stored native→default `fx_rate` still shows correctly in this form's
  * default→native direction. */
 function TransactionForm({
-  type,
+  type: fixedType,
+  allowedTypes,
   transactionType = "AVERAGE",
   mode,
   instances,
@@ -114,6 +124,15 @@ function TransactionForm({
   onCancel,
 }) {
   const api = useApi();
+  // `allowedTypes` (create mode only, GitHub issue #201): more than one
+  // option renders the "Transaction type" dropdown below and lets the user
+  // pick; a fixed `type` (editing an existing entry, or a create caller
+  // that only ever offers one type) skips it entirely. The account list
+  // itself is never re-filtered by the chosen type here (simplified,
+  // per #201) — an invalid combination (e.g. a second BUY against an
+  // AVERAGE-mode holding that already has one) surfaces as this form's own
+  // error message via the backend's existing validation instead.
+  const [type, setType] = useState(fixedType ?? allowedTypes?.[0] ?? "BUY");
   const [holdingId, setHoldingId] = useState(
     initialValues?.holdingId ?? instances[0]?.holding.id ?? ""
   );
@@ -136,6 +155,13 @@ function TransactionForm({
     isTransactionTrade && latestTradeDate != null && isCompleteDate(date) && date <= latestTradeDate;
   const [price, setPrice] = useState(initialValues?.[priceFieldKey] ?? "");
   const [amount, setAmount] = useState(initialValues?.amount_native ?? "");
+  // sdrt (GitHub issue #100, BUY only) / fx_fee (GitHub issue #101, BUY or
+  // SELL) — both already in the user's default currency (never native, so
+  // neither goes through the fx_rate conversion below, unlike every other
+  // monetary field in this form). Optional: an empty string is omitted
+  // from the payload entirely rather than sent as `0`.
+  const [sdrt, setSdrt] = useState(initialValues?.sdrt ?? "");
+  const [fxFee, setFxFee] = useState(initialValues?.fx_fee ?? "");
   // `initialValues.fx_rate` (when editing) is always stored native→default
   // (see equicast_core.transactions/resolve_converted_amounts — that
   // direction is what `converted_value = native_value * fx_rate` actually
@@ -180,10 +206,14 @@ function TransactionForm({
     // `fx_rate` is actually stored/used in (see the `fxRate` state comment
     // above) — this field shows/accepts the reciprocal for display only.
     const fxFields = fxRate !== "" ? { fx_rate: String(1 / Number(fxRate)) } : {};
+    const feeFields = {
+      ...(type === "BUY" && sdrt !== "" ? { sdrt } : {}),
+      ...((type === "BUY" || type === "SELL") && fxFee !== "" ? { fx_fee: fxFee } : {}),
+    };
     const fields =
       type === "DIVIDEND"
         ? { date, amount_native: amount, ...fxFields }
-        : { date, no_of_shares: shares, [priceFieldKey]: price, ...fxFields };
+        : { date, no_of_shares: shares, [priceFieldKey]: price, ...fxFields, ...feeFields };
     const payload = mode === "create" ? { type, ...fields } : fields;
     onSubmit(holdingId, payload)
       .catch((err) => setError(err.message ?? "Couldn't save this transaction."))
@@ -219,6 +249,21 @@ function TransactionForm({
           {instances.map((instance) => (
             <option key={instance.holding.id} value={instance.holding.id}>
               {instance.location}
+            </option>
+          ))}
+        </SelectField>
+      )}
+      {mode === "create" && allowedTypes && allowedTypes.length > 1 && (
+        <SelectField
+          id="transaction-type"
+          label="Transaction type"
+          required
+          value={type}
+          onChange={(event) => setType(event.target.value)}
+        >
+          {allowedTypes.map((t) => (
+            <option key={t} value={t}>
+              {t === "BUY" ? "Buy" : t === "SELL" ? "Sell" : "Dividend"}
             </option>
           ))}
         </SelectField>
@@ -265,6 +310,30 @@ function TransactionForm({
             value={price}
             onChange={(event) => setPrice(event.target.value)}
           />
+          {type === "BUY" && (
+            <TextField
+              id="transaction-sdrt"
+              label={`UK Stamp Duty / SDRT (${defaultCurrency ?? "default currency"})`}
+              type="number"
+              min="0"
+              step="0.01"
+              value={sdrt}
+              onChange={(event) => setSdrt(event.target.value)}
+              hint="Optional — leave blank if none was charged."
+            />
+          )}
+          {(type === "BUY" || type === "SELL") && (
+            <TextField
+              id="transaction-fx-fee"
+              label={`FX / currency conversion fee (${defaultCurrency ?? "default currency"})`}
+              type="number"
+              min="0"
+              step="0.01"
+              value={fxFee}
+              onChange={(event) => setFxFee(event.target.value)}
+              hint="Optional — leave blank if none was charged."
+            />
+          )}
         </>
       )}
       {showFxField && (
@@ -324,6 +393,17 @@ function displayFxRate(transaction) {
   return transaction.fx_rate ? 1 / Number(transaction.fx_rate) : null;
 }
 
+/** "SDRT £5.00, FX fee £1.50" (either half omitted when not set) — both
+ * GitHub issues #100/#101 fields are always in the user's default
+ * currency already, regardless of `showFx`. `null` when neither is set,
+ * so callers can skip rendering entirely. */
+function transactionFeesLabel(transaction, defaultCurrency) {
+  const parts = [];
+  if (transaction.sdrt) parts.push(`SDRT ${formatPrice(Number(transaction.sdrt), defaultCurrency)}`);
+  if (transaction.fx_fee) parts.push(`FX fee ${formatPrice(Number(transaction.fx_fee), defaultCurrency)}`);
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
 /** One AVERAGE-mode entry (BUY or DIVIDEND) in the top-5 list — a single
  * row: icon-only type badge, date, no of shares, FX rate, native value,
  * converted value, edit, delete. A DIVIDEND has no `no_of_shares` (only a
@@ -331,19 +411,24 @@ function displayFxRate(transaction) {
  * column. FX rate/native value only show when this holding's native
  * currency actually differs from the user's default — nothing to convert
  * otherwise, same gate `TransactionForm`'s own FX field uses. */
-function AverageEntryCard({ transaction, nativeCurrency, defaultCurrency, onEdit, onDelete }) {
+function AverageEntryCard({ transaction, nativeCurrency, defaultCurrency, location, onEdit, onDelete }) {
   const type = transaction.type ?? "BUY";
   const meta = averageTypeMeta(type);
   const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
   const fxRate = showFx ? displayFxRate(transaction) : null;
   const convertedTotal = showFx ? averageEntryTotalConverted(transaction) : null;
+  const feesLabel = transactionFeesLabel(transaction, defaultCurrency);
 
   return (
     <div className="ec-transaction-row-card">
       <Badge tone={meta.tone} title={meta.label} aria-label={meta.label}>
         <i className={`bi ${meta.icon}`} aria-hidden="true" />
       </Badge>
-      <span className="ec-transaction-row-date">{formatTransactionDate(transaction.date)}</span>
+      <span className="ec-transaction-row-date">
+        {formatTransactionDate(transaction.date)}
+        {location && <span className="ec-transaction-card-location"> · {location}</span>}
+        {feesLabel && <span className="ec-transaction-card-location"> · {feesLabel}</span>}
+      </span>
       <span className="ec-transaction-row-shares">
         {type === "BUY" ? transaction.no_of_shares : "—"}
       </span>
@@ -413,6 +498,7 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
   const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
   const fxRate = showFx ? displayFxRate(transaction) : null;
   const convertedTotal = showFx ? tradeEntryTotalConverted(transaction) : null;
+  const feesLabel = transactionFeesLabel(transaction, defaultCurrency);
 
   return (
     <div className="ec-transaction-row-card">
@@ -422,6 +508,7 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
       <span className="ec-transaction-row-date">
         {formatTransactionDate(transaction.date)}
         {location && <span className="ec-transaction-card-location"> · {location}</span>}
+        {feesLabel && <span className="ec-transaction-card-location"> · {feesLabel}</span>}
       </span>
       <span className="ec-transaction-row-shares">{type === "DIVIDEND" ? "—" : transaction.no_of_shares}</span>
       {showFx && (
@@ -461,27 +548,31 @@ function TradeRowCard({ transaction, nativeCurrency, defaultCurrency, location, 
  * depends on the user's single global transaction_type (see
  * api/identity.js's UserProfile — no per-instance mode anymore):
  *
- * - AVERAGE: header actions "Add Buy"/"Add Dividend"/"See all" (all open a
- *   Drawer — see `TransactionForm` and the "See all" table below), a top-5
- *   grid of the most recent BUY/DIVIDEND entries merged across every
- *   instance of this ticker (a location tag appears only when the ticker
- *   has more than one instance), each editable/deletable in place. "Add
- *   Buy" only offers instances that don't already have a BUY recorded (one
- *   per holding, see equicast_core.transactions); "Add Dividend" offers
- *   every instance, since dividends are uncapped.
- * - TRANSACTION: header actions "Add Buy"/"Add Sell"/"Add Dividend"/"See
- *   all", up to MAX_RECENT_TRANSACTIONS most recent BUY/SELL/DIVIDEND rows
- *   (same `ec-transaction-row-list`/`ec-transaction-row-card` layout
- *   AVERAGE-mode's top-5 list uses — see `TradeRowCard`) merged across
- *   every instance of this ticker, plus a "See all" drawer with the full
- *   history table. BUY/SELL are immutable once created (no edit — mirrors
- *   equicast_core.transactions) but deletable; DIVIDEND is editable and
- *   deletable in both modes alike, same as an AVERAGE-mode entry — a
- *   dividend is a user-correctable fact regardless of mode, including the
- *   ones GitHub issue #124's auto-dividend sync creates on the user's
- *   behalf. "Add Sell" only offers instances with net shares > 0 recorded
- *   (see `selectNetShares`); "Add Buy"/"Add Dividend" offer every instance,
- *   since TRANSACTION-mode BUYs and dividends are both uncapped.
+ * - AVERAGE: header actions a single "Add" icon button (opens a Drawer with
+ *   `TransactionForm`'s own "Transaction type" dropdown offering
+ *   Buy/Dividend, GitHub issue #201) and "See all", a top-5 grid of the
+ *   most recent BUY/DIVIDEND entries merged across every instance of this
+ *   ticker (a location tag appears only when the ticker has more than one
+ *   instance), each editable/deletable in place. The account list isn't
+ *   pre-filtered by eligibility (e.g. a holding that already has a BUY
+ *   recorded, one per holding — see equicast_core.transactions) — picking
+ *   an invalid combination surfaces as the form's own error message from
+ *   the backend's existing validation instead.
+ * - TRANSACTION: same single "Add" icon button (dropdown offering
+ *   Buy/Sell/Dividend) plus "See all", up to MAX_RECENT_TRANSACTIONS most
+ *   recent BUY/SELL/DIVIDEND rows (same `ec-transaction-row-list`/
+ *   `ec-transaction-row-card` layout AVERAGE-mode's top-5 list uses — see
+ *   `TradeRowCard`) merged across every instance of this ticker, plus a
+ *   "See all" drawer with the full history table. BUY/SELL are immutable
+ *   once created (no edit — mirrors equicast_core.transactions) but
+ *   deletable; DIVIDEND is editable and deletable in both modes alike,
+ *   same as an AVERAGE-mode entry — a dividend is a user-correctable fact
+ *   regardless of mode, including the ones GitHub issue #124's
+ *   auto-dividend sync creates on the user's behalf. Same "account list
+ *   not pre-filtered by eligibility" simplification as AVERAGE mode above
+ *   — a SELL with no shares recorded fails with the backend's own
+ *   `InsufficientSharesError` message rather than being excluded from the
+ *   dropdown up front.
  *
  * `instances`/`transactionsByHolding` are already fetched at the page
  * level (see HoldingTickerPage.jsx) — this component takes them as props
@@ -510,7 +601,7 @@ function HoldingTransactionsSection({
   onDeleteTransaction,
   onLoadMoreTransactions,
 }) {
-  const [drawer, setDrawer] = useState(null); // null | "add-buy" | "add-dividend" | "see-all" | { kind: "edit", holdingId, transaction }
+  const [drawer, setDrawer] = useState(null); // null | "add" | "see-all" | { kind: "edit", holdingId, transaction }
   const [deleting, setDeleting] = useState(null); // null | { holdingId, transactionId }
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
@@ -521,11 +612,6 @@ function HoldingTransactionsSection({
   if (validInstances.length === 0) return null;
 
   const showLocation = validInstances.length > 1;
-  // Gates every FX rate/native value/converted value column and field
-  // (row cards, both "See all" tables, the TransactionForm's own FX
-  // field) — nothing to convert when the holding's native currency
-  // already matches the user's default.
-  const showFx = Boolean(nativeCurrency && defaultCurrency && nativeCurrency !== defaultCurrency);
 
   const handleDelete = () => {
     setIsDeleting(true);
@@ -569,20 +655,20 @@ function HoldingTransactionsSection({
       (b.transaction.date ?? "").localeCompare(a.transaction.date ?? "")
     );
     const top5 = sorted.slice(0, MAX_RECENT_TRANSACTIONS);
-    const buyEligibleInstances = validInstances.filter(
-      (instance) => !selectPositionEntry(transactionsByHolding[instance.holding.id]?.transactions ?? [])
-    );
 
     return (
       <Card className="ec-detail-section">
         <div className="ec-section-head">
           <h3 className="ec-section-title">Transactions</h3>
           <div className="ec-section-head-actions">
-            <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-buy")}>
-              Add Buy
-            </button>
-            <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-dividend")}>
-              Add Dividend
+            <button
+              type="button"
+              className="ec-icon-btn"
+              aria-label="Add transaction"
+              title="Add transaction"
+              onClick={() => setDrawer("add")}
+            >
+              <i className="bi bi-plus-lg" aria-hidden="true" />
             </button>
             <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("see-all")}>
               See all
@@ -607,28 +693,9 @@ function HoldingTransactionsSection({
           <p className="ec-chart-caption">No transactions recorded yet.</p>
         )}
 
-        <Drawer open={drawer === "add-buy"} onClose={closeDrawer} title="Add Buy">
-          {buyEligibleInstances.length > 0 ? (
-            <TransactionForm
-              type="BUY"
-              mode="create"
-              instances={buyEligibleInstances}
-              nativeCurrency={nativeCurrency}
-              defaultCurrency={defaultCurrency}
-              onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
-              onCancel={closeDrawer}
-            />
-          ) : (
-            <p className="ec-chart-caption">
-              Every one of your holdings for this ticker already has a purchase recorded — edit it
-              from See all instead.
-            </p>
-          )}
-        </Drawer>
-
-        <Drawer open={drawer === "add-dividend"} onClose={closeDrawer} title="Add Dividend">
+        <Drawer open={drawer === "add"} onClose={closeDrawer} title="Add transaction">
           <TransactionForm
-            type="DIVIDEND"
+            allowedTypes={["BUY", "DIVIDEND"]}
             mode="create"
             instances={validInstances}
             nativeCurrency={nativeCurrency}
@@ -660,86 +727,18 @@ function HoldingTransactionsSection({
         </Drawer>
 
         <Drawer open={drawer === "see-all"} onClose={closeDrawer} title="Transactions">
-          <div className="ec-table-wrap">
-            <table className="ec-table">
-              <thead>
-                <tr>
-                  <th>Type</th>
-                  <th>Date</th>
-                  <th>Shares</th>
-                  <th>Avg price (native)</th>
-                  {showFx && <th>FX rate</th>}
-                  <th>Native value</th>
-                  {showFx && <th>Value</th>}
-                  {showLocation && <th>Location</th>}
-                  <th aria-label="Actions" />
-                </tr>
-              </thead>
-              <tbody>
-                {sorted.map(({ transaction, holdingId, location }) => {
-                  const type = transaction.type ?? "BUY";
-                  const meta = averageTypeMeta(type);
-                  const fxRate = showFx ? displayFxRate(transaction) : null;
-                  const convertedTotal = showFx ? averageEntryTotalConverted(transaction) : null;
-                  return (
-                    <tr key={transaction.id}>
-                      <td>
-                        <Badge tone={meta.tone}>
-                          <i className={`bi ${meta.icon}`} aria-hidden="true" /> {meta.label}
-                        </Badge>
-                      </td>
-                      <td>{formatTransactionDate(transaction.date)}</td>
-                      <td>{type === "BUY" ? transaction.no_of_shares : "—"}</td>
-                      <td>
-                        {type === "BUY" ? (
-                          <Balance>
-                            {formatPrice(Number(transaction.average_price_native), nativeCurrency)}
-                          </Balance>
-                        ) : (
-                          "—"
-                        )}
-                      </td>
-                      {showFx && (
-                        <td>{fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}</td>
-                      )}
-                      <td>
-                        <Balance>{formatPrice(averageEntryTotal(transaction), nativeCurrency)}</Balance>
-                      </td>
-                      {showFx && (
-                        <td>
-                          {convertedTotal != null ? (
-                            <Balance>{formatPrice(convertedTotal, defaultCurrency)}</Balance>
-                          ) : (
-                            "—"
-                          )}
-                        </td>
-                      )}
-                      {showLocation && <td>{location}</td>}
-                      <td>
-                        <div className="ec-table-actions">
-                          <button
-                            type="button"
-                            className="ec-icon-btn"
-                            aria-label="Edit transaction"
-                            onClick={() => setDrawer({ kind: "edit", holdingId, transaction })}
-                          >
-                            <i className="bi bi-pencil" aria-hidden="true" />
-                          </button>
-                          <button
-                            type="button"
-                            className="ec-icon-btn ec-icon-btn--danger"
-                            aria-label="Delete transaction"
-                            onClick={() => setDeleting({ holdingId, transactionId: transaction.id })}
-                          >
-                            <i className="bi bi-trash" aria-hidden="true" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+          <div className="ec-transaction-row-list">
+            {sorted.map(({ transaction, holdingId, location }) => (
+              <AverageEntryCard
+                key={transaction.id}
+                transaction={transaction}
+                nativeCurrency={nativeCurrency}
+                defaultCurrency={defaultCurrency}
+                location={showLocation ? location : null}
+                onEdit={() => setDrawer({ kind: "edit", holdingId, transaction })}
+                onDelete={() => setDeleting({ holdingId, transactionId: transaction.id })}
+              />
+            ))}
           </div>
           {loadMoreControl}
         </Drawer>
@@ -779,24 +778,20 @@ function HoldingTransactionsSection({
         entry.transaction.type === "DIVIDEND"
     )
     .sort((a, b) => (b.transaction.date ?? "").localeCompare(a.transaction.date ?? ""));
-  const sellEligibleInstances = validInstances.filter(
-    (instance) =>
-      selectNetShares(transactionsByHolding[instance.holding.id]?.transactions ?? []) > 0
-  );
 
   return (
     <Card className="ec-detail-section">
       <div className="ec-section-head">
         <h3 className="ec-section-title">Transactions</h3>
         <div className="ec-section-head-actions">
-          <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-buy")}>
-            Add Buy
-          </button>
-          <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-sell")}>
-            Add Sell
-          </button>
-          <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("add-dividend")}>
-            Add Dividend
+          <button
+            type="button"
+            className="ec-icon-btn"
+            aria-label="Add transaction"
+            title="Add transaction"
+            onClick={() => setDrawer("add")}
+          >
+            <i className="bi bi-plus-lg" aria-hidden="true" />
           </button>
           <button type="button" className="ec-inline-link-btn" onClick={() => setDrawer("see-all")}>
             See all
@@ -822,43 +817,9 @@ function HoldingTransactionsSection({
         <p className="ec-chart-caption">No transactions recorded yet.</p>
       )}
 
-      <Drawer open={drawer === "add-buy"} onClose={closeDrawer} title="Add Buy">
+      <Drawer open={drawer === "add"} onClose={closeDrawer} title="Add transaction">
         <TransactionForm
-          type="BUY"
-          transactionType="TRANSACTION"
-          mode="create"
-          instances={validInstances}
-          transactionsByHolding={transactionsByHolding}
-          nativeCurrency={nativeCurrency}
-          defaultCurrency={defaultCurrency}
-          onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
-          onCancel={closeDrawer}
-        />
-      </Drawer>
-
-      <Drawer open={drawer === "add-sell"} onClose={closeDrawer} title="Add Sell">
-        {sellEligibleInstances.length > 0 ? (
-          <TransactionForm
-            type="SELL"
-            transactionType="TRANSACTION"
-            mode="create"
-            instances={sellEligibleInstances}
-            transactionsByHolding={transactionsByHolding}
-            nativeCurrency={nativeCurrency}
-            defaultCurrency={defaultCurrency}
-            onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}
-            onCancel={closeDrawer}
-          />
-        ) : (
-          <p className="ec-chart-caption">
-            None of your holdings for this ticker have any shares recorded to sell.
-          </p>
-        )}
-      </Drawer>
-
-      <Drawer open={drawer === "add-dividend"} onClose={closeDrawer} title="Add Dividend">
-        <TransactionForm
-          type="DIVIDEND"
+          allowedTypes={["BUY", "SELL", "DIVIDEND"]}
           transactionType="TRANSACTION"
           mode="create"
           instances={validInstances}
@@ -893,85 +854,18 @@ function HoldingTransactionsSection({
       </Drawer>
 
       <Drawer open={drawer === "see-all"} onClose={closeDrawer} title="Transactions">
-        <div className="ec-table-wrap">
-          <table className="ec-table">
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Date</th>
-                <th>Shares</th>
-                <th>Price (native)</th>
-                {showFx && <th>FX rate</th>}
-                <th>Native value</th>
-                {showFx && <th>Value</th>}
-                {showLocation && <th>Location</th>}
-                <th aria-label="Actions" />
-              </tr>
-            </thead>
-            <tbody>
-              {fullHistory.map(({ transaction, holdingId, location }) => {
-                const meta = tradeTypeMeta(transaction.type);
-                const fxRate = showFx ? displayFxRate(transaction) : null;
-                const convertedTotal = showFx ? tradeEntryTotalConverted(transaction) : null;
-                return (
-                <tr key={transaction.id}>
-                  <td>
-                    <Badge tone={meta.tone}>
-                      <i className={`bi ${meta.icon}`} aria-hidden="true" /> {meta.label}
-                    </Badge>
-                  </td>
-                  <td>{formatTransactionDate(transaction.date)}</td>
-                  <td>{transaction.type === "DIVIDEND" ? "—" : transaction.no_of_shares}</td>
-                  <td>
-                    {transaction.type === "DIVIDEND" ? (
-                      "—"
-                    ) : (
-                      <Balance>{formatPrice(Number(transaction.price_native), nativeCurrency)}</Balance>
-                    )}
-                  </td>
-                  {showFx && (
-                    <td>{fxRate != null ? formatFxRatio(fxRate, defaultCurrency, nativeCurrency) : "—"}</td>
-                  )}
-                  <td>
-                    <Balance>{formatPrice(tradeEntryTotal(transaction), nativeCurrency)}</Balance>
-                  </td>
-                  {showFx && (
-                    <td>
-                      {convertedTotal != null ? (
-                        <Balance>{formatPrice(convertedTotal, defaultCurrency)}</Balance>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                  )}
-                  {showLocation && <td>{location}</td>}
-                  <td>
-                    <div className="ec-table-actions">
-                      {transaction.type === "DIVIDEND" && (
-                        <button
-                          type="button"
-                          className="ec-icon-btn"
-                          aria-label="Edit transaction"
-                          onClick={() => setDrawer({ kind: "edit", holdingId, transaction })}
-                        >
-                          <i className="bi bi-pencil" aria-hidden="true" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="ec-icon-btn ec-icon-btn--danger"
-                        aria-label="Delete transaction"
-                        onClick={() => setDeleting({ holdingId, transactionId: transaction.id })}
-                      >
-                        <i className="bi bi-trash" aria-hidden="true" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="ec-transaction-row-list">
+          {fullHistory.map(({ transaction, holdingId, location }) => (
+            <TradeRowCard
+              key={transaction.id}
+              transaction={transaction}
+              nativeCurrency={nativeCurrency}
+              defaultCurrency={defaultCurrency}
+              location={showLocation ? location : null}
+              onEdit={() => setDrawer({ kind: "edit", holdingId, transaction })}
+              onDelete={() => setDeleting({ holdingId, transactionId: transaction.id })}
+            />
+          ))}
         </div>
         {loadMoreControl}
       </Drawer>

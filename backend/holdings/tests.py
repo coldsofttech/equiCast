@@ -467,6 +467,8 @@ class HoldingListViewTests(TestCase):
             amount_native=None,
             amount=None,
             fx_rate=None,
+            sdrt=None,
+            fx_fee=None,
             date="2026-01-15",
             type="BUY",
         )
