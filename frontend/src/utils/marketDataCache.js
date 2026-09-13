@@ -276,6 +276,37 @@ export async function writeTransactionsValue(key, value) {
 }
 
 /**
+ * GitHub issue #184: wipes every store in "equicast-cache" — holdings
+ * (prices/profiles/metrics/dividends/news/events), accounts, transactions,
+ * and goals — for the Settings drawer's "Reset cache" action. Clears the
+ * object stores in place rather than deleting the database itself, so
+ * there's no version/upgrade dance to redo and no risk of a stale
+ * `indexedDB.deleteDatabase` hanging behind another open connection.
+ *
+ * @returns {Promise<void>}
+ */
+export async function clearAllCaches() {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(
+        [HOLDINGS_STORE_NAME, ACCOUNTS_STORE_NAME, TRANSACTIONS_STORE_NAME, GOALS_STORE_NAME],
+        "readwrite"
+      );
+      tx.objectStore(HOLDINGS_STORE_NAME).clear();
+      tx.objectStore(ACCOUNTS_STORE_NAME).clear();
+      tx.objectStore(TRANSACTIONS_STORE_NAME).clear();
+      tx.objectStore(GOALS_STORE_NAME).clear();
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
  * Drops every page cached for `holdingId` (every key in the "transactions"
  * store prefixed `${holdingId}:`) in one key-range delete — call after any
  * create/update/delete against this holding's transactions so a stale page

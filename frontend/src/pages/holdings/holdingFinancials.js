@@ -419,6 +419,38 @@ export function selectUpcomingDividends(dividends, limit = MAX_UPCOMING_DIVIDEND
 }
 
 /**
+ * The nearest `status === "declared"` record whose `ex_dividend_date`
+ * hasn't passed yet (today still counts — the banner stays up through the
+ * ex-dividend date itself, not just up to the day before), or null when
+ * there isn't one. Feeds HoldingDividendBanner.jsx's page-load banner —
+ * unlike `selectUpcomingDividends` this never falls back to an "estimated"
+ * record, since a forecast payout isn't the "your dividend is declared"
+ * event the banner announces.
+ *
+ * @param {import("../../api/market.js").DividendRecord[]} dividends
+ * @returns {import("../../api/market.js").DividendRecord|null}
+ */
+export function selectActiveDeclaredDividend(dividends) {
+  const today = todayIsoDate();
+  const declared = dividends.filter(
+    (record) => record.status === "declared" && record.ex_dividend_date >= today
+  );
+  if (declared.length === 0) return null;
+  return declared.reduce((nearest, record) =>
+    record.ex_dividend_date < nearest.ex_dividend_date ? record : nearest
+  );
+}
+
+/** A plain "YYYY-MM-DD" date string as "10 Sep 2026" — shared by
+ * HoldingDividendsSection's cards and HoldingDividendBanner.jsx; no time
+ * component to strip since ex_dividend_date/payment_date carry none. */
+export function formatDividendDate(isoDate) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+}
+
+/**
  * Every declared/estimated record from `dividends` still due before the
  * current calendar year ends — same dedup rule as `selectUpcomingDividends`
  * (a declared record wins over an overlapping estimated one), just

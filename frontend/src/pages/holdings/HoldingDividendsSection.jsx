@@ -5,18 +5,13 @@ import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import HoldingDividendChart from "./HoldingDividendChart.jsx";
-import { formatPrice, resolveFxRate, selectUpcomingDividends } from "./holdingFinancials.js";
+import {
+  formatDividendDate,
+  formatPrice,
+  resolveFxRate,
+  selectUpcomingDividends,
+} from "./holdingFinancials.js";
 import "../accounts/PriceChart.css";
-
-/** A plain "YYYY-MM-DD" date string as "10 Sep 2026" — same short format
- * HoldingAboutSection's formatIpoDate uses for a profile date, just without
- * that one's ISO-*datetime* parsing (ex_dividend_date/payment_date have no
- * time component to strip). */
-function formatDividendDate(isoDate) {
-  const date = new Date(isoDate);
-  if (Number.isNaN(date.getTime())) return null;
-  return date.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
-}
 
 /** One dividend card's contents — a Declared/Estimated badge, the
  * ex-dividend date, with the payment date alongside it (side by side) when

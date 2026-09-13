@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Modal from "../core/Modal.jsx";
+import ConfirmDialog from "../core/ConfirmDialog.jsx";
 import { SelectField } from "../core/Field.jsx";
 import Button from "../core/Button.jsx";
 import Alert from "../core/Alert.jsx";
@@ -11,6 +12,7 @@ import {
   updateTaxResidency,
   updateTransactionType,
 } from "../../api/identity.js";
+import { clearAllCaches } from "../../utils/marketDataCache.js";
 import CURRENCIES from "../../config/currencies.json";
 import "./SettingsModal.css";
 
@@ -50,6 +52,40 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
   const [incomeTaxBand, setIncomeTaxBand] = useState(profile?.income_tax_band ?? "BASIC");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
+
+  // GitHub issue #184: wipes every account/pie/holding/price/dividend/etc.
+  // cached in IndexedDB (see marketDataCache.js's clearAllCaches) — nothing
+  // here touches the sessionStorage-backed profile/greeting caches, since
+  // the issue's own scope is specifically "clears all the indexed db".
+  // Confirmed via ConfirmDialog first since the resulting re-download can
+  // noticeably slow down the next few pages the user opens; on success this
+  // just shows a done message rather than reloading, so an in-progress edit
+  // elsewhere on the page isn't interrupted — the cache empties immediately,
+  // and whatever's already on screen keeps showing until the user next
+  // navigates or refreshes.
+  const [isResetCacheConfirmOpen, setIsResetCacheConfirmOpen] = useState(false);
+  const [isResettingCache, setIsResettingCache] = useState(false);
+  const [cacheResetDone, setCacheResetDone] = useState(false);
+
+  // SettingsModal stays mounted between opens (only its inner <Modal> un/
+  // remounts visually, see UserMenu.jsx), so without this a "Cache cleared"
+  // message from a previous visit would still be showing the next time the
+  // drawer is reopened.
+  useEffect(() => {
+    if (open) {
+      setCacheResetDone(false);
+      setIsResetCacheConfirmOpen(false);
+    }
+  }, [open]);
+
+  const handleResetCache = () => {
+    setIsResettingCache(true);
+    clearAllCaches().then(() => {
+      setIsResettingCache(false);
+      setIsResetCacheConfirmOpen(false);
+      setCacheResetDone(true);
+    });
+  };
 
   const toggleFxWarmupCurrency = (code) => {
     setFxWarmupCurrencies((current) =>
@@ -166,6 +202,37 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
           </Button>
         </div>
       </form>
+
+      <div className="ec-settings-cache-section">
+        <span className="ec-field-label">Cache</span>
+        {cacheResetDone ? (
+          <Alert tone="success">
+            Cache cleared. Accounts, pies, and holdings will re-download from the network the next
+            time you open them.
+          </Alert>
+        ) : (
+          <>
+            <p className="ec-field-hint">
+              Clears every account, pie, and holding cached on this device. The next pages you open
+              will re-download that information from the network instead, which can take a little
+              longer than usual to load.
+            </p>
+            <Button type="button" variant="secondary" onClick={() => setIsResetCacheConfirmOpen(true)}>
+              Reset cache
+            </Button>
+          </>
+        )}
+      </div>
+
+      <ConfirmDialog
+        open={isResetCacheConfirmOpen}
+        title="Reset cache"
+        message="This clears every account, pie, and holding cached on this device. They'll be re-downloaded from the network the next time you open them, which could take a little longer than usual to load. This can't be undone."
+        confirmLabel="Reset cache"
+        isLoading={isResettingCache}
+        onConfirm={handleResetCache}
+        onCancel={() => setIsResetCacheConfirmOpen(false)}
+      />
     </Modal>
   );
 }
