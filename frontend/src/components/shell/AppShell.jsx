@@ -50,6 +50,11 @@ const STICKY_TITLE_ROOT_MARGIN = "-52px 0px 0px 0px";
  * ServiceUnavailablePage so `title` lines up with their own centered
  * icon/message/action body underneath, rather than sitting flush left
  * above centered content.
+ *
+ * `banner`, when given, renders as a full-width row between Topbar and
+ * `<main>` — the same slot/position Topbar's own offline banner occupies,
+ * just page-specific instead of global (e.g. HoldingTickerPage's declared-
+ * dividend banner, see HoldingDividendBanner.jsx for GitHub issue #186).
  */
 function AppShell({
   greeting,
@@ -62,6 +67,7 @@ function AppShell({
   children,
   footer,
   sidebar,
+  banner,
   stickyTitle = false,
   narrow = false,
   centerTitle = false,
@@ -82,6 +88,7 @@ function AppShell({
   return (
     <div className="ec-app">
       <Topbar />
+      {banner}
       {stickyTitle && (
         <div className={`ec-frozen-title${isTitleFrozen ? " is-visible" : ""}`} aria-hidden={!isTitleFrozen}>
           {title}

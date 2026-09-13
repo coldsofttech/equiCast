@@ -128,14 +128,29 @@ function TransactionForm({
   // option renders the "Transaction type" dropdown below and lets the user
   // pick; a fixed `type` (editing an existing entry, or a create caller
   // that only ever offers one type) skips it entirely. The account list
-  // itself is never re-filtered by the chosen type here (simplified,
-  // per #201) — an invalid combination (e.g. a second BUY against an
-  // AVERAGE-mode holding that already has one) surfaces as this form's own
-  // error message via the backend's existing validation instead.
-  const [type, setType] = useState(fixedType ?? allowedTypes?.[0] ?? "BUY");
+  // itself is never re-filtered by the chosen type here — picking an
+  // account that can't take a given type otherwise (e.g. a SELL against a
+  // holding with no shares left) surfaces as this form's own error message
+  // via the backend's existing validation instead. The one exception is
+  // "Buy" in AVERAGE mode (GitHub issue #182): an AVERAGE-mode holding
+  // allows only one BUY, ever (see equicast_core.transactions), so once
+  // the selected account already has one, "Buy" is dropped from the type
+  // dropdown's options for it instead of being left in to fail on submit —
+  // see `typeOptions` below.
   const [holdingId, setHoldingId] = useState(
     initialValues?.holdingId ?? instances[0]?.holding.id ?? ""
   );
+  // Whether the currently-selected account (`holdingId`) already has a BUY
+  // recorded — a legacy entry with no `type` at all counts too, same
+  // "treated as BUY everywhere" convention AVERAGE_TYPE_META documents.
+  const holdingHasBuy = (transactionsByHolding[holdingId]?.transactions ?? []).some(
+    (t) => t.type === "BUY" || t.type == null
+  );
+  const typeOptions =
+    mode === "create" && transactionType === "AVERAGE" && allowedTypes
+      ? allowedTypes.filter((t) => t !== "BUY" || !holdingHasBuy)
+      : allowedTypes;
+  const [type, setType] = useState(fixedType ?? typeOptions?.[0] ?? "BUY");
   const [date, setDate] = useState(initialValues?.date ?? "");
   const [shares, setShares] = useState(initialValues?.no_of_shares ?? "");
   const isAverageBuy = type === "BUY" && transactionType === "AVERAGE";
@@ -244,7 +259,20 @@ function TransactionForm({
           label="Account"
           required
           value={holdingId}
-          onChange={(event) => setHoldingId(event.target.value)}
+          onChange={(event) => {
+            const nextHoldingId = event.target.value;
+            setHoldingId(nextHoldingId);
+            // Switching to an account that already has a BUY (AVERAGE mode
+            // only) can drop "Buy" from the type dropdown's next render —
+            // move off it here rather than leaving a now-invalid selection
+            // in place until the user notices.
+            if (mode === "create" && transactionType === "AVERAGE" && type === "BUY" && allowedTypes) {
+              const nextHasBuy = (transactionsByHolding[nextHoldingId]?.transactions ?? []).some(
+                (t) => t.type === "BUY" || t.type == null
+              );
+              if (nextHasBuy) setType(allowedTypes.find((t) => t !== "BUY") ?? "DIVIDEND");
+            }
+          }}
         >
           {instances.map((instance) => (
             <option key={instance.holding.id} value={instance.holding.id}>
@@ -261,7 +289,7 @@ function TransactionForm({
           value={type}
           onChange={(event) => setType(event.target.value)}
         >
-          {allowedTypes.map((t) => (
+          {typeOptions.map((t) => (
             <option key={t} value={t}>
               {t === "BUY" ? "Buy" : t === "SELL" ? "Sell" : "Dividend"}
             </option>
@@ -698,6 +726,7 @@ function HoldingTransactionsSection({
             allowedTypes={["BUY", "DIVIDEND"]}
             mode="create"
             instances={validInstances}
+            transactionsByHolding={transactionsByHolding}
             nativeCurrency={nativeCurrency}
             defaultCurrency={defaultCurrency}
             onSubmit={(holdingId, fields) => onCreateTransaction(holdingId, fields).then(closeDrawer)}

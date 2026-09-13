@@ -514,3 +514,42 @@
   color: var(--ec-text-subtle);
   margin: 0 0 var(--ec-s-4);
 }
+
+/* Same sticky-below-Topbar treatment as Topbar's own .ec-offline-banner
+   (see AppShell's `banner` slot), just success-toned for good news instead
+   of the offline banner's warning tone, and with a close button since a
+   dividend banner is dismissible while offline's own isn't. */
+.ec-dividend-banner {
+  position: sticky;
+  top: var(--ec-topbar-h);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-8) var(--ec-s-16);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-success-soft-text);
+  background: var(--ec-success-soft);
+  border-bottom: 1px solid var(--ec-divider);
+}
+
+.ec-dividend-banner-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: none;
+  padding: 0;
+  margin-left: var(--ec-s-8);
+  color: inherit;
+  font-size: var(--ec-fs-13);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ec-dividend-banner-close:hover,
+.ec-dividend-banner-close:focus-visible {
+  opacity: 0.7;
+}

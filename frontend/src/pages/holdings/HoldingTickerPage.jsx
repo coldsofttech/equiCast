@@ -18,6 +18,7 @@ import HoldingStatsPanel from "./HoldingStatsPanel.jsx";
 import HoldingCagrSection from "./HoldingCagrSection.jsx";
 import HoldingBuySellGauge from "./HoldingBuySellGauge.jsx";
 import HoldingAboutSection from "./HoldingAboutSection.jsx";
+import HoldingDividendBanner from "./HoldingDividendBanner.jsx";
 import HoldingDividendsSection from "./HoldingDividendsSection.jsx";
 import HoldingNewsSection from "./HoldingNewsSection.jsx";
 import HoldingTransactionsSection from "./HoldingTransactionsSection.jsx";
@@ -536,6 +537,15 @@ function HoldingTickerPage() {
             {backTarget.label}
           </Button>
         )
+      }
+      banner={
+        <HoldingDividendBanner
+          ticker={ticker}
+          dividends={marketDividends}
+          isOwned={isOwned}
+          sharesOwned={sharesOwned}
+          defaultCurrency={userProfile?.default_currency ?? null}
+        />
       }
       footer={<SiteFooter />}
     >
