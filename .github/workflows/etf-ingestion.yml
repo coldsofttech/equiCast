@@ -246,6 +246,13 @@ jobs:
     needs: [plan, ingest]
     if: needs.plan.outputs.has_chunks == 'true' && needs.plan.outputs.run_ingest == 'true'
     runs-on: ubuntu-latest
+    # Overrides the workflow-level defaults: adds issues:write (for the
+    # missing-ISIN issue sync below) and drops packages:read (unused here —
+    # this job never pulls a GHCR image).
+    permissions:
+      id-token: write
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -274,3 +281,29 @@ jobs:
             --asset-class etf \
             --output-dir "${{ github.workspace }}/output" \
             --bucket "${{ needs.plan.outputs.bucket }}"
+
+      # GitHub issue #215: consolidate tickers with no ISIN on record and
+      # notify via a GitHub issue rather than a separate email integration
+      # (GitHub already emails watchers when an issue is opened/updated).
+      # Reads the catalog just uploaded above — it already carries each
+      # ticker's isin (see equicast_core.catalog) — rather than re-scanning
+      # every chunk's individual profile.parquet.
+      - name: Download the freshly-built catalog
+        run: aws s3 cp "s3://${{ needs.plan.outputs.bucket }}/catalog/etf.parquet" catalog.parquet
+
+      - name: Find tickers missing ISIN
+        id: missing_isin
+        working-directory: packages/core
+        run: |
+          TICKERS=$(uv run python "${{ github.workspace }}/.github/scripts/find_missing_isin.py" \
+            --catalog "${{ github.workspace }}/catalog.parquet")
+          echo "tickers=$TICKERS" >> "$GITHUB_OUTPUT"
+
+      - name: Sync missing-ISIN tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash .github/scripts/sync-missing-isin-issue.sh \
+            "ETF ingestion: tickers missing ISIN" \
+            "packages/etf/config/etfs.prod.yaml" \
+            "${{ steps.missing_isin.outputs.tickers }}"

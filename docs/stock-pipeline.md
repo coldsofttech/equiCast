@@ -335,6 +335,19 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
    reads (see [packages/core/README.md](../packages/core/README.md)).
    Needs no S3 permission beyond `ingest`'s existing `s3:PutObject`, since
    it reads the profiles from the downloaded artifacts, not back from S3.
+   Finally (GitHub issue #215), downloads that freshly-uploaded catalog
+   back and, via `.github/scripts/find_missing_isin.py`, reads its `isin`
+   column (already populated per ticker — see `equicast_core.catalog`)
+   for any ticker with none on record. `.github/scripts/sync-missing-isin-issue.sh`
+   then opens, updates, or closes a single persistent GitHub issue titled
+   "Stock ingestion: tickers missing ISIN" listing the result — GitHub's
+   own issue-notification emails are the "notification" the issue asks
+   for, so there's no separate email/SMTP integration. The issue lists
+   each ticker and points at `packages/stock/config/stocks.prod.yaml` for
+   the `isin`/`tax_domicile` override to add; it auto-closes once every
+   ticker has an ISIN again on a later run. Needs the job's `issues:
+   write` permission, granted only to this job (overriding the
+   workflow-level default, which drops it for every other job).
 
 ### S3 layout produced
 
