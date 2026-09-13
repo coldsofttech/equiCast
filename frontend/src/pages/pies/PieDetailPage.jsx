@@ -215,6 +215,7 @@ function PieDetailPage() {
   const holdingValuations = (pie.holdings ?? []).map((h) => computeHoldingValuation(h));
   const heatmapWeights = (pie.holdings ?? []).map((h, index) => ({
     ticker: h.ticker,
+    website: h.website,
     value: holdingValuations[index].currentValue,
   }));
   const totals = summarizeHoldingValuations(pie.holdings ?? [], holdingValuations);

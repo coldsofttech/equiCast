@@ -229,6 +229,7 @@ function AccountDetailPage() {
   const marketCapData = buildMarketCapAllocation(allHoldings, holdingValuations);
   const heatmapWeights = allHoldings.map((h, index) => ({
     ticker: h.ticker,
+    website: h.website,
     value: holdingValuations[index].currentValue,
   }));
 
