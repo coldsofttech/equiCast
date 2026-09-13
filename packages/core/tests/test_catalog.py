@@ -39,6 +39,7 @@ _EMPTY_ROW = {
     "sector": None,
     "industry": None,
     "isin": None,
+    "tax_domicile": None,
     "last_updated": None,
 }
 
@@ -113,6 +114,7 @@ class TestBuildCatalogRows:
                 "sector": "Technology",
                 "industry": "Consumer Electronics",
                 "isin": None,
+                "tax_domicile": None,
                 "last_updated": "2026-08-30T09:00:00+00:00",
             },
             {
@@ -128,6 +130,7 @@ class TestBuildCatalogRows:
                 "sector": "Technology",
                 "industry": "Software—Infrastructure",
                 "isin": None,
+                "tax_domicile": None,
                 "last_updated": "2026-08-29T09:00:00+00:00",
             },
         ]
@@ -183,9 +186,23 @@ class TestBuildCatalogRows:
                 "sector": None,
                 "industry": None,
                 "isin": None,
+                "tax_domicile": None,
                 "last_updated": None,
             }
         ]
+
+    def test_carries_the_tax_domicile_field_through(self, tmp_path: Path) -> None:
+        _write_profile(
+            tmp_path,
+            "stock",
+            "AAPL",
+            {"ticker": "AAPL", "name": "Apple Inc.", "isin": "US0378331005", "tax_domicile": "US"},
+        )
+
+        rows = build_catalog_rows(tmp_path, "stock")
+
+        assert rows[0]["isin"] == "US0378331005"
+        assert rows[0]["tax_domicile"] == "US"
 
     def test_only_matches_the_given_asset_class(self, tmp_path: Path) -> None:
         _write_profile(tmp_path, "stock", "AAPL", {"ticker": "AAPL", "name": "Apple Inc."})

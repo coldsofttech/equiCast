@@ -2,10 +2,29 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
-from equicast_stock.cli import run
+import pytest
+from equicast_stock.cli import _derive_tax_domicile, run
 
 
-def _fake_stock_client_factory(created: list[MagicMock] | None = None):
+@pytest.mark.parametrize(
+    ("isin", "expected"),
+    [
+        ("US0378331005", "US"),
+        ("GB00B03MLX29", "UK"),
+        ("gb00b03mlx29", "UK"),  # case-insensitive
+        ("IE00BKVD2N49", None),  # unmodeled country
+        (None, None),
+        ("", None),
+    ],
+)
+def test_derive_tax_domicile(isin: str | None, expected: str | None) -> None:
+    assert _derive_tax_domicile(isin) == expected
+
+
+def _fake_stock_client_factory(
+    created: list[MagicMock] | None = None,
+    profile_overrides: dict[str, dict] | None = None,
+):
     def fake_stock_client(ticker: str, datafeed=None) -> MagicMock:
         client = MagicMock()
         client.symbol = ticker
@@ -13,6 +32,7 @@ def _fake_stock_client_factory(created: list[MagicMock] | None = None):
             "ticker": ticker,
             "name": f"{ticker} Inc.",
             "quote_type": "EQUITY",
+            "isin": None,
             "exchange": "NMS",
             "currency": "USD",
             "description": f"{ticker} description.",
@@ -41,6 +61,7 @@ def _fake_stock_client_factory(created: list[MagicMock] | None = None):
             "ipo_date": "2000-01-01T00:00:00+00:00",
             "last_updated": "2026-08-28T21:29:05+00:00",
             "source": "yfinance",
+            **(profile_overrides or {}).get(ticker, {}),
         }
         client.prices.return_value = [
             {
@@ -210,11 +231,13 @@ def _patch_clients(
     dividend_records: list[dict] | None = None,
     future_dividend_records: list[dict] | None = None,
     news_records: list[dict] | None = None,
+    stock_profile_overrides: dict[str, dict] | None = None,
 ):
     return (
         patch("equicast_stock.cli.DatafeedClient"),
         patch(
-            "equicast_stock.cli.StockClient", side_effect=_fake_stock_client_factory(stock_created)
+            "equicast_stock.cli.StockClient",
+            side_effect=_fake_stock_client_factory(stock_created, stock_profile_overrides),
         ),
         patch(
             "equicast_stock.cli.DividendsClient",
@@ -278,6 +301,80 @@ def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> 
 
     profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
     assert profile["dividend_frequency"].iloc[0] == "quarterly"
+
+
+def test_run_applies_isin_override_to_profile(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "AAPL", "isin": "US0378331005"}]')
+
+    profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
+    assert profile["isin"].iloc[0] == "US0378331005"
+
+
+def test_run_derives_tax_domicile_from_isin_when_not_overridden(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients(
+        stock_profile_overrides={"AAPL": {"isin": "US0378331005"}},
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='["AAPL"]')
+
+    profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "US"
+
+
+def test_run_derives_tax_domicile_from_isin_override(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "STX", "isin": "GB00B03MLX29"}]')
+
+    profile = pd.read_parquet(out_dir / "stock=STX" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "UK"
+
+
+def test_run_tax_domicile_override_wins_over_isin_derived_value(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients(
+        stock_profile_overrides={"AAPL": {"isin": "US0378331005"}},
+    )
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(
+            None,
+            out_dir,
+            tickers_json='[{"ticker": "AAPL", "tax_domicile": "OTHER"}]',
+        )
+
+    profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
+    assert profile["tax_domicile"].iloc[0] == "OTHER"
+
+
+def test_run_tax_domicile_is_none_for_an_unmodeled_isin_country(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='[{"ticker": "STX", "isin": "IE00BKVD2N49"}]')
+
+    profile = pd.read_parquet(out_dir / "stock=STX" / "profile.parquet")
+    assert pd.isna(profile["tax_domicile"].iloc[0])
+
+
+def test_run_tax_domicile_is_none_when_isin_is_unset(tmp_path: Path) -> None:
+    out_dir = tmp_path / "output"
+
+    patches = _patch_clients()
+    with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5]:
+        run(None, out_dir, tickers_json='["AAPL"]')
+
+    profile = pd.read_parquet(out_dir / "stock=AAPL" / "profile.parquet")
+    assert pd.isna(profile["tax_domicile"].iloc[0])
 
 
 def test_run_dividend_frequency_is_not_applicable_with_too_little_history(

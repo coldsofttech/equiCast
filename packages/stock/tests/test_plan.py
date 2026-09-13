@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from equicast_stock.config import StockTicker
-from equicast_stock.plan import chunk_tickers
+from equicast_stock.plan import _serialize_ticker, chunk_tickers
 
 
 def _tickers(n: int) -> list[StockTicker]:
@@ -34,6 +34,61 @@ def test_chunk_tickers_rejects_invalid_arguments() -> None:
         chunk_tickers(_tickers(1), chunk_size=0, max_chunks=256)
     with pytest.raises(ValueError):
         chunk_tickers(_tickers(1), chunk_size=1, max_chunks=0)
+
+
+def test_serialize_ticker_plain_when_no_overrides() -> None:
+    assert _serialize_ticker(StockTicker(ticker="AAPL")) == "AAPL"
+
+
+def test_serialize_ticker_with_isin_override_only() -> None:
+    assert _serialize_ticker(StockTicker(ticker="STX", isin="IE00BKVD2N49")) == {
+        "ticker": "STX",
+        "isin": "IE00BKVD2N49",
+    }
+
+
+def test_serialize_ticker_with_tax_domicile_override_only() -> None:
+    assert _serialize_ticker(StockTicker(ticker="AAPL", tax_domicile="US")) == {
+        "ticker": "AAPL",
+        "tax_domicile": "US",
+    }
+
+
+def test_serialize_ticker_with_both_overrides() -> None:
+    assert _serialize_ticker(
+        StockTicker(ticker="MSFT", isin="US5949181045", tax_domicile="US")
+    ) == {
+        "ticker": "MSFT",
+        "isin": "US5949181045",
+        "tax_domicile": "US",
+    }
+
+
+def test_plan_cli_prints_json_chunks_preserves_isin_and_tax_domicile_overrides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from equicast_stock.plan import main
+
+    config = tmp_path / "stocks.yaml"
+    config.write_text(
+        "tickers:\n"
+        "  - AAPL\n"
+        "  - ticker: MSFT\n"
+        "    isin: US5949181045\n"
+        "    tax_domicile: US\n"
+    )
+
+    import sys
+
+    old_argv = sys.argv
+    sys.argv = ["equicast-stock-plan", "--config", str(config), "--chunk-size", "2"]
+    try:
+        main()
+    finally:
+        sys.argv = old_argv
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == [["AAPL", {"ticker": "MSFT", "isin": "US5949181045", "tax_domicile": "US"}]]
 
 
 def test_plan_cli_prints_json_chunks(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

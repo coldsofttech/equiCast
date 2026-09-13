@@ -1,28 +1,39 @@
 import { useState } from "react";
-import { TextField, TextAreaField } from "../../components/core/Field.jsx";
+import { TextField, TextAreaField, SelectField } from "../../components/core/Field.jsx";
 import IconPicker from "../../components/core/IconPicker.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
-import ACCOUNT_TYPE_SUGGESTIONS from "../../config/accountTypes.json";
+import ACCOUNT_TYPES from "../../config/accountTypes.json";
 import { ACCOUNT_ICON_OPTIONS, DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
 
 /**
  * Shared create/edit body for AccountsListPage's "New account" drawer and
- * AccountDetailPage's "Edit" drawer. `account_type` has no backend enum
- * (see REQUIRED_CREATE_FIELDS in backend/accounts/views.py) — free text
- * with a `<datalist>` of common values rather than a closed `<select>`, so
- * a caller isn't blocked from an account type this list doesn't happen to
- * include.
+ * AccountDetailPage's "Edit" drawer. `account_type` — a.k.a. wrapper_type
+ * (GitHub issue #94) — is a closed `<select>` now that tax logic branches
+ * on it (see ACCOUNT_TYPES in backend/accounts/views.py, kept in sync with
+ * this bundled list the same way identity/views.py's SUPPORTED_CURRENCIES
+ * is kept in sync with config/currencies.json).
  *
  * No currency field — removed (GitHub issues #98/#115): every real money
  * figure is already valued in the user's own `default_currency` (see
  * Settings' default-currency picker), so there was nothing left for a
  * per-account currency to mean.
  */
+//: Full names for ACCOUNT_TYPES's codes, displayed in the picker — the
+//: stored value is still the bare code (matches backend's ACCOUNT_TYPES in
+//: backend/accounts/views.py).
+const ACCOUNT_TYPE_LABELS = {
+  ISA: "Individual Savings Account (ISA)",
+  GIA: "General Investment Account (GIA)",
+  SIPP: "Self-Invested Personal Pension (SIPP)",
+  LISA: "Lifetime ISA (LISA)",
+  JISA: "Junior ISA (JISA)",
+};
+
 const EMPTY_VALUES = {
   name: "",
   description: "",
-  account_type: "",
+  account_type: ACCOUNT_TYPES[0],
   icon: DEFAULT_ACCOUNT_ICON,
 };
 
@@ -56,20 +67,20 @@ function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error })
         value={values.description}
         onChange={setField("description")}
       />
-      <TextField
+      <SelectField
         id="account-type"
         label="Account type"
         required
-        list="account-type-suggestions"
         value={values.account_type}
         onChange={setField("account_type")}
-        hint="e.g. ISA, GIA, SIPP — whatever labels your accounts."
-      />
-      <datalist id="account-type-suggestions">
-        {ACCOUNT_TYPE_SUGGESTIONS.map((option) => (
-          <option key={option} value={option} />
+        hint="Which UK tax wrapper this account is."
+      >
+        {ACCOUNT_TYPES.map((option) => (
+          <option key={option} value={option}>
+            {ACCOUNT_TYPE_LABELS[option] ?? option}
+          </option>
         ))}
-      </datalist>
+      </SelectField>
       <IconPicker
         id="account-icon"
         label="Icon"

@@ -671,6 +671,151 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
+    @patch("holdings.views._profile_client")
+    @patch("holdings.views._market_data_client")
+    @patch("holdings.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_sets_tax_override_pct(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_market_data_client,
+        mock_profile_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        updated = {**HOLDING, "tax_override_pct": 30}
+        mock_client.update_holding_tax_override.return_value = updated
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
+        enriched = {**updated, "current_price_native": 150.0, "current_price": 120.0}
+        mock_market_data_client.enrich_holdings.return_value = [enriched]
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["h-1"]),
+            data={"tax_override_pct": 30},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json(), enriched)
+        mock_client.update_holding_tax_override.assert_called_once_with("auth0|abc123", "h-1", 30)
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._client")
+    @patch("holdings.views._profile_client")
+    @patch("holdings.views._market_data_client")
+    @patch("holdings.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_clears_tax_override_pct_with_null(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_market_data_client,
+        mock_profile_client,
+        mock_transactions_client,
+        mock_transactions_market_data_client,
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.update_holding_tax_override.return_value = HOLDING
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        mock_transactions_client.list_transactions.return_value = []
+        mock_transactions_client.get_dividends_synced_through.return_value = None
+        mock_transactions_market_data_client.get_dividends.return_value = None
+        mock_market_data_client.enrich_holdings.return_value = [HOLDING]
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["h-1"]),
+            data={"tax_override_pct": None},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.update_holding_tax_override.assert_called_once_with("auth0|abc123", "h-1", None)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_400_when_tax_override_pct_missing(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["h-1"]),
+            data={},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_400_for_out_of_range_tax_override_pct(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["h-1"]),
+            data={"tax_override_pct": 150},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_400_for_non_numeric_tax_override_pct(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["h-1"]),
+            data={"tax_override_pct": "not-a-number"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("holdings.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_returns_404_for_unknown_holding(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.update_holding_tax_override.side_effect = HoldingNotFoundError("no such")
+
+        response = self.client.patch(
+            reverse("holdings-detail", args=["missing"]),
+            data={"tax_override_pct": 15},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 404)
+
     @patch("holdings.views._transactions_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")

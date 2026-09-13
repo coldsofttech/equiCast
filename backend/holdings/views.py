@@ -277,6 +277,36 @@ class HoldingDetailView(APIView):
             return Response(status=404)
         return Response(_enrich_holding(request.user.user_id, holding))
 
+    def patch(self, request: Request, holding_id: str) -> Response:
+        """Set this holding's `tax_override_pct` (GitHub issue #94) — the
+        only field a holding supports patching directly (its rollup fields
+        are only ever written by transactions/views.py, off the actual
+        recorded transactions). `null` clears the override, falling back to
+        the domicile-derived default withholding rate."""
+        if "tax_override_pct" not in request.data:
+            return Response({"detail": "Missing field: tax_override_pct."}, status=400)
+
+        tax_override_pct = request.data["tax_override_pct"]
+        if tax_override_pct is not None:
+            try:
+                tax_override_pct = float(tax_override_pct)
+            except (TypeError, ValueError):
+                return Response(
+                    {"detail": f"Invalid tax_override_pct: {tax_override_pct!r}."}, status=400
+                )
+            if not 0 <= tax_override_pct <= 100:
+                return Response(
+                    {"detail": "tax_override_pct must be between 0 and 100."}, status=400
+                )
+
+        try:
+            holding = _client.update_holding_tax_override(
+                request.user.user_id, holding_id, tax_override_pct
+            )
+        except HoldingNotFoundError:
+            return Response(status=404)
+        return Response(_enrich_holding(request.user.user_id, holding))
+
     def delete(self, request: Request, holding_id: str) -> Response:
         try:
             _client.delete_holding(request.user.user_id, holding_id)

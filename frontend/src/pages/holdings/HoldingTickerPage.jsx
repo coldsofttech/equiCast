@@ -39,7 +39,7 @@ import {
   listTransactions,
   updateTransaction,
 } from "../../api/transactions.js";
-import { deleteHolding, getHolding } from "../../api/holdings.js";
+import { deleteHolding, getHolding, updateHoldingTaxOverride } from "../../api/holdings.js";
 import {
   clearCachedTransactionsForHolding,
   readCachedTransactionsPage,
@@ -423,6 +423,17 @@ function HoldingTickerPage() {
     );
   };
 
+  // GitHub issue #94: unlike a transaction mutation, a tax_override_pct
+  // change doesn't touch this holding's transaction list or rollup fields,
+  // so this just merges the updated holding (HoldingDetailView.patch
+  // already re-enriches it, same as _enrich_holding) into the cache
+  // straight from the PATCH response, without also re-fetching
+  // transactions the way refreshHoldingAfterMutation does.
+  const handleTaxOverrideCommit = (instance, taxOverridePct) =>
+    updateHoldingTaxOverride(api, instance.holding.id, taxOverridePct).then((holding) =>
+      setCachedAccounts((current) => replaceHoldingInAccounts(current, holding))
+    );
+
   const handleCreateTransaction = (holdingId, fields) =>
     createTransaction(api, { holding_id: holdingId, ...fields }).then((transaction) =>
       refreshHoldingAfterMutation(holdingId).then(() => {
@@ -490,6 +501,7 @@ function HoldingTickerPage() {
         (marketProfile.exchange ||
           marketProfile.quote_type ||
           marketProfile.isin ||
+          marketProfile.tax_domicile ||
           marketProfile.last_updated) ? (
           <>
             {marketProfile.exchange && (
@@ -504,6 +516,11 @@ function HoldingTickerPage() {
             )}
             {marketProfile.isin && (
               <Badge tone={MARKET_PROFILE_BADGE_TONES.isin}>ISIN: {marketProfile.isin}</Badge>
+            )}
+            {marketProfile.tax_domicile && (
+              <Badge tone={MARKET_PROFILE_BADGE_TONES.taxDomicile}>
+                Tax domicile: {marketProfile.tax_domicile}
+              </Badge>
             )}
             {marketProfile.last_updated && formatSyncedDate(marketProfile.last_updated) && (
               <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>
@@ -732,6 +749,7 @@ function HoldingTickerPage() {
                     fxState={fxState}
                     onDelete={handleDeleteClick}
                     onRowClick={(instance) => navigate(instance.destination)}
+                    onTaxOverrideCommit={handleTaxOverrideCommit}
                   />
                 </>
               );

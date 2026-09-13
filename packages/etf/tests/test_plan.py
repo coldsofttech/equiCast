@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from equicast_etf.config import ETFTicker
-from equicast_etf.plan import chunk_tickers
+from equicast_etf.plan import _serialize_ticker, chunk_tickers
 
 
 def _tickers(n: int) -> list[ETFTicker]:
@@ -34,6 +34,59 @@ def test_chunk_tickers_rejects_invalid_arguments() -> None:
         chunk_tickers(_tickers(1), chunk_size=0, max_chunks=256)
     with pytest.raises(ValueError):
         chunk_tickers(_tickers(1), chunk_size=1, max_chunks=0)
+
+
+def test_serialize_ticker_plain_when_no_overrides() -> None:
+    assert _serialize_ticker(ETFTicker(ticker="VOO")) == "VOO"
+
+
+def test_serialize_ticker_with_isin_override_only() -> None:
+    assert _serialize_ticker(ETFTicker(ticker="IWDA", isin="IE00B4L5Y983")) == {
+        "ticker": "IWDA",
+        "isin": "IE00B4L5Y983",
+    }
+
+
+def test_serialize_ticker_with_tax_domicile_override_only() -> None:
+    assert _serialize_ticker(ETFTicker(ticker="VOO", tax_domicile="US")) == {
+        "ticker": "VOO",
+        "tax_domicile": "US",
+    }
+
+
+def test_serialize_ticker_with_both_overrides() -> None:
+    assert _serialize_ticker(ETFTicker(ticker="QQQ", isin="US46090E1038", tax_domicile="US")) == {
+        "ticker": "QQQ",
+        "isin": "US46090E1038",
+        "tax_domicile": "US",
+    }
+
+
+def test_plan_cli_prints_json_chunks_preserves_isin_and_tax_domicile_overrides(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from equicast_etf.plan import main
+
+    config = tmp_path / "etfs.yaml"
+    config.write_text(
+        "tickers:\n"
+        "  - VOO\n"
+        "  - ticker: QQQ\n"
+        "    isin: US46090E1038\n"
+        "    tax_domicile: US\n"
+    )
+
+    import sys
+
+    old_argv = sys.argv
+    sys.argv = ["equicast-etf-plan", "--config", str(config), "--chunk-size", "2"]
+    try:
+        main()
+    finally:
+        sys.argv = old_argv
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == [["VOO", {"ticker": "QQQ", "isin": "US46090E1038", "tax_domicile": "US"}]]
 
 
 def test_plan_cli_prints_json_chunks(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

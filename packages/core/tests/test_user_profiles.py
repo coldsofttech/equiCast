@@ -31,6 +31,8 @@ def test_get_or_create_profile_creates_with_defaults_on_first_login(
         "default_currency": "GBP",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|new-user"})["Item"]
     assert stored == profile
@@ -43,6 +45,8 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
             "default_currency": "EUR",
             "transaction_type": "TRANSACTION",
             "fx_warmup_currencies": ["EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "HIGHER",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -54,6 +58,8 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
         "default_currency": "EUR",
         "transaction_type": "TRANSACTION",
         "fx_warmup_currencies": ["EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
     }
 
 
@@ -65,6 +71,8 @@ def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_
             "user_id": "auth0|existing",
             "default_currency": "EUR",
             "fx_warmup_currencies": ["EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "HIGHER",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -76,6 +84,8 @@ def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_
         "default_currency": "EUR",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -89,6 +99,8 @@ def test_get_or_create_profile_backfills_fx_warmup_currencies_onto_existing_prof
             "user_id": "auth0|existing",
             "default_currency": "EUR",
             "transaction_type": "TRANSACTION",
+            "tax_residency": "UK",
+            "income_tax_band": "HIGHER",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -100,12 +112,70 @@ def test_get_or_create_profile_backfills_fx_warmup_currencies_onto_existing_prof
         "default_currency": "EUR",
         "transaction_type": "TRANSACTION",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
 
 
-def test_get_or_create_profile_backfills_both_fields_when_neither_is_present(
+def test_get_or_create_profile_backfills_tax_residency_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION",
+            "fx_warmup_currencies": ["EUR"],
+            "income_tax_band": "HIGHER",
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_get_or_create_profile_backfills_income_tax_band_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION",
+            "fx_warmup_currencies": ["EUR"],
+            "tax_residency": "UK",
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_get_or_create_profile_backfills_all_fields_when_none_are_present(
     dynamodb_resource,
 ) -> None:
     dynamodb_resource.Table(TABLE).put_item(
@@ -120,6 +190,8 @@ def test_get_or_create_profile_backfills_both_fields_when_neither_is_present(
         "default_currency": "EUR",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
 
 
@@ -151,6 +223,8 @@ def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> 
             "default_currency": "GBP",
             "transaction_type": "AVERAGE",
             "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "BASIC",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -162,6 +236,8 @@ def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> 
         "default_currency": "EUR",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -177,6 +253,8 @@ def test_update_default_currency_creates_profile_first_if_missing(dynamodb_resou
         "default_currency": "INR",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
 
 
@@ -187,6 +265,8 @@ def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> 
             "default_currency": "GBP",
             "transaction_type": "AVERAGE",
             "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "BASIC",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -198,6 +278,8 @@ def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> 
         "default_currency": "GBP",
         "transaction_type": "TRANSACTION",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -213,6 +295,8 @@ def test_update_transaction_type_creates_profile_first_if_missing(dynamodb_resou
         "default_currency": "GBP",
         "transaction_type": "TRANSACTION",
         "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
 
 
@@ -223,6 +307,8 @@ def test_update_fx_warmup_currencies_updates_existing_profile(dynamodb_resource)
             "default_currency": "GBP",
             "transaction_type": "AVERAGE",
             "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "BASIC",
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -234,6 +320,8 @@ def test_update_fx_warmup_currencies_updates_existing_profile(dynamodb_resource)
         "default_currency": "GBP",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["GBP", "INR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -249,4 +337,90 @@ def test_update_fx_warmup_currencies_creates_profile_first_if_missing(dynamodb_r
         "default_currency": "GBP",
         "transaction_type": "AVERAGE",
         "fx_warmup_currencies": ["INR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
+    }
+
+
+def test_update_tax_residency_updates_existing_profile(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "GBP",
+            "transaction_type": "AVERAGE",
+            "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "BASIC",
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_tax_residency("auth0|existing", "UK")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_update_tax_residency_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_tax_residency("auth0|new-user", "UK")
+
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "BASIC",
+    }
+
+
+def test_update_income_tax_band_updates_existing_profile(dynamodb_resource) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "GBP",
+            "transaction_type": "AVERAGE",
+            "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "BASIC",
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_income_tax_band("auth0|existing", "HIGHER")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_update_income_tax_band_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.update_income_tax_band("auth0|new-user", "ADDITIONAL")
+
+    assert profile == {
+        "user_id": "auth0|new-user",
+        "default_currency": "GBP",
+        "transaction_type": "AVERAGE",
+        "fx_warmup_currencies": ["GBP", "USD", "EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "ADDITIONAL",
     }

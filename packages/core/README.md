@@ -94,11 +94,12 @@ regardless of how recent the ticker is.
 
 `get_catalog(asset_class)`/`search(query, asset_classes=None)` read a
 third, separate piece of the market-data layout: `catalog/<asset_class>.parquet`
-— a small, pre-built `{ticker, name, type, current_price, ..., isin}` row per
-configured ticker, published by each ingestion pipeline after a run (see
-`equicast_core.catalog` below), not derived from `profile.parquet` on the
-fly. `isin` is only ever populated for stock/etf rows (always `None` for
-fx/benchmark, which don't carry one). `search()` reads each scanned asset
+— a small, pre-built `{ticker, name, type, current_price, ..., isin, tax_domicile}`
+row per configured ticker, published by each ingestion pipeline after a run
+(see `equicast_core.catalog` below), not derived from `profile.parquet` on
+the fly. `isin`/`tax_domicile` are only ever populated for stock/etf rows
+(always `None` for fx/benchmark, which don't carry either — see GitHub
+issue #94 for `tax_domicile`). `search()` reads each scanned asset
 class's catalog once via `get_catalog()` and does a case-insensitive
 substring match against `ticker`/`name`/`isin` in memory — no per-ticker S3
 reads, and no live bucket listing:
@@ -261,6 +262,14 @@ allowed (the Django backend's `identity/views.py` rejects it with `409`
 once the user has any transaction recorded, across any holding) isn't
 validated by `UserProfileClient` itself — the same way account_id
 ownership isn't validated by `PiesClient`.
+
+`tax_residency` (GitHub issue #94, defaults to `"UK"` — the only value v1
+tax logic accepts) and `income_tax_band` (`"NONE"`/`"BASIC"`/`"HIGHER"`/
+`"ADDITIONAL"`, defaults to `"BASIC"`, self-declared rather than computed
+from any income data equicast has) round out the profile — both
+per-user, backfilled the same way as `transaction_type`, and validated by
+`identity/views.py` (`TAX_RESIDENCIES`/`INCOME_TAX_BANDS`), not
+`UserProfileClient` itself.
 
 ## `AccountsClient` — S3 JSON user-owned data (accounts)
 
@@ -466,6 +475,16 @@ raises `ValueError` for a pie-scoped holding — those only ever change via
 helpers the Django backend uses for the parent domains' `?force=true`
 deletes — like `PiesClient.delete_pies_for_account`, an empty match is a
 no-op, not an error.
+
+Every holding also carries `tax_override_pct` (GitHub issue #94, `None` by
+default) — a per-holding-in-account override of the withholding tax rate
+`MarketDataClient.enrich_holdings` otherwise derives from the ticker's
+`tax_domicile` (e.g. no W-8BEN on file for that account, so the real US
+rate is 30%, not the default 15%). `update_holding_tax_override(user_id,
+holding_id, tax_override_pct)` sets or clears it (`None` clears); whether
+the value is a sane percentage is the Django backend's job to check first
+(`holdings/views.py`'s `PATCH /api/holdings/<id>/`), not
+`HoldingsClient` itself.
 
 `sync_pie_holdings` applies an `add`/`remove`/`reallocate` batch to one
 pie's holdings atomically — every change is validated against the

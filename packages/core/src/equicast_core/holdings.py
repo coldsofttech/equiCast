@@ -85,7 +85,13 @@ def _normalize(holding: dict[str, Any]) -> dict[str, Any]:
     predating this feature has no recorded position yet from this client's
     point of view — it's brought current the next time one of its
     transactions is created/updated/deleted (see `_refresh_holding_rollup`
-    in backend/transactions/views.py), not backfilled by computation here."""
+    in backend/transactions/views.py), not backfilled by computation here.
+
+    Also backfills `tax_override_pct` (GitHub issue #94 — a per-holding
+    override of the withholding tax rate `MarketDataClient.enrich_holdings`
+    otherwise derives from the ticker's `tax_domicile`; see
+    `update_holding_tax_override`), `None` meaning "use the derived
+    default"."""
     holding.setdefault("no_of_shares", 0)
     holding.setdefault("average_price_native", None)
     holding.setdefault("average_price", None)
@@ -93,6 +99,7 @@ def _normalize(holding: dict[str, Any]) -> dict[str, Any]:
     holding.setdefault("invested", 0)
     holding.setdefault("dividends_native", 0)
     holding.setdefault("dividends", 0)
+    holding.setdefault("tax_override_pct", None)
     return holding
 
 
@@ -244,6 +251,34 @@ class HoldingsClient:
             return holdings[index]
         raise RuntimeError(f"Too many conflicting writes to holdings for user '{user_id}'.")
 
+    def update_holding_tax_override(
+        self, user_id: str, holding_id: str, tax_override_pct: float | None
+    ) -> dict[str, Any]:
+        """Set `holding_id`'s `tax_override_pct` (GitHub issue #94) —
+        `None` to clear the override and fall back to the domicile-derived
+        default (`MarketDataClient.enrich_holdings`'s `default_
+        withholding_pct`), a number to override it (e.g. no W-8BEN on file
+        for this account, so the real US withholding rate is 30%, not the
+        default 15%). Raises `HoldingNotFoundError` if no such holding
+        exists. Whether the value is a sane percentage is the caller's job
+        to check first — this client only knows about holdings, the same
+        way `sync_pie_holdings` leaves `allocation_pct` validation to
+        `_validate_allocation` at the view boundary."""
+        for _ in range(_MAX_CONFLICT_RETRIES):
+            holdings, etag = self._load(user_id)
+            index = next((i for i, h in enumerate(holdings) if h["id"] == holding_id), None)
+            if index is None:
+                raise HoldingNotFoundError(f"No holding '{holding_id}' for user '{user_id}'.")
+            holdings[index] = {**holdings[index], "tax_override_pct": tax_override_pct}
+            try:
+                self._save(user_id, holdings, etag)
+            except self._s3.exceptions.ClientError as exc:
+                if self._is_conflict(exc):
+                    continue
+                raise
+            return holdings[index]
+        raise RuntimeError(f"Too many conflicting writes to holdings for user '{user_id}'.")
+
     def create_holding(
         self,
         user_id: str,
@@ -293,6 +328,7 @@ class HoldingsClient:
                 "invested": 0,
                 "dividends_native": 0,
                 "dividends": 0,
+                "tax_override_pct": None,
             }
             try:
                 self._save(user_id, [*holdings, holding], etag)
@@ -468,6 +504,7 @@ class HoldingsClient:
                         "invested": 0,
                         "dividends_native": 0,
                         "dividends": 0,
+                        "tax_override_pct": None,
                     }
                 )
 

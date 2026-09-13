@@ -46,3 +46,25 @@ export function getHolding(api, holdingId) {
 export function deleteHolding(api, holdingId) {
   return /** @type {Promise<null>} */ (api(`/holdings/${holdingId}/`, { method: "DELETE" }));
 }
+
+/**
+ * PATCH /api/holdings/<id>/ — see backend/holdings/views.py's
+ * HoldingDetailView.patch (GitHub issue #94). Overrides the dividend
+ * withholding tax rate `enrich_holdings` otherwise derives from this
+ * holding's ticker's `tax_domicile` (e.g. no W-8BEN on file for this
+ * account, so the real US rate is 30%, not the default 15%) — pass `null`
+ * to clear the override and fall back to the derived default.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string} holdingId
+ * @param {number | null} taxOverridePct
+ * @returns {Promise<Holding>}
+ */
+export function updateHoldingTaxOverride(api, holdingId, taxOverridePct) {
+  return /** @type {Promise<Holding>} */ (
+    api(`/holdings/${holdingId}/`, {
+      method: "PATCH",
+      body: { tax_override_pct: taxOverridePct },
+    })
+  );
+}

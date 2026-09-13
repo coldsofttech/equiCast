@@ -56,6 +56,23 @@ from equicast_etf.writer import (
 
 logger = logging.getLogger(__name__)
 
+#: v1 tax logic only models these two domiciles (GitHub issue #94) — an
+#: ISIN prefix outside this map (or a missing ISIN) leaves `tax_domicile`
+#: unset, same as an unmodeled asset class leaving other profile fields
+#: `None` elsewhere in this pipeline.
+_ISIN_COUNTRY_TAX_DOMICILE = {"GB": "UK", "US": "US"}
+
+
+def _derive_tax_domicile(isin: str | None) -> str | None:
+    """Best-effort `tax_domicile` from an ISIN's leading 2-letter country
+    code (ISO 6166) — `None` for an unset ISIN or a country this v1 model
+    doesn't cover. Only a default: a config entry's own `tax_domicile`
+    (see `ETFTicker`) always wins over this, the same way `isin_override`
+    wins over yfinance's own lookup."""
+    if not isin:
+        return None
+    return _ISIN_COUNTRY_TAX_DOMICILE.get(isin[:2].upper())
+
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -66,8 +83,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
     source.add_argument("--config", type=Path, help="Path to an ETF tickers YAML config.")
     source.add_argument(
         "--tickers-json",
-        help="JSON array of ticker strings, or {ticker, isin} objects for an ISIN override "
-        "(e.g. one matrix chunk).",
+        help="JSON array of ticker strings, or {ticker, isin, tax_domicile} objects for an "
+        "ISIN/tax_domicile override (e.g. one matrix chunk).",
     )
     parser.add_argument(
         "--out", type=Path, required=True, help="Output directory for Parquet files."
@@ -114,6 +131,7 @@ def _profile_and_dividends_task(
     key: str,
     full_load: bool,
     isin_override: str | None = None,
+    tax_domicile_override: str | None = None,
 ) -> list[Path]:
     """Write profile.parquet (with a `dividend_frequency` field derived from
     dividend history), dividend/current.parquet (plus
@@ -131,12 +149,18 @@ def _profile_and_dividends_task(
     write costs no more yfinance calls than the old separate profile/
     dividends tasks did, while a naive merge that just called `dividends()`
     a second time from `_profile_task` would have doubled them.
+
+    `profile["tax_domicile"]` (GitHub issue #94) is `tax_domicile_override`
+    when the config gave one, else derived from the (possibly just-
+    overridden) `isin` via `_derive_tax_domicile` — same override-wins-over-
+    derived precedence `isin_override` itself has over yfinance's lookup.
     """
     logger.info("Fetching profile and dividends for %s (full_load=%s)", key, full_load)
     dividends = dividends_client.dividends(full_load=True)
     profile = {**client.profile(), "dividend_frequency": dividend_frequency(dividends)}
     if isin_override is not None:
         profile["isin"] = isin_override
+    profile["tax_domicile"] = tax_domicile_override or _derive_tax_domicile(profile.get("isin"))
     paths = [write_profile_parquet(profile, output_dir)]
 
     if full_load:
@@ -211,6 +235,7 @@ def run(
                 ticker.key,
                 full_load,
                 ticker.isin,
+                ticker.tax_domicile,
             )
         )
         tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))

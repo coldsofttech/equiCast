@@ -7,6 +7,8 @@ import { useApi } from "../../api/useApi.js";
 import {
   updateDefaultCurrency,
   updateFxWarmupCurrencies,
+  updateIncomeTaxBand,
+  updateTaxResidency,
   updateTransactionType,
 } from "../../api/identity.js";
 import CURRENCIES from "../../config/currencies.json";
@@ -28,7 +30,10 @@ const DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"];
  * backend rejects the change with a 409 once the user has any transaction
  * recorded anywhere, surfaced here as `error`), and fx_warmup_currencies
  * (GitHub issue #149 — which currencies the login-time FX warm-up, see
- * utils/fxWarmup.js, pairs against `default_currency`).
+ * utils/fxWarmup.js, pairs against `default_currency`), tax_residency and
+ * income_tax_band (GitHub issue #94 — v1 tax logic is UK-only, so
+ * tax_residency only ever offers "UK" for now; income_tax_band is a
+ * self-declared band, always per-user, never household-pooled).
  *
  * Each setting saves independently (its own PATCH) so changing one doesn't
  * require re-submitting the others, and a transaction_type 409 doesn't
@@ -41,6 +46,8 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
   const [fxWarmupCurrencies, setFxWarmupCurrencies] = useState(
     profile?.fx_warmup_currencies ?? DEFAULT_FX_WARMUP_CURRENCIES
   );
+  const [taxResidency, setTaxResidency] = useState(profile?.tax_residency ?? "UK");
+  const [incomeTaxBand, setIncomeTaxBand] = useState(profile?.income_tax_band ?? "BASIC");
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState(null);
 
@@ -61,6 +68,8 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
     const fxWarmupCurrenciesChanged =
       JSON.stringify([...fxWarmupCurrencies].sort()) !==
       JSON.stringify([...originalFxWarmupCurrencies].sort());
+    const taxResidencyChanged = taxResidency !== (profile?.tax_residency ?? "UK");
+    const incomeTaxBandChanged = incomeTaxBand !== (profile?.income_tax_band ?? "BASIC");
 
     Promise.resolve(currencyChanged ? updateDefaultCurrency(api, currency) : profile)
       .then((updated) =>
@@ -68,6 +77,10 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
       )
       .then((updated) =>
         fxWarmupCurrenciesChanged ? updateFxWarmupCurrencies(api, fxWarmupCurrencies) : updated
+      )
+      .then((updated) => (taxResidencyChanged ? updateTaxResidency(api, taxResidency) : updated))
+      .then((updated) =>
+        incomeTaxBandChanged ? updateIncomeTaxBand(api, incomeTaxBand) : updated
       )
       .then((updated) => {
         onSaved(updated);
@@ -103,6 +116,27 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
         >
           <option value="AVERAGE">Average cost</option>
           <option value="TRANSACTION">Per-transaction</option>
+        </SelectField>
+        <SelectField
+          id="settings-tax-residency"
+          label="Tax residency"
+          value={taxResidency}
+          onChange={(event) => setTaxResidency(event.target.value)}
+          hint="Currently only UK is supported. Upcoming release to include more"
+        >
+          <option value="UK">UK</option>
+        </SelectField>
+        <SelectField
+          id="settings-income-tax-band"
+          label="Income tax band"
+          value={incomeTaxBand}
+          onChange={(event) => setIncomeTaxBand(event.target.value)}
+          hint="Self-declared — used to work out the tax due on GIA income once outside your dividend/CGT allowance. ISA/SIPP/LISA/JISA holdings are unaffected."
+        >
+          <option value="NONE">Non-taxpayer (0%)</option>
+          <option value="BASIC">Basic rate (20%)</option>
+          <option value="HIGHER">Higher rate (40%)</option>
+          <option value="ADDITIONAL">Additional rate (45%)</option>
         </SelectField>
         <div className="ec-field">
           <span className="ec-field-label">FX warm-up currencies</span>
