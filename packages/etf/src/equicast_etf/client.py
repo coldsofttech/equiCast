@@ -122,6 +122,7 @@ class ETFClient:
             "ticker": self.ticker,
             "name": info.get("longName") or info.get("shortName"),
             "quote_type": info.get("quoteType"),
+            "isin": self._datafeed.get_isin(self.symbol),
             "exchange": info.get("exchange"),
             "currency": info.get("currency"),
             "region": info.get("region"),

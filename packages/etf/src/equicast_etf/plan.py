@@ -50,12 +50,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _serialize_ticker(ticker: ETFTicker) -> str | dict:
+    """Plain ticker string when there's no ISIN override, else a
+    `{ticker, isin}` mapping — round-trips through `parse_etf_tickers_json`
+    (via `_tickers_from_raw`) so an override in the config survives being
+    split into a GitHub Actions matrix chunk."""
+    return {"ticker": ticker.ticker, "isin": ticker.isin} if ticker.isin else ticker.ticker
+
+
 def main() -> None:
     args = build_arg_parser().parse_args()
     tickers = load_etf_tickers(args.config)
     chunks = chunk_tickers(tickers, args.chunk_size, args.max_chunks)
 
-    print(json.dumps([[ticker.ticker for ticker in chunk] for chunk in chunks]))
+    print(json.dumps([[_serialize_ticker(ticker) for ticker in chunk] for chunk in chunks]))
 
 
 if __name__ == "__main__":

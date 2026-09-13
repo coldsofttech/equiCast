@@ -177,6 +177,7 @@ class StockClient:
             "ticker": self.ticker,
             "name": info.get("longName") or info.get("shortName"),
             "quote_type": info.get("quoteType"),
+            "isin": self._datafeed.get_isin(self.symbol),
             "exchange": info.get("exchange"),
             "currency": info.get("currency"),
             "description": info.get("longBusinessSummary"),
