@@ -3,8 +3,9 @@ import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
+import { listTransactions } from "../../api/transactions.js";
 import { resolveFxRate, formatPrice } from "../holdings/holdingFinancials.js";
-import { RANGES, formatAxisDate, sliceForRange } from "../priceRangeSlicing.js";
+import { formatAxisDate, sliceForRange, visibleRanges } from "../priceRangeSlicing.js";
 import PieComparePicker from "./PieComparePicker.jsx";
 import PieBenchmarkRating from "./PieBenchmarkRating.jsx";
 import "../accounts/PriceChart.css";
@@ -51,6 +52,94 @@ function lastKnownBar(sortedBars, date) {
     result = bar;
   }
   return result;
+}
+
+/**
+ * Walks one holding's own BUY/SELL transactions (ascending by date) into a
+ * running {date, shares, cost} checkpoint after each date — `shares` is the
+ * net position, `cost` its cost basis in the holding's own native currency
+ * (a weighted-average tracker: a BUY adds its own shares*price to both; a
+ * SELL removes shares at the *average* cost per share held just before it,
+ * not its own sale price, same as a real cost-basis tracker — GitHub issue
+ * #194). DIVIDEND records don't affect either and are ignored. A legacy
+ * AVERAGE-mode record predating the BUY/DIVIDEND shape has `type: null` but
+ * is still a BUY (see holdingFinancials.js's `selectPositionEntry`) — an
+ * AVERAGE-mode holding only ever has one such record, so its own checkpoint
+ * history is a single step from 0 to that record's shares/cost.
+ *
+ * @param {import("../../api/transactions.js").Transaction[]} transactions
+ * @returns {{ date: string, shares: number, cost: number }[]}
+ */
+function buildPositionCheckpoints(transactions) {
+  const trades = transactions
+    .filter((t) => (t.type === "BUY" || t.type === "SELL" || t.type == null) && t.date)
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  let shares = 0;
+  let cost = 0;
+  const checkpoints = [];
+  for (const t of trades) {
+    if (t.type === "SELL") {
+      const avgCost = shares > 0 ? cost / shares : 0;
+      const sold = Math.min(Number(t.no_of_shares), shares);
+      shares -= sold;
+      cost -= avgCost * sold;
+    } else {
+      const price = Number(t.price_native ?? t.average_price_native ?? 0);
+      shares += Number(t.no_of_shares);
+      cost += Number(t.no_of_shares) * price;
+    }
+    checkpoints.push({ date: t.date, shares, cost });
+  }
+  return checkpoints;
+}
+
+/** The net {shares, cost} as of `date` — the last checkpoint at or before
+ * it, or all-zero if `date` predates this holding's first transaction. */
+function positionAt(checkpoints, date) {
+  let result = { shares: 0, cost: 0 };
+  for (const c of checkpoints) {
+    if (c.date > date) break;
+    result = c;
+  }
+  return result;
+}
+
+/**
+ * Every held holding's own full BUY/SELL transaction history (looping
+ * every page — TransactionPagination caps a single page at 200, see
+ * backend/transactions/views.py), reduced to its own position checkpoint
+ * timeline (see `buildPositionCheckpoints`). A holding whose transactions
+ * can't be fetched is dropped rather than failing the whole fetch, same as
+ * `fetchHoldingHistories` below. Used only by the main (non-compare) series
+ * — GitHub issue #194's since-inception invested/current value curves are
+ * deliberately not offered for a "compare against" pie/account/benchmark,
+ * so that path keeps its own pre-existing "today's shares" aggregate.
+ */
+async function fetchHoldingPositionSeries(api, holdings) {
+  const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
+  if (heldHoldings.length === 0) return [];
+
+  const results = await Promise.all(
+    heldHoldings.map(async (holding) => {
+      try {
+        let pageNumber = 1;
+        let page = await listTransactions(api, { holdingId: holding.id, pageSize: 200, page: pageNumber });
+        const all = [...page.results];
+        while (page.next) {
+          pageNumber += 1;
+          page = await listTransactions(api, { holdingId: holding.id, pageSize: 200, page: pageNumber });
+          all.push(...page.results);
+        }
+        const checkpoints = buildPositionCheckpoints(all);
+        return checkpoints.length > 0 ? { id: holding.id, checkpoints } : null;
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  return results.filter(Boolean);
 }
 
 /**
@@ -136,7 +225,7 @@ async function fetchHoldingHistories(api, holdings, targetCurrency) {
         }
         const fxRate = await resolveFxRate(api, history.currency, targetCurrency);
         if (fxRate == null) return null;
-        return { shares: Number(holding.no_of_shares), fxRate, history };
+        return { id: holding.id, shares: Number(holding.no_of_shares), fxRate, history };
       } catch {
         return null;
       }
@@ -159,6 +248,93 @@ function sliceAndAggregate(holdingHistories, rangeId) {
     return { shares, fxRate, bars, barsByDate: new Map(bars.map((b) => [b.date, b])) };
   });
   return holdingSeries.length > 0 ? buildAggregateBars(holdingSeries) : [];
+}
+
+/** The earliest checkpoint date across `positionSeries` — the real date the
+ * first investment was made across every held holding — or `null` if
+ * nothing's been invested yet. */
+function earliestInvestmentDate(positionSeries) {
+  let earliest = null;
+  for (const { checkpoints } of positionSeries) {
+    const first = checkpoints[0]?.date;
+    if (first && (earliest == null || first < earliest)) earliest = first;
+  }
+  return earliest;
+}
+
+/**
+ * The since-inception counterpart to `buildAggregateBars` (GitHub issue
+ * #194): rather than valuing *today's* share count at every past date, each
+ * date is valued at the shares/cost basis actually held *as of that date*
+ * (`positionAt`, built from real BUY/SELL history) — a true point-in-time
+ * reconstruction, not a "what if we'd always held today's position"
+ * approximation. `close`/`open`/`high`/`low` are the resulting current
+ * value (point-in-time shares × that date's own price, forward-filled from
+ * the holding's last known bar same as `buildAggregateBars`); `invested` is
+ * the resulting cost basis (point-in-time shares' own weighted-average
+ * cost, see `buildPositionCheckpoints`) — both summed across every holding
+ * and converted via its own (current, single) `fxRate`, same approximation
+ * `buildAggregateBars` already makes rather than resolving a historical FX
+ * rate per date. Dates before the very first investment across every
+ * holding are dropped entirely (see `earliestInvestmentDate`) — this chart
+ * starts on day 1, not before.
+ */
+function buildSinceInceptionBars(holdingSeries) {
+  const dateSet = new Set();
+  holdingSeries.forEach((h) => h.bars.forEach((b) => dateSet.add(b.date)));
+  const dates = [...dateSet].sort();
+  const earliest = earliestInvestmentDate(holdingSeries);
+  if (!earliest) return [];
+
+  return dates
+    .filter((date) => date >= earliest)
+    .map((date) => {
+      let open = 0;
+      let high = 0;
+      let low = 0;
+      let close = 0;
+      let invested = 0;
+      let hasData = false;
+      holdingSeries.forEach((h) => {
+        const { shares, cost } = positionAt(h.checkpoints, date);
+        invested += cost * h.fxRate;
+        if (shares <= 0) return;
+        const exactBar = h.barsByDate.get(date);
+        const bar = exactBar ?? lastKnownBar(h.bars, date);
+        if (!bar) return;
+        hasData = true;
+        const weight = shares * h.fxRate;
+        open += weight * (exactBar ? bar.open : bar.close);
+        high += weight * (exactBar ? bar.high : bar.close);
+        low += weight * (exactBar ? bar.low : bar.close);
+        close += weight * bar.close;
+      });
+      return hasData || invested > 0 ? { date, open, high, low, close, invested } : null;
+    })
+    .filter(Boolean);
+}
+
+/**
+ * Slices each of `holdingHistories`' full price history down to `rangeId`
+ * and combines the results with `positionSeries` (each holding's own
+ * BUY/SELL checkpoint timeline, unaffected by `rangeId` — the full history
+ * is always needed to know the correct point-in-time position even for a
+ * date near a windowed range's start) via `buildSinceInceptionBars`. The
+ * client-side, synchronous counterpart to `fetchHoldingHistories`/
+ * `fetchHoldingPositionSeries`, called again on every range-picker click
+ * with no further request.
+ */
+function sliceAndAggregateSinceInception(holdingHistories, positionSeries, rangeId) {
+  const checkpointsById = new Map(positionSeries.map((p) => [p.id, p.checkpoints]));
+  const holdingSeries = holdingHistories
+    .map(({ id, fxRate, history }) => {
+      const checkpoints = checkpointsById.get(id);
+      if (!checkpoints) return null;
+      const bars = sliceForRange(history, rangeId);
+      return { fxRate, bars, barsByDate: new Map(bars.map((b) => [b.date, b])), checkpoints };
+    })
+    .filter(Boolean);
+  return holdingSeries.length > 0 ? buildSinceInceptionBars(holdingSeries) : [];
 }
 
 /**
@@ -200,14 +376,32 @@ function sliceAndAggregate(holdingHistories, rangeId) {
  * independent of this chart's own range picker, same as HoldingPriceChart's
  * own HoldingBenchmarkRating.
  *
- * `investedTotal`/`currentValueTotal` (the caller's own `totals.invested`/
- * `totals.currentValue`, both in `currency`) draw as reference lines (grey
- * dashed / accent info dashed respectively) the same way HoldingPriceChart
- * treats avg buy price/current price — including in pctMode, log-scaled via
- * their own ratio to the first bar's close, so they stay meaningful and
- * on-screen even while comparing. They get the same continuously-flowing
- * dash animation too (ec-chart-avg-line/ec-chart-current-line,
- * HoldingPriceChart.css — already imported here, so no extra CSS needed).
+ * The main (non-compare) series is a true since-inception reconstruction
+ * (GitHub issue #194), not the "what today's holdings would have been worth
+ * historically" approximation this chart used to draw: the blue line is
+ * point-in-time *current* value (point-in-time shares actually held, valued
+ * at that date's own price — see `buildSinceInceptionBars`) and the grey
+ * dashed line is point-in-time *invested* value (that same position's own
+ * running cost basis — see `buildPositionCheckpoints`), both starting on
+ * the real date of the very first BUY across every held holding and running
+ * to today, so both move up and down together as positions are built,
+ * trimmed, and re-priced over time. There's deliberately no separate
+ * "current price" reference line or legend badge any more — the blue line
+ * already is current value. `investedTotal` (the caller's own
+ * `totals.invested`) now only feeds the legend's own "Total invested"
+ * summary number, not any line — and that badge itself is hidden once a
+ * comparison is active (pctMode), same reasoning as the removed lines: a
+ * static invested total isn't a meaningful thing to show alongside another
+ * portfolio's or a benchmark's own % growth. Since this reconstruction
+ * needs each held holding's own transaction history, it's fetched only for
+ * the main series
+ * — a "compare against" pie/account/benchmark keeps the pre-existing
+ * "today's shares" aggregate (`buildAggregateBars`) with no invested/
+ * current overlay of its own, since neither is a meaningful thing to
+ * compare against another portfolio's or a benchmark's own % growth.
+ * `visibleRanges` (priceRangeSlicing.js) trims the range picker itself to
+ * what the actual investment history could show — no "10Y" button when the
+ * first investment was made 3 months ago.
  *
  * A holdings-set change doesn't blank the view while the new fetch is in
  * flight (a range switch has no such gap any more — see
@@ -225,7 +419,7 @@ function sliceAndAggregate(holdingHistories, rangeId) {
  * fetch effect and JSX, not anything HoldingPriceChart's CSS import alone
  * could cover. No candle-reveal case, since this chart has no Candles type.
  *
- * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, entityLabel?: string, compareItems?: { id: string, name: string }[], compareItemType?: "pie"|"account", fetchCompareHoldings: (refId: string) => Promise<import("../../api/accounts.js").Holding[]>, investedTotal?: number|null, currentValueTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
+ * @param {{ holdings: import("../../api/accounts.js").Holding[], currency: string, entityLabel?: string, compareItems?: { id: string, name: string }[], compareItemType?: "pie"|"account", fetchCompareHoldings: (refId: string) => Promise<import("../../api/accounts.js").Holding[]>, investedTotal?: number|null, holdingValuations?: { currentValue: number }[]|null }} props
  */
 function PiePriceChart({
   holdings,
@@ -235,7 +429,6 @@ function PiePriceChart({
   compareItemType = "pie",
   fetchCompareHoldings,
   investedTotal = null,
-  currentValueTotal = null,
   holdingValuations = null,
 }) {
   const api = useApi();
@@ -287,13 +480,19 @@ function PiePriceChart({
     setRevision((r) => r + 1);
   };
 
+  const [positionSeries, setPositionSeries] = useState([]);
+
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
     setHoverIndex(null);
-    fetchHoldingHistories(api, holdings, currency).then((result) => {
+    Promise.all([
+      fetchHoldingHistories(api, holdings, currency),
+      fetchHoldingPositionSeries(api, holdings),
+    ]).then(([histories, positions]) => {
       if (cancelled) return;
-      setHoldingHistories(result);
+      setHoldingHistories(histories);
+      setPositionSeries(positions);
       setStatus("ok");
       const isSameEntity =
         prevEntityRef.current.holdingsSignature === holdingsSignature &&
@@ -306,14 +505,25 @@ function PiePriceChart({
     };
   }, [api, holdings, currency, holdingsSignature]);
 
-  // Nothing above clears `holdingHistories` while a new fetch is in
-  // flight, so `bars` keeps reflecting the previous holdings set right up
-  // until the new one lands — see the "is-refreshing" wrapper below. A
-  // range switch has no such gap at all: slicing/aggregating client-side
-  // (sliceAndAggregate) is synchronous.
+  const earliestDate = useMemo(() => earliestInvestmentDate(positionSeries), [positionSeries]);
+  const ranges = useMemo(() => visibleRanges(earliestDate), [earliestDate]);
+
+  // A holdings/history change can shrink `ranges` down past whatever's
+  // currently selected (e.g. switching to a pie invested into more
+  // recently) — fall back to "max" rather than leaving `rangeId` pointing
+  // at a button that's no longer rendered.
+  useEffect(() => {
+    if (!ranges.some((r) => r.id === rangeId)) setRangeId("max");
+  }, [ranges, rangeId]);
+
+  // Nothing above clears `holdingHistories`/`positionSeries` while a new
+  // fetch is in flight, so `bars` keeps reflecting the previous holdings set
+  // right up until the new one lands — see the "is-refreshing" wrapper
+  // below. A range switch has no such gap at all: slicing/aggregating
+  // client-side (sliceAndAggregateSinceInception) is synchronous.
   const bars = useMemo(
-    () => sliceAndAggregate(holdingHistories, rangeId),
-    [holdingHistories, rangeId]
+    () => sliceAndAggregateSinceInception(holdingHistories, positionSeries, rangeId),
+    [holdingHistories, positionSeries, rangeId]
   );
   const hasData = bars.length > 0;
 
@@ -401,20 +611,8 @@ function PiePriceChart({
     return compareAlignedCloses.map((c) => c / first);
   }, [compareAlignedCloses]);
 
-  const investedRatio = useMemo(() => {
-    if (investedTotal == null || bars.length === 0) return null;
-    return investedTotal / bars[0].close;
-  }, [investedTotal, bars]);
-
-  const currentValueRatio = useMemo(() => {
-    if (currentValueTotal == null || bars.length === 0) return null;
-    return currentValueTotal / bars[0].close;
-  }, [currentValueTotal, bars]);
-
   const mainLog = useMemo(() => (mainRatio ? mainRatio.map(Math.log) : null), [mainRatio]);
   const compareLog = useMemo(() => (compareRatio ? compareRatio.map(Math.log) : null), [compareRatio]);
-  const investedLog = investedRatio != null ? Math.log(investedRatio) : null;
-  const currentValueLog = currentValueRatio != null ? Math.log(currentValueRatio) : null;
 
   // The legend's total-change badge stays in plain (linear) %, since "up
   // 27,918%" reads naturally there — only the chart's own y-positions use
@@ -426,15 +624,11 @@ function PiePriceChart({
     if (pctMode) {
       const values = [...(mainLog ?? []), 0];
       if (compareLog) values.push(...compareLog);
-      if (investedLog != null) values.push(investedLog);
-      if (currentValueLog != null) values.push(currentValueLog);
       return { min: Math.min(...values), max: Math.max(...values) };
     }
-    const values = bars.flatMap((b) => [b.high, b.low]);
-    if (investedTotal != null) values.push(investedTotal);
-    if (currentValueTotal != null) values.push(currentValueTotal);
+    const values = bars.flatMap((b) => [b.high, b.low, b.invested]);
     return { min: Math.min(...values), max: Math.max(...values) };
-  }, [bars, pctMode, mainLog, compareLog, investedLog, investedTotal, currentValueLog, currentValueTotal]);
+  }, [bars, pctMode, mainLog, compareLog]);
 
   const rangeSpan = max - min || 1;
   const plotWidth = width - PADDING_LEFT - PADDING_RIGHT;
@@ -448,6 +642,9 @@ function PiePriceChart({
   const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.close)}`).join(" ");
   const areaPath =
     bars.length > 0 ? `${linePath} L${xFor(bars.length - 1)},${bottomY} L${xFor(0)},${bottomY} Z` : "";
+  const investedPath = bars
+    .map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.invested)}`)
+    .join(" ");
   const pctLinePath = mainLog
     ? mainLog.map((v, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(v)}`).join(" ")
     : "";
@@ -556,7 +753,7 @@ function PiePriceChart({
       </div>
 
       <div className="ec-pchart-ranges" role="group" aria-label="Date range">
-        {RANGES.map((r) => (
+        {ranges.map((r) => (
           <button
             key={r.id}
             type="button"
@@ -571,8 +768,8 @@ function PiePriceChart({
       {status === "loading" && !hasData && <p className="ec-loading">Loading price history…</p>}
       {status === "ok" && !hasData && (
         <p className="ec-chart-caption">
-          No price history to chart yet — this needs at least one holding with shares and published
-          price/FX data.
+          No price history to chart yet — this needs at least one recorded transaction on a holding
+          with shares and published price/FX data.
         </p>
       )}
 
@@ -597,16 +794,10 @@ function PiePriceChart({
                 </span>
               </span>
             )}
-            {investedTotal != null && (
+            {!pctMode && investedTotal != null && (
               <span className="ec-pchart-legend-item">
                 <span className="ec-pchart-swatch ec-pchart-swatch--avg" aria-hidden="true" />
                 Total invested: <Balance>{formatPrice(investedTotal, currency)}</Balance>
-              </span>
-            )}
-            {currentValueTotal != null && (
-              <span className="ec-pchart-legend-item">
-                <span className="ec-pchart-swatch ec-pchart-swatch--current" aria-hidden="true" />
-                Current value: <Balance>{formatPrice(currentValueTotal, currency)}</Balance>
               </span>
             )}
           </div>
@@ -688,24 +879,6 @@ function PiePriceChart({
                     />
                   </>
                 )}
-                {investedLog != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(investedLog)}
-                    y2={yFor(investedLog)}
-                    className="ec-chart-avg-line"
-                  />
-                )}
-                {currentValueLog != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(currentValueLog)}
-                    y2={yFor(currentValueLog)}
-                    className="ec-chart-current-line"
-                  />
-                )}
               </>
             ) : (
               <>
@@ -714,25 +887,12 @@ function PiePriceChart({
                     <path d={areaPath} className="ec-pchart-area" />
                   </g>
                 )}
+                {/* Invested draws first so the current-value line (the
+                    default, primary series) always paints on top of it —
+                    the two are often close in value, and SVG paints later
+                    elements over earlier ones. */}
+                <path d={investedPath} className="ec-chart-avg-line" fill="none" />
                 <path ref={mainLineRef} d={linePath} className="ec-chart-line" fill="none" />
-                {investedTotal != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(investedTotal)}
-                    y2={yFor(investedTotal)}
-                    className="ec-chart-avg-line"
-                  />
-                )}
-                {currentValueTotal != null && (
-                  <line
-                    x1={PADDING_LEFT}
-                    x2={width - PADDING_RIGHT}
-                    y1={yFor(currentValueTotal)}
-                    y2={yFor(currentValueTotal)}
-                    className="ec-chart-current-line"
-                  />
-                )}
               </>
             )}
 

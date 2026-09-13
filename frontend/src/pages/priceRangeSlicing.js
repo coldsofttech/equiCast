@@ -66,6 +66,38 @@ function startDateForRange(months, today) {
 const RANGE_MONTHS = { "1m": 1, "6m": 6, "1y": 12, "3y": 36, "5y": 60, "10y": 120 };
 
 /**
+ * Which of `RANGES` are worth offering at all, given `earliestDate` (the
+ * real earliest date this chart could ever show — e.g. a since-inception
+ * portfolio chart's own first-investment date). `null` skips filtering
+ * entirely, showing every preset. "5d"/"ytd"/"max" are always offered —
+ * "5d" and "ytd" are distinct, commonly useful windows regardless of total
+ * history length, and "max" is the permanent catch-all the range picker
+ * always defaults to. For the remaining month-based presets, only the
+ * *first* (smallest) one whose own cutoff already reaches back on/before
+ * `earliestDate` is kept — any larger preset past it would show the exact
+ * same data, so it's dropped as redundant (mirrors holdingFinancials.js's
+ * `availablePastRanges`, same "if the data doesn't go back that far, the
+ * bigger button doesn't make sense" reasoning).
+ *
+ * @param {string|null} earliestDate - "YYYY-MM-DD"
+ * @param {Date} [today] - overridable for tests.
+ * @returns {typeof RANGES}
+ */
+export function visibleRanges(earliestDate, today = new Date()) {
+  if (!earliestDate) return RANGES;
+
+  const always = new Set(["5d", "ytd", "max"]);
+  const kept = new Set(always);
+  for (const range of RANGES) {
+    if (always.has(range.id)) continue;
+    kept.add(range.id);
+    const months = range.id === "2y" ? 24 : RANGE_MONTHS[range.id];
+    if (startDateForRange(months, today) <= earliestDate) break;
+  }
+  return RANGES.filter((r) => kept.has(r.id));
+}
+
+/**
  * Picks and trims the right segment of `history` (see api/market.js's
  * `PriceSeries` typedef — `{ daily, weekly, monthly }`) for `rangeId`,
  * entirely client-side. `today` is overridable for tests.

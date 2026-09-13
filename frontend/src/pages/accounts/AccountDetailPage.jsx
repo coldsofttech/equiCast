@@ -294,7 +294,6 @@ function AccountDetailPage() {
         compareItemType="account"
         fetchCompareHoldings={fetchCompareHoldings}
         investedTotal={totals.invested}
-        currentValueTotal={totals.currentValue}
         holdingValuations={holdingValuations}
       />
 
