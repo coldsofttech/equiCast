@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import Logo from "../components/brand/Logo.jsx";
+import AppShell from "../components/shell/AppShell.jsx";
+import SiteFooter from "../components/shell/SiteFooter.jsx";
 import "./AppLoadingScreen.css";
 
 /** Candlestick bars that grow up from the baseline in a staggered wave,
@@ -58,14 +59,18 @@ const LOADING_MESSAGES = [
 ];
 
 /**
- * Full-screen "app is getting ready" overlay — no AppShell/Topbar, same
- * standalone-full-viewport convention ErrorPage.jsx uses, since what this
- * screen is waiting on (accounts, FX rates) is exactly what Topbar's own
- * currency/balance chrome would otherwise need too. Shown by DashboardPage
- * while its accounts fetch and the login-time FX warm-up (GitHub issues
- * #149/#177, see utils/fxWarmup.js) are both still in flight — real work
- * happening underneath, not a fake delay; this only exists to make that
- * wait feel like something rather than a blank page.
+ * "App is getting ready" overlay, shown by DashboardPage while its accounts
+ * fetch and the login-time FX warm-up (GitHub issues #149/#177/#188, see
+ * utils/fxWarmup.js) are both still in flight — real work happening
+ * underneath, not a fake delay; this only exists to make that wait feel
+ * like something rather than a blank page.
+ *
+ * Only reached inside RequireAuth (DashboardPage), so — like NotFoundPage/
+ * ServiceUnavailablePage — it renders inside AppShell (with the same
+ * SiteFooter DashboardPage itself passes) rather than a bare standalone
+ * layout: Topbar's search/currency/theme/sign-out chrome and the footer
+ * stay up while this is showing, instead of disappearing for the length of
+ * the warm-up and popping back in once DashboardPage takes over.
  *
  * The rotating message is cosmetic only: it doesn't track which of those
  * two loads has actually finished, just cycles on a timer for the whole
@@ -83,20 +88,16 @@ function AppLoadingScreen() {
   }, []);
 
   return (
-    <div className="ec-apploading">
-      <div className="ec-apploading-logo">
-        <Logo />
-      </div>
+    <AppShell narrow centerTitle title="Getting everything ready" footer={<SiteFooter />}>
       <div className="ec-apploading-body">
         <div className="ec-apploading-icon" aria-hidden="true">
           <LoadingIcon />
         </div>
-        <h1 className="ec-apploading-title">Getting everything ready</h1>
         <p className="ec-apploading-message" key={messageIndex} role="status">
           {LOADING_MESSAGES[messageIndex]}
         </p>
       </div>
-    </div>
+    </AppShell>
   );
 }
 

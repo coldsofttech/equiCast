@@ -1,4 +1,5 @@
 import AppShell from "../../components/shell/AppShell.jsx";
+import SiteFooter from "../../components/shell/SiteFooter.jsx";
 import ServiceUnavailableIcon from "../../components/errors/ServiceUnavailableIcon.jsx";
 import Button from "../../components/core/Button.jsx";
 import "../../components/errors/ErrorPage.css";
@@ -13,16 +14,17 @@ import "../../components/errors/ErrorPage.css";
  * reload when it doesn't.
  *
  * Only reached inside RequireAuth (DashboardPage), so — like NotFoundPage —
- * it renders inside AppShell rather than the bare standalone ErrorPage
- * layout: Topbar's own profile fetch failing the same way doesn't crash
- * it, it just renders without the currency badge (see Topbar.jsx/
- * UserMenu.jsx, which reads the signed-in user's name/avatar straight off
- * the Auth0 token, not an API call) — so search/theme/sign-out stay
+ * it renders inside AppShell (with the same SiteFooter DashboardPage
+ * itself passes) rather than the bare standalone ErrorPage layout:
+ * Topbar's own profile fetch failing the same way doesn't crash it, it
+ * just renders without the currency badge (see Topbar.jsx/UserMenu.jsx,
+ * which reads the signed-in user's name/avatar straight off the Auth0
+ * token, not an API call) — so search/theme/sign-out and the footer stay
  * reachable even while the backend itself is down.
  */
 function ServiceUnavailablePage({ onRetry }) {
   return (
-    <AppShell narrow centerTitle title="equiCast is temporarily unavailable">
+    <AppShell narrow centerTitle title="equiCast is temporarily unavailable" footer={<SiteFooter />}>
       <div className="ec-errorpage-body">
         <div className="ec-errorpage-icon" aria-hidden="true">
           <ServiceUnavailableIcon />

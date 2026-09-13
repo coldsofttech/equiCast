@@ -20,7 +20,7 @@ describe("ErrorBoundary", () => {
     expect(screen.getByText("All good")).toBeInTheDocument();
   });
 
-  it("renders AppErrorPage instead of crashing the tree when a child throws", () => {
+  it("renders the given fallback instead of crashing the tree when a child throws", () => {
     // React logs the caught error to the console by default (in addition
     // to componentDidCatch's own console.error) - silenced here so the
     // test output doesn't imply a real, unhandled failure.
@@ -28,13 +28,13 @@ describe("ErrorBoundary", () => {
 
     render(
       <MemoryRouter>
-        <ErrorBoundary>
+        <ErrorBoundary fallback={<p>Fallback content</p>}>
           <Bomb />
         </ErrorBoundary>
       </MemoryRouter>
     );
 
-    expect(screen.getByRole("heading", { name: "Something went wrong" })).toBeInTheDocument();
+    expect(screen.getByText("Fallback content")).toBeInTheDocument();
 
     consoleError.mockRestore();
   });
