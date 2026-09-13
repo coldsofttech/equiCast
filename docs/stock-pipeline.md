@@ -339,14 +339,19 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
    back and, via `.github/scripts/find_missing_isin.py`, reads its `isin`
    column (already populated per ticker — see `equicast_core.catalog`)
    for any ticker with none on record. `.github/scripts/sync-missing-isin-issue.sh`
-   then opens, updates, or closes a single persistent GitHub issue titled
-   "Stock ingestion: tickers missing ISIN" listing the result — GitHub's
-   own issue-notification emails are the "notification" the issue asks
-   for, so there's no separate email/SMTP integration. The issue lists
-   each ticker and points at `packages/stock/config/stocks.prod.yaml` for
-   the `isin`/`tax_domicile` override to add; it auto-closes once every
-   ticker has an ISIN again on a later run. Needs the job's `issues:
-   write` permission, granted only to this job (overriding the
+   then finds-or-creates a persistent parent issue titled "Stock
+   ingestion: tickers missing ISIN" and, under it, opens a native GitHub
+   **sub-issue** per missing ticker (e.g. "AAPL: missing ISIN") —
+   reopening one that was previously resolved and has gone missing again,
+   and closing one whose ticker is no longer missing — rather than one
+   issue with a checklist body. GitHub's own issue-notification emails
+   are the "notification" the issue asks for, so there's no separate
+   email/SMTP integration. Each sub-issue points at
+   `packages/stock/config/stocks.prod.yaml` for the `isin`/`tax_domicile`
+   override to add, and can be closed independently by a fix PR (e.g.
+   `Closes #<sub-issue>`) — the parent issue's own open/closed state is
+   never touched automatically; only its sub-issues are. Needs the job's
+   `issues: write` permission, granted only to this job (overriding the
    workflow-level default, which drops it for every other job).
 
 ### S3 layout produced
