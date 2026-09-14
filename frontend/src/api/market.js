@@ -166,6 +166,66 @@ export async function getProfile(api, assetClass, symbol) {
 }
 
 /**
+ * @typedef {Object} BulkItem
+ * @property {string} assetClass
+ * @property {string} symbol
+ */
+
+/**
+ * Cache-aware bulk counterpart to getProfile — for a page loading N
+ * holdings at once (an account/pie's own holdings, or a portfolio rating's
+ * underlying instruments — see pies/PieCagrSection.jsx, pies/
+ * PieBenchmarkRating.jsx), this replaces N individual GET .../profile/
+ * calls with one POST /api/market/bulk/profile/ (see backend/market_data/
+ * views.py's BulkProfileView) for whichever `items` aren't already
+ * same-day cached (GitHub issue #203), and write-throughs each result into
+ * the same per-symbol IndexedDB cache getProfile itself reads/writes — so
+ * a later individual getProfile call for the same symbol still hits cache
+ * instead of re-fetching.
+ *
+ * Returns one entry per `items`, same order and length, `null` for a
+ * symbol with no published profile.parquet (or an unpublished/mistyped
+ * asset_class) — this never throws per-item, mirroring the
+ * `.catch(() => null)` every caller already wraps individual getProfile
+ * calls in today.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {BulkItem[]} items
+ * @returns {Promise<(MarketProfile|null)[]>}
+ */
+export async function getBulkProfiles(api, items) {
+  if (items.length === 0) return [];
+
+  const cacheKeys = items.map((item) => profileCacheKey(item.assetClass, item.symbol));
+  const results = await Promise.all(cacheKeys.map((key) => readCachedProfile(key)));
+
+  const missingIndexes = results.reduce((indexes, value, index) => {
+    if (!value) indexes.push(index);
+    return indexes;
+  }, /** @type {number[]} */ ([]));
+  if (missingIndexes.length === 0) return results;
+
+  const response = /** @type {{ results: { profile: MarketProfile|null }[] }} */ (
+    await api("/market/bulk/profile/", {
+      method: "POST",
+      body: {
+        items: missingIndexes.map((index) => ({
+          asset_class: items[index].assetClass,
+          symbol: items[index].symbol,
+        })),
+      },
+    })
+  );
+
+  missingIndexes.forEach((index, i) => {
+    const profile = response.results[i].profile;
+    results[index] = profile;
+    if (profile) writeCachedProfile(cacheKeys[index], profile);
+  });
+  return results;
+}
+
+/**
  * @typedef {Object} MarketMetrics
  * @property {number|null} volatility - annualized std deviation of daily
  *   returns, as a fraction (e.g. 0.23 for 23%).
@@ -240,6 +300,49 @@ export async function getMetrics(api, assetClass, symbol) {
   const result = /** @type {MarketMetrics} */ (await api(`/market/${assetClass}/${symbol}/metrics/`));
   writeCachedMetrics(cacheKey, result);
   return result;
+}
+
+/**
+ * Cache-aware bulk counterpart to getMetrics — see getBulkProfiles' own
+ * docstring for the full rationale (GitHub issue #203); identical shape/
+ * behavior with `metrics`/POST /api/market/bulk/metrics/ (backend/
+ * market_data/views.py's BulkMetricsView) in place of `profile`/
+ * /market/bulk/profile/.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {BulkItem[]} items
+ * @returns {Promise<(MarketMetrics|null)[]>}
+ */
+export async function getBulkMetrics(api, items) {
+  if (items.length === 0) return [];
+
+  const cacheKeys = items.map((item) => metricsCacheKey(item.assetClass, item.symbol));
+  const results = await Promise.all(cacheKeys.map((key) => readCachedMetrics(key)));
+
+  const missingIndexes = results.reduce((indexes, value, index) => {
+    if (!value) indexes.push(index);
+    return indexes;
+  }, /** @type {number[]} */ ([]));
+  if (missingIndexes.length === 0) return results;
+
+  const response = /** @type {{ results: { metrics: MarketMetrics|null }[] }} */ (
+    await api("/market/bulk/metrics/", {
+      method: "POST",
+      body: {
+        items: missingIndexes.map((index) => ({
+          asset_class: items[index].assetClass,
+          symbol: items[index].symbol,
+        })),
+      },
+    })
+  );
+
+  missingIndexes.forEach((index, i) => {
+    const metrics = response.results[i].metrics;
+    results[index] = metrics;
+    if (metrics) writeCachedMetrics(cacheKeys[index], metrics);
+  });
+  return results;
 }
 
 /**

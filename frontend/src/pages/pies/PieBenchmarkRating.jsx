@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import Badge from "../../components/core/Badge.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
-import { getMetrics } from "../../api/market.js";
+import { getBulkMetrics } from "../../api/market.js";
 import { RATED_METRICS, compareMetric, scoreInfoFor } from "../holdings/HoldingBenchmarkRating.jsx";
 import "../holdings/HoldingBenchmarkRating.css";
 
@@ -65,14 +65,17 @@ function PieBenchmarkRating({ holdings, valuations, benchmarkKey, benchmarkLabel
   useEffect(() => {
     let cancelled = false;
     setStatus("loading");
-    Promise.all([
-      Promise.all(holdings.map((h) => getMetrics(api, h.asset_class, h.ticker).catch(() => null))),
-      getMetrics(api, "benchmark", benchmarkKey),
+    // One bulk request for every holding plus the benchmark itself (GitHub
+    // issue #203), rather than N+1 individual GET .../metrics/ calls — the
+    // benchmark's own metrics are just the last entry back.
+    getBulkMetrics(api, [
+      ...holdings.map((h) => ({ assetClass: h.asset_class, symbol: h.ticker })),
+      { assetClass: "benchmark", symbol: benchmarkKey },
     ])
-      .then(([perHolding, benchmark]) => {
+      .then((results) => {
         if (cancelled) return;
-        setMetricsByHolding(perHolding);
-        setBenchmarkMetrics(benchmark);
+        setMetricsByHolding(results.slice(0, holdings.length));
+        setBenchmarkMetrics(results[holdings.length]);
         setStatus("ok");
       })
       .catch(() => {

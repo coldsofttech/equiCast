@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  getBulkMetrics,
+  getBulkProfiles,
   getDividends,
   getEvents,
   getMetrics,
@@ -100,6 +102,64 @@ describe("market api", () => {
     await getMetrics(api, "stock", "AAPL");
 
     expect(api).toHaveBeenCalledWith("/market/stock/AAPL/metrics/");
+  });
+
+  it("returns an empty array without calling the API for an empty items list", async () => {
+    const api = vi.fn();
+
+    expect(await getBulkProfiles(api, [])).toEqual([]);
+    expect(await getBulkMetrics(api, [])).toEqual([]);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("fetches bulk profiles for every item in one request, same order", async () => {
+    const api = vi.fn().mockResolvedValue({
+      results: [
+        { asset_class: "stock", symbol: "AAPL", profile: { ticker: "AAPL" } },
+        { asset_class: "stock", symbol: "MSFT", profile: null },
+      ],
+    });
+
+    const result = await getBulkProfiles(api, [
+      { assetClass: "stock", symbol: "AAPL" },
+      { assetClass: "stock", symbol: "MSFT" },
+    ]);
+
+    expect(api).toHaveBeenCalledWith("/market/bulk/profile/", {
+      method: "POST",
+      body: {
+        items: [
+          { asset_class: "stock", symbol: "AAPL" },
+          { asset_class: "stock", symbol: "MSFT" },
+        ],
+      },
+    });
+    expect(result).toEqual([{ ticker: "AAPL" }, null]);
+  });
+
+  it("fetches bulk metrics for every item in one request, same order", async () => {
+    const api = vi.fn().mockResolvedValue({
+      results: [
+        { asset_class: "stock", symbol: "AAPL", metrics: { volatility: 0.23 } },
+        { asset_class: "stock", symbol: "MSFT", metrics: null },
+      ],
+    });
+
+    const result = await getBulkMetrics(api, [
+      { assetClass: "stock", symbol: "AAPL" },
+      { assetClass: "stock", symbol: "MSFT" },
+    ]);
+
+    expect(api).toHaveBeenCalledWith("/market/bulk/metrics/", {
+      method: "POST",
+      body: {
+        items: [
+          { asset_class: "stock", symbol: "AAPL" },
+          { asset_class: "stock", symbol: "MSFT" },
+        ],
+      },
+    });
+    expect(result).toEqual([{ volatility: 0.23 }, null]);
   });
 
   it("fetches a symbol's dividends", async () => {

@@ -4,7 +4,7 @@ import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
 import { listTransactions } from "../../api/transactions.js";
-import { resolveFxRate, formatPrice } from "../holdings/holdingFinancials.js";
+import { resolveBulkFxRates, formatPrice } from "../holdings/holdingFinancials.js";
 import { formatAxisDate, sliceForRange, visibleRanges } from "../priceRangeSlicing.js";
 import PieComparePicker from "./PieComparePicker.jsx";
 import PieBenchmarkRating from "./PieBenchmarkRating.jsx";
@@ -194,10 +194,12 @@ function buildAggregateBars(holdingSeries) {
  * Fetches every held (`no_of_shares > 0`) holding's own real *full* price
  * history (the bundled `{daily, weekly, monthly}` payload — see
  * api/market.js's getPrices) once, resolving each to `targetCurrency` via a
- * single current FX rate (see resolveFxRate) — shared by the main pie
- * (PiePriceChart's own `holdings` prop) and a "compare against" pie
- * (fetched fresh via `getPie` once selected). A holding whose price/FX
- * can't be resolved is dropped rather than failing the whole fetch.
+ * single current FX rate (see resolveBulkFxRates — one bulk lookup for every
+ * *distinct* currency across the held holdings, not one getProfile call per
+ * holding, GitHub issue #203) — shared by the main pie (PiePriceChart's own
+ * `holdings` prop) and a "compare against" pie (fetched fresh via `getPie`
+ * once selected). A holding whose price/FX can't be resolved is dropped
+ * rather than failing the whole fetch.
  * `targetCurrency` only has to be *some* consistent currency across the
  * holdings it's aggregating — for a compare pie, its choice doesn't affect
  * the % growth ratio the comparison actually plots (a constant FX rate
@@ -216,23 +218,35 @@ async function fetchHoldingHistories(api, holdings, targetCurrency) {
   const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
   if (heldHoldings.length === 0) return [];
 
-  const results = await Promise.all(
+  const histories = await Promise.all(
     heldHoldings.map(async (holding) => {
       try {
         const history = await getPrices(api, holding.asset_class, holding.ticker);
         if (history.daily.length === 0 && history.weekly.length === 0 && history.monthly.length === 0) {
           return null;
         }
-        const fxRate = await resolveFxRate(api, history.currency, targetCurrency);
-        if (fxRate == null) return null;
-        return { id: holding.id, shares: Number(holding.no_of_shares), fxRate, history };
+        return { holding, history };
       } catch {
         return null;
       }
     })
   );
+  const valid = histories.filter(Boolean);
+  if (valid.length === 0) return [];
 
-  return results.filter(Boolean);
+  const fxRates = await resolveBulkFxRates(
+    api,
+    valid.map(({ history }) => history.currency),
+    targetCurrency
+  );
+
+  return valid
+    .map(({ holding, history }) => {
+      const fxRate = fxRates.get(history.currency);
+      if (fxRate == null) return null;
+      return { id: holding.id, shares: Number(holding.no_of_shares), fxRate, history };
+    })
+    .filter(Boolean);
 }
 
 /**

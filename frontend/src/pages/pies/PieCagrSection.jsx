@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
-import { getMetrics } from "../../api/market.js";
+import { getBulkMetrics } from "../../api/market.js";
 import { plTone } from "../sampleFinancials.js";
 import { formatPercent } from "../holdings/holdingFinancials.js";
 import { weightedPortfolioMetric } from "./PieBenchmarkRating.jsx";
@@ -57,11 +57,12 @@ function PieCagrSection({ holdings, valuations, label = "portfolio" }) {
     // `valuations` prop (new length/order), and weightedPortfolioMetric
     // indexes both positionally, crashing on the mismatch.
     setMetricsByHolding(null);
-    Promise.all(holdings.map((h) => getMetrics(api, h.asset_class, h.ticker).catch(() => null))).then(
-      (results) => {
-        if (!cancelled) setMetricsByHolding(results);
-      }
-    );
+    getBulkMetrics(
+      api,
+      holdings.map((h) => ({ assetClass: h.asset_class, symbol: h.ticker }))
+    ).then((results) => {
+      if (!cancelled) setMetricsByHolding(results);
+    });
     return () => {
       cancelled = true;
     };

@@ -15,6 +15,15 @@ from rest_framework.views import APIView
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
 
+#: Max `items` a BulkProfileView/BulkMetricsView request can carry — these
+#: exist to replace a page's N individual GET .../profile/ or .../metrics/
+#: calls (one per holding) with a single request (GitHub issue #203), but a
+#: caller could otherwise send an arbitrarily large `items` list in one
+#: request; this caps it at well beyond any real account/pie's holding
+#: count, same "reasonable ceiling, not a real limit" role MAX_PAGE_SIZE
+#: plays for SearchView.
+MAX_BULK_ITEMS = 200
+
 #: One shared client for the process — cheap to construct, but no reason to
 #: rebuild it (and its boto3 client) on every request. Also the instance
 #: `lambda_handler.py` calls `warm_fx_cache()` on at Lambda cold start —
@@ -63,6 +72,95 @@ class MetricsView(APIView):
         if metrics is None:
             return Response({"detail": f"No data for {asset_class}={symbol.upper()}."}, status=404)
         return Response(metrics)
+
+
+def _validate_bulk_items(data: object) -> list[dict[str, str]] | Response:
+    """Shared request-body validation for BulkProfileView/BulkMetricsView —
+    both expect `{"items": [{"asset_class": str, "symbol": str}, ...]}`.
+    Returns the validated `items` list, or a ready-to-return 400 `Response`
+    describing what's wrong. An unknown `asset_class` on an individual item
+    is deliberately *not* validated here — that's a per-item "no data"
+    case each view resolves to `None` for, same as an unpublished symbol,
+    rather than failing the whole batch for one bad entry (a caller mixing
+    a typo'd item among otherwise-valid ones still gets the rest back)."""
+    if not isinstance(data, dict) or not isinstance(data.get("items"), list):
+        return Response(
+            {"detail": 'Expected a JSON body: {"items": [{"asset_class", "symbol"}, ...]}.'},
+            status=400,
+        )
+
+    items = data["items"]
+    if not items:
+        return Response({"detail": "items must not be empty."}, status=400)
+    if len(items) > MAX_BULK_ITEMS:
+        return Response({"detail": f"items must not exceed {MAX_BULK_ITEMS}."}, status=400)
+
+    for item in items:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("asset_class"), str)
+            or not isinstance(item.get("symbol"), str)
+        ):
+            return Response(
+                {"detail": 'Each item must be {"asset_class": str, "symbol": str}.'}, status=400
+            )
+
+    return items
+
+
+class BulkProfileView(APIView):
+    """POST counterpart to ProfileView — takes a list of `{asset_class,
+    symbol}` items and returns one profile (or `None`) per item, in the
+    same order, so a page listing N holdings (an account/pie's own, or a
+    portfolio rating's underlying instruments — see frontend api/market.js's
+    getBulkProfiles) can fetch every holding's profile in one request
+    instead of N (GitHub issue #203). Each item's data still comes from
+    `MarketDataClient.get_profile`, so it's cached exactly as it would be
+    for an individual GET .../profile/ call (see that client's
+    `_read_parquet` docstring) — this endpoint only collapses the HTTP
+    round trips, not the underlying per-symbol cache."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        items = _validate_bulk_items(request.data)
+        if isinstance(items, Response):
+            return items
+
+        results = []
+        for item in items:
+            asset_class = item["asset_class"]
+            symbol = item["symbol"]
+            profile = (
+                _client.get_profile(asset_class, symbol) if asset_class in ASSET_CLASSES else None
+            )
+            results.append({"asset_class": asset_class, "symbol": symbol, "profile": profile})
+        return Response({"results": results})
+
+
+class BulkMetricsView(APIView):
+    """POST counterpart to MetricsView — see BulkProfileView's docstring,
+    identical shape/behavior with `metrics`/`MarketDataClient.get_metrics`
+    in place of `profile`/`get_profile`."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        items = _validate_bulk_items(request.data)
+        if isinstance(items, Response):
+            return items
+
+        results = []
+        for item in items:
+            asset_class = item["asset_class"]
+            symbol = item["symbol"]
+            metrics = (
+                _client.get_metrics(asset_class, symbol) if asset_class in ASSET_CLASSES else None
+            )
+            results.append({"asset_class": asset_class, "symbol": symbol, "metrics": metrics})
+        return Response({"results": results})
 
 
 class DividendsView(APIView):

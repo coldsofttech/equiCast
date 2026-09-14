@@ -99,6 +99,190 @@ class MetricsViewTests(TestCase):
         self.assertEqual(response.status_code, 400)
 
 
+class BulkProfileViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.post(
+            reverse("bulk-profile"), data={"items": []}, content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_one_profile_per_item_in_order(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_profile.side_effect = [
+            {"ticker": "AAPL", "name": "Apple Inc."},
+            None,
+        ]
+
+        response = self.client.post(
+            reverse("bulk-profile"),
+            data={
+                "items": [
+                    {"asset_class": "stock", "symbol": "aapl"},
+                    {"asset_class": "stock", "symbol": "unknown"},
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "results": [
+                    {
+                        "asset_class": "stock",
+                        "symbol": "aapl",
+                        "profile": {"ticker": "AAPL", "name": "Apple Inc."},
+                    },
+                    {"asset_class": "stock", "symbol": "unknown", "profile": None},
+                ]
+            },
+        )
+        mock_client.get_profile.assert_any_call("stock", "aapl")
+        mock_client.get_profile.assert_any_call("stock", "unknown")
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_treats_unknown_asset_class_as_no_data_without_failing_the_batch(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-profile"),
+            data={"items": [{"asset_class": "crypto", "symbol": "btc"}]},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"results": [{"asset_class": "crypto", "symbol": "btc", "profile": None}]},
+        )
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_items_missing(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-profile"), data={}, content_type="application/json", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_items_empty(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-profile"),
+            data={"items": []},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_an_item_is_malformed(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-profile"),
+            data={"items": [{"asset_class": "stock"}]},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_items_exceeds_the_max(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-profile"),
+            data={"items": [{"asset_class": "stock", "symbol": "aapl"}] * 201},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+
+class BulkMetricsViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.post(
+            reverse("bulk-metrics"), data={"items": []}, content_type="application/json"
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("market_data.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_one_metrics_record_per_item_in_order(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_metrics.side_effect = [
+            {"volatility": 0.23, "trailing_pe": 28.5},
+            None,
+        ]
+
+        response = self.client.post(
+            reverse("bulk-metrics"),
+            data={
+                "items": [
+                    {"asset_class": "stock", "symbol": "aapl"},
+                    {"asset_class": "stock", "symbol": "unknown"},
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "results": [
+                    {
+                        "asset_class": "stock",
+                        "symbol": "aapl",
+                        "metrics": {"volatility": 0.23, "trailing_pe": 28.5},
+                    },
+                    {"asset_class": "stock", "symbol": "unknown", "metrics": None},
+                ]
+            },
+        )
+        mock_client.get_metrics.assert_any_call("stock", "aapl")
+        mock_client.get_metrics.assert_any_call("stock", "unknown")
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_items_missing(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("bulk-metrics"), data={}, content_type="application/json", **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+
 class DividendsViewTests(TestCase):
     def test_returns_401_when_unauthenticated(self) -> None:
         response = self.client.get(reverse("dividends", args=["stock", "aapl"]))

@@ -1,4 +1,4 @@
-import { getPrices, getProfile } from "../../api/market.js";
+import { getBulkProfiles, getPrices, getProfile } from "../../api/market.js";
 import { formatCurrency } from "../sampleFinancials.js";
 
 /**
@@ -259,6 +259,63 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
   }
 
   return null;
+}
+
+/**
+ * Bulk counterpart to resolveFxRate — resolves a current FX rate for every
+ * distinct currency in `nativeCurrencies` to `defaultCurrency` in at most
+ * two bulk profile requests total (see api/market.js's getBulkProfiles),
+ * rather than one getProfile call per holding (GitHub issue #203). Several
+ * holdings often share the same native currency (e.g. a handful of US
+ * stocks all converting from USD), so resolving each holding's rate
+ * individually was re-requesting the exact same fx pair's profile over and
+ * over. Used by PiePriceChart's `fetchHoldingHistories`, which needs one
+ * rate per *held* holding to convert its price history into the chart's
+ * target currency.
+ *
+ * Same direct-then-inverted-pair fallback as resolveFxRate, just resolved
+ * once per distinct currency instead of once per holding. Never throws —
+ * a currency with no direct or inverted pair published just maps to
+ * `null`, same as resolveFxRate's return for that case.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {(string|null|undefined)[]} nativeCurrencies
+ * @param {string} defaultCurrency
+ * @returns {Promise<Map<string, number|null>>} keyed by each distinct
+ *   truthy entry in `nativeCurrencies`.
+ */
+export async function resolveBulkFxRates(api, nativeCurrencies, defaultCurrency) {
+  const distinct = [...new Set(nativeCurrencies.filter(Boolean))];
+  const rates = new Map(distinct.map((currency) => [currency, currency === defaultCurrency ? 1 : null]));
+
+  const pending = distinct.filter((currency) => currency !== defaultCurrency);
+  if (pending.length === 0) return rates;
+
+  const direct = await getBulkProfiles(
+    api,
+    pending.map((currency) => ({ assetClass: "fx", symbol: `${currency}${defaultCurrency}` }))
+  );
+  const stillMissing = [];
+  pending.forEach((currency, index) => {
+    const rate = direct[index]?.day_close;
+    if (typeof rate === "number" && rate > 0) {
+      rates.set(currency, rate);
+    } else {
+      stillMissing.push(currency);
+    }
+  });
+  if (stillMissing.length === 0) return rates;
+
+  const inverted = await getBulkProfiles(
+    api,
+    stillMissing.map((currency) => ({ assetClass: "fx", symbol: `${defaultCurrency}${currency}` }))
+  );
+  stillMissing.forEach((currency, index) => {
+    const rate = inverted[index]?.day_close;
+    if (typeof rate === "number" && rate > 0) rates.set(currency, 1 / rate);
+  });
+
+  return rates;
 }
 
 /** The latest bar with `bar.date <= date` across `history`'s three
