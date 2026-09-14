@@ -6,6 +6,7 @@ import {
   formatPercent,
   formatPrice,
   formatRatio,
+  resolveBulkFxRates,
   resolveFxRate,
   resolveFxRateOnDate,
   rollupInstances,
@@ -120,6 +121,75 @@ describe("resolveFxRate", () => {
     const api = vi.fn().mockRejectedValue(new Error("404"));
 
     await expect(resolveFxRate(api, "USD", "GBP")).resolves.toBeNull();
+  });
+});
+
+describe("resolveBulkFxRates", () => {
+  it("short-circuits currencies matching defaultCurrency to 1 without calling the API", async () => {
+    const api = vi.fn();
+
+    const rates = await resolveBulkFxRates(api, ["USD", "USD"], "USD");
+
+    expect(rates.get("USD")).toBe(1);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("dedupes repeated/falsy currencies into one bulk request per distinct pair", async () => {
+    const api = vi.fn().mockResolvedValue({
+      results: [{ asset_class: "fx", symbol: "USDGBP", profile: { day_close: 0.79 } }],
+    });
+
+    const rates = await resolveBulkFxRates(api, ["USD", "USD", null], "GBP");
+
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(api).toHaveBeenCalledWith("/market/bulk/profile/", {
+      method: "POST",
+      body: { items: [{ asset_class: "fx", symbol: "USDGBP" }] },
+    });
+    expect(rates.get("USD")).toBe(0.79);
+  });
+
+  it("falls back to the inverted pair for whichever currencies have no direct pair", async () => {
+    const api = vi
+      .fn()
+      .mockResolvedValueOnce({
+        results: [
+          { asset_class: "fx", symbol: "USDGBP", profile: { day_close: 0.79 } },
+          { asset_class: "fx", symbol: "EURGBP", profile: null },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [{ asset_class: "fx", symbol: "GBPEUR", profile: { day_close: 1.15 } }],
+      });
+
+    const rates = await resolveBulkFxRates(api, ["USD", "EUR"], "GBP");
+
+    expect(api).toHaveBeenNthCalledWith(1, "/market/bulk/profile/", {
+      method: "POST",
+      body: {
+        items: [
+          { asset_class: "fx", symbol: "USDGBP" },
+          { asset_class: "fx", symbol: "EURGBP" },
+        ],
+      },
+    });
+    expect(api).toHaveBeenNthCalledWith(2, "/market/bulk/profile/", {
+      method: "POST",
+      body: { items: [{ asset_class: "fx", symbol: "GBPEUR" }] },
+    });
+    expect(rates.get("USD")).toBe(0.79);
+    expect(rates.get("EUR")).toBeCloseTo(1 / 1.15);
+  });
+
+  it("resolves to null when neither pair is published", async () => {
+    const api = vi
+      .fn()
+      .mockResolvedValueOnce({ results: [{ asset_class: "fx", symbol: "USDGBP", profile: null }] })
+      .mockResolvedValueOnce({ results: [{ asset_class: "fx", symbol: "GBPUSD", profile: null }] });
+
+    const rates = await resolveBulkFxRates(api, ["USD"], "GBP");
+
+    expect(rates.get("USD")).toBeNull();
   });
 });
 
