@@ -79,6 +79,46 @@ export function listTransactions(api, { holdingId, year, dateFrom, dateTo, page,
 }
 
 /**
+ * One holding's own BUY/SELL transactions reduced to a running position
+ * timeline, as returned by `getBulkPositionCheckpoints` — the server-side
+ * counterpart of what PiePriceChart.jsx used to compute client-side from
+ * its own full transaction fetch (see `buildPositionCheckpoints` there).
+ *
+ * @typedef {Object} PositionCheckpoint
+ * @property {string} date - "YYYY-MM-DD"
+ * @property {number} shares - net position after this transaction.
+ * @property {number} cost - cost basis (native currency) after this transaction.
+ */
+
+/**
+ * POST /api/transactions/bulk/checkpoints/ — replaces a page's N per-holding,
+ * individually paginated `listTransactions` calls (PiePriceChart.jsx's own
+ * `fetchHoldingPositionSeries`) with one request that returns every
+ * requested holding's own `{date, shares, cost}` checkpoint timeline,
+ * already reduced server-side (GitHub issue #233; see
+ * backend/transactions/views.py's BulkCheckpointsView /
+ * equicast_core.transactions.compute_position_checkpoints). A `holding_id`
+ * with nothing on record (or not this caller's) simply comes back with an
+ * empty `checkpoints` list, not an error.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {string[]} holdingIds
+ * @returns {Promise<Map<string, PositionCheckpoint[]>>}
+ */
+export async function getBulkPositionCheckpoints(api, holdingIds) {
+  if (holdingIds.length === 0) return new Map();
+
+  const response = /** @type {{ results: { holding_id: string, checkpoints: PositionCheckpoint[] }[] }} */ (
+    await api("/transactions/bulk/checkpoints/", {
+      method: "POST",
+      body: { holding_ids: holdingIds },
+    })
+  );
+
+  return new Map(response.results.map((r) => [r.holding_id, r.checkpoints]));
+}
+
+/**
  * GET /api/transactions/<holding_id>/<transaction_id>/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
