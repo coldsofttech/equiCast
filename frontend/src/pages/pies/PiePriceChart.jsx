@@ -3,7 +3,7 @@ import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import { getPrices } from "../../api/market.js";
-import { listTransactions } from "../../api/transactions.js";
+import { getBulkPositionCheckpoints } from "../../api/transactions.js";
 import { resolveBulkFxRates, formatPrice } from "../holdings/holdingFinancials.js";
 import { formatAxisDate, sliceForRange, visibleRanges } from "../priceRangeSlicing.js";
 import PieComparePicker from "./PieComparePicker.jsx";
@@ -54,46 +54,6 @@ function lastKnownBar(sortedBars, date) {
   return result;
 }
 
-/**
- * Walks one holding's own BUY/SELL transactions (ascending by date) into a
- * running {date, shares, cost} checkpoint after each date — `shares` is the
- * net position, `cost` its cost basis in the holding's own native currency
- * (a weighted-average tracker: a BUY adds its own shares*price to both; a
- * SELL removes shares at the *average* cost per share held just before it,
- * not its own sale price, same as a real cost-basis tracker — GitHub issue
- * #194). DIVIDEND records don't affect either and are ignored. A legacy
- * AVERAGE-mode record predating the BUY/DIVIDEND shape has `type: null` but
- * is still a BUY (see holdingFinancials.js's `selectPositionEntry`) — an
- * AVERAGE-mode holding only ever has one such record, so its own checkpoint
- * history is a single step from 0 to that record's shares/cost.
- *
- * @param {import("../../api/transactions.js").Transaction[]} transactions
- * @returns {{ date: string, shares: number, cost: number }[]}
- */
-function buildPositionCheckpoints(transactions) {
-  const trades = transactions
-    .filter((t) => (t.type === "BUY" || t.type === "SELL" || t.type == null) && t.date)
-    .sort((a, b) => a.date.localeCompare(b.date));
-
-  let shares = 0;
-  let cost = 0;
-  const checkpoints = [];
-  for (const t of trades) {
-    if (t.type === "SELL") {
-      const avgCost = shares > 0 ? cost / shares : 0;
-      const sold = Math.min(Number(t.no_of_shares), shares);
-      shares -= sold;
-      cost -= avgCost * sold;
-    } else {
-      const price = Number(t.price_native ?? t.average_price_native ?? 0);
-      shares += Number(t.no_of_shares);
-      cost += Number(t.no_of_shares) * price;
-    }
-    checkpoints.push({ date: t.date, shares, cost });
-  }
-  return checkpoints;
-}
-
 /** The net {shares, cost} as of `date` — the last checkpoint at or before
  * it, or all-zero if `date` predates this holding's first transaction. */
 function positionAt(checkpoints, date) {
@@ -106,40 +66,40 @@ function positionAt(checkpoints, date) {
 }
 
 /**
- * Every held holding's own full BUY/SELL transaction history (looping
- * every page — TransactionPagination caps a single page at 200, see
- * backend/transactions/views.py), reduced to its own position checkpoint
- * timeline (see `buildPositionCheckpoints`). A holding whose transactions
- * can't be fetched is dropped rather than failing the whole fetch, same as
- * `fetchHoldingHistories` below. Used only by the main (non-compare) series
- * — GitHub issue #194's since-inception invested/current value curves are
- * deliberately not offered for a "compare against" pie/account/benchmark,
- * so that path keeps its own pre-existing "today's shares" aggregate.
+ * Every held holding's own position checkpoint timeline — `{date, shares,
+ * cost}` after each of its own BUY/SELL transactions, already reduced
+ * server-side (GitHub issue #233; see api/transactions.js's
+ * `getBulkPositionCheckpoints` and backend/transactions/views.py's
+ * BulkCheckpointsView) in one request rather than fetching and reducing
+ * every held holding's own full, individually paginated transaction
+ * history client-side, the way this used to work. A holding with nothing
+ * on record is dropped rather than kept as an empty entry, same as
+ * `fetchHoldingHistories` below drops one whose price/FX can't be
+ * resolved. Used only by the main (non-compare) series — GitHub issue
+ * #194's since-inception invested/current value curves are deliberately
+ * not offered for a "compare against" pie/account/benchmark, so that path
+ * keeps its own pre-existing "today's shares" aggregate.
  */
 async function fetchHoldingPositionSeries(api, holdings) {
   const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
   if (heldHoldings.length === 0) return [];
 
-  const results = await Promise.all(
-    heldHoldings.map(async (holding) => {
-      try {
-        let pageNumber = 1;
-        let page = await listTransactions(api, { holdingId: holding.id, pageSize: 200, page: pageNumber });
-        const all = [...page.results];
-        while (page.next) {
-          pageNumber += 1;
-          page = await listTransactions(api, { holdingId: holding.id, pageSize: 200, page: pageNumber });
-          all.push(...page.results);
-        }
-        const checkpoints = buildPositionCheckpoints(all);
-        return checkpoints.length > 0 ? { id: holding.id, checkpoints } : null;
-      } catch {
-        return null;
-      }
-    })
-  );
+  let checkpointsById;
+  try {
+    checkpointsById = await getBulkPositionCheckpoints(
+      api,
+      heldHoldings.map((h) => h.id)
+    );
+  } catch {
+    return [];
+  }
 
-  return results.filter(Boolean);
+  return heldHoldings
+    .map((holding) => {
+      const checkpoints = checkpointsById.get(holding.id) ?? [];
+      return checkpoints.length > 0 ? { id: holding.id, checkpoints } : null;
+    })
+    .filter(Boolean);
 }
 
 /**
@@ -286,7 +246,8 @@ function earliestInvestmentDate(positionSeries) {
  * value (point-in-time shares × that date's own price, forward-filled from
  * the holding's last known bar same as `buildAggregateBars`); `invested` is
  * the resulting cost basis (point-in-time shares' own weighted-average
- * cost, see `buildPositionCheckpoints`) — both summed across every holding
+ * cost, see `compute_position_checkpoints` in equicast_core.transactions) —
+ * both summed across every holding
  * and converted via its own (current, single) `fxRate`, same approximation
  * `buildAggregateBars` already makes rather than resolving a historical FX
  * rate per date. Dates before the very first investment across every
@@ -396,7 +357,8 @@ function sliceAndAggregateSinceInception(holdingHistories, positionSeries, range
  * point-in-time *current* value (point-in-time shares actually held, valued
  * at that date's own price — see `buildSinceInceptionBars`) and the grey
  * dashed line is point-in-time *invested* value (that same position's own
- * running cost basis — see `buildPositionCheckpoints`), both starting on
+ * running cost basis, computed server-side — see `fetchHoldingPositionSeries`),
+ * both starting on
  * the real date of the very first BUY across every held holding and running
  * to today, so both move up and down together as positions are built,
  * trimmed, and re-priced over time. There's deliberately no separate

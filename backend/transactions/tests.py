@@ -920,6 +920,110 @@ class TransactionListViewTests(TestCase):
         )
 
 
+class BulkCheckpointsViewTests(TestCase):
+    def test_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={"holding_ids": []},
+            content_type="application/json",
+        )
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("transactions.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_one_checkpoint_list_per_holding_in_order(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.list_transactions.side_effect = [
+            [BUY_TRANSACTION],
+            [],
+        ]
+
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={"holding_ids": ["h-1", "h-2"]},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "results": [
+                    {
+                        "holding_id": "h-1",
+                        "checkpoints": [{"date": "2026-01-15", "shares": 10.0, "cost": 1525.0}],
+                    },
+                    {"holding_id": "h-2", "checkpoints": []},
+                ]
+            },
+        )
+        mock_client.list_transactions.assert_any_call("auth0|abc123", holding_id="h-1")
+        mock_client.list_transactions.assert_any_call("auth0|abc123", holding_id="h-2")
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_holding_ids_missing(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_holding_ids_empty(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={"holding_ids": []},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_an_entry_is_not_a_string(self, mock_jwks_client, mock_decode) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={"holding_ids": [123]},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_returns_400_when_holding_ids_exceeds_the_max(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("transactions-bulk-checkpoints"),
+            data={"holding_ids": ["h-1"] * 201},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+
 class TransactionDetailViewTests(TestCase):
     """Addressed by holding_id/transaction_id together — see
     transactions/urls.py — so every call below passes both."""

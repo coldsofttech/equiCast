@@ -370,6 +370,53 @@ def compute_holding_rollup(transactions: list[dict[str, Any]], mode: str) -> dic
     }
 
 
+def compute_position_checkpoints(transactions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return one holding's own BUY/SELL transactions (ascending by `date`)
+    walked into a running `{date, shares, cost}` checkpoint after each one —
+    `shares` the net position, `cost` its cost basis in the holding's own
+    native currency, tracked the same weighted-average way
+    `compute_holding_rollup`'s `TRANSACTION`-mode branch does (a SELL removes
+    shares at the *average* cost per share held just before it, not its own
+    sale price). `DIVIDEND` records don't affect either and are ignored. A
+    legacy `AVERAGE`-mode record predating the BUY/DIVIDEND shape has
+    `type: None` but is still a BUY (see `compute_holding_rollup`'s own
+    handling of it) — such a holding only ever has one such record, so its
+    checkpoint history is a single step from 0 to that record's shares/cost.
+
+    This is the server-side counterpart of the frontend's own
+    `buildPositionCheckpoints` (see PiePriceChart.jsx) — GitHub issue #233:
+    that logic used to run client-side against every held holding's full
+    transaction history, fetched one paginated `GET /transactions/` per
+    holding; `BulkCheckpointsView` (backend/transactions/views.py) now
+    computes it here instead, so the frontend gets the finished checkpoint
+    list for many holdings in one request rather than fetching and reducing
+    raw transactions itself."""
+    trades = sorted(
+        (t for t in transactions if t["type"] in ("BUY", "SELL", None) and t["date"]),
+        key=lambda t: t["date"],
+    )
+
+    shares = Decimal(0)
+    cost = Decimal(0)
+    checkpoints = []
+    for t in trades:
+        qty = Decimal(str(t["no_of_shares"]))
+        if t["type"] == "SELL":
+            avg_cost = cost / shares if shares > 0 else Decimal(0)
+            sold = min(qty, shares)
+            shares -= sold
+            cost -= avg_cost * sold
+        else:
+            native_raw = t.get("price_native")
+            if native_raw is None:
+                native_raw = t.get("average_price_native")
+            price = Decimal(str(native_raw)) if native_raw is not None else Decimal(0)
+            shares += qty
+            cost += qty * price
+        checkpoints.append({"date": t["date"], "shares": float(shares), "cost": float(cost)})
+    return checkpoints
+
+
 def _average_mode_shares_at(
     existing_transactions: list[dict[str, Any]],
 ) -> tuple[Callable[[str], Decimal] | None, str | None]:

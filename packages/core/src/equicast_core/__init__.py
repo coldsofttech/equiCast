@@ -58,6 +58,7 @@ from equicast_core.transactions import (
     TransactionsClient,
     compute_holding_rollup,
     compute_new_dividend_transactions,
+    compute_position_checkpoints,
     latest_paid_dividend_date,
 )
 from equicast_core.user_profiles import UserProfileClient
@@ -113,6 +114,7 @@ __all__ = [
     "TransactionsClient",
     "compute_holding_rollup",
     "compute_new_dividend_transactions",
+    "compute_position_checkpoints",
     "latest_paid_dividend_date",
     "ASSET_CLASSES",
     "DEFAULT_CACHE_TTL_SECONDS",
