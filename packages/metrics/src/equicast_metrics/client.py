@@ -28,22 +28,12 @@ EQUICAST_METRICS_DISCLAIMER = (
     "- validate accuracy independently."
 )
 
-#: The only CAGR window yfinance has a direct equivalent for (fiftyTwoWeekChangePercent).
-YFINANCE_CAGR_YEARS = 1
-
 CAGR_YEARS = (1, 2, 3, 5, 10)
 METRICS_WINDOW_YEARS = 1
 
 #: yfinance's suffix for FX pair symbols (e.g. "GBPUSD=X"), reused here to
 #: reject fundamentals() calls against them - see FXClient.symbol.
 FX_SYMBOL_SUFFIX = "=X"
-
-
-def _cagr_1y_from_info(info: dict[str, Any]) -> float | None:
-    """`fiftyTwoWeekChangePercent` is, for a 1-year window, the same figure as
-    CAGR (total return over exactly one year, with no compounding needed)."""
-    value = info.get("fiftyTwoWeekChangePercent")
-    return round_value(float(value) / 100) if value is not None else None
 
 
 def _is_fx_symbol(symbol: str) -> bool:
@@ -68,7 +58,6 @@ class MetricsClient:
         self._datafeed = datafeed or DatafeedClient()
 
     def metrics(self) -> dict[str, Any]:
-        info = self._datafeed.get_info(self.symbol)
         history = self._datafeed.get_history(self.symbol, period="max")
         close: pd.Series = (
             history["Close"] if "Close" in history.columns else pd.Series(dtype=float)
@@ -80,15 +69,12 @@ class MetricsClient:
 
         window = trailing_window(close, METRICS_WINDOW_YEARS)
 
-        # volatility/sharpe/max_drawdown have no yfinance equivalent at all, so
-        # this record always includes at least one equicast-computed value.
-        # Only cagr_1y can ever come directly from yfinance (fiftyTwoWeekChangePercent).
-        cagr_values: dict[str, float | None] = {}
-        for years in CAGR_YEARS:
-            yfinance_value = _cagr_1y_from_info(info) if years == YFINANCE_CAGR_YEARS else None
-            cagr_values[f"cagr_{years}y"] = (
-                yfinance_value if yfinance_value is not None else cagr(close, years)
-            )
+        # Every CAGR window, cagr_1y included, is computed from this same
+        # stored close-price history rather than yfinance's own live
+        # `fiftyTwoWeekChangePercent` figure - that's Yahoo's own quote data
+        # on Yahoo's own reference dates, which can disagree with equicast's
+        # own price history by several points.
+        cagr_values = {f"cagr_{years}y": cagr(close, years) for years in CAGR_YEARS}
 
         return {
             "volatility": annualized_volatility(window),

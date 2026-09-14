@@ -61,13 +61,11 @@ MetricsClient("AAPL").buy_sell_pressure()
 - **`max_drawdown`** — largest peak-to-trough decline over the trailing 1
   year, as a negative fraction (e.g. `-0.18` = -18%).
 - **`cagr_1y`/`cagr_2y`/`cagr_3y`/`cagr_5y`/`cagr_10y`** — compound annual
-  growth rate over each trailing window, `None` if the symbol doesn't have
-  enough history to cover it.
-- **`source`** — `"yfinance"` only if every field above came directly from
-  yfinance's `.info` (in practice this never happens: only `cagr_1y` has a
-  yfinance equivalent, via `fiftyTwoWeekChangePercent`); otherwise
-  `"equicast"`, meaning at least one field was calculated from historical
-  price data rather than read directly from yfinance.
+  growth rate over each trailing window, calculated from historical close
+  prices, `None` if the symbol doesn't have enough history to cover it.
+- **`source`** — always `"equicast"` for `metrics()`, since every field above
+  is calculated from historical price data rather than read directly from
+  yfinance (`fundamentals()` has its own separate `source`, see below).
 
 ## `fundamentals()` — valuation and fundamental metrics (stock only)
 

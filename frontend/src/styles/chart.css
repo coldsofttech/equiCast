@@ -46,6 +46,12 @@
   color: var(--ec-danger);
 }
 
+.ec-chart-change-qualifier {
+  font-family: var(--ec-font-sans);
+  font-weight: 400;
+  color: var(--ec-text-subtle);
+}
+
 .ec-chart-svg {
   display: block;
   width: 100%;

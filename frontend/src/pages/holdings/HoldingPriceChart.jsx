@@ -838,6 +838,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
               {changePct !== null && (
                 <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
                   {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
+                  {pctMode && <span className="ec-chart-change-qualifier"> cumulative</span>}
                 </span>
               )}
             </span>
@@ -847,6 +848,7 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
                 {compare.label}
                 <span className={`ec-chart-change${compareChangePct >= 0 ? " is-up" : " is-down"}`}>
                   {compareChangePct >= 0 ? "▲" : "▼"} {Math.abs(compareChangePct).toFixed(1)}%
+                  <span className="ec-chart-change-qualifier"> cumulative</span>
                 </span>
               </span>
             )}
@@ -863,6 +865,12 @@ function HoldingPriceChart({ assetClass, ticker, currency, avgPrice = null, curr
               </span>
             )}
           </div>
+          {compare.assetClass === "benchmark" && (
+            <p className="ec-chart-caption">
+              Badges above show cumulative price change for the selected range; the rating below
+              compares annualized (CAGR) returns instead, so the two aren&rsquo;t directly comparable.
+            </p>
+          )}
 
           <div className="ec-pchart-svg-wrap">
           <svg

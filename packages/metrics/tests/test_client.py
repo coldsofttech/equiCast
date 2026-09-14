@@ -22,7 +22,10 @@ def _history(prices: list[float], start: str = "2015-01-01") -> pd.DataFrame:
 
 
 def _ohlcv_history(
-    high: list[float], low: list[float], close: list[float], volume: list[float],
+    high: list[float],
+    low: list[float],
+    close: list[float],
+    volume: list[float],
     start: str = "2015-01-01",
 ) -> pd.DataFrame:
     index = pd.date_range(start=start, periods=len(close), freq="D")
@@ -51,17 +54,20 @@ def test_constructing_client_shows_equicast_disclaimer_once(
     assert caplog.messages == [EQUICAST_METRICS_DISCLAIMER]
 
 
-def test_metrics_uses_yfinance_cagr_1y_when_present() -> None:
+def test_metrics_ignores_yfinance_cagr_1y_field() -> None:
+    # cagr_1y is always computed from the same stored close-price history as
+    # every other CAGR window, not yfinance's own live fiftyTwoWeekChangePercent
+    # figure - a flat history's 1y CAGR is 0, regardless of what info reports.
     info = {"fiftyTwoWeekChangePercent": 20.0}
     history = _history([100.0] * 4000)  # long flat history: 2/3/5/10y all computable
 
     metrics = MetricsClient("AAPL", datafeed=_datafeed(info, history)).metrics()
 
-    assert metrics["cagr_1y"] == pytest.approx(0.20)
+    assert metrics["cagr_1y"] == pytest.approx(0.0)
     assert metrics["source"] == "equicast"  # other fields are still computed
 
 
-def test_metrics_calculates_cagr_1y_when_yfinance_field_missing() -> None:
+def test_metrics_calculates_cagr_1y_from_history() -> None:
     history = _history([100.0] * 400)
     metrics = MetricsClient("AAPL", datafeed=_datafeed({}, history)).metrics()
 
@@ -235,9 +241,7 @@ def test_buy_sell_pressure_ignores_trailing_nan_close() -> None:
 
 
 def test_buy_sell_pressure_has_no_last_updated_or_source() -> None:
-    history = _ohlcv_history(
-        high=[100.0] * 5, low=[90.0] * 5, close=[100.0] * 5, volume=[1000] * 5
-    )
+    history = _ohlcv_history(high=[100.0] * 5, low=[90.0] * 5, close=[100.0] * 5, volume=[1000] * 5)
     result = MetricsClient("AAPL", datafeed=_datafeed({}, history)).buy_sell_pressure()
 
     assert set(result.keys()) == {"buyers_pct", "sellers_pct"}
