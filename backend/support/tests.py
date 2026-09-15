@@ -87,7 +87,26 @@ class SupportViewTests(TestCase):
 
         self.assertEqual(response.status_code, 201)
         _title, _body, labels = mock_create_issue.call_args[0]
-        self.assertEqual(labels, ["other", "production"])
+        self.assertEqual(labels, ["customer-other", "production"])
+
+    @patch("support.views._create_github_issue")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_maps_query_category_to_its_github_label(
+        self, mock_jwks_client, mock_decode, mock_create_issue
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={"category": "query", "description": "How do I add a holding?"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        _title, _body, labels = mock_create_issue.call_args[0]
+        self.assertEqual(labels, ["customer-query", "development"])
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
@@ -116,6 +135,124 @@ class SupportViewTests(TestCase):
         )
 
         self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_rejects_ticker_request_without_a_ticker(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={"category": "ticker-request", "description": "Please add NVDA."},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("support.views._create_github_issue")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_accepts_ticker_request_without_a_description(
+        self, mock_jwks_client, mock_decode, mock_create_issue
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={"category": "ticker-request", "ticker": "NVDA"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        title, body, _labels = mock_create_issue.call_args[0]
+        self.assertIn("NVDA", title)
+        self.assertIn("**Ticker:** NVDA", body)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_rejects_incorrect_data_without_a_subject_type(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={
+                "category": "incorrect-data",
+                "description": "The value looks wrong.",
+                "subject": "My ISA",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_rejects_incorrect_data_without_a_subject(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={
+                "category": "incorrect-data",
+                "description": "The value looks wrong.",
+                "subject_type": "account",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_rejects_incorrect_data_without_a_description(
+        self, mock_jwks_client, mock_decode
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={"category": "incorrect-data", "subject_type": "account", "subject": "My ISA"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 400)
+
+    @patch("support.views._create_github_issue")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_creates_incorrect_data_issue_with_subject(
+        self, mock_jwks_client, mock_decode, mock_create_issue
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+
+        response = self.client.post(
+            reverse("support"),
+            data={
+                "category": "incorrect-data",
+                "description": "The invested amount looks wrong.",
+                "subject_type": "pie",
+                "subject": "Growth Pie",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        title, body, labels = mock_create_issue.call_args[0]
+        self.assertIn("[Incorrect Data]", title)
+        self.assertIn("**Affected Pie:** Growth Pie", body)
+        self.assertEqual(labels, ["customer-issue", "development"])
 
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
@@ -170,7 +307,7 @@ class CreateGitHubIssueTests(TestCase):
     def test_raises_when_token_not_configured(self) -> None:
         from support.views import GitHubIssueError, _create_github_issue
 
-        with self.settings(GITHUB_SUPPORT_TOKEN=None):
+        with self.settings(SUPPORT_ISSUE_TOKEN=None):
             with self.assertRaises(GitHubIssueError):
                 _create_github_issue("title", "body", ["query"])
 
@@ -180,7 +317,7 @@ class CreateGitHubIssueTests(TestCase):
 
         mock_urlopen.side_effect = URLError("no network")
 
-        with self.settings(GITHUB_SUPPORT_TOKEN="fake-token", GITHUB_SUPPORT_REPO="org/repo"):
+        with self.settings(SUPPORT_ISSUE_TOKEN="fake-token", SUPPORT_REPO="org/repo"):
             with self.assertRaises(GitHubIssueError):
                 _create_github_issue("title", "body", ["query"])
 
@@ -192,7 +329,7 @@ class CreateGitHubIssueTests(TestCase):
         mock_response.status = 201
         mock_urlopen.return_value.__enter__.return_value = mock_response
 
-        with self.settings(GITHUB_SUPPORT_TOKEN="fake-token", GITHUB_SUPPORT_REPO="org/repo"):
+        with self.settings(SUPPORT_ISSUE_TOKEN="fake-token", SUPPORT_REPO="org/repo"):
             _create_github_issue("title", "body", ["query"])
 
         request = mock_urlopen.call_args[0][0]

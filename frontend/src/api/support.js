@@ -6,7 +6,7 @@
  * never an issue URL/number to follow.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ category: "query"|"ticker-request"|"incorrect-data"|"other", description: string, ticker?: string }} data
+ * @param {{ category: "query"|"ticker-request"|"incorrect-data"|"other", description?: string, ticker?: string, subject_type?: "account"|"pie"|"goal"|"holding"|"other", subject?: string }} data
  * @returns {Promise<{ detail: string }>}
  */
 export function submitSupportRequest(api, data) {

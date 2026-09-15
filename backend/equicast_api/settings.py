@@ -99,6 +99,16 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # further down.
 API_RATE_LIMIT_PER_MINUTE = int(os.environ.get("API_RATE_LIMIT_PER_MINUTE", 120))
 
+# GitHub issue #246: a much lower per-minute ceiling than the general
+# budget above, applied only to SupportView (see support.throttling.
+# SupportRateThrottle's "support" scope in DEFAULT_THROTTLE_RATES below) —
+# each submission creates a real GitHub issue via a token with its own
+# GitHub API quota, so this needs to stay well under API_RATE_LIMIT_PER_
+# MINUTE's default of 120. Same GitHub Environment variable convention as
+# API_RATE_LIMIT_PER_MINUTE (see infra/variables.tf's
+# support_rate_limit_per_minute).
+SUPPORT_RATE_LIMIT_PER_MINUTE = int(os.environ.get("SUPPORT_RATE_LIMIT_PER_MINUTE", 2))
+
 # Django's cache framework backs DRF throttling below (every count/window
 # it tracks lives here). Explicit rather than relying on Django's own
 # implicit LocMemCache default, so the choice — and its one real
@@ -132,10 +142,12 @@ REST_FRAMEWORK = {
     # "support": GitHub issue #246's SupportView adds support.throttling.
     # SupportRateThrottle on top of the general "user" budget above — a
     # much lower ceiling, since each submission creates a real GitHub
-    # issue in the private support repo.
+    # issue in the private support repo. Same "<int>/min" shape as
+    # API_RATE_LIMIT_PER_MINUTE above, kept as its own SUPPORT_RATE_LIMIT_
+    # PER_MINUTE setting (see below) so it can be tuned independently.
     "DEFAULT_THROTTLE_RATES": {
         "user": f"{API_RATE_LIMIT_PER_MINUTE}/min",
-        "support": os.environ.get("SUPPORT_RATE_LIMIT", "5/hour"),
+        "support": f"{SUPPORT_RATE_LIMIT_PER_MINUTE}/min",
     },
 }
 
@@ -176,11 +188,16 @@ USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")
 # GitHub issue #246: support/views.py's SupportView creates a GitHub issue
 # per submission in a dedicated *private* repo — never the public equiCast
 # repo, since every submitted ticket would then be visible to every user
-# (and the internet). GITHUB_SUPPORT_TOKEN has no default, same
+# (and the internet). SUPPORT_ISSUE_TOKEN has no default, same
 # "fail loudly" reasoning as MARKET_DATA_BUCKET — a fine-grained PAT/GitHub
-# App token scoped to just `issues:write` on that one repo.
-GITHUB_SUPPORT_TOKEN = os.environ.get("GITHUB_SUPPORT_TOKEN")
-GITHUB_SUPPORT_REPO = os.environ.get("GITHUB_SUPPORT_REPO", "coldsofttech/equicast-support")
+# App token scoped to just `issues:write` on that one repo. Named without
+# a "GITHUB_" prefix because GitHub Actions rejects secrets whose names
+# start with that reserved prefix.
+SUPPORT_ISSUE_TOKEN = os.environ.get("SUPPORT_ISSUE_TOKEN")
+# Repo-level (not per-environment) GitHub Actions variable — not sensitive,
+# same "plain variable, not a secret" treatment auth0_domain/auth0_audience
+# get in infra/variables.tf.
+SUPPORT_REPO = os.environ.get("SUPPORT_REPO", "coldsofttech/equicast-support")
 
 # GitHub issue #246: the same equicast-support repo is shared by both dev
 # and prod (no separate repo per environment) — SupportView labels each

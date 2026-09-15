@@ -129,3 +129,9 @@
 .ec-usermenu-item--danger:hover {
   background: var(--ec-danger-soft);
 }
+
+.ec-usermenu-divider {
+  height: 1px;
+  margin: var(--ec-s-4) var(--ec-s-8);
+  background: var(--ec-divider);
+}

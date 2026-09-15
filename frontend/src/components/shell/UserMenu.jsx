@@ -20,10 +20,11 @@ function initialsFor(name, email) {
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
  * `user` — no extra API round trip), its nav entries (now that MenuBar is
- * gone) — "Accounts", "Watchlists" (GitHub issue #170; currently lands on
- * ComingSoonPage — see WatchlistsPage), "Goals", "Import transactions",
- * and "Support" (GitHub issue #246 — SupportPage) — "Settings" (opens
- * SettingsModal), and the sign-out action. Only rendered inside AppShell,
+ * gone), grouped with dividers: "Accounts", "Watchlists" (GitHub issue
+ * #170; currently lands on ComingSoonPage — see WatchlistsPage), "Goals";
+ * then "Import transactions"; then "Support" (GitHub issue #246 —
+ * SupportPage), "Settings" (opens SettingsModal), and the sign-out action.
+ * Only rendered inside AppShell,
  * which only mounts once RequireAuth has already confirmed
  * `isAuthenticated`, so `user` is always populated here.
  *
@@ -160,18 +161,7 @@ function UserMenu({ profile, onProfileUpdate }) {
             <i className="bi bi-flag" aria-hidden="true" />
             Goals
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="ec-usermenu-item"
-            onClick={() => {
-              setIsSettingsOpen(true);
-              setIsOpen(false);
-            }}
-          >
-            <i className="bi bi-gear" aria-hidden="true" />
-            Settings
-          </button>
+          <div className="ec-usermenu-divider" role="separator" />
           <button
             type="button"
             role="menuitem"
@@ -184,6 +174,7 @@ function UserMenu({ profile, onProfileUpdate }) {
             <i className="bi bi-upload" aria-hidden="true" />
             Import Transactions
           </button>
+          <div className="ec-usermenu-divider" role="separator" />
           <button
             type="button"
             role="menuitem"
@@ -195,6 +186,18 @@ function UserMenu({ profile, onProfileUpdate }) {
           >
             <i className="bi bi-life-preserver" aria-hidden="true" />
             Support
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              setIsSettingsOpen(true);
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-gear" aria-hidden="true" />
+            Settings
           </button>
           <button
             type="button"
