@@ -35,6 +35,7 @@ INSTALLED_APPS = [
     "holdings",
     "transactions",
     "goals",
+    "support",
 ]
 
 MIDDLEWARE = [
@@ -128,7 +129,14 @@ REST_FRAMEWORK = {
     # identity.throttling.Auth0UserRateThrottle for why this isn't DRF's
     # own UserRateThrottle (Auth0User has no `.pk`).
     "DEFAULT_THROTTLE_CLASSES": ["identity.throttling.Auth0UserRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"user": f"{API_RATE_LIMIT_PER_MINUTE}/min"},
+    # "support": GitHub issue #246's SupportView adds support.throttling.
+    # SupportRateThrottle on top of the general "user" budget above — a
+    # much lower ceiling, since each submission creates a real GitHub
+    # issue in the private support repo.
+    "DEFAULT_THROTTLE_RATES": {
+        "user": f"{API_RATE_LIMIT_PER_MINUTE}/min",
+        "support": os.environ.get("SUPPORT_RATE_LIMIT", "5/hour"),
+    },
 }
 
 CORS_ALLOWED_ORIGINS = [
@@ -164,6 +172,24 @@ USER_PROFILES_TABLE = os.environ.get("USER_PROFILES_TABLE")
 # transactions) — see infra/main.tf's user_data_bucket module. No default,
 # same "fail loudly" reasoning as MARKET_DATA_BUCKET.
 USER_DATA_BUCKET = os.environ.get("USER_DATA_BUCKET")
+
+# GitHub issue #246: support/views.py's SupportView creates a GitHub issue
+# per submission in a dedicated *private* repo — never the public equiCast
+# repo, since every submitted ticket would then be visible to every user
+# (and the internet). GITHUB_SUPPORT_TOKEN has no default, same
+# "fail loudly" reasoning as MARKET_DATA_BUCKET — a fine-grained PAT/GitHub
+# App token scoped to just `issues:write` on that one repo.
+GITHUB_SUPPORT_TOKEN = os.environ.get("GITHUB_SUPPORT_TOKEN")
+GITHUB_SUPPORT_REPO = os.environ.get("GITHUB_SUPPORT_REPO", "coldsofttech/equicast-support")
+
+# GitHub issue #246: the same equicast-support repo is shared by both dev
+# and prod (no separate repo per environment) — SupportView labels each
+# created issue "development"/"production" (see support.views.
+# _ENVIRONMENT_LABELS) so they're distinguishable at a glance. Set to
+# infra's var.environment ("dev"/"prod" — see infra/main.tf's
+# backend_lambda module) in a real deployment; defaults to "development"
+# so local runs need nothing set to get a sensible label.
+ENVIRONMENT_NAME = os.environ.get("ENVIRONMENT_NAME", "development")
 
 # Product-defined per-user/per-account/per-pie/per-watchlist/per-holding
 # caps, overridable per environment via GitHub Environment variables (see

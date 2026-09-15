@@ -33,6 +33,21 @@ variable "auth0_audience" {
   type        = string
 }
 
+# GitHub issue #246: support/views.py's SupportView uses this to create
+# issues in the private coldsofttech/equicast-support repo — a
+# fine-grained PAT scoped to just `issues:write` on that one repo. Shared
+# across dev and prod (one repo, not a per-environment split — see
+# ENVIRONMENT_NAME/support/views.py's _ENVIRONMENT_LABELS for how issues
+# from each are told apart), so this is a plain repository-level GitHub
+# Actions secret, same "no default, no per-environment split" treatment
+# terraform.yml gives auth0_domain/auth0_audience — except this one really
+# is sensitive, so it's a secret, not a variable.
+variable "github_support_token" {
+  description = "Fine-grained GitHub PAT (issues:write on coldsofttech/equicast-support) for the support form's issue creation."
+  type        = string
+  sensitive   = true
+}
+
 # Product-defined caps for Phase D's S3-JSON domains. Real values come from
 # each GitHub Environment's MAX_ACCOUNTS/MAX_PIES/MAX_WATCHLISTS variables
 # (see .github/workflows/terraform.yml's apply-dev/apply-prod, which pass
