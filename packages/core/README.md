@@ -271,6 +271,61 @@ per-user, backfilled the same way as `transaction_type`, and validated by
 `identity/views.py` (`TAX_RESIDENCIES`/`INCOME_TAX_BANDS`), not
 `UserProfileClient` itself.
 
+`dividend_allowance_used_by_tax_year` (GitHub issue #212, defaults to
+`{}`) tracks how much of the £500 `UK_DIVIDEND_ALLOWANCE` a user has
+consumed, per UK tax year label (e.g. `"2026-27"`, see
+`uk_dividend_tax.uk_tax_year_label`) — updated via
+`add_dividend_allowance_used`, an atomic DynamoDB nested increment rather
+than a read-modify-write, so concurrent dividend events for the same
+tax year each land their own delta:
+
+```python
+client.add_dividend_allowance_used("auth0|65f2c1...", "2026-27", 42.50)
+```
+
+## `uk_dividend_tax` — UK dividend tax calculation
+
+A pure, stateless calculation (GitHub issue #212, the follow-up to #94's
+data-model groundwork): `compute_uk_dividend_tax` takes one dividend's
+gross GBP amount plus the holding/user context #94 already models
+(`wrapper_type`, `tax_domicile`/`default_withholding_pct`,
+`tax_override_pct`, `income_tax_band`) and a running
+`allowance_used_ytd`, and returns the full breakdown — withholding, what
+the £500 allowance covered, the taxable remainder, the band-rate tax
+amount, and the net amount the user actually receives:
+
+```python
+from equicast_core import compute_uk_dividend_tax, uk_tax_year_label
+
+uk_tax_year_label("2026-09-15")  # "2026-27"
+
+compute_uk_dividend_tax(
+    wrapper_type="GIA",
+    tax_domicile="US",
+    default_withholding_pct=15.0,
+    tax_override_pct=None,
+    income_tax_band="HIGHER",
+    gross_amount=100.0,
+    allowance_used_ytd=480.0,
+)
+# {"wrapper_taxable": True, "withholding_pct_applied": 15.0,
+#  "withholding_amount": 15.0, "net_of_withholding": 85.0,
+#  "allowance_consumed": 20.0, "taxable_amount": 65.0,
+#  "tax_rate_applied": 0.3375, "tax_amount": 21.9375,
+#  "net_amount": 63.0625, "new_allowance_used_ytd": 500.0}
+```
+
+`ISA`/`SIPP`/`LISA`/`JISA` wrapper types short-circuit to 0% tax with no
+allowance consumed. A `GIA` holding applies `tax_override_pct` (if set) or
+the domicile-derived withholding rate first, then the £500 allowance,
+then the income-tax-band rate on whatever's left. Doesn't read or write
+any store itself — the Django backend (`backend/transactions/views.py`'s
+`_apply_uk_dividend_tax`) calls this once per DIVIDEND transaction created
+and persists the returned `new_allowance_used_ytd` delta via
+`UserProfileClient.add_dividend_allowance_used`; this v1 only runs the
+calculation when the user's `default_currency` is `"GBP"`, since the
+allowance/band thresholds are GBP figures by law.
+
 ## `AccountsClient` — S3 JSON user-owned data (accounts)
 
 Reads and writes one user's accounts as a single JSON object in equicast's

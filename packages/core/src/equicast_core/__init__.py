@@ -61,6 +61,13 @@ from equicast_core.transactions import (
     compute_position_checkpoints,
     latest_paid_dividend_date,
 )
+from equicast_core.uk_dividend_tax import (
+    UK_DIVIDEND_ALLOWANCE,
+    UK_DIVIDEND_TAX_RATES,
+    UK_TAX_EXEMPT_WRAPPER_TYPES,
+    compute_uk_dividend_tax,
+    uk_tax_year_label,
+)
 from equicast_core.user_profiles import UserProfileClient
 from equicast_core.watchlists import (
     MAX_WATCHLISTS,
@@ -123,4 +130,9 @@ __all__ = [
     "MarketDataClient",
     "UserProfileClient",
     "clear_cache",
+    "UK_DIVIDEND_ALLOWANCE",
+    "UK_DIVIDEND_TAX_RATES",
+    "UK_TAX_EXEMPT_WRAPPER_TYPES",
+    "compute_uk_dividend_tax",
+    "uk_tax_year_label",
 ]

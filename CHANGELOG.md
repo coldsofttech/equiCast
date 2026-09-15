@@ -27,6 +27,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- UK dividend tax calculation engine (GitHub issue #212, the follow-up to
+  #94's data-model groundwork): `ISA`/`SIPP`/`LISA`/`JISA` wrapper-type
+  dividends stay untaxed; a `GIA` dividend applies its holding's
+  `tax_override_pct` (or the domicile-derived default withholding rate)
+  first, then the first £500 per UK tax year (6 Apr-5 Apr) tax-free, then
+  the user's `income_tax_band` rate (8.75%/33.75%/39.35% for
+  BASIC/HIGHER/ADDITIONAL) on the remainder. New
+  `equicast_core.uk_dividend_tax.compute_uk_dividend_tax` (pure, stateless)
+  runs once per DIVIDEND transaction — manually recorded or auto-synced
+  alike — from `backend/transactions/views.py`'s new
+  `_apply_uk_dividend_tax`/`_resolve_wrapper_type`, and the allowance
+  consumed is persisted via `UserProfileClient`'s new
+  `dividend_allowance_used_by_tax_year` (keyed per UK tax year, updated
+  through an atomic DynamoDB nested increment). v1 only runs the
+  calculation when the user's `default_currency` is `"GBP"`, since the
+  allowance/band thresholds are GBP figures by law.
+
 - Missing-ISIN GitHub issue notification (GitHub issue #215):
   `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog` job now reads
   the freshly-built `catalog/<asset_class>.parquet`'s `isin` column (see

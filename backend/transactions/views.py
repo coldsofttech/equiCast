@@ -3,10 +3,15 @@ from typing import Any
 
 from django.conf import settings
 from equicast_core import (
+    UK_TAX_EXEMPT_WRAPPER_TYPES,
+    AccountNotFoundError,
+    AccountsClient,
     HoldingNotFoundError,
     HoldingsClient,
     InsufficientSharesError,
     MarketDataClient,
+    PieNotFoundError,
+    PiesClient,
     TransactionAlreadyExistsError,
     TransactionAmountError,
     TransactionLimitExceededError,
@@ -16,7 +21,9 @@ from equicast_core import (
     compute_holding_rollup,
     compute_new_dividend_transactions,
     compute_position_checkpoints,
+    compute_uk_dividend_tax,
     latest_paid_dividend_date,
+    uk_tax_year_label,
 )
 from identity.authentication import Auth0JWTAuthentication
 from rest_framework.pagination import PageNumberPagination
@@ -175,6 +182,18 @@ _market_data_client = MarketDataClient(
     region_name=settings.AWS_REGION,
     cache_ttl_seconds=settings.MARKET_DATA_CACHE_TTL_SECONDS,
 )
+#: Needed only to resolve a holding's account (directly, or via its pie —
+#: see `_resolve_wrapper_type`) for GitHub issue #212's UK dividend tax
+#: calculation — accounts/pies/views.py hold the clients actually used for
+#: account/pie CRUD.
+_accounts_client = AccountsClient(
+    settings.USER_DATA_BUCKET, region_name=settings.AWS_REGION, max_accounts=settings.MAX_ACCOUNTS
+)
+_pies_client = PiesClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_pies_per_account=settings.MAX_PIES,
+)
 
 
 def resolve_transaction_mode(
@@ -328,6 +347,104 @@ def _refresh_holding_rollup(user_id: str, holding_id: str, mode: str) -> None:
         pass
 
 
+def _resolve_wrapper_type(user_id: str, holding: dict[str, Any]) -> str | None:
+    """Return the `account_type` (a.k.a. wrapper_type, GitHub issue #94)
+    that governs `holding`'s dividend tax treatment (GitHub issue #212) —
+    the `account_type` of `holding`'s own account directly, or of the
+    account its pie belongs to for a pie-scoped holding (a holding's
+    `account_id`/`pie_id` are mutually exclusive, see
+    `equicast_core.holdings` module docstring). `None` if the account/pie
+    has since been deleted out from under a still-in-flight request — this
+    never raises, since a missing wrapper type just means `_apply_uk_
+    dividend_tax` skips the calculation for this dividend rather than
+    failing the transaction it's already been recorded against."""
+    try:
+        if holding["account_id"] is not None:
+            return _accounts_client.get_account(user_id, holding["account_id"])["account_type"]
+        if holding["pie_id"] is not None:
+            pie = _pies_client.get_pie(user_id, holding["pie_id"])
+            return _accounts_client.get_account(user_id, pie["account_id"])["account_type"]
+    except (AccountNotFoundError, PieNotFoundError):
+        return None
+    return None
+
+
+def _apply_uk_dividend_tax(
+    user_id: str,
+    holding: dict[str, Any],
+    profile: dict[str, Any],
+    fields: dict[str, Any],
+    allowance_used_by_tax_year: dict[str, float],
+) -> None:
+    """Run GitHub issue #212's UK dividend tax calculation for the just-
+    created DIVIDEND transaction described by `fields`, and persist any
+    allowance it consumed (`UserProfileClient.add_dividend_allowance_used`)
+    — called once per DIVIDEND transaction, from both `TransactionListView.
+    post` (a manually-recorded dividend) and `_sync_dividends_for_one_
+    holding` (an auto-synced one).
+
+    `allowance_used_by_tax_year` is the caller's running, in-memory view of
+    `profile["dividend_allowance_used_by_tax_year"]` — seeded from the
+    profile once per request/sync-pass and mutated here as each taxable
+    dividend consumes more of it, so several dividends processed in the
+    same pass (e.g. `sync_dividends_for_holdings` catching up several
+    holdings' backlog at once) draw down the same tax year's allowance
+    correctly instead of each starting from the same stale snapshot. The
+    persisted delta is still an atomic per-call DynamoDB add (see
+    `add_dividend_allowance_used`), so this is a bookkeeping/ordering
+    convenience, not what makes concurrent writers safe.
+
+    A no-op — no allowance consumed, nothing persisted — whenever the
+    calculation doesn't apply: `fields["amount"]` couldn't be resolved (no
+    FX rate on file for that date, see `resolve_converted_amounts`), the
+    user's `default_currency` isn't GBP (this v1 assumes `amount` already
+    IS the GBP figure the UK's allowance/band thresholds are defined in —
+    see `equicast_core.uk_dividend_tax` module docstring), or the holding's
+    account/pie has since been deleted (`_resolve_wrapper_type` returns
+    `None`). Never raises — this is bookkeeping alongside a transaction
+    that's already been committed by the time this runs, not a condition
+    that should fail the request that got the user this far; any
+    unexpected error is logged and swallowed, the same tolerance
+    `sync_dividends_for_holdings` already applies per-holding."""
+    if fields.get("amount") is None or profile.get("default_currency") != "GBP":
+        return
+    try:
+        wrapper_type = _resolve_wrapper_type(user_id, holding)
+        if wrapper_type is None:
+            return
+
+        tax_domicile = None
+        default_withholding_pct = None
+        if wrapper_type not in UK_TAX_EXEMPT_WRAPPER_TYPES:
+            enriched = _market_data_client.enrich_holdings([holding], profile["default_currency"])
+            if enriched:
+                tax_domicile = enriched[0].get("tax_domicile")
+                default_withholding_pct = enriched[0].get("default_withholding_pct")
+
+        tax_year = uk_tax_year_label(fields["date"])
+        breakdown = compute_uk_dividend_tax(
+            wrapper_type=wrapper_type,
+            tax_domicile=tax_domicile,
+            default_withholding_pct=default_withholding_pct,
+            tax_override_pct=holding.get("tax_override_pct"),
+            income_tax_band=profile["income_tax_band"],
+            gross_amount=fields["amount"],
+            allowance_used_ytd=allowance_used_by_tax_year.get(tax_year, 0.0),
+        )
+        if breakdown["allowance_consumed"] > 0:
+            _profile_client.add_dividend_allowance_used(
+                user_id, tax_year, breakdown["allowance_consumed"]
+            )
+            allowance_used_by_tax_year[tax_year] = breakdown["new_allowance_used_ytd"]
+    except Exception:
+        logger.exception(
+            "_apply_uk_dividend_tax: failed to update dividend_allowance_used_ytd for user "
+            "'%s' holding '%s'; allowance tracking may undercount this dividend",
+            user_id,
+            holding["id"],
+        )
+
+
 def sync_dividends_for_holdings(
     user_id: str, holdings: list[dict[str, Any]], profile: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -401,8 +518,17 @@ def sync_dividends_for_holdings(
     just once) — so whichever of the two racing calls loses the write
     raises `TransactionAlreadyExistsError` on its own retry instead of
     creating a duplicate; that's treated as a success here, not a failure,
-    since the payout genuinely exists now."""
+    since the payout genuinely exists now.
+
+    `allowance_used_by_tax_year` (GitHub issue #212) is seeded once here
+    from `profile["dividend_allowance_used_by_tax_year"]` and threaded
+    through every holding's sync, rather than each holding re-reading the
+    same profile snapshot — the UK dividend allowance is per-user, not
+    per-holding, so a pass catching up several holdings' backlogged
+    payouts in one call needs them to draw down the same running total
+    (see `_apply_uk_dividend_tax`)."""
     mode = profile["transaction_type"]
+    allowance_used_by_tax_year = dict(profile.get("dividend_allowance_used_by_tax_year", {}))
     synced: list[dict[str, Any]] = []
     for holding in holdings:
         if (
@@ -413,7 +539,9 @@ def sync_dividends_for_holdings(
             continue
 
         try:
-            new_entries = _sync_dividends_for_one_holding(user_id, holding, mode, profile)
+            new_entries = _sync_dividends_for_one_holding(
+                user_id, holding, mode, profile, allowance_used_by_tax_year
+            )
         except Exception:
             logger.exception(
                 "sync_dividends_for_holdings: unexpected error syncing holding '%s' (%s); "
@@ -439,7 +567,11 @@ def sync_dividends_for_holdings(
 
 
 def _sync_dividends_for_one_holding(
-    user_id: str, holding: dict[str, Any], mode: str, profile: dict[str, Any]
+    user_id: str,
+    holding: dict[str, Any],
+    mode: str,
+    profile: dict[str, Any],
+    allowance_used_by_tax_year: dict[str, float],
 ) -> list[dict[str, Any]]:
     """The per-holding body of `sync_dividends_for_holdings`'s loop,
     factored out so that function can wrap it in one `try/except` per
@@ -447,7 +579,11 @@ def _sync_dividends_for_one_holding(
     `compute_new_dividend_transactions` found (`[]` when there was nothing
     new), regardless of how many of those actually got created; the
     watermark itself only ever advances when every create this pass
-    succeeded, same "all or nothing" reasoning either way."""
+    succeeded, same "all or nothing" reasoning either way.
+
+    `allowance_used_by_tax_year` — see `sync_dividends_for_holdings`'s
+    docstring — is passed straight through to `_apply_uk_dividend_tax`
+    (GitHub issue #212) for each newly-created entry."""
     existing = _client.list_transactions(user_id, holding_id=holding["id"])
     dividends_data = _market_data_client.get_dividends(holding["asset_class"], holding["ticker"])
     dividends = dividends_data["dividends"] if dividends_data else []
@@ -473,6 +609,7 @@ def _sync_dividends_for_one_holding(
                 external_id=f"dividend:{entry['date']}",
                 **fields,
             )
+            _apply_uk_dividend_tax(user_id, holding, profile, fields, allowance_used_by_tax_year)
         except TransactionAlreadyExistsError:
             # A concurrent sync for this same holding (two browser tabs, a
             # frontend effect double-firing) already created this exact
@@ -586,6 +723,17 @@ class TransactionListView(APIView):
         if mode == "TRANSACTION" and fields["type"] in ("BUY", "SELL"):
             _client.rewind_dividends_synced_through(
                 request.user.user_id, holding_id, fields["date"]
+            )
+        # GitHub issue #212: a manually-recorded DIVIDEND is just as
+        # taxable as an auto-synced one (_sync_dividends_for_one_holding) —
+        # run the same calculation/allowance bookkeeping here.
+        if fields["type"] == "DIVIDEND":
+            _apply_uk_dividend_tax(
+                request.user.user_id,
+                holding,
+                profile,
+                fields,
+                dict(profile.get("dividend_allowance_used_by_tax_year", {})),
             )
         _refresh_holding_rollup(request.user.user_id, holding_id, mode)
         return Response(transaction, status=201)
