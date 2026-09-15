@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useAuth0 } from "@auth0/auth0-react";
 import {
+  deleteAccount,
   updateDefaultCurrency,
   updateFxWarmupCurrencies,
   updateIncomeTaxBand,
@@ -16,6 +17,7 @@ vi.mock("../../api/identity.js", () => ({
   updateFxWarmupCurrencies: vi.fn(),
   updateTaxResidency: vi.fn(),
   updateIncomeTaxBand: vi.fn(),
+  deleteAccount: vi.fn(),
 }));
 
 afterEach(() => {
@@ -150,5 +152,82 @@ describe("SettingsModal", () => {
     expect(updateIncomeTaxBand).toHaveBeenCalledWith(expect.any(Function), "ADDITIONAL");
     expect(updateTaxResidency).not.toHaveBeenCalled();
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it("keeps the delete-account button disabled until DELETE is typed exactly", () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+
+    render(
+      <SettingsModal
+        open
+        onClose={vi.fn()}
+        profile={{ default_currency: "GBP" }}
+        onSaved={vi.fn()}
+        onAccountDeleted={vi.fn()}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    const confirmButtons = screen.getAllByRole("button", { name: "Delete my account" });
+    const confirmButton = confirmButtons[confirmButtons.length - 1];
+
+    expect(confirmButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "delete" },
+    });
+    expect(confirmButton).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    expect(confirmButton).toBeEnabled();
+  });
+
+  it("deletes the account and calls onAccountDeleted on success", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    vi.mocked(deleteAccount).mockResolvedValue(null);
+    const onAccountDeleted = vi.fn();
+
+    render(
+      <SettingsModal
+        open
+        onClose={vi.fn()}
+        profile={{ default_currency: "GBP" }}
+        onSaved={vi.fn()}
+        onAccountDeleted={onAccountDeleted}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    const confirmButtons = screen.getAllByRole("button", { name: "Delete my account" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    await waitFor(() => expect(onAccountDeleted).toHaveBeenCalled());
+    expect(deleteAccount).toHaveBeenCalledWith(expect.any(Function));
+  });
+
+  it("shows an error and doesn't call onAccountDeleted on failure", async () => {
+    vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
+    vi.mocked(deleteAccount).mockRejectedValue(new Error("Nope."));
+    const onAccountDeleted = vi.fn();
+
+    render(
+      <SettingsModal
+        open
+        onClose={vi.fn()}
+        profile={{ default_currency: "GBP" }}
+        onSaved={vi.fn()}
+        onAccountDeleted={onAccountDeleted}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
+    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
+      target: { value: "DELETE" },
+    });
+    const confirmButtons = screen.getAllByRole("button", { name: "Delete my account" });
+    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Nope.");
+    expect(onAccountDeleted).not.toHaveBeenCalled();
   });
 });

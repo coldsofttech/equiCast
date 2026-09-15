@@ -21,3 +21,17 @@
   padding-top: var(--ec-s-16);
   border-top: 1px solid var(--ec-divider);
 }
+
+.ec-settings-danger-section {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-16);
+  padding-top: var(--ec-s-16);
+  border-top: 1px solid var(--ec-danger);
+}
+
+.ec-settings-danger-section .ec-field-label {
+  color: var(--ec-danger);
+}

@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import Modal from "../core/Modal.jsx";
 import ConfirmDialog from "../core/ConfirmDialog.jsx";
-import { SelectField } from "../core/Field.jsx";
+import { SelectField, TextField } from "../core/Field.jsx";
 import Button from "../core/Button.jsx";
 import Alert from "../core/Alert.jsx";
 import { useApi } from "../../api/useApi.js";
 import {
+  deleteAccount,
   updateDefaultCurrency,
   updateFxWarmupCurrencies,
   updateIncomeTaxBand,
@@ -21,6 +22,10 @@ import "./SettingsModal.css";
  * loaded yet (the same "seed from the backend default until we know
  * otherwise" reasoning as `currency`/`transactionType` below). */
 const DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"];
+
+/** GitHub issue #158 — the exact phrase a user must type into the
+ * delete-account confirmation field before the Delete button enables. */
+const DELETE_CONFIRM_PHRASE = "DELETE";
 
 /**
  * Opened from UserMenu's "Settings" item. Three settings: default_currency
@@ -40,8 +45,20 @@ const DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"];
  * Each setting saves independently (its own PATCH) so changing one doesn't
  * require re-submitting the others, and a transaction_type 409 doesn't
  * block a currency/warm-up-list change made in the same visit.
+ *
+ * Also has a "Danger zone" section (GitHub issue #158) for permanently
+ * deleting the caller's equicast account — every accounts/pies/goals/
+ * watchlists/holdings/transactions record, plus their profile. Gated
+ * behind typing "DELETE" into a confirmation field (stronger than the
+ * plain confirm/cancel `ConfirmDialog` the cache-reset section above
+ * uses, given how much more this destroys) in its own nested `Modal`.
+ * `onAccountDeleted` is called once the DELETE succeeds — UserMenu wires
+ * it to the same cache-clear-then-Auth0-logout flow its own sign-out
+ * button uses, since a deleted account has nothing left to stay signed
+ * into (v1 scope only deletes equicast's own data, not the Auth0
+ * identity itself — see the issue).
  */
-function SettingsModal({ open, onClose, profile, onSaved }) {
+function SettingsModal({ open, onClose, profile, onSaved, onAccountDeleted }) {
   const api = useApi();
   const [currency, setCurrency] = useState(profile?.default_currency ?? CURRENCIES[0].code);
   const [transactionType, setTransactionType] = useState(profile?.transaction_type ?? "AVERAGE");
@@ -67,14 +84,27 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
   const [isResettingCache, setIsResettingCache] = useState(false);
   const [cacheResetDone, setCacheResetDone] = useState(false);
 
+  // GitHub issue #158: permanently deletes the caller's equicast account.
+  // deleteConfirmText is compared against DELETE_CONFIRM_PHRASE to gate the
+  // Delete button, same "must type an exact phrase" pattern as GitHub's own
+  // repo-deletion confirmation.
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
   // SettingsModal stays mounted between opens (only its inner <Modal> un/
   // remounts visually, see UserMenu.jsx), so without this a "Cache cleared"
-  // message from a previous visit would still be showing the next time the
-  // drawer is reopened.
+  // message (or a stale delete-account error/confirmation text) from a
+  // previous visit would still be showing the next time the drawer is
+  // reopened.
   useEffect(() => {
     if (open) {
       setCacheResetDone(false);
       setIsResetCacheConfirmOpen(false);
+      setIsDeleteAccountOpen(false);
+      setDeleteConfirmText("");
+      setDeleteError(null);
     }
   }, [open]);
 
@@ -85,6 +115,17 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
       setIsResetCacheConfirmOpen(false);
       setCacheResetDone(true);
     });
+  };
+
+  const handleDeleteAccount = () => {
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    deleteAccount(api)
+      .then(() => onAccountDeleted())
+      .catch((err) => {
+        setDeleteError(err.message ?? "Couldn't delete your account.");
+        setIsDeletingAccount(false);
+      });
   };
 
   const toggleFxWarmupCurrency = (code) => {
@@ -233,6 +274,66 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
         onConfirm={handleResetCache}
         onCancel={() => setIsResetCacheConfirmOpen(false)}
       />
+
+      <div className="ec-settings-danger-section">
+        <span className="ec-field-label">Danger zone</span>
+        <p className="ec-field-hint">
+          Permanently deletes your equicast account — every account, pie, goal, watchlist,
+          holding, and transaction. This can&rsquo;t be undone.
+        </p>
+        <Button
+          type="button"
+          variant="danger"
+          onClick={() => {
+            setDeleteError(null);
+            setDeleteConfirmText("");
+            setIsDeleteAccountOpen(true);
+          }}
+        >
+          Delete my account
+        </Button>
+      </div>
+
+      <Modal
+        open={isDeleteAccountOpen}
+        onClose={() => (isDeletingAccount ? undefined : setIsDeleteAccountOpen(false))}
+        title="Delete my account"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsDeleteAccountOpen(false)}
+              disabled={isDeletingAccount}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDeleteAccount}
+              isLoading={isDeletingAccount}
+              disabled={deleteConfirmText !== DELETE_CONFIRM_PHRASE}
+            >
+              Delete my account
+            </Button>
+          </>
+        }
+      >
+        {deleteError && <Alert tone="danger">{deleteError}</Alert>}
+        <p>
+          This permanently deletes every account, pie, goal, watchlist, holding, and transaction
+          you have on equicast. There&rsquo;s no undo, and no recovery once it&rsquo;s done.
+        </p>
+        <TextField
+          id="settings-delete-confirm"
+          label={`Type ${DELETE_CONFIRM_PHRASE} to confirm`}
+          value={deleteConfirmText}
+          onChange={(event) => setDeleteConfirmText(event.target.value)}
+          disabled={isDeletingAccount}
+          autoComplete="off"
+        />
+      </Modal>
     </Modal>
   );
 }
