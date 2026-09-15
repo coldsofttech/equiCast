@@ -54,16 +54,54 @@ const FEATURES = [
     ),
   },
   {
-    title: "Custom watchlists",
-    desc: "Follow the tickers and pairs that matter to you, without the noise of everything else.",
+    title: "Portfolio pies",
+    desc: "Split an account into custom pies to see exactly how your money is allocated.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M10 10V3.2A6.8 6.8 0 0116.8 10z" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    title: "Goals & funding targets",
+    desc: "Set savings goals, map them to accounts or pies, and track progress automatically.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+        <circle cx="10" cy="10" r="3.6" stroke="currentColor" strokeWidth="1.4" />
+        <circle cx="10" cy="10" r="0.9" fill="currentColor" />
+      </svg>
+    ),
+  },
+  {
+    title: "Since-inception performance",
+    desc: "See invested vs. current value across your whole history, not just today's snapshot.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
         <path
-          d="M10 3.5l2.1 4.3 4.7.7-3.4 3.3.8 4.7-4.2-2.2-4.2 2.2.8-4.7-3.4-3.3 4.7-.7z"
+          d="M2.5 15.5c2.5 0 2.5-8 5-8s2.5 5.5 5 5.5 2.5-6.5 5-6.5"
           stroke="currentColor"
-          strokeWidth="1.4"
+          strokeWidth="1.6"
+          strokeLinecap="round"
           strokeLinejoin="round"
         />
+      </svg>
+    ),
+  },
+  {
+    title: "Import from CSV or Trading 212",
+    desc: "Bring in your existing transaction history in minutes — no manual re-entry.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <path
+          d="M10 13V3.5M6.5 6.5L10 3l3.5 3.5"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        <path d="M3 13.5v1.8a1.7 1.7 0 001.7 1.7h10.6a1.7 1.7 0 001.7-1.7v-1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -80,7 +118,7 @@ const ROADMAP = [
     title: "Markets, at a glance",
     items: [
       "Market indices, sector and top-mover overviews",
-      "A news feed curated to your holdings",
+      "A news feed curated to your holdings, with sentiment scoring",
       "A calendar for macro events — rate decisions, inflation prints and more",
     ],
   },
@@ -88,17 +126,17 @@ const ROADMAP = [
     tag: "Analysis tools",
     title: "Fundamentals & screening",
     items: [
-      "Company fundamentals, financials and key statistics",
+      "Company financials and key statistics for every holding",
       "Analyst ratings and price targets",
       "Screeners to surface top performers by sector or growth",
     ],
   },
   {
-    tag: "Income tracking",
-    title: "Dividend income",
+    tag: "Income & tax",
+    title: "Dividend income & UK tax",
     items: [
       "A payout calendar with 5-year income projections",
-      "Dividend growth history and yield tracking",
+      "UK dividend allowance and capital gains tax, with a household-level view",
       "Cumulative income visualised across your whole portfolio",
     ],
   },
@@ -106,9 +144,19 @@ const ROADMAP = [
     tag: "Unique to equiCast",
     title: "Portfolio intelligence",
     items: [
-      "Custom “pies” to visualise portfolio composition",
+      "Custom watchlists for tickers you don't hold yet",
       "Forecasts and a future-value growth simulator",
-      "A performance heatmap across every holding",
+      "Sold-candidate and rebalancing suggestions",
+      "Smarter sector-diversification and benchmark-comparison scoring",
+    ],
+  },
+  {
+    tag: "Coverage & access",
+    title: "More to track, everywhere you are",
+    items: [
+      "Futures, alongside stocks, ETFs and FX",
+      "Broker-linked import (starting with Trading 212), plus splits, spin-offs and other corporate actions",
+      "Fully responsive layouts for phone and tablet",
     ],
   },
 ];

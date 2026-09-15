@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refreshed the pre-login landing page: `DemoChart` now fetches real
+  ~1-month daily OHLC bars for AAPL/NVDA/VOO from a new, deliberately
+  narrow unauthenticated endpoint (`GET /api/market/public/demo-prices/`,
+  IP-throttled via its own `public_demo` scope) instead of hand-authored
+  synthetic data. The "Live today"/"Coming next" copy was also brought up
+  to date — dropped "Custom watchlists" (never actually live, still a
+  `ComingSoonPage`), added what's shipped since this copy was last written
+  (portfolio pies, goals, since-inception performance charts, CSV/Trading
+  212 import), and refreshed the roadmap (UK tax, forecasts, news
+  sentiment, futures, broker-linked import, corporate actions, sold-
+  candidate suggestions, diversification/benchmark scoring, responsive
+  layouts).
+
 - Account/pie price charts now plot a true since-inception reconstruction
   instead of "what today's holdings would have been worth historically"
   (GitHub issue #194): the blue line is point-in-time current value
