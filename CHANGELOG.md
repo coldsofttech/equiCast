@@ -27,6 +27,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Support page (GitHub issue #246): a new `/support` page (Account menu ->
+  Support) lets a signed-in user raise a query, request a new ticker,
+  report incorrect data, or send anything else, without ever going
+  through GitHub directly. The new `POST /api/support/` endpoint
+  (`backend/support/`) creates a GitHub issue from it — but in a dedicated
+  *private* repo (`coldsofttech/equicast-support`), not the public
+  `equiCast` repo, since every ticket there would otherwise be visible to
+  every other user and the public internet. Both dev and prod share that
+  one repo; each issue is labeled by category plus environment
+  (`development`/`production`, via a new `ENVIRONMENT_NAME` setting fed
+  from Terraform's `var.environment`) to tell them apart. Rate-limited via
+  a dedicated `support` throttle scope on top of the existing per-user API
+  budget. The response is a generic confirmation only — never the created
+  issue's link, since the user has no access to the private repo anyway.
+
 - Missing-ISIN GitHub issue notification (GitHub issue #215):
   `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog` job now reads
   the freshly-built `catalog/<asset_class>.parquet`'s `isin` column (see
