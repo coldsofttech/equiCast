@@ -131,6 +131,24 @@
   anything. The backend/frontend windows (if any are still open from a
   previous run) aren't tracked across invocations - close them directly.
 
+.PARAMETER SupportIssueToken
+  Only applies with -StartBackend: a fine-grained GitHub PAT (issues:write
+  on the private support repo) for support/views.py's SupportView, exported
+  as SUPPORT_ISSUE_TOKEN (or export $env:SUPPORT_ISSUE_TOKEN first). If
+  unset and the GitHub CLI (`gh`) is installed and authenticated, falls back
+  to `gh auth token` - convenient (nothing to create or lose), but that
+  token is scoped far wider than a dedicated issues:write-on-one-repo PAT,
+  so it's local-dev-only, never how prod is configured. Left unset with no
+  `gh` fallback available, only the Support page's submissions 502; every
+  other endpoint is unaffected.
+
+.PARAMETER SupportRepo
+  Only applies with -StartBackend: overrides which private repo
+  SupportView.post files issues in, exported as SUPPORT_REPO (or export
+  $env:SUPPORT_REPO first). Optional - settings.py already defaults to
+  coldsofttech/equicast-support, so this is only needed to point local runs
+  at a different repo.
+
 .EXAMPLE
   .\scripts\local-dev.ps1
 .EXAMPLE
@@ -145,6 +163,8 @@
   .\scripts\local-dev.ps1 -Auth0Domain equicast.eu.auth0.com -Auth0Audience https://api.equicast.app -Auth0ClientId <client-id>
 .EXAMPLE
   .\scripts\local-dev.ps1 -StartFrontend -GaMeasurementId G-XXXXXXXXXX
+.EXAMPLE
+  .\scripts\local-dev.ps1 -StartBackend -SupportIssueToken ghp_xxx -SupportRepo coldsofttech/equicast-support
 .EXAMPLE
   .\scripts\local-dev.ps1 -Stop
 #>
@@ -162,6 +182,8 @@ param(
     [string]$Auth0Audience = $env:AUTH0_AUDIENCE,
     [string]$Auth0ClientId = $env:AUTH0_CLIENT_ID,
     [string]$GaMeasurementId = $env:GA_MEASUREMENT_ID,
+    [string]$SupportIssueToken = $env:SUPPORT_ISSUE_TOKEN,
+    [string]$SupportRepo = $env:SUPPORT_REPO,
     [string]$Region = "eu-west-1",
     [string]$MarketDataBucket = "equicast-market-data-dev",
     [string]$UserDataBucket = "equicast-user-data-dev",
@@ -418,6 +440,38 @@ if ($StartBackend) {
     } else {
         $env:AUTH0_DOMAIN = $Auth0Domain
         $env:AUTH0_AUDIENCE = $Auth0Audience
+    }
+
+    # Only SUPPORT_ISSUE_TOKEN has no Python-side default (settings.py's
+    # "fail loudly" SUPPORT_ISSUE_TOKEN) - unlike Auth0 above, this only
+    # affects the one /api/support/ endpoint, so a missing token is a
+    # warning, not something that blocks startup: SupportView.post will
+    # 502 until it's provided. SUPPORT_REPO already defaults to
+    # coldsofttech/equicast-support in settings.py, so it's only exported
+    # here when explicitly overridden - same optional treatment as
+    # -GaMeasurementId below.
+    if (-not $SupportIssueToken -and (Test-Command gh)) {
+        # Falls back to the GitHub CLI's own session token rather than
+        # requiring a dedicated fine-grained PAT for local dev - a fine-
+        # grained PAT's value is only ever shown once at creation, so
+        # regenerating it every time it's lost is real friction `gh` avoids
+        # entirely (it's already sitting in gh's own credential storage).
+        # Meaningfully broader scope than the issues:write-on-one-repo PAT
+        # settings.py/infra actually use in prod, though - see the warning
+        # below - never used for anything but this local convenience.
+        $ghToken = gh auth token 2>$null
+        if ($LASTEXITCODE -eq 0 -and $ghToken) {
+            $SupportIssueToken = $ghToken.Trim()
+            Write-Warning "SUPPORT_ISSUE_TOKEN not set - falling back to 'gh auth token'. This uses your personal gh CLI session, which is scoped far wider than the issues:write-on-one-repo PAT used in prod. Pass -SupportIssueToken for a properly scoped token instead."
+        }
+    }
+    if (-not $SupportIssueToken) {
+        Write-Warning "SUPPORT_ISSUE_TOKEN not set: the Support page's submissions will fail with a 502 until it's provided. Pass -SupportIssueToken, set SUPPORT_ISSUE_TOKEN in your shell first, or run 'gh auth login' so this script can fall back to 'gh auth token'."
+    } else {
+        $env:SUPPORT_ISSUE_TOKEN = $SupportIssueToken
+    }
+    if ($SupportRepo) {
+        $env:SUPPORT_REPO = $SupportRepo
     }
 }
 

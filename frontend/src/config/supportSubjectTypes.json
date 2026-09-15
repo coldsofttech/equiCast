@@ -1,0 +1,7 @@
+[
+  { "value": "account", "label": "Account" },
+  { "value": "pie", "label": "Pie" },
+  { "value": "goal", "label": "Goal" },
+  { "value": "holding", "label": "Holding" },
+  { "value": "other", "label": "Other" }
+]

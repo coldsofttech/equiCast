@@ -1,0 +1,6 @@
+[
+  { "value": "query", "label": "General question" },
+  { "value": "ticker-request", "label": "Request a new ticker" },
+  { "value": "incorrect-data", "label": "Report incorrect data" },
+  { "value": "other", "label": "Other" }
+]
