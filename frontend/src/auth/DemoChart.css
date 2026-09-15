@@ -27,6 +27,15 @@
   text-align: left;
 }
 
+.ec-demo-loading,
+.ec-demo-error {
+  margin: 0;
+  padding: var(--ec-s-32) 0;
+  text-align: center;
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-14);
+}
+
 .ec-demo-toolbar {
   display: flex;
   align-items: center;

@@ -124,11 +124,20 @@ REST_FRAMEWORK = {
     # identity/views.py, market_data/views.py).
     "DEFAULT_AUTHENTICATION_CLASSES": ["identity.authentication.Auth0JWTAuthentication"],
     # Applies to every DRF view by default (no per-view opt-out needed,
-    # since every real endpoint requires IsAuthenticated already) — see
+    # since every real endpoint requires IsAuthenticated already, other
+    # than market_data's PublicDemoPricesView, which sets its own
+    # dedicated throttle_classes instead — see that view) — see
     # identity.throttling.Auth0UserRateThrottle for why this isn't DRF's
     # own UserRateThrottle (Auth0User has no `.pk`).
     "DEFAULT_THROTTLE_CLASSES": ["identity.throttling.Auth0UserRateThrottle"],
-    "DEFAULT_THROTTLE_RATES": {"user": f"{API_RATE_LIMIT_PER_MINUTE}/min"},
+    # "public_demo": market_data.views.PublicDemoRateThrottle's own
+    # IP-keyed scope for the landing page's unauthenticated demo-prices
+    # endpoint — deliberately much lower than the per-user "user" budget
+    # above, since it has no per-caller identity to key off.
+    "DEFAULT_THROTTLE_RATES": {
+        "user": f"{API_RATE_LIMIT_PER_MINUTE}/min",
+        "public_demo": os.environ.get("PUBLIC_DEMO_RATE_LIMIT", "30/min"),
+    },
 }
 
 CORS_ALLOWED_ORIGINS = [

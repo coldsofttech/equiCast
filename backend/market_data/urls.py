@@ -10,10 +10,12 @@ from .views import (
     NewsView,
     PricesView,
     ProfileView,
+    PublicDemoPricesView,
     SearchView,
 )
 
 urlpatterns = [
+    path("public/demo-prices/", PublicDemoPricesView.as_view(), name="public-demo-prices"),
     path("search/", SearchView.as_view(), name="search"),
     path("fx-rate/<str:from_currency>/<str:to_currency>/", FxRateView.as_view(), name="fx-rate"),
     path("bulk/profile/", BulkProfileView.as_view(), name="bulk-profile"),
