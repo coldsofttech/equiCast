@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
+  now file into the shared private `coldsofttech/equicast-support` repo
+  instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`
+  variable and `SUPPORT_ISSUE_TOKEN` secret the Support page's backend
+  already uses (`backend/support/views.py`), so internal
+  engineering/data-quality trackers stay off the public repo's issue
+  list. `.github/scripts/sync-missing-isin-issue.sh` now takes the
+  target repo as its first argument; the `build-catalog` job in both
+  `stock-ingestion.yml`/`etf-ingestion.yml` no longer needs its
+  `issues: write` permission override, since it no longer writes issues
+  into its own repo.
+
 - Account/pie price charts now plot a true since-inception reconstruction
   instead of "what today's holdings would have been worth historically"
   (GitHub issue #194): the blue line is point-in-time current value
