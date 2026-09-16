@@ -221,6 +221,7 @@ function UserMenu({ profile, onProfileUpdate }) {
         profile={profile}
         onSaved={onProfileUpdate}
         onAccountDeleted={handleSignOut}
+        userEmail={email}
       />
     </div>
   );

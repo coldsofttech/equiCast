@@ -10,7 +10,7 @@ import "./Modal.css";
  * than hiding via CSS, so its content (and any form state inside) only
  * exists while actually open.
  */
-function Modal({ open, onClose, title, children, footer }) {
+function Modal({ open, onClose, title, children, footer, className }) {
   useEffect(() => {
     if (!open) return undefined;
     const handleKeyDown = (event) => {
@@ -25,7 +25,7 @@ function Modal({ open, onClose, title, children, footer }) {
   return createPortal(
     <div className="ec-modal-backdrop" onClick={onClose}>
       <div
-        className="ec-modal"
+        className={className ? `ec-modal ${className}` : "ec-modal"}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ec-modal-title"

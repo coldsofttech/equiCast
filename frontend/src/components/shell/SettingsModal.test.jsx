@@ -154,7 +154,7 @@ describe("SettingsModal", () => {
     expect(onClose).toHaveBeenCalled();
   });
 
-  it("keeps the delete-account button disabled until DELETE is typed exactly", () => {
+  it("keeps the delete-account button disabled until the user's email is typed exactly", () => {
     vi.mocked(useAuth0).mockReturnValue({ getAccessTokenSilently: vi.fn() });
 
     render(
@@ -164,6 +164,7 @@ describe("SettingsModal", () => {
         profile={{ default_currency: "GBP" }}
         onSaved={vi.fn()}
         onAccountDeleted={vi.fn()}
+        userEmail="jane@example.com"
       />
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
@@ -171,12 +172,12 @@ describe("SettingsModal", () => {
     const confirmButton = confirmButtons[confirmButtons.length - 1];
 
     expect(confirmButton).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
-      target: { value: "delete" },
+    fireEvent.change(screen.getByLabelText("Type jane@example.com to confirm"), {
+      target: { value: "jane@example" },
     });
     expect(confirmButton).toBeDisabled();
-    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
-      target: { value: "DELETE" },
+    fireEvent.change(screen.getByLabelText("Type jane@example.com to confirm"), {
+      target: { value: "jane@example.com" },
     });
     expect(confirmButton).toBeEnabled();
   });
@@ -193,11 +194,12 @@ describe("SettingsModal", () => {
         profile={{ default_currency: "GBP" }}
         onSaved={vi.fn()}
         onAccountDeleted={onAccountDeleted}
+        userEmail="jane@example.com"
       />
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
-    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
-      target: { value: "DELETE" },
+    fireEvent.change(screen.getByLabelText("Type jane@example.com to confirm"), {
+      target: { value: "jane@example.com" },
     });
     const confirmButtons = screen.getAllByRole("button", { name: "Delete my account" });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
@@ -218,11 +220,12 @@ describe("SettingsModal", () => {
         profile={{ default_currency: "GBP" }}
         onSaved={vi.fn()}
         onAccountDeleted={onAccountDeleted}
+        userEmail="jane@example.com"
       />
     );
     fireEvent.click(screen.getByRole("button", { name: "Delete my account" }));
-    fireEvent.change(screen.getByLabelText("Type DELETE to confirm"), {
-      target: { value: "DELETE" },
+    fireEvent.change(screen.getByLabelText("Type jane@example.com to confirm"), {
+      target: { value: "jane@example.com" },
     });
     const confirmButtons = screen.getAllByRole("button", { name: "Delete my account" });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
