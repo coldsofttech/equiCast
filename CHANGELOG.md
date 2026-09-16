@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- AVERAGE-mode transaction import now has a re-upload dedup safety net
+  (equicast-support#119/GitHub issue #192): re-importing the same or an
+  overlapping export used to always extend the position by every row's
+  full amount, double-counting shares already folded in. A new
+  `imported_external_ids` field on the AVERAGE-mode BUY record
+  (`equicast_core.transactions`) accumulates every imported row's
+  `external_id` folded into that position so far — `_commit_average_mode`
+  (`backend/transactions/import_views.py`) now skips a row whose id is
+  already on record before recomputing the weighted average, the same
+  "skip a known external_id" principle TRANSACTION mode's per-row
+  `external_id` tracking already had. A commit where every row was
+  already imported is a full no-op (`status: "skipped"`, no write at
+  all) rather than a redundant update.
+
 ### Changed
 
 - Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)

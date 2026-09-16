@@ -39,9 +39,13 @@ An AVERAGE-mode target holding that already has a position is *extended*
 by a commit, not skipped or overwritten: the existing position and the
 imported rows are recombined via `compute_holding_rollup`'s weighted-
 average-cost math into one new totals, written back via
-`update_transaction`. This has no re-upload dedup safety net the way
-TRANSACTION mode's `external_id` tracking does — re-importing the same
-export in AVERAGE mode will double-count shares; see GitHub issue #192.
+`update_transaction`. Re-upload dedup (GitHub issue #192) works the same
+way in spirit as TRANSACTION mode's `external_id` tracking, but against
+`imported_external_ids` (the accumulating set of every row ever folded
+into that one position) rather than a single record's own `external_id`,
+since AVERAGE mode has exactly one BUY record instead of one per row —
+see `_commit_average_mode` and `equicast_core.transactions`' module
+docstring.
 """
 
 from __future__ import annotations
@@ -523,15 +527,41 @@ def _commit_average_mode(
     """AVERAGE mode: fold every row into one weighted-average position —
     creating the holding's first BUY if it has none yet, or extending its
     existing one (combined via `compute_holding_rollup`, written back via
-    `update_transaction`) if it does. See module docstring for the
-    re-upload dedup limitation this carries (GitHub issue #192)."""
+    `update_transaction`) if it does. Re-upload dedup (GitHub issue #192)
+    checks each row's `external_id` against the existing BUY's own
+    `imported_external_ids` (empty for a holding with no position yet, or
+    one predating this field) before folding anything in — a row whose id
+    is already on record is skipped rather than double-counted, the same
+    "skip a known external_id" principle as `_commit_transaction_mode`,
+    just checked against the one accumulating record instead of one row
+    per external_id. A row with no `external_id` at all (e.g. a preset
+    that doesn't supply one) can never be deduped this way and is always
+    folded in — same limitation `_commit_transaction_mode` already has."""
     existing_transactions = _client.list_transactions(user_id, holding_id=holding_id)
     existing_buy = next((t for t in existing_transactions if t["type"] in ("BUY", None)), None)
 
-    synthetic_rows = [
-        _synthetic_trade(ticker, asset_class, default_currency, row)[0] for row in rows
+    already_imported = (
+        set(existing_buy.get("imported_external_ids") or []) if existing_buy else set()
+    )
+    new_rows = [
+        row
+        for row in rows
+        if not (row.get("external_id") and row["external_id"] in already_imported)
     ]
-    row_dates = [row["date"] for row in rows]
+    skipped_duplicate_count = len(rows) - len(new_rows)
+    if existing_buy is not None and not new_rows:
+        return {
+            "status": "skipped",
+            "created_count": 0,
+            "skipped_duplicate_count": skipped_duplicate_count,
+            "detail": "Every row was already imported into this position.",
+        }
+
+    synthetic_rows = [
+        _synthetic_trade(ticker, asset_class, default_currency, row)[0] for row in new_rows
+    ]
+    row_dates = [row["date"] for row in new_rows]
+    new_external_ids = [row["external_id"] for row in new_rows if row.get("external_id")]
 
     if existing_buy is None:
         rollup = compute_holding_rollup(synthetic_rows, "TRANSACTION")
@@ -545,8 +575,9 @@ def _commit_average_mode(
                 average_price_native=rollup["average_price_native"],
                 average_price=rollup["average_price"],
                 date=min(row_dates),
-                sdrt=sum(row.get("sdrt") or 0 for row in rows),
-                fx_fee=sum(row.get("fx_fee") or 0 for row in rows),
+                sdrt=sum(row.get("sdrt") or 0 for row in new_rows),
+                fx_fee=sum(row.get("fx_fee") or 0 for row in new_rows),
+                imported_external_ids=list(dict.fromkeys(new_external_ids)),
             )
         except (TransactionAmountError, TransactionLimitExceededError):
             return {
@@ -555,8 +586,8 @@ def _commit_average_mode(
             }
         return {
             "status": "created",
-            "created_count": len(rows),
-            "skipped_duplicate_count": 0,
+            "created_count": len(new_rows),
+            "skipped_duplicate_count": skipped_duplicate_count,
             "detail": f"Created a new position of {rollup['no_of_shares']} shares.",
         }
 
@@ -569,6 +600,9 @@ def _commit_average_mode(
     }
     combined = compute_holding_rollup([existing_synth, *synthetic_rows], "TRANSACTION")
     new_date = min([existing_buy.get("date") or min(row_dates), *row_dates])
+    updated_external_ids = list(
+        dict.fromkeys([*(existing_buy.get("imported_external_ids") or []), *new_external_ids])
+    )
     try:
         # fx_rate is explicitly cleared (not carried forward) — a single
         # rate can't represent a blended multi-lot average, same "derived,
@@ -594,8 +628,10 @@ def _commit_average_mode(
             average_price=combined["average_price"],
             date=new_date,
             fx_rate=None,
-            sdrt=(existing_buy.get("sdrt") or 0) + sum(row.get("sdrt") or 0 for row in rows),
-            fx_fee=(existing_buy.get("fx_fee") or 0) + sum(row.get("fx_fee") or 0 for row in rows),
+            sdrt=(existing_buy.get("sdrt") or 0) + sum(row.get("sdrt") or 0 for row in new_rows),
+            fx_fee=(existing_buy.get("fx_fee") or 0)
+            + sum(row.get("fx_fee") or 0 for row in new_rows),
+            imported_external_ids=updated_external_ids,
         )
     except TransactionAmountError:
         return {
@@ -604,8 +640,8 @@ def _commit_average_mode(
         }
     return {
         "status": "created",
-        "created_count": len(rows),
-        "skipped_duplicate_count": 0,
+        "created_count": len(new_rows),
+        "skipped_duplicate_count": skipped_duplicate_count,
         "detail": (
             f"Extended existing position: {existing_buy['no_of_shares']} -> "
             f"{combined['no_of_shares']} shares."

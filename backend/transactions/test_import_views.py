@@ -739,6 +739,274 @@ class ImportCommitViewTests(TestCase):
     @patch("transactions.views._market_data_client")
     @patch("transactions.import_views._client")
     @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._accounts_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_average_mode_new_position_records_imported_external_ids(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_accounts_client,
+        mock_holdings_client,
+        mock_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+    ) -> None:
+        """GitHub issue #192: a brand-new AVERAGE position records every
+        folded-in row's external_id, so a later re-upload extending it has
+        something to dedup against."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "AVERAGE",
+            "default_currency": "GBP",
+        }
+        mock_accounts_client.get_account.return_value = {"id": "acc-1"}
+        new_holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_holdings_client.create_holding.return_value = new_holding
+        mock_client.list_transactions.return_value = []
+        mock_client.create_transaction.return_value = {"id": "t-1"}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = new_holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "account", "id": "acc-1"},
+                        "rows": [
+                            {
+                                "external_id": "t212-1",
+                                "date": "2024-01-10",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                            },
+                            {
+                                "external_id": "t212-2",
+                                "date": "2024-02-10",
+                                "type": "BUY",
+                                "no_of_shares": 5,
+                                "price_native": 110.0,
+                                "fx_rate": None,
+                            },
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["results"][0]
+        self.assertEqual(result["status"], "created")
+        self.assertEqual(result["created_count"], 2)
+        self.assertEqual(result["skipped_duplicate_count"], 0)
+        _, kwargs = mock_client.create_transaction.call_args
+        self.assertEqual(kwargs["imported_external_ids"], ["t212-1", "t212-2"])
+
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_average_mode_extends_position_skipping_already_imported_rows(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_holdings_client,
+        mock_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+    ) -> None:
+        """GitHub issue #192: re-uploading an export that overlaps with
+        rows already folded into the position skips the already-known
+        external_id and only extends the position by the genuinely new
+        row, rather than double-counting shares."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "AVERAGE",
+            "default_currency": "GBP",
+        }
+        existing_holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_holdings_client.get_holding.return_value = existing_holding
+        existing_buy = {
+            "id": "t-existing",
+            "type": "BUY",
+            "no_of_shares": 10,
+            "average_price_native": 100.0,
+            "average_price": None,
+            "date": "2024-01-10",
+            "imported_external_ids": ["t212-1"],
+        }
+        mock_client.list_transactions.return_value = [existing_buy]
+        mock_client.update_transaction.return_value = {**existing_buy, "no_of_shares": 15}
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = existing_holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "existing_holding", "id": "h-1"},
+                        "rows": [
+                            {
+                                # Already folded into the position - same
+                                # export, or an overlapping later one.
+                                "external_id": "t212-1",
+                                "date": "2024-01-10",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                            },
+                            {
+                                "external_id": "t212-2",
+                                "date": "2024-02-10",
+                                "type": "BUY",
+                                "no_of_shares": 5,
+                                "price_native": 110.0,
+                                "fx_rate": None,
+                            },
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["results"][0]
+        self.assertEqual(result["status"], "created")
+        self.assertEqual(result["created_count"], 1)
+        self.assertEqual(result["skipped_duplicate_count"], 1)
+        mock_client.update_transaction.assert_called_once()
+        args, kwargs = mock_client.update_transaction.call_args
+        self.assertEqual(args[2], "t-existing")
+        # Only the genuinely new row (5 @ 110) is folded in - not the
+        # already-imported one (10 @ 100) a second time.
+        self.assertEqual(kwargs["no_of_shares"], 15.0)
+        self.assertAlmostEqual(kwargs["average_price_native"], (10 * 100.0 + 5 * 110.0) / 15.0)
+        self.assertEqual(kwargs["imported_external_ids"], ["t212-1", "t212-2"])
+
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_average_mode_skips_entirely_when_every_row_already_imported(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_profile_client,
+        mock_holdings_client,
+        mock_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+    ) -> None:
+        """GitHub issue #192: re-uploading the exact same export a second
+        time is a full no-op - no write at all, not just a smaller one."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "AVERAGE",
+            "default_currency": "GBP",
+        }
+        existing_holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_holdings_client.get_holding.return_value = existing_holding
+        existing_buy = {
+            "id": "t-existing",
+            "type": "BUY",
+            "no_of_shares": 10,
+            "average_price_native": 100.0,
+            "average_price": None,
+            "date": "2024-01-10",
+            "imported_external_ids": ["t212-1"],
+        }
+        mock_client.list_transactions.return_value = [existing_buy]
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = existing_holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "existing_holding", "id": "h-1"},
+                        "rows": [
+                            {
+                                "external_id": "t212-1",
+                                "date": "2024-01-10",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                            }
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result = response.json()["results"][0]
+        self.assertEqual(result["status"], "skipped")
+        self.assertEqual(result["created_count"], 0)
+        self.assertEqual(result["skipped_duplicate_count"], 1)
+        mock_client.update_transaction.assert_not_called()
+
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
     @patch("transactions.import_views._profile_client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")

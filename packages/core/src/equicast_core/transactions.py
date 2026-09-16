@@ -74,11 +74,21 @@ transaction is still recorded in that case, just without a converted
 figure.
 
 Every record has the same stable shape regardless of mode/type (all
-thirteen of `no_of_shares`/`average_price_native`/`average_price`/
+fourteen of `no_of_shares`/`average_price_native`/`average_price`/
 `price_native`/`price`/`amount_native`/`amount`/`fx_rate`/`sdrt`/`fx_fee`/
-`date`/`type`/`external_id` are always present, `None` where not
-applicable) — the same "stable shape rather than sometimes-absent keys"
-reasoning `HoldingsClient` uses for its three parent-id fields. `sdrt`
+`date`/`type`/`external_id`/`imported_external_ids` are always present,
+`None` where not applicable) — the same "stable shape rather than
+sometimes-absent keys" reasoning `HoldingsClient` uses for its three
+parent-id fields. `imported_external_ids` (GitHub issue #192) is the
+AVERAGE-mode counterpart to `external_id`: an AVERAGE holding has exactly
+one `BUY` record that every imported row ever gets folded into (see
+`update_transaction`), so a single `external_id` can't track which rows
+it's already absorbed the way a TRANSACTION-mode row's own `external_id`
+can — this is the accumulating set of every row's `external_id` folded
+into that one record so far, letting a repeat/overlapping import skip
+rows it already consumed instead of double-counting shares. `None`/empty
+for a TRANSACTION-mode record, a DIVIDEND, or an AVERAGE BUY never
+created/extended by an import. `sdrt`
 (GitHub issue #100) and `fx_fee` (GitHub issue #101) are unlike every
 other monetary field here: both are already in the user's default
 currency (never the holding's native currency), so neither has a `_native`
@@ -200,6 +210,7 @@ def _normalize(transaction: dict[str, Any]) -> dict[str, Any]:
     transaction.setdefault("amount_native", None)
     transaction.setdefault("fx_rate", None)
     transaction.setdefault("external_id", None)
+    transaction.setdefault("imported_external_ids", None)
     transaction.setdefault("sdrt", None)
     transaction.setdefault("fx_fee", None)
     return transaction
@@ -715,6 +726,7 @@ class TransactionsClient:
         amount: Any = None,
         fx_rate: Any = None,
         external_id: Any = None,
+        imported_external_ids: list[str] | None = None,
         sdrt: Any = None,
         fx_fee: Any = None,
     ) -> dict[str, Any]:
@@ -751,6 +763,15 @@ class TransactionsClient:
         already exists) is the caller-side half of this — this method is
         what makes that check race-safe rather than just a best-effort
         pre-check.
+
+        `imported_external_ids` (GitHub issue #192) is the AVERAGE-mode
+        counterpart — an import creating a holding's first `BUY` passes
+        every folded-in row's `external_id` here (deduplicated, in case
+        the same row somehow appears twice in one upload) so a later
+        `update_transaction` extending that same position can tell which
+        rows it's already absorbed. `None`/omitted for a hand-entered/
+        API-created transaction, a TRANSACTION-mode record, or a
+        DIVIDEND — see module docstring.
 
         `sdrt` (UK Stamp Duty Reserve Tax, GitHub issue #100) and `fx_fee`
         (currency-conversion fee, GitHub issue #101) are both already in
@@ -854,6 +875,7 @@ class TransactionsClient:
                 "amount": amount if type == "DIVIDEND" else None,
                 "fx_rate": fx_rate,
                 "external_id": external_id,
+                "imported_external_ids": imported_external_ids if is_average_buy else None,
                 "sdrt": sdrt if type == "BUY" else None,
                 "fx_fee": fx_fee if type in ("BUY", "SELL") else None,
                 "date": date,
@@ -897,7 +919,12 @@ class TransactionsClient:
         deliberately absent from both allowed sets — it's immutable once set
         by `create_transaction`, so an import's dedup check can always trust
         it against the original import rather than a value that could have
-        drifted since.
+        drifted since. `imported_external_ids` *is* patchable for an
+        AVERAGE-mode `BUY`, unlike `external_id` — extending an existing
+        position with more imported rows (GitHub issue #192) needs to grow
+        the accumulated set, not replace a fixed original value; the caller
+        is responsible for passing the full updated set (existing plus
+        newly-folded-in), same as every other patched field here.
 
         Patching an AVERAGE-mode `BUY`'s `date` or `no_of_shares` drops
         every auto-created `DIVIDEND` on file and rewinds
@@ -931,6 +958,7 @@ class TransactionsClient:
                     "fx_rate",
                     "sdrt",
                     "fx_fee",
+                    "imported_external_ids",
                 }
             else:
                 raise ValueError(
