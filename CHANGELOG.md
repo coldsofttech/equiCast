@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidated the five near-identical per-asset-class Docker image
+  workflows (`stock-image.yml`, `etf-image.yml`, `fx-image.yml`,
+  `benchmark-image.yml`, `forecasting-image.yml`) into one
+  `.github/workflows/images.yml` matrix job
+  (equicast-support#5). A new `changes` job (`dorny/paths-filter`)
+  preserves each image's original independent trigger — a push only
+  rebuilds the asset class(es) whose own paths actually changed, not
+  every image — and `workflow_dispatch` gained an `asset_class` choice
+  input (default `all`) to build one image on demand instead of one
+  dedicated workflow per class.
+
+
 - Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
   now file into the shared private `coldsofttech/equicast-support` repo
   instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`

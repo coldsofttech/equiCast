@@ -362,9 +362,12 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 - `deploy.yml` — builds the backend image/frontend bundle once, posts a rough
   cost estimate, then `dev` and `prod` deploys each wait for approval on their
   own GitHub Environment (`development`, `production`) before pushing/syncing
-- `fx-image.yml` / `fx-ingestion.yml` — build the FX pipeline's image and run it on a
-  schedule; see [fx-pipeline.md](fx-pipeline.md) for details
-- `stock-image.yml` / `stock-ingestion.yml` — build the stock pipeline's image and run it
-  on a schedule; see [stock-pipeline.md](stock-pipeline.md) for details
-- `etf-image.yml` / `etf-ingestion.yml` — build the ETF pipeline's image and run it
-  on a schedule; see [etf-pipeline.md](etf-pipeline.md) for details
+- `images.yml` — builds and pushes every asset class's Docker image to GHCR in one
+  matrix job (stock, ETF, FX, benchmark, forecasting), gated per class by which
+  paths actually changed; see each pipeline doc's "Publishing the image" section
+- `fx-ingestion.yml` — runs the FX pipeline on a schedule; see
+  [fx-pipeline.md](fx-pipeline.md) for details
+- `stock-ingestion.yml` — runs the stock pipeline on a schedule; see
+  [stock-pipeline.md](stock-pipeline.md) for details
+- `etf-ingestion.yml` — runs the ETF pipeline on a schedule; see
+  [etf-pipeline.md](etf-pipeline.md) for details
