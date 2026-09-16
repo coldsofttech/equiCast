@@ -41,6 +41,7 @@ packages = [
     "watchlists",
     "holdings",
     "transactions",
+    "support",
 ]
 
 [tool.pytest.ini_options]

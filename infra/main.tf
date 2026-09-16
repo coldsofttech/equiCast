@@ -258,6 +258,13 @@ module "backend_lambda" {
     USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
+    # GitHub issue #246: labels a support-form-created issue "development"/
+    # "production" in the shared equicast-support repo (see support/views.py's
+    # _ENVIRONMENT_LABELS) — var.environment is "dev"/"prod" here.
+    ENVIRONMENT_NAME              = var.environment
+    SUPPORT_ISSUE_TOKEN           = var.support_issue_token
+    SUPPORT_REPO                  = var.support_repo
+    SUPPORT_RATE_LIMIT_PER_MINUTE = var.support_rate_limit_per_minute
     # Previously unset here, silently falling back to settings.py's
     # CORS_ALLOWED_ORIGINS default of "http://localhost:5173" for every
     # deployed environment — the deployed frontend's own CloudFront origin
