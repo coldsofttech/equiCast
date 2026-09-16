@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Consolidated `stock-ci.yml`/`etf-ci.yml`/`fx-ci.yml`/`benchmark-ci.yml`
+  into one `.github/workflows/packages-ci.yml` matrix job
+  (equicast-support#2), one entry per unique package
+  (`datafeed`/`metrics`/`dividends`/`events`/`stock`/`etf`/`fx`/`benchmark`)
+  rather than one per asset class. The old shape re-tested every shared
+  package (`equicast-datafeed`/`metrics`/`dividends`/`events`) once per
+  workflow that depended on it — `datafeed` ran up to 4x on a single
+  change, `dividends`/`events` 2x — this runs each package's own
+  lint/type-check/tests exactly once, gated by a new `changes` job
+  (`dorny/paths-filter`, same pattern as `images.yml`'s consolidation).
+  `packages/core` (tested in `backend-ci.yml`) and `packages/forecasting`
+  (untested anywhere — equicast-support#147) are out of scope here.
+
+
 - Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
   now file into the shared private `coldsofttech/equicast-support` repo
   instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`

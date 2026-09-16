@@ -1,0 +1,128 @@
+name: Packages CI
+
+# Consolidates what used to be four workflows (stock-ci.yml, etf-ci.yml,
+# fx-ci.yml, benchmark-ci.yml — see GitHub issue equicast-support#2) into
+# one matrix job, one entry per unique package directory rather than one
+# per asset class. The old per-asset-class shape re-tested every shared
+# dependency package (equicast-datafeed/metrics/dividends/events) once
+# per workflow that happened to depend on it — datafeed's own pytest
+# suite ran up to 4 times over on a single datafeed change, dividends/
+# events twice. This runs each package's own lint/type-check/tests
+# exactly once, gated by whether that package's own files (or the shared
+# lockfile/this workflow) actually changed - see the `changes` job.
+#
+# packages/core (tested inside backend-ci.yml, since it's the Django
+# backend's dependency rather than an asset-class pipeline's) and
+# packages/forecasting (currently untested anywhere — see
+# equicast-support#147) are deliberately out of scope here.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
+      - "packages/fx/**"
+      - "packages/benchmark/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/packages-ci.yml"
+  pull_request:
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
+      - "packages/fx/**"
+      - "packages/benchmark/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/packages-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  # One boolean output per package - each true only when that package's
+  # own directory (or the shared lockfile/this workflow file) changed in
+  # this push/PR, so build-and-push's matrix below only runs the packages
+  # actually affected instead of every package on any relevant change.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      datafeed: ${{ steps.filter.outputs.datafeed }}
+      metrics: ${{ steps.filter.outputs.metrics }}
+      dividends: ${{ steps.filter.outputs.dividends }}
+      events: ${{ steps.filter.outputs.events }}
+      stock: ${{ steps.filter.outputs.stock }}
+      etf: ${{ steps.filter.outputs.etf }}
+      fx: ${{ steps.filter.outputs.fx }}
+      benchmark: ${{ steps.filter.outputs.benchmark }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            root: &root
+              - "pyproject.toml"
+              - "uv.lock"
+              - ".github/workflows/packages-ci.yml"
+            datafeed:
+              - *root
+              - "packages/datafeed/**"
+            metrics:
+              - *root
+              - "packages/metrics/**"
+            dividends:
+              - *root
+              - "packages/dividends/**"
+            events:
+              - *root
+              - "packages/events/**"
+            stock:
+              - *root
+              - "packages/stock/**"
+            etf:
+              - *root
+              - "packages/etf/**"
+            fx:
+              - *root
+              - "packages/fx/**"
+            benchmark:
+              - *root
+              - "packages/benchmark/**"
+
+  test:
+    needs: [changes]
+    if: needs.changes.outputs[matrix.name] == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [datafeed, metrics, dividends, events, stock, etf, fx, benchmark]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync --all-packages --extra dev
+
+      - name: Lint
+        run: uv run ruff check packages/${{ matrix.name }}/
+
+      - name: Type check
+        working-directory: packages/${{ matrix.name }}
+        run: uv run mypy src/
+
+      - name: Test
+        working-directory: packages/${{ matrix.name }}
+        run: uv run pytest
