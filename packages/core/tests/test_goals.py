@@ -182,6 +182,24 @@ def test_delete_goal_raises_for_unknown_id(s3_client) -> None:
         client.delete_goal("auth0|abc123", "does-not-exist")
 
 
+def test_delete_all_goals_removes_the_whole_object(s3_client) -> None:
+    client = GoalsClient(BUCKET, s3_client=s3_client)
+    _create(client, "auth0|abc123")
+    _create(client, "auth0|abc123", name="Second")
+
+    client.delete_all_goals("auth0|abc123")
+
+    assert client.list_goals("auth0|abc123") == []
+
+
+def test_delete_all_goals_is_a_no_op_when_none_exist(s3_client) -> None:
+    client = GoalsClient(BUCKET, s3_client=s3_client)
+
+    client.delete_all_goals("auth0|abc123")  # doesn't raise
+
+    assert client.list_goals("auth0|abc123") == []
+
+
 def test_create_goal_retries_on_conditional_write_conflict(s3_client) -> None:
     """Simulates another process's write landing between this client's
     get_object and put_object calls: the first put_object loses the

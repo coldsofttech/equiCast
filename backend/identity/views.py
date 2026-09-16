@@ -1,5 +1,13 @@
 from django.conf import settings
-from equicast_core import HoldingsClient, TransactionsClient, UserProfileClient
+from equicast_core import (
+    AccountsClient,
+    GoalsClient,
+    HoldingsClient,
+    PiesClient,
+    TransactionsClient,
+    UserProfileClient,
+    WatchlistsClient,
+)
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -48,6 +56,25 @@ _transactions_client = TransactionsClient(
     settings.USER_DATA_BUCKET,
     region_name=settings.AWS_REGION,
     max_transactions_for_holding=settings.MAX_TRANSACTIONS_FOR_HOLDING,
+)
+#: Only needed for DELETEing every domain's data on account deletion (GitHub
+#: issue #158) — accounts/pies/goals/watchlists/views.py hold the clients
+#: actually used for those domains' own CRUD.
+_accounts_client = AccountsClient(
+    settings.USER_DATA_BUCKET, region_name=settings.AWS_REGION, max_accounts=settings.MAX_ACCOUNTS
+)
+_pies_client = PiesClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_pies_per_account=settings.MAX_PIES,
+)
+_goals_client = GoalsClient(
+    settings.USER_DATA_BUCKET, region_name=settings.AWS_REGION, max_goals=settings.MAX_GOALS
+)
+_watchlists_client = WatchlistsClient(
+    settings.USER_DATA_BUCKET,
+    region_name=settings.AWS_REGION,
+    max_watchlists=settings.MAX_WATCHLISTS,
 )
 
 
@@ -128,3 +155,30 @@ class MeView(APIView):
             profile = _client.update_income_tax_band(user_id, income_tax_band)
 
         return Response(profile)
+
+    def delete(self, request: Request) -> Response:
+        """Permanently delete every equicast-owned record for the caller
+        (GitHub issue #158) — profile, accounts, pies, goals, watchlists,
+        holdings, and every holding's transactions. Their Auth0 identity
+        itself is untouched (v1 scope — see the issue), so nothing stops
+        them signing up again fresh afterward. Irreversible; the frontend
+        gates this behind a type-to-confirm prompt before ever sending the
+        request, not just a plain confirm dialog.
+
+        Order doesn't matter for correctness (nothing read here depends on
+        another client's data mid-delete, unlike a normal holding/account
+        delete's cascade), but transactions/holdings go first anyway so a
+        request that fails partway through never leaves transactions
+        dangling for holdings that already look gone.
+        """
+        user_id = request.user.user_id
+        holding_ids = [h["id"] for h in _holdings_client.list_holdings(user_id)]
+        if holding_ids:
+            _transactions_client.delete_transactions_for_holdings(user_id, holding_ids)
+        _holdings_client.delete_all_holdings(user_id)
+        _accounts_client.delete_all_accounts(user_id)
+        _pies_client.delete_all_pies(user_id)
+        _goals_client.delete_all_goals(user_id)
+        _watchlists_client.delete_all_watchlists(user_id)
+        _client.delete_profile(user_id)
+        return Response(status=204)

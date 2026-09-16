@@ -203,3 +203,12 @@ class AccountsClient:
                 raise
             return
         raise RuntimeError(f"Too many conflicting writes to accounts for user '{user_id}'.")
+
+    def delete_all_accounts(self, user_id: str) -> None:
+        """Remove `user_id`'s entire accounts object outright (GitHub issue
+        #158's account-deletion flow), rather than emptying it via
+        `_save(user_id, [], etag)` — no conflict retry needed, since this
+        unconditionally replaces the whole object with nothing rather than
+        reading-modifying-writing a subset of it. A no-op (no error) if the
+        user has no accounts object yet, same as S3's own `delete_object`."""
+        self._s3.delete_object(Bucket=self._bucket, Key=self._key(user_id))

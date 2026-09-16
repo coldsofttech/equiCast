@@ -70,6 +70,10 @@ function UserMenu({ profile, onProfileUpdate }) {
   const initials = initialsFor(name, email);
   const showImage = Boolean(user?.picture) && !imgFailed;
 
+  // Also passed to SettingsModal as onAccountDeleted (GitHub issue #158) —
+  // once a delete-account call succeeds there's nothing left to stay
+  // signed into, so it reuses this exact cache-clear-then-logout flow
+  // rather than a separate one.
   const handleSignOut = () => {
     // All three caches survive the Auth0 logout/login redirect round trip
     // (profile's and the greeting's sessionStorage survive it same-tab;
@@ -216,6 +220,8 @@ function UserMenu({ profile, onProfileUpdate }) {
         onClose={() => setIsSettingsOpen(false)}
         profile={profile}
         onSaved={onProfileUpdate}
+        onAccountDeleted={handleSignOut}
+        userEmail={email}
       />
     </div>
   );

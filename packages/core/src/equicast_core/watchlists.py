@@ -170,3 +170,10 @@ class WatchlistsClient:
                 raise
             return
         raise RuntimeError(f"Too many conflicting writes to watchlists for user '{user_id}'.")
+
+    def delete_all_watchlists(self, user_id: str) -> None:
+        """Remove `user_id`'s entire watchlists object outright (GitHub
+        issue #158's account-deletion flow) — see `AccountsClient.
+        delete_all_accounts` for why this skips the conflict-retry
+        read-modify-write `delete_watchlist` uses."""
+        self._s3.delete_object(Bucket=self._bucket, Key=self._key(user_id))
