@@ -218,6 +218,7 @@ jobs:
           VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          VITE_BRANDFETCH_CLIENT_ID: ${{ vars.BRANDFETCH_CLIENT_ID }}
         run: |
           npm ci
           npm run build
@@ -269,6 +270,7 @@ jobs:
           VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
           VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
           VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+          VITE_BRANDFETCH_CLIENT_ID: ${{ vars.BRANDFETCH_CLIENT_ID }}
         run: |
           npm ci
           npm run build

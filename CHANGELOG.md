@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Asset icons (`AssetIcon`) now resolve through a three-tier fallback:
+  [Brandfetch's free Logo API](https://brandfetch.com/developers/logo-api)
+  (looked up by ticker) first, Google's favicon-by-domain second, then an
+  optional per-ticker local SVG override
+  (`frontend/src/config/websiteIcons.json`) as a last resort — each tier
+  is only tried if the previous one's image fails to load. Replaces the
+  old Clearbit-based per-ticker override, since `logo.clearbit.com` is no
+  longer available. `VITE_BRANDFETCH_CLIENT_ID` (a public client ID, not
+  a secret) is optional — unset, icons just fall through to Google/SVG.
+
 ### Changed
 
 - Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)

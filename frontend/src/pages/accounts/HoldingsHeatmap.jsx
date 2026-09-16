@@ -153,7 +153,7 @@ function HoldingsHeatmap({ weights = [], label = "portfolio" }) {
                   color: tone.color,
                 }}
               >
-                {showIcon && <AssetIcon website={cell.website} size={20} />}
+                {showIcon && <AssetIcon ticker={cell.ticker} website={cell.website} size={20} />}
                 <span className="ec-heatmap-ticker">{cell.ticker}</span>
                 {showPct && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
               </div>
