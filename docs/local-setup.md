@@ -368,3 +368,10 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
   on a schedule; see [stock-pipeline.md](stock-pipeline.md) for details
 - `etf-image.yml` / `etf-ingestion.yml` — build the ETF pipeline's image and run it
   on a schedule; see [etf-pipeline.md](etf-pipeline.md) for details
+- `manage-config.yml` (equicast-support#6) — `workflow_dispatch`-only, lets an
+  allowlisted user add/update/delete one stock/etf/fx/benchmark config entry
+  (`packages/*/config/*.yaml`) through a form instead of hand-editing YAML.
+  Applies the edit via `.github/scripts/manage_config_entry.py`
+  (`ruamel.yaml` round-trip mode, so existing comments/formatting survive),
+  then opens a PR rather than pushing straight to `main` — a bad input still
+  goes through review/CI before it reaches a live pipeline's config

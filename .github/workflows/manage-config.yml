@@ -1,0 +1,170 @@
+name: Manage Config Entry
+
+# equicast-support#6: lets an allowed user add/update/delete one entry in
+# a stock/etf/fx/benchmark ingestion config YAML (packages/*/config/*.yaml)
+# through a form instead of hand-editing YAML and opening a PR themselves.
+# Deliberately opens a PR rather than pushing straight to main (the
+# issue's own open design question) - a typo'd ticker or malformed
+# override then goes through the same review/CI gate as any other change,
+# rather than landing unreviewed. Auto-merge is requested once the PR is
+# open, but only takes effect if the repo has "Allow auto-merge" enabled
+# and this PR's required checks pass - otherwise it's left open for a
+# manual merge, same as any other PR.
+#
+# Every input is threaded through `env:` rather than interpolated
+# directly into a `run:` script (`${{ inputs.key }}` etc. spliced into
+# shell text) - the standard GitHub Actions script-injection guard, since
+# a `run:` step treats untrusted `${{ }}` expansions as literal script
+# text, not a quoted argument.
+#
+# Scope: stock/etf/fx/benchmark only - packages/futures doesn't exist
+# yet, so there's nothing to target there (see equicast-support#4/#5 for
+# the same "no futures package yet" note on the ingestion/image
+# workflows). Add one more `asset_class` option and a branch in
+# manage_config_entry.py's `_CONFIGS` once it does.
+on:
+  workflow_dispatch:
+    inputs:
+      asset_class:
+        description: "Which config to edit"
+        type: choice
+        options: [stock, etf, fx, benchmark]
+        required: true
+      environment:
+        description: "dev or prod config file"
+        type: choice
+        options: [dev, prod]
+        required: true
+      action:
+        description: "What to do with --key"
+        type: choice
+        options: [add, update, delete]
+        required: true
+      key:
+        description: "Ticker (stock/etf), 'FROM:TO' pair (fx, e.g. GBP:USD), or benchmark key (benchmark)"
+        required: true
+      isin:
+        description: "stock/etf only - ISIN override for add/update"
+        required: false
+      tax_domicile:
+        description: "stock only - tax_domicile override for add/update"
+        required: false
+      symbol:
+        description: "benchmark only - the yfinance ticker to fetch, required for add/update"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  manage-entry:
+    runs-on: ubuntu-latest
+    steps:
+      # Repo write access alone (the default gate on any workflow_dispatch)
+      # isn't treated as enough here, since this commits directly into
+      # ingestion config feeding live data pipelines - an explicit
+      # allowlist on top, same "belt and braces" reasoning as
+      # SUPPORT_ISSUE_TOKEN being scoped narrower than a full repo PAT.
+      - name: Restrict to allowed actors
+        env:
+          ACTOR: ${{ github.actor }}
+        run: |
+          ALLOWED_ACTORS=("coldsofttech")
+          for allowed in "${ALLOWED_ACTORS[@]}"; do
+            if [ "$ACTOR" = "$allowed" ]; then
+              exit 0
+            fi
+          done
+          echo "::error::'$ACTOR' is not on this workflow's allowlist."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Apply the config edit
+        id: edit
+        env:
+          ASSET_CLASS: ${{ inputs.asset_class }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
+          KEY: ${{ inputs.key }}
+          ISIN: ${{ inputs.isin }}
+          TAX_DOMICILE: ${{ inputs.tax_domicile }}
+          SYMBOL: ${{ inputs.symbol }}
+        run: |
+          ARGS=(--asset-class "$ASSET_CLASS" --environment "$ENVIRONMENT" --action "$ACTION" --key "$KEY")
+          [ -n "$ISIN" ] && ARGS+=(--isin "$ISIN")
+          [ -n "$TAX_DOMICILE" ] && ARGS+=(--tax-domicile "$TAX_DOMICILE")
+          [ -n "$SYMBOL" ] && ARGS+=(--symbol "$SYMBOL")
+
+          SUMMARY=$(uv run --with ruamel.yaml python .github/scripts/manage_config_entry.py "${ARGS[@]}")
+          echo "$SUMMARY"
+          # A random delimiter, not a fixed "EOF" - $KEY/$ISIN/etc. (echoed
+          # back into $SUMMARY by the script above) are user-supplied
+          # workflow_dispatch text, so a fixed delimiter could in principle
+          # be spoofed into terminating this block early.
+          DELIM="EOF_$(uuidgen)"
+          {
+            echo "summary<<$DELIM"
+            echo "$SUMMARY"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create branch, commit, and push
+        id: branch
+        env:
+          ASSET_CLASS: ${{ inputs.asset_class }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
+          KEY: ${{ inputs.key }}
+          SUMMARY: ${{ steps.edit.outputs.summary }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # Only [A-Za-z0-9-] survive into the branch name - a raw --key
+          # (e.g. "GBP:USD") isn't a valid git ref component on its own.
+          SAFE_KEY=$(echo "$KEY" | tr -c 'A-Za-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')
+          BRANCH="config/${ASSET_CLASS}-${ENVIRONMENT}-${ACTION}-${SAFE_KEY}-${RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "packages/${ASSET_CLASS}/config/"*.yaml
+          git commit -m "$SUMMARY (${ASSET_CLASS}/${ENVIRONMENT})"
+          git push origin "$BRANCH"
+          echo "branch=$BRANCH" >> "$GITHUB_OUTPUT"
+
+      - name: Open a PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ASSET_CLASS: ${{ inputs.asset_class }}
+          ENVIRONMENT: ${{ inputs.environment }}
+          ACTION: ${{ inputs.action }}
+          KEY: ${{ inputs.key }}
+          SUMMARY: ${{ steps.edit.outputs.summary }}
+          BRANCH: ${{ steps.branch.outputs.branch }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          PR_URL=$(gh pr create \
+            --title "$SUMMARY ($ASSET_CLASS/$ENVIRONMENT)" \
+            --body "Requested via \`manage-config.yml\` by @${ACTOR}.
+
+          | Field | Value |
+          |---|---|
+          | asset_class | \`${ASSET_CLASS}\` |
+          | environment | \`${ENVIRONMENT}\` |
+          | action | \`${ACTION}\` |
+          | key | \`${KEY}\` |" \
+            --base main \
+            --head "$BRANCH")
+          echo "$PR_URL" >> "$GITHUB_STEP_SUMMARY"
+
+          # Best-effort: only takes effect if this repo has "Allow
+          # auto-merge" enabled and the PR's required checks pass:
+          # otherwise it's left open for a manual merge like any other PR.
+          gh pr merge --auto --squash "$PR_URL" \
+            || echo "::warning::Auto-merge could not be enabled - merge $PR_URL manually once checks pass."

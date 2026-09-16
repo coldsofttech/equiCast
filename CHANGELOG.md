@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `manage-config.yml` (equicast-support#6): a `workflow_dispatch`-only
+  GitHub Actions workflow, restricted to an explicit actor allowlist, for
+  adding/updating/deleting one entry in a stock/etf/fx/benchmark
+  ingestion config YAML (`packages/*/config/*.yaml`) via form inputs
+  instead of a hand-edited PR. `.github/scripts/manage_config_entry.py`
+  applies the edit using `ruamel.yaml`'s round-trip mode (not PyYAML),
+  so existing comments/quote styles/ordering survive untouched — a
+  one-line config change stays a one-line diff. The workflow opens a PR
+  (with best-effort auto-merge if the repo allows it) rather than
+  pushing straight to `main`, so a bad input still goes through the same
+  review/CI gate as any other change. `futures` isn't a supported
+  `asset_class` yet — `packages/futures` doesn't exist.
+
 ### Changed
 
 - Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
