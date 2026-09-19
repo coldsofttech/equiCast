@@ -186,6 +186,23 @@ class TestDeleteHolding:
         with pytest.raises(HoldingNotFoundError):
             client.delete_holding("auth0|abc123", "does-not-exist")
 
+    def test_delete_all_holdings_removes_the_whole_object(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+        client.create_holding(
+            "auth0|abc123", ticker="AAPL", asset_class="stock", account_id=ACCOUNT_ID
+        )
+
+        client.delete_all_holdings("auth0|abc123")
+
+        assert client.list_holdings("auth0|abc123") == []
+
+    def test_delete_all_holdings_is_a_no_op_when_none_exist(self, s3_client) -> None:
+        client = HoldingsClient(BUCKET, s3_client=s3_client)
+
+        client.delete_all_holdings("auth0|abc123")  # doesn't raise
+
+        assert client.list_holdings("auth0|abc123") == []
+
     def test_delete_holding_rejects_pie_scoped_holding(self, s3_client) -> None:
         client = HoldingsClient(BUCKET, s3_client=s3_client)
         holding = client.sync_pie_holdings(

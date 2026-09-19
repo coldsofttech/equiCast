@@ -246,13 +246,13 @@ jobs:
     needs: [plan, ingest]
     if: needs.plan.outputs.has_chunks == 'true' && needs.plan.outputs.run_ingest == 'true'
     runs-on: ubuntu-latest
-    # Overrides the workflow-level defaults: adds issues:write (for the
-    # missing-ISIN issue sync below) and drops packages:read (unused here —
-    # this job never pulls a GHCR image).
+    # Overrides the workflow-level defaults: drops packages:read (unused
+    # here — this job never pulls a GHCR image). No issues:write needed —
+    # the missing-ISIN issue sync below files into equicast-support via
+    # SUPPORT_ISSUE_TOKEN, not this repo's own GITHUB_TOKEN.
     permissions:
       id-token: write
       contents: read
-      issues: write
     steps:
       - uses: actions/checkout@v4
 
@@ -302,9 +302,10 @@ jobs:
 
       - name: Sync missing-ISIN tracking issue
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
         run: |
           bash .github/scripts/sync-missing-isin-issue.sh \
+            "${{ vars.SUPPORT_REPO }}" \
             "ETF ingestion: tickers missing ISIN" \
             "ETF" \
             "packages/etf/config/etfs.prod.yaml" \

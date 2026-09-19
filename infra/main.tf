@@ -1,7 +1,8 @@
 module "market_data_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-market-data-${var.environment}"
+  bucket_name   = "${var.project_name}-market-data-${var.environment}"
+  force_destroy = var.force_destroy
 }
 
 # React static site bundle. NOT static_site=true (S3 website hosting) —
@@ -15,7 +16,8 @@ module "market_data_bucket" {
 module "frontend_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-frontend-${var.environment}"
+  bucket_name   = "${var.project_name}-frontend-${var.environment}"
+  force_destroy = var.force_destroy
 }
 
 # Lets CloudFront (and only CloudFront, via the bucket policy's
@@ -114,8 +116,9 @@ resource "aws_s3_bucket_policy" "frontend" {
 module "backend_deploy_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-backend-deploy-${var.environment}"
-  versioning  = true
+  bucket_name   = "${var.project_name}-backend-deploy-${var.environment}"
+  versioning    = true
+  force_destroy = var.force_destroy
 }
 
 # Minimal user-profile store (see docs/ discussion: DynamoDB holds only the
@@ -136,10 +139,25 @@ module "user_profiles_table" {
 # (the Lambda only holds s3:GetObject on it) — mixing in writable
 # user-owned data would broaden that bucket's IAM footprint and blur two
 # unrelated lifecycles.
-module "user_data_bucket" {
-  source = "./modules/s3_bucket"
-
-  bucket_name = "${var.project_name}-user-data-${var.environment}"
+#
+# Managed in ./user-data's own Terraform state, not here — this bucket
+# holds real user data that a redeploy cannot recreate, so it must survive
+# an infra-lifecycle.yml "destroy" run against this root's state.
+# Terraform has no "-exclude" flag on any command to keep one resource out
+# of a destroy, so the only reliable way to protect it is to keep it out
+# of this state entirely.
+#
+# A plain local, not a `data "aws_s3_bucket"` lookup — a data source reads
+# the real bucket at plan time and hard-fails this whole root's plan/apply/
+# destroy ("couldn't find resource") whenever that bucket doesn't currently
+# exist (mid-migration, or between an infra-lifecycle.yml destroy and
+# redeploy). The bucket name/ARN are fully deterministic from
+# project_name/environment, so no lookup is needed at all — this root's
+# own plan/apply/destroy should never depend on whether that bucket
+# happens to exist right now.
+locals {
+  user_data_bucket_name = "${var.project_name}-user-data-${var.environment}"
+  user_data_bucket_arn  = "arn:aws:s3:::${local.user_data_bucket_name}"
 }
 
 # Generated rather than left at the code's insecure hardcoded dev default —
@@ -168,14 +186,14 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # domains that don't exist yet.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/accounts/*"]
+    resources = ["${local.user_data_bucket_arn}/accounts/*"]
   }
 
   # Pies domain (see PiesClient) — same rationale as the accounts statement
   # above: its own statement/review, scoped to pies/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/pies/*"]
+    resources = ["${local.user_data_bucket_arn}/pies/*"]
   }
 
   # Watchlists domain (see WatchlistsClient) — same rationale as the
@@ -183,7 +201,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # watchlists/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/watchlists/*"]
+    resources = ["${local.user_data_bucket_arn}/watchlists/*"]
   }
 
   # Holdings domain (see HoldingsClient) — same rationale as the
@@ -191,7 +209,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # scoped to holdings/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/holdings/*"]
+    resources = ["${local.user_data_bucket_arn}/holdings/*"]
   }
 
   # Transactions domain (see TransactionsClient) — same rationale as the
@@ -205,7 +223,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # do.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/transactions/*"]
+    resources = ["${local.user_data_bucket_arn}/transactions/*"]
   }
 
   # Goals domain (see GoalsClient) — same rationale as the
@@ -213,7 +231,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # own statement/review, scoped to goals/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/goals/*"]
+    resources = ["${local.user_data_bucket_arn}/goals/*"]
   }
 
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
@@ -233,7 +251,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # resource to scope by statement the way GetObject/PutObject are above.
   statement {
     actions   = ["s3:ListBucket"]
-    resources = [module.user_data_bucket.bucket_arn]
+    resources = [local.user_data_bucket_arn]
 
     condition {
       test     = "StringLike"
@@ -255,9 +273,16 @@ module "backend_lambda" {
     MARKET_DATA_BUCKET  = module.market_data_bucket.bucket_name
     DJANGO_SECRET_KEY   = random_password.django_secret_key.result
     USER_PROFILES_TABLE = module.user_profiles_table.table_name
-    USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
+    USER_DATA_BUCKET    = local.user_data_bucket_name
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
+    # GitHub issue #246: labels a support-form-created issue "development"/
+    # "production" in the shared equicast-support repo (see support/views.py's
+    # _ENVIRONMENT_LABELS) — var.environment is "dev"/"prod" here.
+    ENVIRONMENT_NAME              = var.environment
+    SUPPORT_ISSUE_TOKEN           = var.support_issue_token
+    SUPPORT_REPO                  = var.support_repo
+    SUPPORT_RATE_LIMIT_PER_MINUTE = var.support_rate_limit_per_minute
     # Previously unset here, silently falling back to settings.py's
     # CORS_ALLOWED_ORIGINS default of "http://localhost:5173" for every
     # deployed environment — the deployed frontend's own CloudFront origin

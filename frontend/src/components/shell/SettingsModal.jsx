@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import Modal from "../core/Modal.jsx";
 import ConfirmDialog from "../core/ConfirmDialog.jsx";
-import { SelectField } from "../core/Field.jsx";
+import { SelectField, TextField } from "../core/Field.jsx";
 import Button from "../core/Button.jsx";
 import Alert from "../core/Alert.jsx";
+import Card from "../core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
 import {
+  deleteAccount,
   updateDefaultCurrency,
   updateFxWarmupCurrencies,
   updateIncomeTaxBand,
@@ -40,8 +42,26 @@ const DEFAULT_FX_WARMUP_CURRENCIES = ["GBP", "USD", "EUR"];
  * Each setting saves independently (its own PATCH) so changing one doesn't
  * require re-submitting the others, and a transaction_type 409 doesn't
  * block a currency/warm-up-list change made in the same visit.
+ *
+ * Also has a "Danger zone" section (GitHub issue #158) for permanently
+ * deleting the caller's equicast account — every accounts/pies/goals/
+ * watchlists/holdings/transactions record, plus their profile. Gated
+ * behind typing the caller's own `userEmail` (from UserMenu's Auth0
+ * `user.email`, not part of `profile`) into a confirmation field
+ * (stronger than the plain confirm/cancel `ConfirmDialog` the cache-reset
+ * section above uses, given how much more this destroys) in its own
+ * nested `Modal`. Once the backend DELETE succeeds, the IndexedDB-cached
+ * accounts/pies/holdings/transactions/goals (the same store `clearAllCaches`
+ * wipes for the "Reset cache" button above) are cleared before
+ * `onAccountDeleted` fires — otherwise the next person to sign in on this
+ * device would see this now-deleted account's stale data until it happened
+ * to be reset on its own. UserMenu wires `onAccountDeleted` to the same
+ * cache-clear-then-Auth0-logout flow its own sign-out button uses, since a
+ * deleted account has nothing left to stay signed into (v1 scope only
+ * deletes equicast's own data, not the Auth0 identity itself — see the
+ * issue).
  */
-function SettingsModal({ open, onClose, profile, onSaved }) {
+function SettingsModal({ open, onClose, profile, onSaved, onAccountDeleted, userEmail }) {
   const api = useApi();
   const [currency, setCurrency] = useState(profile?.default_currency ?? CURRENCIES[0].code);
   const [transactionType, setTransactionType] = useState(profile?.transaction_type ?? "AVERAGE");
@@ -67,14 +87,28 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
   const [isResettingCache, setIsResettingCache] = useState(false);
   const [cacheResetDone, setCacheResetDone] = useState(false);
 
+  // GitHub issue #158: permanently deletes the caller's equicast account.
+  // deleteConfirmText is compared against userEmail to gate the Delete
+  // button, same "must type an exact phrase" pattern as GitHub's own
+  // repo-deletion confirmation, but scoped to something only the account
+  // owner would know/have rather than a fixed word.
+  const [isDeleteAccountOpen, setIsDeleteAccountOpen] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
+
   // SettingsModal stays mounted between opens (only its inner <Modal> un/
   // remounts visually, see UserMenu.jsx), so without this a "Cache cleared"
-  // message from a previous visit would still be showing the next time the
-  // drawer is reopened.
+  // message (or a stale delete-account error/confirmation text) from a
+  // previous visit would still be showing the next time the drawer is
+  // reopened.
   useEffect(() => {
     if (open) {
       setCacheResetDone(false);
       setIsResetCacheConfirmOpen(false);
+      setIsDeleteAccountOpen(false);
+      setDeleteConfirmText("");
+      setDeleteError(null);
     }
   }, [open]);
 
@@ -85,6 +119,18 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
       setIsResetCacheConfirmOpen(false);
       setCacheResetDone(true);
     });
+  };
+
+  const handleDeleteAccount = () => {
+    setIsDeletingAccount(true);
+    setDeleteError(null);
+    deleteAccount(api)
+      .then(() => clearAllCaches())
+      .then(() => onAccountDeleted())
+      .catch((err) => {
+        setDeleteError(err.message ?? "Couldn't delete your account.");
+        setIsDeletingAccount(false);
+      });
   };
 
   const toggleFxWarmupCurrency = (code) => {
@@ -127,101 +173,134 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Settings">
+    <Modal open={open} onClose={onClose} title="Settings" className="ec-modal--settings">
       <form onSubmit={handleSubmit} className="ec-form">
         {error && <Alert tone="danger">{error}</Alert>}
-        <SelectField
-          id="settings-default-currency"
-          label="Default currency"
-          value={currency}
-          onChange={(event) => setCurrency(event.target.value)}
-          hint="Used to value your accounts consistently across currencies."
-        >
-          {CURRENCIES.map((option) => (
-            <option key={option.code} value={option.code}>
-              {option.code} — {option.name}
-            </option>
-          ))}
-        </SelectField>
-        <SelectField
-          id="settings-transaction-type"
-          label="Transaction type"
-          value={transactionType}
-          onChange={(event) => setTransactionType(event.target.value)}
-          hint="AVERAGE tracks one running average cost per holding; TRANSACTION keeps every buy/sell separately. Locked once you have any transaction recorded."
-        >
-          <option value="AVERAGE">Average cost</option>
-          <option value="TRANSACTION">Per-transaction</option>
-        </SelectField>
-        <SelectField
-          id="settings-tax-residency"
-          label="Tax residency"
-          value={taxResidency}
-          onChange={(event) => setTaxResidency(event.target.value)}
-          hint="Currently only UK is supported. Upcoming release to include more"
-        >
-          <option value="UK">UK</option>
-        </SelectField>
-        <SelectField
-          id="settings-income-tax-band"
-          label="Income tax band"
-          value={incomeTaxBand}
-          onChange={(event) => setIncomeTaxBand(event.target.value)}
-          hint="Self-declared — used to work out the tax due on GIA income once outside your dividend/CGT allowance. ISA/SIPP/LISA/JISA holdings are unaffected."
-        >
-          <option value="NONE">Non-taxpayer (0%)</option>
-          <option value="BASIC">Basic rate (20%)</option>
-          <option value="HIGHER">Higher rate (40%)</option>
-          <option value="ADDITIONAL">Additional rate (45%)</option>
-        </SelectField>
-        <div className="ec-field">
-          <span className="ec-field-label">FX warm-up currencies</span>
-          <div className="ec-settings-fx-warmup-list">
+        <div className="ec-settings-field-row">
+          <SelectField
+            id="settings-default-currency"
+            label="Default currency"
+            value={currency}
+            onChange={(event) => setCurrency(event.target.value)}
+            hint="Used to value your accounts consistently across currencies."
+          >
             {CURRENCIES.map((option) => (
-              <label key={option.code} className="ec-settings-fx-warmup-item">
-                <input
-                  type="checkbox"
-                  checked={fxWarmupCurrencies.includes(option.code)}
-                  onChange={() => toggleFxWarmupCurrency(option.code)}
-                />
-                {option.code}
-              </label>
+              <option key={option.code} value={option.code}>
+                {option.code} — {option.name}
+              </option>
             ))}
-          </div>
-          <span className="ec-field-hint">
-            Pre-warmed against your default currency when you sign in, so adding a transaction in
-            one of these doesn&rsquo;t wait on a fresh FX lookup.
-          </span>
+          </SelectField>
+          <SelectField
+            id="settings-transaction-type"
+            label="Transaction type"
+            value={transactionType}
+            onChange={(event) => setTransactionType(event.target.value)}
+            hint="AVERAGE tracks one running average cost per holding; TRANSACTION keeps every buy/sell separately. Locked once you have any transaction recorded."
+          >
+            <option value="AVERAGE">Average cost</option>
+            <option value="TRANSACTION">Per-transaction</option>
+          </SelectField>
         </div>
-        <div className="ec-form-actions">
-          <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
-            Cancel
-          </Button>
-          <Button type="submit" variant="primary" isLoading={isSaving}>
-            Save
-          </Button>
+        <div className="ec-settings-field-row">
+          <SelectField
+            id="settings-tax-residency"
+            label="Tax residency"
+            value={taxResidency}
+            onChange={(event) => setTaxResidency(event.target.value)}
+            hint="Currently only UK is supported. Upcoming release to include more"
+          >
+            <option value="UK">UK</option>
+          </SelectField>
+          <SelectField
+            id="settings-income-tax-band"
+            label="Income tax band"
+            value={incomeTaxBand}
+            onChange={(event) => setIncomeTaxBand(event.target.value)}
+            hint="Self-declared — used to work out the tax due on GIA income once outside your dividend/CGT allowance. ISA/SIPP/LISA/JISA holdings are unaffected."
+          >
+            <option value="NONE">Non-taxpayer (0%)</option>
+            <option value="BASIC">Basic rate (20%)</option>
+            <option value="HIGHER">Higher rate (40%)</option>
+            <option value="ADDITIONAL">Additional rate (45%)</option>
+          </SelectField>
+        </div>
+        <div className="ec-settings-field-row">
+          <div className="ec-field">
+            <span className="ec-field-label">FX warm-up currencies</span>
+            <div className="ec-settings-fx-warmup-list">
+              {CURRENCIES.map((option) => (
+                <label key={option.code} className="ec-settings-fx-warmup-item">
+                  <input
+                    type="checkbox"
+                    checked={fxWarmupCurrencies.includes(option.code)}
+                    onChange={() => toggleFxWarmupCurrency(option.code)}
+                  />
+                  {option.code}
+                </label>
+              ))}
+            </div>
+            <span className="ec-field-hint">
+              Pre-warmed against your default currency when you sign in, so adding a transaction
+              in one of these doesn&rsquo;t wait on a fresh FX lookup.
+            </span>
+          </div>
+          <div className="ec-form-actions">
+            <Button type="button" variant="secondary" onClick={onClose} disabled={isSaving}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary" isLoading={isSaving}>
+              Save
+            </Button>
+          </div>
         </div>
       </form>
 
-      <div className="ec-settings-cache-section">
-        <span className="ec-field-label">Cache</span>
-        {cacheResetDone ? (
-          <Alert tone="success">
-            Cache cleared. Accounts, pies, and holdings will re-download from the network the next
-            time you open them.
-          </Alert>
-        ) : (
-          <>
-            <p className="ec-field-hint">
-              Clears every account, pie, and holding cached on this device. The next pages you open
-              will re-download that information from the network instead, which can take a little
-              longer than usual to load.
+      <div className="ec-settings-secondary-row">
+        <div className="ec-settings-cache-section">
+          <span className="ec-field-label">Cache</span>
+          {cacheResetDone ? (
+            <Alert tone="success">
+              Cache cleared. Accounts, pies, and holdings will re-download from the network the
+              next time you open them.
+            </Alert>
+          ) : (
+            <>
+              <p className="ec-field-hint">
+                Clears every account, pie, and holding cached on this device. The next pages you
+                open will re-download that information from the network instead, which can take a
+                little longer than usual to load.
+              </p>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setIsResetCacheConfirmOpen(true)}
+              >
+                Reset cache
+              </Button>
+            </>
+          )}
+        </div>
+
+        <Card className="ec-danger-zone">
+          <div className="ec-danger-zone-text">
+            <h3 className="ec-danger-zone-title">Delete my account</h3>
+            <p className="ec-danger-zone-desc">
+              Permanently deletes your equicast account — every account, pie, goal, watchlist,
+              holding, and transaction. This can&rsquo;t be undone.
             </p>
-            <Button type="button" variant="secondary" onClick={() => setIsResetCacheConfirmOpen(true)}>
-              Reset cache
-            </Button>
-          </>
-        )}
+          </div>
+          <Button
+            variant="danger"
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteConfirmText("");
+              setIsDeleteAccountOpen(true);
+            }}
+          >
+            <i className="bi bi-trash" aria-hidden="true" />
+            Delete my account
+          </Button>
+        </Card>
       </div>
 
       <ConfirmDialog
@@ -233,6 +312,48 @@ function SettingsModal({ open, onClose, profile, onSaved }) {
         onConfirm={handleResetCache}
         onCancel={() => setIsResetCacheConfirmOpen(false)}
       />
+
+      <Modal
+        open={isDeleteAccountOpen}
+        onClose={() => (isDeletingAccount ? undefined : setIsDeleteAccountOpen(false))}
+        title="Delete my account"
+        footer={
+          <>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => setIsDeleteAccountOpen(false)}
+              disabled={isDeletingAccount}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="danger"
+              onClick={handleDeleteAccount}
+              isLoading={isDeletingAccount}
+              disabled={!userEmail || deleteConfirmText !== userEmail}
+            >
+              Delete my account
+            </Button>
+          </>
+        }
+      >
+        {deleteError && <Alert tone="danger">{deleteError}</Alert>}
+        <p>
+          This permanently deletes every account, pie, goal, watchlist, holding, and transaction
+          you have on equicast. There&rsquo;s no undo, and no recovery once it&rsquo;s done.
+        </p>
+        <TextField
+          id="settings-delete-confirm"
+          label={`Type ${userEmail} to confirm`}
+          placeholder={userEmail}
+          value={deleteConfirmText}
+          onChange={(event) => setDeleteConfirmText(event.target.value)}
+          disabled={isDeletingAccount}
+          autoComplete="off"
+        />
+      </Modal>
     </Modal>
   );
 }

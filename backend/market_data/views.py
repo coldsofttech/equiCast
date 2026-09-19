@@ -3,6 +3,7 @@ import math
 from django.conf import settings
 from equicast_core import ASSET_CLASSES, PRICE_RANGES, MarketDataClient
 from identity.authentication import Auth0JWTAuthentication
+from rest_framework.authentication import BaseAuthentication
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -407,7 +408,7 @@ class PublicDemoPricesView(APIView):
     (IP-keyed, not per-user) guards against that same risk from the demand
     side."""
 
-    authentication_classes = []
+    authentication_classes: list[type[BaseAuthentication]] = []
     permission_classes = [AllowAny]
     throttle_classes = [PublicDemoRateThrottle]
 

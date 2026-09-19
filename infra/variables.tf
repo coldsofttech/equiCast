@@ -33,6 +33,46 @@ variable "auth0_audience" {
   type        = string
 }
 
+# GitHub issue #246: support/views.py's SupportView uses this to create
+# issues in the private coldsofttech/equicast-support repo — a
+# fine-grained PAT scoped to just `issues:write` on that one repo. Shared
+# across dev and prod (one repo, not a per-environment split — see
+# ENVIRONMENT_NAME/support/views.py's _ENVIRONMENT_LABELS for how issues
+# from each are told apart), so this is a plain repository-level GitHub
+# Actions secret, same "no default, no per-environment split" treatment
+# terraform.yml gives auth0_domain/auth0_audience — except this one really
+# is sensitive, so it's a secret, not a variable. Named without a
+# "GITHUB_" prefix because GitHub Actions rejects secrets whose names
+# start with that reserved prefix.
+variable "support_issue_token" {
+  description = "Fine-grained GitHub PAT (issues:write on coldsofttech/equicast-support) for the support form's issue creation."
+  type        = string
+  sensitive   = true
+}
+
+# Repo-level (not per-environment) GitHub Actions variable, same "shared
+# across dev and prod" treatment as auth0_domain/auth0_audience above, and
+# for the same reason: settings.py's SUPPORT_REPO points both environments
+# at the one private equicast-support repo. Not sensitive (it's just a
+# repo name), so a plain variable rather than a secret.
+variable "support_repo" {
+  description = "owner/repo of the private GitHub repo the support form files issues in (settings.py's SUPPORT_REPO)."
+  type        = string
+}
+
+# GitHub issue #246: environment-scoped, same convention as
+# api_rate_limit_per_minute above — a much lower per-minute ceiling than
+# the general API budget, applied only to SupportView (see
+# support.throttling.SupportRateThrottle). The default here matches
+# settings.py's SUPPORT_RATE_LIMIT_PER_MINUTE default so `terraform plan`
+# (which can't see GitHub Environment-scoped variables) previews the same
+# behavior apply-dev/apply-prod would otherwise get.
+variable "support_rate_limit_per_minute" {
+  description = "Per-user requests/minute against the support form endpoint (support.throttling.SupportRateThrottle's DEFAULT_THROTTLE_RATES)."
+  type        = number
+  default     = 2
+}
+
 # Product-defined caps for Phase D's S3-JSON domains. Real values come from
 # each GitHub Environment's MAX_ACCOUNTS/MAX_PIES/MAX_WATCHLISTS variables
 # (see .github/workflows/terraform.yml's apply-dev/apply-prod, which pass
@@ -42,6 +82,17 @@ variable "auth0_audience" {
 # scoped variables — they match equicast_core's own MAX_ACCOUNTS/MAX_PIES/
 # MAX_WATCHLISTS code defaults, keeping plan's preview consistent with
 # today's behavior.
+# Off by default so a normal apply (terraform.yml) can never silently lose
+# data. infra-lifecycle.yml's destroy job overrides this to true, but only
+# for the buckets a redeploy can recreate from scratch — never for
+# user_data_bucket, which is also -exclude'd from that terraform destroy
+# so real user data is never even targeted.
+variable "force_destroy" {
+  description = "Allow Terraform to delete non-user-data S3 buckets even if they still have objects/versions."
+  type        = bool
+  default     = false
+}
+
 variable "max_accounts" {
   description = "Max accounts per user (accounts/views.py's AccountLimitExceededError cap)."
   type        = number

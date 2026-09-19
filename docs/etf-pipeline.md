@@ -341,19 +341,23 @@ The workflow has three jobs, structured identically to
    column (already populated per ticker — see `equicast_core.catalog`)
    for any ticker with none on record. `.github/scripts/sync-missing-isin-issue.sh`
    then finds-or-creates a persistent parent issue titled "ETF ingestion:
-   tickers missing ISIN" and, under it, opens a native GitHub
-   **sub-issue** per missing ticker (e.g. "VOO: missing ISIN") —
-   reopening one that was previously resolved and has gone missing again,
-   and closing one whose ticker is no longer missing — rather than one
-   issue with a checklist body. GitHub's own issue-notification emails
-   are the "notification" the issue asks for, so there's no separate
-   email/SMTP integration. Each sub-issue points at
-   `packages/etf/config/etfs.prod.yaml` for the `isin`/`tax_domicile`
+   tickers missing ISIN" **in the shared `equicast-support` repo**
+   (`vars.SUPPORT_REPO` — same repo/variable the support form's backend
+   files into, see `support/views.py`'s `SUPPORT_REPO`) and, under it,
+   opens a native GitHub **sub-issue** per missing ticker (e.g. "VOO:
+   missing ISIN") — reopening one that was previously resolved and has
+   gone missing again, and closing one whose ticker is no longer missing
+   — rather than one issue with a checklist body. GitHub's own
+   issue-notification emails are the "notification" the issue asks for,
+   so there's no separate email/SMTP integration. Each sub-issue points
+   at `packages/etf/config/etfs.prod.yaml` for the `isin`/`tax_domicile`
    override to add, and can be closed independently by a fix PR (e.g.
    `Closes #<sub-issue>`) — the parent issue's own open/closed state is
-   never touched automatically; only its sub-issues are. Needs the job's
-   `issues: write` permission, granted only to this job (overriding the
-   workflow-level default, which drops it for every other job).
+   never touched automatically; only its sub-issues are. Authenticates as
+   `secrets.SUPPORT_ISSUE_TOKEN` (a token with `issues:write` on
+   `equicast-support`) rather than this job's own `GITHUB_TOKEN`, since
+   the latter only has write access to this repo — this job needs no
+   `issues:write` permission of its own as a result.
 
 ### S3 layout produced
 

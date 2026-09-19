@@ -20,11 +20,13 @@ function initialsFor(name, email) {
  * Topbar account menu: an avatar trigger that opens a dropdown with the
  * signed-in user's name/email (read straight off the Auth0 ID token via
  * `user` — no extra API round trip), its nav entries (now that MenuBar is
- * gone) — "Accounts", "Watchlists" (GitHub issue #170; currently lands on
- * ComingSoonPage — see WatchlistsPage), "Goals", and "Import transactions"
- * — "Settings" (opens SettingsModal), and the sign-out action. Only
- * rendered inside AppShell, which only mounts once RequireAuth has already
- * confirmed `isAuthenticated`, so `user` is always populated here.
+ * gone), grouped with dividers: "Accounts", "Watchlists" (GitHub issue
+ * #170; currently lands on ComingSoonPage — see WatchlistsPage), "Goals";
+ * then "Import transactions"; then "Support" (GitHub issue #246 —
+ * SupportPage), "Settings" (opens SettingsModal), and the sign-out action.
+ * Only rendered inside AppShell,
+ * which only mounts once RequireAuth has already confirmed
+ * `isAuthenticated`, so `user` is always populated here.
  *
  * `profile`/`onProfileUpdate` are passed down from Topbar's own
  * useCurrentUser() call (rather than this component fetching its own copy)
@@ -68,6 +70,10 @@ function UserMenu({ profile, onProfileUpdate }) {
   const initials = initialsFor(name, email);
   const showImage = Boolean(user?.picture) && !imgFailed;
 
+  // Also passed to SettingsModal as onAccountDeleted (GitHub issue #158) —
+  // once a delete-account call succeeds there's nothing left to stay
+  // signed into, so it reuses this exact cache-clear-then-logout flow
+  // rather than a separate one.
   const handleSignOut = () => {
     // All three caches survive the Auth0 logout/login redirect round trip
     // (profile's and the greeting's sessionStorage survive it same-tab;
@@ -159,18 +165,7 @@ function UserMenu({ profile, onProfileUpdate }) {
             <i className="bi bi-flag" aria-hidden="true" />
             Goals
           </button>
-          <button
-            type="button"
-            role="menuitem"
-            className="ec-usermenu-item"
-            onClick={() => {
-              setIsSettingsOpen(true);
-              setIsOpen(false);
-            }}
-          >
-            <i className="bi bi-gear" aria-hidden="true" />
-            Settings
-          </button>
+          <div className="ec-usermenu-divider" role="separator" />
           <button
             type="button"
             role="menuitem"
@@ -182,6 +177,31 @@ function UserMenu({ profile, onProfileUpdate }) {
           >
             <i className="bi bi-upload" aria-hidden="true" />
             Import Transactions
+          </button>
+          <div className="ec-usermenu-divider" role="separator" />
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              navigate("/support");
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-life-preserver" aria-hidden="true" />
+            Support
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            className="ec-usermenu-item"
+            onClick={() => {
+              setIsSettingsOpen(true);
+              setIsOpen(false);
+            }}
+          >
+            <i className="bi bi-gear" aria-hidden="true" />
+            Settings
           </button>
           <button
             type="button"
@@ -200,6 +220,8 @@ function UserMenu({ profile, onProfileUpdate }) {
         onClose={() => setIsSettingsOpen(false)}
         profile={profile}
         onSaved={onProfileUpdate}
+        onAccountDeleted={handleSignOut}
+        userEmail={email}
       />
     </div>
   );
