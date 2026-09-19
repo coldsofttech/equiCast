@@ -140,14 +140,15 @@ module "user_profiles_table" {
 # user-owned data would broaden that bucket's IAM footprint and blur two
 # unrelated lifecycles.
 #
-# Deliberately never wired to var.force_destroy and always -exclude'd from
-# infra-lifecycle.yml's terraform destroy (see that workflow) — unlike the
-# other buckets here, this one holds real user data that a redeploy cannot
-# recreate, so it must survive a "destroy" run.
-module "user_data_bucket" {
-  source = "./modules/s3_bucket"
-
-  bucket_name = "${var.project_name}-user-data-${var.environment}"
+# Managed in ./user-data's own Terraform state, not here — this bucket
+# holds real user data that a redeploy cannot recreate, so it must survive
+# an infra-lifecycle.yml "destroy" run against this root's state.
+# Terraform has no "-exclude" flag on any command to keep one resource out
+# of a destroy, so the only reliable way to protect it is to keep it out
+# of this state entirely; this data source just reads its ARN/name for the
+# Lambda IAM policy/env var below.
+data "aws_s3_bucket" "user_data" {
+  bucket = "${var.project_name}-user-data-${var.environment}"
 }
 
 # Generated rather than left at the code's insecure hardcoded dev default —
@@ -176,14 +177,14 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # domains that don't exist yet.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/accounts/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/accounts/*"]
   }
 
   # Pies domain (see PiesClient) — same rationale as the accounts statement
   # above: its own statement/review, scoped to pies/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/pies/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/pies/*"]
   }
 
   # Watchlists domain (see WatchlistsClient) — same rationale as the
@@ -191,7 +192,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # watchlists/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/watchlists/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/watchlists/*"]
   }
 
   # Holdings domain (see HoldingsClient) — same rationale as the
@@ -199,7 +200,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # scoped to holdings/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/holdings/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/holdings/*"]
   }
 
   # Transactions domain (see TransactionsClient) — same rationale as the
@@ -213,7 +214,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # do.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/transactions/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/transactions/*"]
   }
 
   # Goals domain (see GoalsClient) — same rationale as the
@@ -221,7 +222,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # own statement/review, scoped to goals/* only.
   statement {
     actions   = ["s3:GetObject", "s3:PutObject"]
-    resources = ["${module.user_data_bucket.bucket_arn}/goals/*"]
+    resources = ["${data.aws_s3_bucket.user_data.arn}/goals/*"]
   }
 
   # s3:ListBucket (a bucket-level action, hence the bucket ARN itself, not
@@ -241,7 +242,7 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
   # resource to scope by statement the way GetObject/PutObject are above.
   statement {
     actions   = ["s3:ListBucket"]
-    resources = [module.user_data_bucket.bucket_arn]
+    resources = [data.aws_s3_bucket.user_data.arn]
 
     condition {
       test     = "StringLike"
@@ -263,7 +264,7 @@ module "backend_lambda" {
     MARKET_DATA_BUCKET  = module.market_data_bucket.bucket_name
     DJANGO_SECRET_KEY   = random_password.django_secret_key.result
     USER_PROFILES_TABLE = module.user_profiles_table.table_name
-    USER_DATA_BUCKET    = module.user_data_bucket.bucket_name
+    USER_DATA_BUCKET    = data.aws_s3_bucket.user_data.bucket
     AUTH0_DOMAIN        = var.auth0_domain
     AUTH0_AUDIENCE      = var.auth0_audience
     # GitHub issue #246: labels a support-form-created issue "development"/
