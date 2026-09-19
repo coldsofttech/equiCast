@@ -3,6 +3,12 @@ variable "bucket_name" {
   type        = string
 }
 
+variable "force_destroy" {
+  description = "Allow Terraform to delete this bucket even if it still has objects/versions. Defaults false so a normal apply can never silently lose data; the infra-lifecycle destroy workflow overrides it per-run."
+  type        = bool
+  default     = false
+}
+
 variable "versioning" {
   description = "Whether to enable object versioning."
   type        = bool

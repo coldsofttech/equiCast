@@ -82,6 +82,17 @@ variable "support_rate_limit_per_minute" {
 # scoped variables — they match equicast_core's own MAX_ACCOUNTS/MAX_PIES/
 # MAX_WATCHLISTS code defaults, keeping plan's preview consistent with
 # today's behavior.
+# Off by default so a normal apply (terraform.yml) can never silently lose
+# data. infra-lifecycle.yml's destroy job overrides this to true, but only
+# for the buckets a redeploy can recreate from scratch — never for
+# user_data_bucket, which is also -exclude'd from that terraform destroy
+# so real user data is never even targeted.
+variable "force_destroy" {
+  description = "Allow Terraform to delete non-user-data S3 buckets even if they still have objects/versions."
+  type        = bool
+  default     = false
+}
+
 variable "max_accounts" {
   description = "Max accounts per user (accounts/views.py's AccountLimitExceededError cap)."
   type        = number

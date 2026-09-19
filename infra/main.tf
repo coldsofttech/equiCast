@@ -1,7 +1,8 @@
 module "market_data_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-market-data-${var.environment}"
+  bucket_name   = "${var.project_name}-market-data-${var.environment}"
+  force_destroy = var.force_destroy
 }
 
 # React static site bundle. NOT static_site=true (S3 website hosting) —
@@ -15,7 +16,8 @@ module "market_data_bucket" {
 module "frontend_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-frontend-${var.environment}"
+  bucket_name   = "${var.project_name}-frontend-${var.environment}"
+  force_destroy = var.force_destroy
 }
 
 # Lets CloudFront (and only CloudFront, via the bucket policy's
@@ -114,8 +116,9 @@ resource "aws_s3_bucket_policy" "frontend" {
 module "backend_deploy_bucket" {
   source = "./modules/s3_bucket"
 
-  bucket_name = "${var.project_name}-backend-deploy-${var.environment}"
-  versioning  = true
+  bucket_name   = "${var.project_name}-backend-deploy-${var.environment}"
+  versioning    = true
+  force_destroy = var.force_destroy
 }
 
 # Minimal user-profile store (see docs/ discussion: DynamoDB holds only the
@@ -136,6 +139,11 @@ module "user_profiles_table" {
 # (the Lambda only holds s3:GetObject on it) — mixing in writable
 # user-owned data would broaden that bucket's IAM footprint and blur two
 # unrelated lifecycles.
+#
+# Deliberately never wired to var.force_destroy and always -exclude'd from
+# infra-lifecycle.yml's terraform destroy (see that workflow) — unlike the
+# other buckets here, this one holds real user data that a redeploy cannot
+# recreate, so it must survive a "destroy" run.
 module "user_data_bucket" {
   source = "./modules/s3_bucket"
 
