@@ -78,14 +78,19 @@ jobs:
 
       - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
 
-      # -exclude keeps user_data_bucket (real user data, not recreatable by
-      # a redeploy) out of this destroy entirely — it's never even
-      # targeted, so it survives regardless of force_destroy below.
+      # `terraform destroy` itself doesn't accept -exclude — HashiCorp only
+      # wired that flag into plan/apply (destroy is a separate command that
+      # fails flag parsing on it: "flag provided but not defined: -exclude").
+      # So this does the equivalent as plan -destroy + apply of the saved
+      # plan instead. -exclude keeps user_data_bucket (real user data, not
+      # recreatable by a redeploy) out of the plan entirely — it's never
+      # even targeted, so it survives regardless of force_destroy below.
       # force_destroy=true is scoped to this destroy run only: the other
       # buckets (market data, frontend, backend deploy artifacts) are all
       # rebuilt from scratch by redeploy-infra/redeploy-backend/
       # redeploy-frontend, so deleting their contents here is safe.
-      - run: terraform destroy -auto-approve -input=false -exclude=module.user_data_bucket -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }} -var force_destroy=true
+      - run: terraform plan -destroy -input=false -out=tfplan -exclude=module.user_data_bucket -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }} -var force_destroy=true
+      - run: terraform apply -auto-approve -input=false tfplan
 
   # Re-applies Terraform for the chosen environment. Needed before
   # redeploy-backend/redeploy-frontend since, after a destroy, the Lambda
