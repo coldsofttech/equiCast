@@ -159,8 +159,18 @@ jobs:
   # deploy-frontend-{dev,prod} — its own build (not a promoted artifact)
   # since VITE_API_BASE_URL/CLOUDFRONT_DISTRIBUTION_ID differ per
   # environment and Vite bakes them in at build time.
+  #
+  # Needs redeploy-backend (not just redeploy-infra) so this job's
+  # environment approval gate can't open until after redeploy-infra has
+  # created/recreated the API Gateway and CloudFront distribution — giving
+  # a reviewer the chance to refresh the API_URL/CLOUDFRONT_DISTRIBUTION_ID
+  # Environment variables (see docs/terraform-state-setup.md Step 4, a
+  # deliberately manual step) before approving this deployment. Depending
+  # on redeploy-backend rather than redeploy-infra directly isn't strictly
+  # about backend's own output — it's what forces this gate to open after,
+  # not alongside, the other job's.
   redeploy-frontend:
-    needs: redeploy-infra
+    needs: [redeploy-infra, redeploy-backend]
     if: inputs.action == 'redeploy'
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
