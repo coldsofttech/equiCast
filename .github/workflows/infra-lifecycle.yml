@@ -1,0 +1,194 @@
+name: Infra Lifecycle (Destroy / Redeploy)
+
+# Manual-only kill switch / redeploy for a whole environment's AWS
+# infrastructure. Separate from terraform.yml (which only ever plans/applies
+# off pushes to main) since destroying everything — including data — is a
+# fundamentally different, deliberate action that should never be reachable
+# from a normal push or PR. Mainly for dev: it's not required to be up all
+# the time, so this is how it gets torn down and later brought back.
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to target"
+        required: true
+        type: choice
+        options: [dev, prod]
+      action:
+        description: "destroy tears everything down (including data); redeploy re-applies Terraform and redeploys backend + frontend"
+        required: true
+        type: choice
+        options: [destroy, redeploy]
+      confirm:
+        description: "Type the environment name above (dev/prod) to confirm"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# Scoped per environment (not per-ref like terraform.yml) so a dev destroy
+# can't queue behind a prod redeploy or vice versa. Doesn't try to coordinate
+# with terraform.yml's own concurrency group — Terraform's S3/DynamoDB state
+# lock (see docs/terraform-state-setup.md) is what actually prevents two
+# concurrent runs from corrupting the same state file; this just stops two
+# dispatches of *this* workflow for the same environment from racing.
+concurrency:
+  group: infra-lifecycle-${{ inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  # Runs with no environment gate so a mistyped confirmation fails
+  # immediately, before a required reviewer is ever asked to approve
+  # anything downstream.
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm environment name matches
+        run: |
+          if [ "${{ inputs.confirm }}" != "${{ inputs.environment }}" ]; then
+            echo "::error::Confirmation input '${{ inputs.confirm }}' does not match the selected environment '${{ inputs.environment }}'. Re-run and type '${{ inputs.environment }}' exactly to confirm."
+            exit 1
+          fi
+
+  # Gated behind the target GitHub Environment's required reviewers, same
+  # protection terraform.yml's apply-dev/apply-prod rely on. Restricted to
+  # main so this can't destroy prod (or dev) using a stale/unmerged branch's
+  # Terraform config.
+  destroy:
+    needs: validate
+    if: inputs.action == 'destroy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
+      - run: terraform destroy -auto-approve -input=false -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
+
+  # Re-applies Terraform for the chosen environment. Needed before
+  # redeploy-backend/redeploy-frontend since, after a destroy, the Lambda
+  # function/S3 buckets/CloudFront distribution those jobs target don't
+  # exist yet — Terraform has to create them first.
+  redeploy-infra:
+    needs: validate
+    if: inputs.action == 'redeploy' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+    permissions:
+      id-token: write
+      contents: read
+    defaults:
+      run:
+        working-directory: infra
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
+      - run: terraform apply -auto-approve -input=false -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
+
+  # Same package/upload steps as deploy.yml's build-backend +
+  # deploy-backend-{dev,prod}, just building fresh here rather than
+  # promoting a CI artifact — there's no in-flight Backend CI run to
+  # download one from.
+  redeploy-backend:
+    needs: redeploy-infra
+    if: inputs.action == 'redeploy'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
+      - name: Build Lambda deployment package
+        run: bash backend/scripts/build_lambda_package.sh
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Upload to S3 and update the Lambda function
+        run: |
+          aws s3 cp backend/lambda_package.zip s3://equicast-backend-deploy-${{ inputs.environment }}/backend.zip
+          VERSION_ID=$(aws s3api head-object \
+            --bucket equicast-backend-deploy-${{ inputs.environment }} --key backend.zip \
+            --query VersionId --output text)
+
+          aws lambda update-function-code \
+            --function-name equicast-backend-${{ inputs.environment }} \
+            --s3-bucket equicast-backend-deploy-${{ inputs.environment }} \
+            --s3-key backend.zip \
+            --s3-object-version "$VERSION_ID"
+
+  # Same build/sync/invalidate steps as deploy.yml's
+  # deploy-frontend-{dev,prod} — its own build (not a promoted artifact)
+  # since VITE_API_BASE_URL/CLOUDFRONT_DISTRIBUTION_ID differ per
+  # environment and Vite bakes them in at build time.
+  redeploy-frontend:
+    needs: redeploy-infra
+    if: inputs.action == 'redeploy'
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment == 'prod' && 'production' || 'development' }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Build frontend
+        working-directory: frontend
+        env:
+          VITE_API_BASE_URL: ${{ vars.API_URL }}
+          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
+          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
+          VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
+        run: |
+          npm ci
+          npm run build
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+
+      - name: Sync to S3
+        working-directory: frontend
+        run: aws s3 sync dist s3://equicast-frontend-${{ inputs.environment }} --delete
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/*"
