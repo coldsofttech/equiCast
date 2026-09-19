@@ -209,3 +209,9 @@ class UserProfileClient:
             ReturnValues="ALL_NEW",
         )
         return dict(response["Attributes"])
+
+    def delete_profile(self, user_id: str) -> None:
+        """Remove `user_id`'s profile item outright (GitHub issue #158's
+        account-deletion flow). A no-op (no error) if they have no profile
+        item yet, same as DynamoDB's own `delete_item`."""
+        self._table.delete_item(Key={"user_id": user_id})

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createTransaction,
   deleteTransaction,
+  getBulkPositionCheckpoints,
   getTransaction,
   listTransactions,
   updateTransaction,
@@ -66,5 +67,32 @@ describe("transactions api", () => {
     await deleteTransaction(api, "h-1", "t-1");
 
     expect(api).toHaveBeenCalledWith("/transactions/h-1/t-1/", { method: "DELETE" });
+  });
+
+  it("fetches every requested holding's checkpoints in one bulk request", async () => {
+    const api = vi.fn().mockResolvedValue({
+      results: [
+        { holding_id: "h-1", checkpoints: [{ date: "2026-01-01", shares: 10, cost: 1000 }] },
+        { holding_id: "h-2", checkpoints: [] },
+      ],
+    });
+
+    const result = await getBulkPositionCheckpoints(api, ["h-1", "h-2"]);
+
+    expect(api).toHaveBeenCalledWith("/transactions/bulk/checkpoints/", {
+      method: "POST",
+      body: { holding_ids: ["h-1", "h-2"] },
+    });
+    expect(result.get("h-1")).toEqual([{ date: "2026-01-01", shares: 10, cost: 1000 }]);
+    expect(result.get("h-2")).toEqual([]);
+  });
+
+  it("skips the request entirely for an empty holding id list", async () => {
+    const api = vi.fn();
+
+    const result = await getBulkPositionCheckpoints(api, []);
+
+    expect(api).not.toHaveBeenCalled();
+    expect(result.size).toBe(0);
   });
 });

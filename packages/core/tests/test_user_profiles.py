@@ -424,3 +424,18 @@ def test_update_income_tax_band_creates_profile_first_if_missing(dynamodb_resour
         "tax_residency": "UK",
         "income_tax_band": "ADDITIONAL",
     }
+
+
+def test_delete_profile_removes_the_item(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+    client.get_or_create_profile("auth0|abc123")
+
+    client.delete_profile("auth0|abc123")
+
+    assert "Item" not in dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|abc123"})
+
+
+def test_delete_profile_is_a_no_op_when_none_exists(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    client.delete_profile("auth0|abc123")  # doesn't raise

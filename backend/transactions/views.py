@@ -15,6 +15,7 @@ from equicast_core import (
     UserProfileClient,
     compute_holding_rollup,
     compute_new_dividend_transactions,
+    compute_position_checkpoints,
     latest_paid_dividend_date,
 )
 from identity.authentication import Auth0JWTAuthentication
@@ -136,6 +137,15 @@ class TransactionPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = "page_size"
     max_page_size = 200
+
+
+#: Max `holding_ids` a BulkCheckpointsView request can carry — same
+#: "reasonable ceiling, not a real limit" role MAX_BULK_ITEMS plays for
+#: market_data/views.py's BulkProfileView/BulkMetricsView (GitHub issue
+#: #233): this exists to replace a page's N per-holding, individually
+#: paginated GET .../transactions/ calls with one request, not to let a
+#: caller request an arbitrarily large batch in one go.
+MAX_BULK_HOLDINGS = 200
 
 
 #: One shared client for the process, mirroring holdings/views.py's
@@ -579,6 +589,54 @@ class TransactionListView(APIView):
             )
         _refresh_holding_rollup(request.user.user_id, holding_id, mode)
         return Response(transaction, status=201)
+
+
+class BulkCheckpointsView(APIView):
+    """POST `{"holding_ids": [str, ...]}` -> one `{holding_id, checkpoints}`
+    per requested id, in the same order — the server-side counterpart of
+    the frontend's own `fetchHoldingPositionSeries`/`buildPositionCheckpoints`
+    (see PiePriceChart.jsx), which used to fetch every held holding's *full*
+    transaction history itself, one paginated `GET /transactions/` per
+    holding (TransactionPagination caps a page at 200, so a long-lived
+    holding could take several round trips on its own) just to reduce it
+    down to a `{date, shares, cost}` checkpoint timeline client-side. This
+    collapses that into one request: each `holding_id`'s transactions are
+    still read one S3 object at a time server-side (`TransactionsClient`
+    partitions by holding, see its module docstring) via
+    `TransactionsClient.list_transactions`, but reduced to checkpoints here
+    (`compute_position_checkpoints`) before ever leaving the server, and
+    returned together (GitHub issue #233).
+
+    An unrecognized/not-this-user's `holding_id` isn't distinguished from
+    "no transactions on record" — `TransactionsClient` is already scoped to
+    `request.user.user_id` (see its `_key`), so a bogus or another user's
+    `holding_id` simply reads a file that doesn't exist under this user's
+    own prefix and resolves to `checkpoints: []`, not an error — same
+    "caller-agnostic, no per-item validation" shape as BulkProfileView's own
+    per-item `asset_class`/`symbol` handling (market_data/views.py)."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        holding_ids = request.data.get("holding_ids") if isinstance(request.data, dict) else None
+        if not isinstance(holding_ids, list) or not holding_ids:
+            return Response(
+                {"detail": 'Expected a JSON body: {"holding_ids": [str, ...]}.'}, status=400
+            )
+        if len(holding_ids) > MAX_BULK_HOLDINGS:
+            return Response(
+                {"detail": f"holding_ids must not exceed {MAX_BULK_HOLDINGS}."}, status=400
+            )
+        if not all(isinstance(hid, str) for hid in holding_ids):
+            return Response({"detail": "Each holding_id must be a string."}, status=400)
+
+        results = []
+        for holding_id in holding_ids:
+            transactions = _client.list_transactions(request.user.user_id, holding_id=holding_id)
+            checkpoints = compute_position_checkpoints(transactions)
+            results.append({"holding_id": holding_id, "checkpoints": checkpoints})
+        return Response({"results": results})
 
 
 class TransactionDetailView(APIView):

@@ -165,6 +165,24 @@ def test_delete_pie_raises_for_unknown_id(s3_client) -> None:
         client.delete_pie("auth0|abc123", "does-not-exist")
 
 
+def test_delete_all_pies_removes_the_whole_object(s3_client) -> None:
+    client = PiesClient(BUCKET, s3_client=s3_client)
+    _create(client, "auth0|abc123")
+    _create(client, "auth0|abc123", name="Second")
+
+    client.delete_all_pies("auth0|abc123")
+
+    assert client.list_pies("auth0|abc123") == []
+
+
+def test_delete_all_pies_is_a_no_op_when_none_exist(s3_client) -> None:
+    client = PiesClient(BUCKET, s3_client=s3_client)
+
+    client.delete_all_pies("auth0|abc123")  # doesn't raise
+
+    assert client.list_pies("auth0|abc123") == []
+
+
 def test_delete_pies_for_account_removes_only_the_matching_ones(s3_client) -> None:
     client = PiesClient(BUCKET, s3_client=s3_client)
     pie_a1 = _create(client, "auth0|abc123", account_id="acc-a")

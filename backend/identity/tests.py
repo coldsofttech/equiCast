@@ -303,3 +303,78 @@ class MeViewTests(TestCase):
 
         self.assertEqual(response.status_code, 400)
         mock_client.update_default_currency.assert_not_called()
+
+    def test_delete_returns_401_when_unauthenticated(self) -> None:
+        response = self.client.delete(reverse("me"))
+
+        self.assertEqual(response.status_code, 401)
+
+    @patch("identity.views._watchlists_client")
+    @patch("identity.views._goals_client")
+    @patch("identity.views._pies_client")
+    @patch("identity.views._accounts_client")
+    @patch("identity.views._transactions_client")
+    @patch("identity.views._holdings_client")
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_wipes_every_domain_for_the_caller(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_holdings_client,
+        mock_transactions_client,
+        mock_accounts_client,
+        mock_pies_client,
+        mock_goals_client,
+        mock_watchlists_client,
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_holdings_client.list_holdings.return_value = [{"id": "h1"}, {"id": "h2"}]
+
+        response = self.client.delete(reverse("me"), HTTP_AUTHORIZATION="Bearer validtoken")
+
+        self.assertEqual(response.status_code, 204)
+        mock_holdings_client.list_holdings.assert_called_once_with("auth0|abc123")
+        mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
+            "auth0|abc123", ["h1", "h2"]
+        )
+        mock_holdings_client.delete_all_holdings.assert_called_once_with("auth0|abc123")
+        mock_accounts_client.delete_all_accounts.assert_called_once_with("auth0|abc123")
+        mock_pies_client.delete_all_pies.assert_called_once_with("auth0|abc123")
+        mock_goals_client.delete_all_goals.assert_called_once_with("auth0|abc123")
+        mock_watchlists_client.delete_all_watchlists.assert_called_once_with("auth0|abc123")
+        mock_client.delete_profile.assert_called_once_with("auth0|abc123")
+
+    @patch("identity.views._watchlists_client")
+    @patch("identity.views._goals_client")
+    @patch("identity.views._pies_client")
+    @patch("identity.views._accounts_client")
+    @patch("identity.views._transactions_client")
+    @patch("identity.views._holdings_client")
+    @patch("identity.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_skips_transactions_cleanup_when_no_holdings(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_holdings_client,
+        mock_transactions_client,
+        mock_accounts_client,
+        mock_pies_client,
+        mock_goals_client,
+        mock_watchlists_client,
+    ) -> None:
+        mock_jwks_client.get_signing_key_from_jwt.return_value = MagicMock(key="public-key")
+        mock_decode.return_value = {"sub": "auth0|abc123"}
+        mock_holdings_client.list_holdings.return_value = []
+
+        response = self.client.delete(reverse("me"), HTTP_AUTHORIZATION="Bearer validtoken")
+
+        self.assertEqual(response.status_code, 204)
+        mock_transactions_client.delete_transactions_for_holdings.assert_not_called()
+        mock_holdings_client.delete_all_holdings.assert_called_once_with("auth0|abc123")

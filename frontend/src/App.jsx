@@ -15,6 +15,7 @@ import CookiePolicyPage from "./pages/CookiePolicyPage.jsx";
 import { initAnalytics, trackPageview } from "./utils/analytics.js";
 import WatchlistsPage from "./pages/watchlists/WatchlistsPage.jsx";
 import ImportPage from "./pages/import/ImportPage.jsx";
+import SupportPage from "./pages/support/SupportPage.jsx";
 import NotFoundPage from "./pages/errors/NotFoundPage.jsx";
 import TermsAndConditionsPage from "./pages/TermsAndConditionsPage.jsx";
 import PrivacyPolicyPage from "./pages/PrivacyPolicyPage.jsx";
@@ -53,6 +54,7 @@ function App() {
           <Route path="/watchlists" element={<WatchlistsPage />} />
           <Route path="/goals" element={<GoalsListPage />} />
           <Route path="/import" element={<ImportPage />} />
+          <Route path="/support" element={<SupportPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Route>
       </Routes>

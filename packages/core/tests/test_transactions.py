@@ -13,6 +13,7 @@ from equicast_core.transactions import (
     TransactionsClient,
     compute_holding_rollup,
     compute_new_dividend_transactions,
+    compute_position_checkpoints,
     latest_paid_dividend_date,
 )
 from moto import mock_aws
@@ -295,8 +296,12 @@ class TestCreateDividendTransaction:
 
         with pytest.raises(TransactionAmountError):
             client.create_transaction(
-                "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
-                amount_native=0, date="2026-03-01"
+                "auth0|abc123",
+                HOLDING_ID,
+                "AVERAGE",
+                type="DIVIDEND",
+                amount_native=0,
+                date="2026-03-01",
             )
 
     def test_does_not_trip_already_exists_after_a_buy_in_average_mode(self, s3_client) -> None:
@@ -312,8 +317,12 @@ class TestCreateDividendTransaction:
         )
 
         dividend = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
-            amount_native=42.10, date="2026-03-01"
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
         )
 
         assert dividend["type"] == "DIVIDEND"
@@ -345,8 +354,12 @@ class TestCreateDividendTransaction:
             date="2026-01-01",
         )
         client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "TRANSACTION", type="DIVIDEND",
-            amount_native=42.10, date="2026-02-01"
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-02-01",
         )
 
         sell = client.create_transaction(
@@ -859,8 +872,12 @@ class TestUpdateTransaction:
     def test_update_rejects_field_not_applicable_to_a_dividend_record(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
-            amount_native=42.10, date="2026-03-01"
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
         )
 
         with pytest.raises(ValueError):
@@ -873,8 +890,12 @@ class TestUpdateTransaction:
         DIVIDEND record the same as `average_price_native` is."""
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
-            amount_native=42.10, date="2026-03-01"
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
         )
 
         with pytest.raises(ValueError):
@@ -936,8 +957,13 @@ class TestUpdateTransaction:
     def test_update_allows_fx_rate_on_a_dividend_record(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
-            "auth0|abc123", HOLDING_ID, "AVERAGE", type="DIVIDEND",
-            amount_native=42.10, fx_rate=0.9, date="2026-03-01"
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            fx_rate=0.9,
+            date="2026-03-01",
         )
 
         updated = client.update_transaction(
@@ -1244,9 +1270,7 @@ class TestDividendsSyncedThroughWatermark:
         )
         client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
 
-        client.update_transaction(
-            "auth0|abc123", HOLDING_ID, buy["id"], "AVERAGE", no_of_shares=20
-        )
+        client.update_transaction("auth0|abc123", HOLDING_ID, buy["id"], "AVERAGE", no_of_shares=20)
 
         remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
         assert [t["type"] for t in remaining] == ["BUY"]
@@ -1578,7 +1602,7 @@ class TestComputeHoldingRollup:
                     "type": "BUY",
                     "no_of_shares": 10,
                     "average_price_native": None,
-                    "average_price": 150
+                    "average_price": 150,
                 }
             ],
             "AVERAGE",
@@ -1729,7 +1753,7 @@ class TestComputeHoldingRollup:
                     "type": "DIVIDEND",
                     "no_of_shares": None,
                     "amount_native": 5,
-                    "date": "2026-02-01"
+                    "date": "2026-02-01",
                 },
             ],
             "TRANSACTION",
@@ -1872,15 +1896,11 @@ class TestComputeNewDividendTransactions:
         dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
 
         assert (
-            compute_new_dividend_transactions(
-                [self.BUY], dividends, synced_through="2026-02-01"
-            )
+            compute_new_dividend_transactions([self.BUY], dividends, synced_through="2026-02-01")
             == []
         )
         assert (
-            compute_new_dividend_transactions(
-                [self.BUY], dividends, synced_through="2026-03-01"
-            )
+            compute_new_dividend_transactions([self.BUY], dividends, synced_through="2026-03-01")
             == []
         )
 
@@ -1902,18 +1922,16 @@ class TestComputeNewDividendTransactionsTransactionMode:
     def test_returns_nothing_with_no_trades_on_record(self) -> None:
         dividends = [{"status": "paid", "ex_dividend_date": "2026-02-01", "price": 0.5}]
 
-        assert (
-            compute_new_dividend_transactions([], dividends, mode="TRANSACTION") == []
-        )
+        assert compute_new_dividend_transactions([], dividends, mode="TRANSACTION") == []
 
     def test_uses_the_running_balance_as_of_the_ex_date(self) -> None:
         buy = {"type": "BUY", "no_of_shares": 10, "date": "2026-01-01"}
         sell = {"type": "SELL", "no_of_shares": 4, "date": "2026-02-01"}
         dividends = [{"status": "paid", "ex_dividend_date": "2026-03-01", "price": 0.5}]
 
-        assert compute_new_dividend_transactions(
-            [buy, sell], dividends, mode="TRANSACTION"
-        ) == [{"date": "2026-03-01", "amount_native": 3.0}]
+        assert compute_new_dividend_transactions([buy, sell], dividends, mode="TRANSACTION") == [
+            {"date": "2026-03-01", "amount_native": 3.0}
+        ]
 
     def test_backfills_a_payout_between_two_buys_using_the_earlier_balance(self) -> None:
         """The past-adjustment case issue #124 specifically calls out — a
@@ -1947,9 +1965,12 @@ class TestComputeNewDividendTransactionsTransactionMode:
             {"status": "paid", "ex_dividend_date": "2026-03-01", "price": 0.5},
         ]
 
-        assert compute_new_dividend_transactions(
-            [buy, recorded_dividend], dividends, synced_through="2026-03-01", mode="TRANSACTION"
-        ) == []
+        assert (
+            compute_new_dividend_transactions(
+                [buy, recorded_dividend], dividends, synced_through="2026-03-01", mode="TRANSACTION"
+            )
+            == []
+        )
 
 
 class TestLatestPaidDividendDate:
@@ -1977,3 +1998,74 @@ class TestLatestPaidDividendDate:
     def test_ignores_a_paid_entry_missing_its_ex_date(self) -> None:
         dividends = [{"status": "paid", "ex_dividend_date": None}]
         assert latest_paid_dividend_date(dividends, "2026-01-01") == "2026-01-01"
+
+
+class TestComputePositionCheckpoints:
+    """See backend/transactions/views.py's BulkCheckpointsView — the
+    server-side counterpart of the frontend's own (now-removed)
+    buildPositionCheckpoints (PiePriceChart.jsx, GitHub issue #233)."""
+
+    def test_single_buy_produces_one_checkpoint(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [{"type": "BUY", "no_of_shares": 10, "price_native": 100, "date": "2026-01-01"}]
+        )
+
+        assert checkpoints == [{"date": "2026-01-01", "shares": 10.0, "cost": 1000.0}]
+
+    def test_sell_removes_shares_at_average_cost_not_its_own_price(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [
+                {"type": "BUY", "no_of_shares": 10, "price_native": 100, "date": "2026-01-01"},
+                {"type": "BUY", "no_of_shares": 10, "price_native": 200, "date": "2026-02-01"},
+                {"type": "SELL", "no_of_shares": 5, "price_native": 500, "date": "2026-03-01"},
+            ]
+        )
+
+        assert checkpoints == [
+            {"date": "2026-01-01", "shares": 10.0, "cost": 1000.0},
+            {"date": "2026-02-01", "shares": 20.0, "cost": 3000.0},
+            # avg cost/share was 150 just before the sell: 5 sold removes 750.
+            {"date": "2026-03-01", "shares": 15.0, "cost": 2250.0},
+        ]
+
+    def test_out_of_order_input_is_sorted_by_date(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [
+                {"type": "BUY", "no_of_shares": 5, "price_native": 200, "date": "2026-02-01"},
+                {"type": "BUY", "no_of_shares": 10, "price_native": 100, "date": "2026-01-01"},
+            ]
+        )
+
+        assert [c["date"] for c in checkpoints] == ["2026-01-01", "2026-02-01"]
+
+    def test_dividend_records_are_ignored(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [
+                {"type": "BUY", "no_of_shares": 10, "price_native": 100, "date": "2026-01-01"},
+                {
+                    "type": "DIVIDEND",
+                    "no_of_shares": None,
+                    "amount_native": 5,
+                    "date": "2026-01-15",
+                },
+            ]
+        )
+
+        assert checkpoints == [{"date": "2026-01-01", "shares": 10.0, "cost": 1000.0}]
+
+    def test_records_missing_a_date_are_excluded(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [{"type": "BUY", "no_of_shares": 10, "price_native": 100, "date": None}]
+        )
+
+        assert checkpoints == []
+
+    def test_legacy_average_mode_record_with_null_type_is_treated_as_a_buy(self) -> None:
+        checkpoints = compute_position_checkpoints(
+            [{"type": None, "no_of_shares": 10, "average_price_native": 150, "date": "2026-01-01"}]
+        )
+
+        assert checkpoints == [{"date": "2026-01-01", "shares": 10.0, "cost": 1500.0}]
+
+    def test_no_transactions_produces_no_checkpoints(self) -> None:
+        assert compute_position_checkpoints([]) == []

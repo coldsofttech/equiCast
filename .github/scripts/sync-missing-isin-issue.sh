@@ -9,7 +9,17 @@
 # GitHub issue #215 asks for, so this deliberately adds no separate
 # email/SMTP integration.
 #
-# Usage: sync-missing-isin-issue.sh <parent-title> <pipeline-label> <config-path> <tickers-csv>
+# Filed in the shared equicast-support repo (see support/views.py's
+# SUPPORT_REPO docstring) rather than this repo — same reasoning as the
+# support form: internal engineering trackers stay out of the
+# customer-facing/public repo's issue list.
+#
+# Usage: sync-missing-isin-issue.sh <target-repo> <parent-title> <pipeline-label> <config-path> <tickers-csv>
+#   <target-repo>    owner/repo to file the parent/sub-issues in (e.g.
+#                     "coldsofttech/equicast-support" — pass
+#                     `${{ vars.SUPPORT_REPO }}`, same variable
+#                     settings.py's SUPPORT_REPO resolves to, so this and
+#                     the support form always target the same repo).
 #   <parent-title>   Exact, stable parent issue title used to find it
 #                     across runs (e.g. "Stock ingestion: tickers missing
 #                     ISIN").
@@ -21,37 +31,40 @@
 #   <tickers-csv>     Comma-separated ticker list currently missing an
 #                     ISIN, or empty when nothing is missing this run.
 #
-# Requires GH_TOKEN in the environment (a workflow step should set it from
-# secrets.GITHUB_TOKEN) and the job to have `issues: write` permission.
-# The parent issue's own open/closed state is never touched here (only
-# its sub-issues are auto-managed) — it's a long-lived tracker, not a
+# Requires GH_TOKEN in the environment, set from a token with issues:write
+# on <target-repo> — a workflow step should set it from
+# `${{ secrets.SUPPORT_ISSUE_TOKEN }}` (same secret the support form's
+# backend uses), since the default `secrets.GITHUB_TOKEN` only has write
+# access to the repo the workflow runs in, not <target-repo>. The parent
+# issue's own open/closed state is never touched here (only its
+# sub-issues are auto-managed) — it's a long-lived tracker, not a
 # per-run alert.
 set -euo pipefail
 
-PARENT_TITLE="$1"
-PIPELINE_LABEL="$2"
-CONFIG_PATH="$3"
-TICKERS_CSV="$4"
+TARGET_REPO="$1"
+PARENT_TITLE="$2"
+PIPELINE_LABEL="$3"
+CONFIG_PATH="$4"
+TICKERS_CSV="$5"
 
-REPO_NWO="$(gh repo view --json nameWithOwner -q .nameWithOwner)"
-OWNER="${REPO_NWO%/*}"
-NAME="${REPO_NWO#*/}"
+OWNER="${TARGET_REPO%/*}"
+NAME="${TARGET_REPO#*/}"
 
 # Find (any state) or create the persistent parent issue.
-PARENT_NUMBER=$(gh issue list --state all \
+PARENT_NUMBER=$(gh issue list --repo "$TARGET_REPO" --state all \
   --search "\"$PARENT_TITLE\" in:title" --json number,title --limit 20 \
   | jq -r --arg t "$PARENT_TITLE" '[.[] | select(.title == $t)] | .[0].number // empty')
 
 PARENT_BODY="Tracks tickers with no ISIN on record after $PIPELINE_LABEL ingestion runs. Each missing ticker gets its own sub-issue below, opened/closed automatically as it appears/resolves. See \`$CONFIG_PATH\` to add an \`isin\`/\`tax_domicile\` override."
 
 if [ -z "$PARENT_NUMBER" ]; then
-  PARENT_URL=$(gh issue create --title "$PARENT_TITLE" --body "$PARENT_BODY")
+  PARENT_URL=$(gh issue create --repo "$TARGET_REPO" --title "$PARENT_TITLE" --body "$PARENT_BODY")
   PARENT_NUMBER="${PARENT_URL##*/}"
   echo "Created parent issue #$PARENT_NUMBER"
 else
   # Keeps an already-existing parent's body in sync with this format —
   # e.g. one created by an earlier, checklist-body version of this script.
-  gh issue edit "$PARENT_NUMBER" --body "$PARENT_BODY"
+  gh issue edit "$PARENT_NUMBER" --repo "$TARGET_REPO" --body "$PARENT_BODY"
 fi
 
 # Existing sub-issues of the parent (number/title/state) via GraphQL --
@@ -82,11 +95,11 @@ for ticker in "${MISSING[@]:-}"; do
 
   if [ -z "$SUB_NUMBER" ]; then
     SUB_BODY="\`$ticker\` has no ISIN on record as of the latest ingestion run. Add an \`isin\`/\`tax_domicile\` override for it in \`$CONFIG_PATH\`, or confirm the ticker itself is correct. This sub-issue closes automatically once \`$ticker\` has an ISIN again."
-    gh issue create --title "$SUB_TITLE" --body "$SUB_BODY" --parent "$PARENT_NUMBER" >/dev/null
+    gh issue create --repo "$TARGET_REPO" --title "$SUB_TITLE" --body "$SUB_BODY" --parent "$PARENT_NUMBER" >/dev/null
     echo "Opened sub-issue for $ticker"
   elif [ "$SUB_STATE" = "CLOSED" ]; then
-    gh issue reopen "$SUB_NUMBER"
-    gh issue comment "$SUB_NUMBER" --body "Missing an ISIN again as of the latest ingestion run."
+    gh issue reopen "$SUB_NUMBER" --repo "$TARGET_REPO"
+    gh issue comment "$SUB_NUMBER" --repo "$TARGET_REPO" --body "Missing an ISIN again as of the latest ingestion run."
     echo "Reopened sub-issue #$SUB_NUMBER for $ticker"
   fi
   # else: already open and tracked, nothing to do.
@@ -108,8 +121,8 @@ while IFS= read -r row; do
     fi
   done
   if [ "$STILL_MISSING" = false ]; then
-    gh issue comment "$NUMBER" --body "\`$TICKER\` now has an ISIN on record — closing."
-    gh issue close "$NUMBER"
+    gh issue comment "$NUMBER" --repo "$TARGET_REPO" --body "\`$TICKER\` now has an ISIN on record — closing."
+    gh issue close "$NUMBER" --repo "$TARGET_REPO"
     echo "Closed resolved sub-issue #$NUMBER for $TICKER"
   fi
 done < <(jq -c '.[]' <<< "$EXISTING")

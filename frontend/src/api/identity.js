@@ -106,3 +106,19 @@ export function updateIncomeTaxBand(api, incomeTaxBand) {
     api("/identity/me/", { method: "PATCH", body: { income_tax_band: incomeTaxBand } })
   );
 }
+
+/**
+ * DELETE /api/identity/me/ — see MeView.delete (GitHub issue #158).
+ * Permanently deletes every equicast-owned record for the caller (profile,
+ * accounts, pies, goals, watchlists, holdings, transactions). Their Auth0
+ * login itself is untouched — v1 scope, see the issue — so nothing stops
+ * them signing up again afterward; the caller is responsible for logging
+ * them out client-side once this resolves, since staying signed in would
+ * just re-create an empty profile on the next `getMe` call.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @returns {Promise<null>}
+ */
+export function deleteAccount(api) {
+  return /** @type {Promise<null>} */ (api("/identity/me/", { method: "DELETE" }));
+}

@@ -188,6 +188,13 @@ class PiesClient:
             return
         raise RuntimeError(f"Too many conflicting writes to pies for user '{user_id}'.")
 
+    def delete_all_pies(self, user_id: str) -> None:
+        """Remove `user_id`'s entire pies object outright (GitHub issue
+        #158's account-deletion flow) — see `AccountsClient.
+        delete_all_accounts` for why this skips the conflict-retry
+        read-modify-write `delete_pie` uses."""
+        self._s3.delete_object(Bucket=self._bucket, Key=self._key(user_id))
+
     def delete_pies_for_account(self, user_id: str, account_id: str) -> int:
         """Remove every pie under `account_id` in one write, returning how
         many were removed. Backs accounts/views.py's force-delete: unlike

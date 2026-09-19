@@ -9,6 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
+  now file into the shared private `coldsofttech/equicast-support` repo
+  instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`
+  variable and `SUPPORT_ISSUE_TOKEN` secret the Support page's backend
+  already uses (`backend/support/views.py`), so internal
+  engineering/data-quality trackers stay off the public repo's issue
+  list. `.github/scripts/sync-missing-isin-issue.sh` now takes the
+  target repo as its first argument; the `build-catalog` job in both
+  `stock-ingestion.yml`/`etf-ingestion.yml` no longer needs its
+  `issues: write` permission override, since it no longer writes issues
+  into its own repo.
+
 - Account/pie price charts now plot a true since-inception reconstruction
   instead of "what today's holdings would have been worth historically"
   (GitHub issue #194): the blue line is point-in-time current value
@@ -26,6 +38,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "today's shares" aggregate, with no invested/current overlay of its own.
 
 ### Added
+
+- Support page (GitHub issue #246): a new `/support` page (Account menu ->
+  Support, now grouped with dividers: Accounts/Watchlists/Goals, then
+  Import Transactions, then Support/Settings/Log out) lets a signed-in
+  user raise a query, request a new ticker, report incorrect data, or send
+  anything else, without ever going through GitHub directly. The new
+  `POST /api/support/` endpoint (`backend/support/`) creates a GitHub
+  issue from it — but in a dedicated *private* repo
+  (`coldsofttech/equicast-support`), not the public `equiCast` repo, since
+  every ticket there would otherwise be visible to every other user and
+  the public internet. Both dev and prod share that one repo; each issue
+  is labeled by category (`customer-query`/`customer-issue`/
+  `customer-other` — distinct from the API's own `query`/`incorrect-data`/
+  `other` category values) plus environment (`development`/`production`,
+  via a new `ENVIRONMENT_NAME` setting fed from Terraform's
+  `var.environment`) to tell them apart. Rate-limited via a dedicated
+  `support` throttle scope (`SUPPORT_RATE_LIMIT_PER_MINUTE`) on top of the
+  existing per-user API budget. The response is a generic confirmation
+  only — never the created issue's link, since the user has no access to
+  the private repo anyway.
+  - "Request a new ticker" requires a ticker (description becomes optional
+    context); every other category requires a description instead.
+  - "Report incorrect data" requires saying what's affected: a type
+    (Account/Pie/Goal/Holding/Other) and, for the first four, which
+    specific one — the value dropdown is populated from the user's own
+    accounts/pies/goals/holdings, with "Other" always available as a
+    fallback default.
+  - `scripts/local-dev.ps1` gained `-SupportIssueToken`/`-SupportRepo` for
+    local backend runs; with no token given, it falls back to `gh auth
+    token` (warning that this uses a far more broadly-scoped credential
+    than the dedicated `issues:write`-on-one-repo PAT prod runs with).
 
 - Missing-ISIN GitHub issue notification (GitHub issue #215):
   `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog` job now reads
