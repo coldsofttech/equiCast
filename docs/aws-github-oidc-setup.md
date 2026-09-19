@@ -143,7 +143,8 @@ rather than broad account-wide access:
       "Action": "apigateway:*",
       "Resource": [
         "arn:aws:apigateway:*::/apis",
-        "arn:aws:apigateway:*::/apis/*"
+        "arn:aws:apigateway:*::/apis/*",
+        "arn:aws:apigateway:*::/tags/*"
       ]
     },
     {
@@ -200,6 +201,18 @@ every other action — reading/updating/deleting a specific API, its routes,
 integrations, stages — authorizes against `/apis/{api-id}`, matched by
 `/apis/*`. Terraform's own `plan`/`refresh` needs the latter even before
 `apply` creates anything, so both must be present from the start.
+
+**On `ApiGatewayManagement`'s extra `/tags/*` resource**: `providers.tf`'s
+`default_tags` block applies the `application`/`environment` tags to every
+resource Terraform creates, including the HTTP API. AWS API Gateway models
+tagging as a separate call — `apigateway:POST` against
+`arn:aws:apigateway:<region>::/tags/<url-encoded-resource-arn>` — not as
+part of `CreateApi` itself, so without this resource, creating the API
+with tags fails with an `AccessDeniedException` on that `/tags/...` ARN
+even though `CreateApi` against `/apis` is otherwise authorized. Same "no
+naming convention to scope against" situation as `/apis`/`/apis/*` above,
+so this is scoped to "any tagging call in this account/region" rather than
+to `equicast-*`.
 
 **On `CloudFrontManagement`'s `Resource: "*"`**: like API Gateway above, a
 distribution's and an OAC's ARNs are only known after they're created —
