@@ -118,6 +118,8 @@ tickers:
     isin: CA0636711016
   - ticker: BMY
     isin: US1101221083
+  - ticker: BNC.L
+    isin: ES0113900J37
   - ticker: BNS
     isin: CA0641491075
   - ticker: BNY

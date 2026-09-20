@@ -52,6 +52,18 @@ DEFAULT_WITHHOLDING_PCT_BY_DOMICILE = {"UK": 0, "US": 15}
 #: for why `benchmark` is opt-in only, not part of this default set.
 DEFAULT_SEARCH_ASSET_CLASSES = ("fx", "stock", "etf")
 
+#: yfinance's currency code for LSE-listed instruments priced in pence
+#: sterling rather than whole pounds — not a real ISO-4217 currency, just
+#: GBP / 100. No "GBpXXX" FX pair is ever published (packages/fx only
+#: publishes real market-quoted pairs), so get_fx_rate_on_date/
+#: _latest_fx_rate special-case it as a fixed unit conversion chained onto
+#: the ordinary GBP rate, rather than a catalog lookup that would always
+#: come back empty. Hardcoded to GBp only for now — see equicast-support
+#: issue #176 for generalizing to other minor-unit currencies (ZAc/ZAr,
+#: ILA/ILS, etc.).
+GBP_MINOR_CURRENCY = "GBp"
+GBP_MINOR_UNIT_FACTOR = 100
+
 #: Every price range get_prices()/PricesView accepts, in the order a range
 #: picker should offer them. "max" is also the default when none is given
 #: — the same "whatever's published" behaviour get_prices had before range
@@ -714,7 +726,10 @@ class MarketDataClient:
     ) -> float | None:
         """Convert 1 unit of `from_currency` into `to_currency` as of the
         nearest published trading day on or before `on_date` — `1.0` with
-        no lookup at all when the two currencies are the same. Tries the
+        no lookup at all when the two currencies are the same. `GBP_MINOR_
+        CURRENCY` ("GBp") on either side is resolved as a fixed 1/100 (or
+        100x) of the equivalent GBP rate, recursively, rather than via a
+        catalog lookup — see that constant's docstring. Otherwise tries the
         direct pair (`<from><to>`, e.g. "USDGBP" quotes GBP per 1 USD — see
         `equicast_fx.client`) first, then the inverted pair (taking its
         reciprocal) if that's what's published instead — same fallback the
@@ -723,6 +738,12 @@ class MarketDataClient:
         neither pair has anything published on or before `on_date`."""
         if from_currency == to_currency:
             return 1.0
+        if from_currency == GBP_MINOR_CURRENCY:
+            gbp_rate = self.get_fx_rate_on_date("GBP", to_currency, on_date)
+            return gbp_rate / GBP_MINOR_UNIT_FACTOR if gbp_rate is not None else None
+        if to_currency == GBP_MINOR_CURRENCY:
+            gbp_rate = self.get_fx_rate_on_date(from_currency, "GBP", on_date)
+            return gbp_rate * GBP_MINOR_UNIT_FACTOR if gbp_rate is not None else None
         direct = self.get_price_on_date("fx", f"{from_currency}{to_currency}", on_date)
         if direct is not None and direct["close"]:
             return direct["close"]
@@ -749,10 +770,19 @@ class MarketDataClient:
         pair (`<to><from>`) if that's what's published instead, same
         fallback `get_fx_rate_on_date` uses, just off the catalog's latest
         snapshot rather than a specific date's price history. `1.0` with no
-        lookup at all when the two currencies are the same. `None` if
+        lookup at all when the two currencies are the same. `GBP_MINOR_
+        CURRENCY` ("GBp") on either side is resolved as a fixed 1/100 (or
+        100x) of the equivalent GBP rate, recursively, same as
+        `get_fx_rate_on_date` — see that constant's docstring. `None` if
         neither pair is in `fx_catalog`."""
         if from_currency == to_currency:
             return 1.0
+        if from_currency == GBP_MINOR_CURRENCY:
+            gbp_rate = self._latest_fx_rate("GBP", to_currency, fx_catalog)
+            return gbp_rate / GBP_MINOR_UNIT_FACTOR if gbp_rate is not None else None
+        if to_currency == GBP_MINOR_CURRENCY:
+            gbp_rate = self._latest_fx_rate(from_currency, "GBP", fx_catalog)
+            return gbp_rate * GBP_MINOR_UNIT_FACTOR if gbp_rate is not None else None
         direct = fx_catalog.get(f"{from_currency}{to_currency}")
         if direct is not None and direct.get("current_price") is not None:
             return direct["current_price"]

@@ -952,6 +952,45 @@ class TestGetFxRateOnDate:
 
         assert client.get_fx_rate_on_date("USD", "GBP", "2026-01-01") is None
 
+    def test_gbp_minor_currency_to_gbp_is_a_fixed_hundredth_with_no_fx_lookup(
+        self, s3_client
+    ) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        # No fx data seeded at all — GBp->GBP is a fixed unit conversion,
+        # never a catalog lookup.
+        assert client.get_fx_rate_on_date("GBp", "GBP", "2026-01-01") == pytest.approx(0.01)
+
+    def test_gbp_to_gbp_minor_currency_is_a_fixed_hundred_times_with_no_fx_lookup(
+        self, s3_client
+    ) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_fx_rate_on_date("GBP", "GBp", "2026-01-01") == pytest.approx(100)
+
+    def test_gbp_minor_currency_to_third_currency_chains_through_gbp(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "fx", "GBPUSD", year, [_fx_row(f"{year}-01-02", close=1.25)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_fx_rate_on_date("GBp", "USD", f"{year}-01-02")
+
+        assert result == pytest.approx(1.25 / 100)
+
+    def test_third_currency_to_gbp_minor_currency_chains_through_gbp(self, s3_client) -> None:
+        year = datetime.now(UTC).year
+        _put_year(s3_client, "fx", "USDGBP", year, [_fx_row(f"{year}-01-02", close=0.8)])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_fx_rate_on_date("USD", "GBp", f"{year}-01-02")
+
+        assert result == pytest.approx(0.8 * 100)
+
+    def test_returns_none_when_the_underlying_gbp_rate_is_unpublished(self, s3_client) -> None:
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        assert client.get_fx_rate_on_date("GBp", "USD", "2026-01-01") is None
+
 
 def _put_catalog(s3_client, asset_class: str, rows: list[dict]) -> None:
     upload_catalog(BUCKET, asset_class, rows, s3_client=s3_client)
@@ -1044,6 +1083,24 @@ class TestEnrichHoldings:
         [enriched] = client.enrich_holdings([holding], "GBP")
 
         assert enriched["current_price"] == pytest.approx(190.0 / 1.25)
+
+    def test_converts_gbp_minor_currency_current_price_as_a_fixed_hundredth_of_gbp(
+        self, s3_client
+    ) -> None:
+        # An LSE holding priced in pence sterling (yfinance's "GBp") — no
+        # "GBpUSD" pair is ever published, so this must chain through the
+        # ordinary GBPUSD rate rather than fail to convert at all.
+        _put_catalog(
+            s3_client, "stock", [{"ticker": "VOD.L", "current_price": 7250.0, "currency": "GBp"}]
+        )
+        _put_catalog(s3_client, "fx", [{"ticker": "GBPUSD", "current_price": 1.25}])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+        holding = {"id": "h-1", "ticker": "VOD.L", "asset_class": "stock"}
+
+        [enriched] = client.enrich_holdings([holding], "USD")
+
+        assert enriched["current_price_native"] == 7250.0
+        assert enriched["current_price"] == pytest.approx(7250.0 / 100 * 1.25)
 
     def test_returns_none_fields_when_ticker_has_no_catalog_row(self, s3_client) -> None:
         client = MarketDataClient(BUCKET, s3_client=s3_client)
