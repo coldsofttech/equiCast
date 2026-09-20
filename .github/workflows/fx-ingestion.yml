@@ -67,6 +67,7 @@ jobs:
       environment: ${{ steps.env.outputs.environment }}
       bucket: ${{ steps.env.outputs.bucket }}
       targeted: ${{ steps.env.outputs.targeted }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -117,6 +118,17 @@ jobs:
             echo "targeted=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # equicast-support#185: dev/vX.Y branches (see fx-image.yml) push
+          # a :dev tag rather than overwriting :latest - this run pulls
+          # whichever one matches the branch it's actually running from, so
+          # a dev/v1.1 run tests dev/v1.1's own image rather than silently
+          # falling back to main's.
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compute FX pair chunks
         id: plan
         working-directory: packages/fx
@@ -155,14 +167,14 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Pull equicast-fx image
-        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-fx:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-fx:${{ needs.plan.outputs.image_tag }}
 
       - name: Extract this chunk's FX pair profiles and prices
         run: |
           mkdir -p output
           docker run --rm \
             -v "${PWD}/output:/output" \
-            ghcr.io/${{ github.repository_owner }}/equicast-fx:latest \
+            ghcr.io/${{ github.repository_owner }}/equicast-fx:${{ needs.plan.outputs.image_tag }} \
             --pairs-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \

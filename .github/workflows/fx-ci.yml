@@ -2,7 +2,9 @@ name: FX Packages CI
 
 on:
   push:
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - the same CI that runs on main.
+    branches: [main, "dev/**"]
     paths:
       - "packages/datafeed/**"
       - "packages/metrics/**"

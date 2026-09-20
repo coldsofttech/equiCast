@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Ingestion workflows (stock, ETF, FX, benchmark) now delete their
   intermediate per-chunk profile artifacts once the catalog build and
   failure reporting are done, instead of leaving them to expire.
+- CI, Docker image builds, Terraform, and deploy now also run on `dev/`
+  release-integration branches (e.g. `dev/v1.1`), the same as `main` -
+  except production deploys/applies, which stay reachable only from `main`.
 
 ## [1.0.5] - 2026-09-20
 
