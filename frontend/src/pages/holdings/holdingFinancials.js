@@ -15,6 +15,39 @@ import { formatCurrency } from "../sampleFinancials.js";
 export { formatCurrency };
 
 /**
+ * yfinance's currency code for LSE-listed instruments priced in pence
+ * sterling rather than whole pounds — not a real ISO-4217 currency, just
+ * GBP / 100. It isn't valid input to Intl.NumberFormat's `currency` option
+ * (formatPrice/formatCompactCurrency below convert-and-relabel to "GBP"
+ * rather than pass it straight through, or Intl throws), and no "GBpXXX" fx
+ * pair is ever published either (packages/fx only publishes real
+ * market-quoted pairs) — resolveFxRate/resolveBulkFxRates/
+ * resolveFxRateOnDate special-case it as a fixed 1/100 (or 100x) of the
+ * equivalent GBP rate instead of a catalog lookup. Mirrors the backend's
+ * equicast_core.client.GBP_MINOR_CURRENCY; hardcoded to GBp only for now —
+ * see equicast-support issue #176 for generalizing to other minor-unit
+ * currencies.
+ */
+const GBP_MINOR_CURRENCY = "GBp";
+const GBP_MINOR_UNIT_FACTOR = 100;
+
+/**
+ * `[value, currency]` with `GBP_MINOR_CURRENCY` ("GBp") converted to its
+ * whole-pound equivalent and relabeled "GBP" — the pair `formatPrice`/
+ * `formatCompactCurrency` should actually format, since Intl.NumberFormat
+ * doesn't understand pence as a currency of its own. Anything else passes
+ * through unchanged.
+ *
+ * @param {number} value
+ * @param {string} currency
+ * @returns {[number, string]}
+ */
+function toFormattableCurrency(value, currency) {
+  if (currency === GBP_MINOR_CURRENCY) return [value / GBP_MINOR_UNIT_FACTOR, "GBP"];
+  return [value, currency];
+}
+
+/**
  * Per-share price formatting — formatCurrency's maximumFractionDigits:0 is
  * too lossy for a share price like $34.56. Falls back to a plain 2-decimal
  * number (no currency symbol) when `currency` is unknown (e.g. the
@@ -26,13 +59,14 @@ export { formatCurrency };
  */
 export function formatPrice(value, currency) {
   if (!currency) return value.toFixed(2);
+  const [displayValue, displayCurrency] = toFormattableCurrency(value, currency);
   return new Intl.NumberFormat(undefined, {
     style: "currency",
-    currency,
+    currency: displayCurrency,
     currencyDisplay: "narrowSymbol",
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(displayValue);
 }
 
 /**
@@ -54,13 +88,14 @@ export function formatCompactCurrency(value, currency) {
       value
     );
   }
+  const [displayValue, displayCurrency] = toFormattableCurrency(value, currency);
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency,
+    currency: displayCurrency,
     currencyDisplay: "narrowSymbol",
     notation: "compact",
     maximumFractionDigits: 2,
-  }).format(value);
+  }).format(displayValue);
 }
 
 /**
@@ -233,6 +268,11 @@ export function rollupInstances(instanceFinancials, currentPriceNative) {
  * block the page on an FX lookup, per this page's explicit design: FX
  * conversion is a nice-to-have on one table column, not a gate.
  *
+ * `GBP_MINOR_CURRENCY` ("GBp") on either side is resolved as a fixed 1/100
+ * (or 100x) of the equivalent GBP rate, recursively, instead of via the
+ * profile endpoint — no "GBpXXX" pair is ever published (see that
+ * constant's docstring).
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string|null|undefined} nativeCurrency
  * @param {string|null|undefined} defaultCurrency
@@ -241,6 +281,15 @@ export function rollupInstances(instanceFinancials, currentPriceNative) {
 export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
   if (!nativeCurrency || !defaultCurrency) return null;
   if (nativeCurrency === defaultCurrency) return 1;
+
+  if (nativeCurrency === GBP_MINOR_CURRENCY) {
+    const gbpRate = await resolveFxRate(api, "GBP", defaultCurrency);
+    return gbpRate !== null ? gbpRate / GBP_MINOR_UNIT_FACTOR : null;
+  }
+  if (defaultCurrency === GBP_MINOR_CURRENCY) {
+    const gbpRate = await resolveFxRate(api, nativeCurrency, "GBP");
+    return gbpRate !== null ? gbpRate * GBP_MINOR_UNIT_FACTOR : null;
+  }
 
   try {
     const direct = await getProfile(api, "fx", `${nativeCurrency}${defaultCurrency}`);
@@ -278,6 +327,13 @@ export async function resolveFxRate(api, nativeCurrency, defaultCurrency) {
  * a currency with no direct or inverted pair published just maps to
  * `null`, same as resolveFxRate's return for that case.
  *
+ * `GBP_MINOR_CURRENCY` ("GBp") is resolved via one extra `resolveFxRate`
+ * call (as a fixed 1/100 of the equivalent GBP rate) rather than the bulk
+ * pair fetch below — no "GBpXXX" pair is ever published (see that
+ * constant's docstring), and it's normally at most one distinct currency
+ * out of `nativeCurrencies`, so this doesn't cost the bulk win the rest of
+ * the pending currencies still get.
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {(string|null|undefined)[]} nativeCurrencies
  * @param {string} defaultCurrency
@@ -291,12 +347,19 @@ export async function resolveBulkFxRates(api, nativeCurrencies, defaultCurrency)
   const pending = distinct.filter((currency) => currency !== defaultCurrency);
   if (pending.length === 0) return rates;
 
+  if (pending.includes(GBP_MINOR_CURRENCY)) {
+    const gbpRate = await resolveFxRate(api, "GBP", defaultCurrency);
+    rates.set(GBP_MINOR_CURRENCY, gbpRate !== null ? gbpRate / GBP_MINOR_UNIT_FACTOR : null);
+  }
+  const bulkPending = pending.filter((currency) => currency !== GBP_MINOR_CURRENCY);
+  if (bulkPending.length === 0) return rates;
+
   const direct = await getBulkProfiles(
     api,
-    pending.map((currency) => ({ assetClass: "fx", symbol: `${currency}${defaultCurrency}` }))
+    bulkPending.map((currency) => ({ assetClass: "fx", symbol: `${currency}${defaultCurrency}` }))
   );
   const stillMissing = [];
-  pending.forEach((currency, index) => {
+  bulkPending.forEach((currency, index) => {
     const rate = direct[index]?.day_close;
     if (typeof rate === "number" && rate > 0) {
       rates.set(currency, rate);
@@ -356,6 +419,11 @@ function findCloseOnOrBefore(history, date) {
  * history) resolves to `null` so a caller can show "—" instead of
  * blocking on this lookup.
  *
+ * `GBP_MINOR_CURRENCY` ("GBp") on either side is resolved as a fixed 1/100
+ * (or 100x) of the equivalent GBP rate, recursively, instead of via price
+ * history — no "GBpXXX" pair is ever published (see that constant's
+ * docstring).
+ *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string|null|undefined} fromCurrency
  * @param {string|null|undefined} toCurrency
@@ -365,6 +433,15 @@ function findCloseOnOrBefore(history, date) {
 export async function resolveFxRateOnDate(api, fromCurrency, toCurrency, date) {
   if (!fromCurrency || !toCurrency || !date) return null;
   if (fromCurrency === toCurrency) return 1;
+
+  if (fromCurrency === GBP_MINOR_CURRENCY) {
+    const gbpRate = await resolveFxRateOnDate(api, "GBP", toCurrency, date);
+    return gbpRate !== null ? gbpRate / GBP_MINOR_UNIT_FACTOR : null;
+  }
+  if (toCurrency === GBP_MINOR_CURRENCY) {
+    const gbpRate = await resolveFxRateOnDate(api, fromCurrency, "GBP", date);
+    return gbpRate !== null ? gbpRate * GBP_MINOR_UNIT_FACTOR : null;
+  }
 
   try {
     const direct = await getPrices(api, "fx", `${fromCurrency}${toCurrency}`);

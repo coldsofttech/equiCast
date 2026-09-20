@@ -31,6 +31,20 @@ describe("formatPrice", () => {
   it("falls back to a plain number when currency is unknown", () => {
     expect(formatPrice(34.5, null)).toBe("34.50");
   });
+
+  it("converts GBp (pence sterling) to its whole-pound GBP equivalent", () => {
+    const expected = new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: "GBP",
+      currencyDisplay: "narrowSymbol",
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    }).format(72.5);
+    // 7250 GBp == 72.50 GBP — "GBp" isn't valid Intl.NumberFormat input on
+    // its own (not a real ISO-4217 currency), so this must convert-and-
+    // relabel rather than pass it straight through.
+    expect(formatPrice(7250, "GBp")).toBe(expected);
+  });
 });
 
 describe("formatPercent", () => {
@@ -122,6 +136,31 @@ describe("resolveFxRate", () => {
 
     await expect(resolveFxRate(api, "USD", "GBP")).resolves.toBeNull();
   });
+
+  it("resolves GBp (pence sterling) to GBP as a fixed 1/100 with no fx lookup", async () => {
+    const api = vi.fn();
+
+    await expect(resolveFxRate(api, "GBp", "GBP")).resolves.toBeCloseTo(0.01);
+    expect(api).not.toHaveBeenCalled();
+  });
+
+  it("chains GBp to a third currency through the GBP rate", async () => {
+    const api = vi.fn().mockResolvedValue({ day_close: 1.25 });
+
+    const rate = await resolveFxRate(api, "GBp", "USD");
+
+    expect(api).toHaveBeenCalledWith("/market/fx/GBPUSD/profile/");
+    expect(rate).toBeCloseTo(1.25 / 100);
+  });
+
+  it("chains a third currency to GBp through the GBP rate", async () => {
+    const api = vi.fn().mockResolvedValue({ day_close: 0.8 });
+
+    const rate = await resolveFxRate(api, "USD", "GBp");
+
+    expect(api).toHaveBeenCalledWith("/market/fx/USDGBP/profile/");
+    expect(rate).toBeCloseTo(0.8 * 100);
+  });
 });
 
 describe("resolveBulkFxRates", () => {
@@ -190,6 +229,27 @@ describe("resolveBulkFxRates", () => {
     const rates = await resolveBulkFxRates(api, ["USD"], "GBP");
 
     expect(rates.get("USD")).toBeNull();
+  });
+
+  it("resolves GBp separately from the bulk pair fetch, as a fixed 1/100 of the GBP rate", async () => {
+    const api = vi
+      .fn()
+      // resolveFxRate("GBP", "USD") for the GBp entry.
+      .mockResolvedValueOnce({ day_close: 1.25 })
+      // The bulk fetch for the remaining (non-GBp) pending currency.
+      .mockResolvedValueOnce({
+        results: [{ asset_class: "fx", symbol: "EURUSD", profile: { day_close: 1.08 } }],
+      });
+
+    const rates = await resolveBulkFxRates(api, ["GBp", "EUR"], "USD");
+
+    expect(api).toHaveBeenNthCalledWith(1, "/market/fx/GBPUSD/profile/");
+    expect(api).toHaveBeenNthCalledWith(2, "/market/bulk/profile/", {
+      method: "POST",
+      body: { items: [{ asset_class: "fx", symbol: "EURUSD" }] },
+    });
+    expect(rates.get("GBp")).toBeCloseTo(1.25 / 100);
+    expect(rates.get("EUR")).toBe(1.08);
   });
 });
 
@@ -274,6 +334,20 @@ describe("resolveFxRateOnDate", () => {
     const api = vi.fn().mockRejectedValue(new Error("404"));
 
     await expect(resolveFxRateOnDate(api, "GBP", "USD", "2026-01-15")).resolves.toBeNull();
+  });
+
+  it("chains GBp (pence sterling) to a third currency through the GBP rate", async () => {
+    const api = vi.fn().mockResolvedValue({
+      ticker: "GBPUSD",
+      daily: [{ date: "2026-01-14", close: 1.25 }],
+      weekly: [],
+      monthly: [],
+    });
+
+    const rate = await resolveFxRateOnDate(api, "GBp", "USD", "2026-01-15");
+
+    expect(api).toHaveBeenCalledWith("/market/fx/GBPUSD/prices/");
+    expect(rate).toBeCloseTo(1.25 / 100);
   });
 });
 

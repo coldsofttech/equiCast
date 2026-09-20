@@ -56,6 +56,25 @@ class TestParseTrading212Csv:
             raw=buy.raw,
         )
 
+    def test_normalizes_gbx_currency_to_gbp_minor_currency_spelling(self) -> None:
+        """Trading 212 reports an LSE-listed row's pence-sterling price with
+        "GBX" in its Currency (Price / share) column; yfinance — and
+        everything downstream that expects its convention (e.g.
+        MarketDataClient.get_fx_rate_on_date) — spells the same currency
+        "GBp" instead. Both must agree, or a holding's native currency would
+        read differently depending on whether it came from market-data
+        ingestion or a Trading 212 import."""
+        file = _csv(
+            f"""
+            {TRADING212_HEADER}
+            Market buy,2024-06-05 11:36:23,GB00BH4HKS39,VOD,Vodafone Group,EOF002,100,72.5,GBX,,,GBP,72.50,GBP,,,,
+            """.replace("            ", "")
+        )
+
+        result = parse_trading212_csv(file)
+
+        assert result.rows[0].currency == "GBp"
+
     def test_drops_dividend_and_other_non_trade_rows(self) -> None:
         file = _csv(
             f"""

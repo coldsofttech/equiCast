@@ -64,6 +64,27 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import IO, Any
 
+from equicast_core.client import GBP_MINOR_CURRENCY
+
+#: Broker-specific currency-code spellings normalized to equicast's own
+#: (yfinance's) convention before landing on a `ParsedRow`, so a holding's
+#: native currency reads the same regardless of whether it came from
+#: market-data ingestion or a broker import. Trading 212 exports an
+#: LSE-listed row's pence-sterling price with "GBX" in its
+#: `Currency (Price / share)` column; yfinance — and everything downstream
+#: that expects its convention, e.g. `MarketDataClient.get_fx_rate_on_date`
+#: — uses `GBP_MINOR_CURRENCY` ("GBp") instead.
+_CURRENCY_ALIASES = {"GBX": GBP_MINOR_CURRENCY}
+
+
+def _normalize_currency(value: str | None) -> str | None:
+    """Map a broker-specific currency-code spelling to equicast's own
+    convention (see `_CURRENCY_ALIASES`) — anything not in that map passes
+    through unchanged, including `None`."""
+    if value is None:
+        return None
+    return _CURRENCY_ALIASES.get(value, value)
+
 
 class ImportParseError(Exception):
     """Raised by a preset parser for a missing/unrecognized column header,
@@ -284,7 +305,7 @@ def _build_trading212_row(
         name=_clean(row.get("Name")),
         no_of_shares=_parse_positive_float(row.get("No. of shares"), "No. of shares", row_number),
         price_native=_parse_positive_float(row.get("Price / share"), "Price / share", row_number),
-        currency=_clean(row.get("Currency (Price / share)")),
+        currency=_normalize_currency(_clean(row.get("Currency (Price / share)"))),
         fx_rate=_invert_rate(_parse_optional_float(row.get("Exchange rate"))),
         sdrt=_parse_optional_float(row.get("Stamp duty reserve tax")),
         fx_fee=_parse_optional_float(row.get("Currency conversion fee")),
