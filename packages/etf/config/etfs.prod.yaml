@@ -38,6 +38,8 @@ tickers:
     isin: IE00BF2B0M76
   - ticker: GDX
     isin: IE00BQQP9F84
+  - ticker: GDX.L
+    isin: IE00BQQP9F84
   - ticker: GLGG.L
     isin: IE00BK5BC891
   - ticker: HEAL.L
@@ -72,6 +74,8 @@ tickers:
     isin: IE00BZCQB185
   - ticker: NUCG.L
     isin: IE000M7V94E1
+  - ticker: QNTG.L
+    isin: IE0007Y8Y157
   - ticker: QNTM.L
     isin: IE0007Y8Y157
   - ticker: RENG.L
