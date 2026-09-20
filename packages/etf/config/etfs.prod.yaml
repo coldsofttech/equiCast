@@ -84,6 +84,8 @@ tickers:
     isin: IE00BK5BCH80
   - ticker: SMH
     isin: IE00BMC38736
+  - ticker: SMH.L
+    isin: IE00BMC38736
   - ticker: SPGP.L
     isin: IE00B6R52036
   - ticker: SPOL.L
