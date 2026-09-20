@@ -3,7 +3,11 @@ name: Deploy
 on:
   workflow_run:
     workflows: ["Backend CI", "Frontend CI"]
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - deploy-backend-prod/deploy-frontend-
+    # prod below stay main-only regardless (see their own if: conditions),
+    # so a dev/vX.Y push only ever reaches the dev deploy jobs.
+    branches: [main, "dev/**"]
     types: [completed]
 
 # Baseline permissions; the active jobs below all declare their own more
@@ -94,8 +98,12 @@ jobs:
   # the prod bucket, then points prod's Lambda function at that copy — the
   # same "promote the exact artifact that ran in dev" principle the old ECR
   # flow used (tagging one image as "prod" rather than rebuilding).
+  # Deliberately main-only (equicast-support#185) - unlike deploy-backend-dev
+  # above, a dev/vX.Y push must never be able to reach production, even
+  # behind approval.
   deploy-backend-prod:
     needs: deploy-backend-dev
+    if: github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     permissions:
@@ -247,9 +255,12 @@ jobs:
   # distributions), so unlike deploy-backend-prod there's no single
   # artifact to promote byte-for-byte. `needs: deploy-frontend-dev` is
   # kept for the same "prod only after dev" ordering the backend jobs use,
-  # not because it reuses dev's build.
+  # not because it reuses dev's build. Deliberately main-only
+  # (equicast-support#185) - unlike deploy-frontend-dev above, a dev/vX.Y
+  # push must never be able to reach production, even behind approval.
   deploy-frontend-prod:
     needs: deploy-frontend-dev
+    if: github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     permissions:

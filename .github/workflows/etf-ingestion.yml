@@ -75,6 +75,7 @@ jobs:
       run_ingest: ${{ steps.env.outputs.run_ingest }}
       run_forecasting: ${{ steps.env.outputs.run_forecasting }}
       targeted: ${{ steps.env.outputs.targeted }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -146,6 +147,17 @@ jobs:
             echo "targeted=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # equicast-support#185: dev/vX.Y branches (see etf-image.yml/
+          # forecasting-image.yml) push a :dev tag rather than overwriting
+          # :latest - this run pulls whichever one matches the branch it's
+          # actually running from, so a dev/v1.1 run tests dev/v1.1's own
+          # image rather than silently falling back to main's.
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compute ETF ticker chunks
         id: plan
         working-directory: packages/etf
@@ -188,14 +200,14 @@ jobs:
 
       - name: Pull equicast-etf image
         if: needs.plan.outputs.run_ingest == 'true'
-        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-etf:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ needs.plan.outputs.image_tag }}
 
       - name: Extract this chunk's ETF ticker profiles and prices
         if: needs.plan.outputs.run_ingest == 'true'
         run: |
           docker run --rm \
             -v "${PWD}/output:/output" \
-            ghcr.io/${{ github.repository_owner }}/equicast-etf:latest \
+            ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ needs.plan.outputs.image_tag }} \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \
@@ -205,7 +217,7 @@ jobs:
 
       - name: Pull equicast-forecasting image
         if: needs.plan.outputs.run_forecasting == 'true'
-        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-forecasting:${{ needs.plan.outputs.image_tag }}
 
       # Independent of the equicast-etf step above — its own DividendsClient
       # fetch, not a read-back of dividend.parquet — but writes into the same
@@ -216,7 +228,7 @@ jobs:
         run: |
           docker run --rm \
             -v "${PWD}/output:/output" \
-            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest \
+            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:${{ needs.plan.outputs.image_tag }} \
             --asset-class etf \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \

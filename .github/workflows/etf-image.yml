@@ -2,7 +2,10 @@ name: Build ETF Image
 
 on:
   push:
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - see "Determine image tag" below for
+    # why this never overwrites the :latest tag main pushes here.
+    branches: [main, "dev/**"]
     paths:
       - "packages/datafeed/**"
       - "packages/metrics/**"
@@ -31,6 +34,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # equicast-support#185: a dev/vX.Y push builds and pushes too, but
+      # must never land on :latest - the ingestion workflows' scheduled
+      # (cron) runs always execute from main and pull :latest unconditionally,
+      # so overwriting it from a pre-release branch would put untested code
+      # in front of real production data on the next scheduled run. main
+      # keeps :latest; every other branch (i.e. dev/**) gets :dev instead -
+      # see etf-ingestion.yml's "plan" job for the matching pull-side logic.
+      - name: Determine image tag
+        id: tag
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Build and push equicast-etf (private)
         uses: docker/build-push-action@v6
         with:
@@ -38,5 +57,5 @@ jobs:
           file: packages/etf/Dockerfile
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/equicast-etf:latest
+            ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ steps.tag.outputs.tag }}
             ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ github.sha }}

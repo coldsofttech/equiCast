@@ -2,7 +2,10 @@ name: Terraform
 
 on:
   push:
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - apply-dev below runs for these too;
+    # apply-prod stays main-only regardless (see its own if: condition).
+    branches: [main, "dev/**"]
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
@@ -165,7 +168,10 @@ jobs:
   # PR could apply an unreviewed change straight to dev on its own.
   apply-dev:
     needs: plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # equicast-support#185: a dev/vX.Y push applies to the shared dev
+    # environment too, same as main - apply-prod below stays main-only
+    # regardless, so dev/** can never reach production from here.
+    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/dev/')) && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: development
     permissions:
@@ -195,7 +201,10 @@ jobs:
   # Gated behind the "production" GitHub Environment's required reviewers
   # (Settings -> Environments -> production) — a separate approval from
   # apply-dev's, since promoting to prod is a distinct decision from
-  # applying to dev even though both now require sign-off.
+  # applying to dev even though both now require sign-off. Deliberately
+  # stays main-only (equicast-support#185) - unlike apply-dev above, a
+  # dev/vX.Y push must never be able to reach production, even behind
+  # approval.
   apply-prod:
     needs: apply-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
