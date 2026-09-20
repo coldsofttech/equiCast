@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The five per-image Docker build workflows are now one workflow that only
   rebuilds the image(s) actually affected by a push, instead of five
   separately-triggered ones.
+- The per-asset-class package CI workflows (stock, ETF, FX, benchmark) are
+  now one workflow that tests each shared package once instead of once per
+  asset class that depends on it.
 - AWS OIDC credential setup, previously duplicated across the ingestion,
   deploy, terraform, and infra-lifecycle workflows, is now a single shared
   action.
