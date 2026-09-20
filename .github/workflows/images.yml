@@ -72,6 +72,12 @@ jobs:
       benchmark: ${{ steps.filter.outputs.benchmark }}
       forecasting: ${{ steps.filter.outputs.forecasting }}
     steps:
+      # dorny/paths-filter needs local git history to diff a push event
+      # against (unlike pull_request, which it can resolve via the API
+      # alone) - without this, it fails with "fatal: not a git repository"
+      # trying to read the current ref.
+      - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
