@@ -394,67 +394,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Determine pipeline status
-        id: status
-        run: |
-          if [ "${{ needs.plan.result }}" = "failure" ] || [ "${{ needs.ingest.result }}" = "failure" ] || [ "${{ needs.build-catalog.result }}" = "failure" ]; then
-            echo "status=failure" >> "$GITHUB_OUTPUT"
-          elif [ "${{ needs.plan.result }}" = "cancelled" ] || [ "${{ needs.ingest.result }}" = "cancelled" ] || [ "${{ needs.build-catalog.result }}" = "cancelled" ]; then
-            echo "status=cancelled" >> "$GITHUB_OUTPUT"
-          else
-            echo "status=success" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Find failed job names for this run
-        id: failed_jobs
-        if: steps.status.outputs.status == 'failure'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          NAMES=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
-            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')
-          echo "names=$NAMES" >> "$GITHUB_OUTPUT"
-
-      - name: Sync pipeline failure tracking issue
-        id: sync_issue
-        if: steps.status.outputs.status != 'cancelled'
-        env:
-          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
-        run: |
-          PARENT_NUMBER=$(bash .github/scripts/sync-pipeline-failure-issue.sh \
-            "${{ vars.SUPPORT_REPO }}" \
-            "Stock ingestion: pipeline failures" \
-            "${{ steps.status.outputs.status }}" \
-            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            "${{ steps.failed_jobs.outputs.names }}")
-          echo "parent_number=$PARENT_NUMBER" >> "$GITHUB_OUTPUT"
-
-      # Only safe on a full, untargeted run where ingest actually attempted
-      # every configured ticker - see sync-pipeline-failure-subissues.sh's
-      # header for why a targeted or forecast-only run (which never
-      # attempted most/any tickers) can't safely auto-close their sub-issues
-      # just because they're absent from this run's failures.
-      - name: Download every chunk's failures manifest
-        id: download_failures
-        if: steps.sync_issue.outcome == 'success' && needs.plan.outputs.targeted != 'true' && needs.plan.outputs.run_ingest == 'true' && (needs.ingest.result == 'success' || needs.ingest.result == 'failure')
-        uses: actions/download-artifact@v4
+      - name: Sync pipeline status
+        uses: ./.github/actions/sync-pipeline-status
         with:
-          pattern: stock-profiles-*
-          path: output
-          merge-multiple: true
-
-      - name: Sync per-ticker extraction-failure sub-issues
-        if: steps.download_failures.outcome == 'success'
-        env:
-          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
-        run: |
-          python3 .github/scripts/merge_failures.py --output-dir output/chunk-failures > merged-failures.json
-          bash .github/scripts/sync-pipeline-failure-subissues.sh \
-            "${{ vars.SUPPORT_REPO }}" \
-            "${{ steps.sync_issue.outputs.parent_number }}" \
-            "stock" \
-            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            merged-failures.json
+          pipeline-label: Stock
+          artifact-prefix: stock-profiles-
+          plan-result: ${{ needs.plan.result }}
+          ingest-result: ${{ needs.ingest.result }}
+          build-catalog-result: ${{ needs.build-catalog.result }}
+          targeted: ${{ needs.plan.outputs.targeted }}
+          run-ingest: ${{ needs.plan.outputs.run_ingest }}
+          support-repo: ${{ vars.SUPPORT_REPO }}
+          support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
   # GitHub issue equicast-support#169: stock-profiles-*'s per-chunk
   # profile.parquet is only ever needed to hand off to build-catalog above
@@ -476,13 +428,12 @@ jobs:
     permissions:
       actions: write
     steps:
-      - name: Delete this run's per-chunk profile artifacts
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --paginate \
-            --jq '.artifacts[] | select(.name | startswith("stock-profiles-")) | .id' \
-          | while read -r id; do
-              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
-              echo "Deleted artifact $id"
-            done
+      # Needed to resolve `uses: ./.github/actions/cleanup-artifacts` below
+      # - see cleanup-artifacts's own header comment for why.
+      - uses: actions/checkout@v4
+
+      - name: Delete per-chunk profile artifacts
+        uses: ./.github/actions/cleanup-artifacts
+        with:
+          artifact-prefix: stock-profiles-
+          github-token: ${{ secrets.GITHUB_TOKEN }}
