@@ -49,6 +49,23 @@ def ratio(numerator: float | None, denominator: float | None) -> float | None:
     return numerator / denominator
 
 
+def _as_float(value: Any) -> float | None:
+    """Coerce a raw `.info` value to `float`, or `None` if it isn't numeric.
+
+    yfinance's `.info` dict is untyped and occasionally carries a
+    non-numeric placeholder (e.g. a string) for a field that's normally a
+    number, on certain tickers with data-quality issues - treating those as
+    missing rather than propagating them avoids a `TypeError` several steps
+    downstream in `round_value()`.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class _Resolver:
     """Tries `.info` first, then each fallback in order; remembers whether
     any field ever needed one, for the caller's `source` field. Also caches
@@ -110,14 +127,16 @@ def compute_fundamentals(
     """
     r = _Resolver(get_financials, get_balance_sheet)
 
-    market_cap = info.get("marketCap")
-    current_price = info.get("currentPrice") or info.get("regularMarketPrice")
-    shares_outstanding = info.get("sharesOutstanding")
+    market_cap = _as_float(info.get("marketCap"))
+    current_price = _as_float(info.get("currentPrice")) or _as_float(info.get("regularMarketPrice"))
+    shares_outstanding = _as_float(info.get("sharesOutstanding"))
 
     total_revenue = r.resolve(
-        info.get("totalRevenue"), lambda: r.financials_row(TOTAL_REVENUE_ROWS)
+        _as_float(info.get("totalRevenue")), lambda: r.financials_row(TOTAL_REVENUE_ROWS)
     )
-    net_income = r.resolve(info.get("netIncomeToCommon"), lambda: r.financials_row(NET_INCOME_ROWS))
+    net_income = r.resolve(
+        _as_float(info.get("netIncomeToCommon")), lambda: r.financials_row(NET_INCOME_ROWS)
+    )
     total_assets = r.resolve(None, lambda: r.balance_sheet_row(TOTAL_ASSETS_ROWS))
     total_liabilities = r.resolve(None, lambda: r.balance_sheet_row(TOTAL_LIABILITIES_ROWS))
     stockholders_equity = r.resolve(None, lambda: r.balance_sheet_row(STOCKHOLDERS_EQUITY_ROWS))
@@ -126,14 +145,18 @@ def compute_fundamentals(
     # anywhere but `forwardEps`/`forwardPE` themselves, so those two have no
     # statement-based fallback - historical financials can't predict them.
     trailing_eps = r.resolve(
-        info.get("trailingEps"),
+        _as_float(info.get("trailingEps")),
         lambda: r.financials_row(DILUTED_EPS_ROWS),
         lambda: ratio(net_income, shares_outstanding),
     )
-    forward_eps = info.get("forwardEps")
+    forward_eps = _as_float(info.get("forwardEps"))
 
-    trailing_pe = r.resolve(info.get("trailingPE"), lambda: ratio(current_price, trailing_eps))
-    forward_pe = r.resolve(info.get("forwardPE"), lambda: ratio(current_price, forward_eps))
+    trailing_pe = r.resolve(
+        _as_float(info.get("trailingPE")), lambda: ratio(current_price, trailing_eps)
+    )
+    forward_pe = r.resolve(
+        _as_float(info.get("forwardPE")), lambda: ratio(current_price, forward_eps)
+    )
 
     # Unlike trailing_pe, always the plain price/EPS calculation - never
     # yfinance's own trailingPE - so it can differ from trailing_pe whenever
@@ -141,38 +164,42 @@ def compute_fundamentals(
     # info dict's own currentPrice/trailingEps.
     pe_ratio = ratio(current_price, trailing_eps)
 
-    peg = info.get("trailingPegRatio") or info.get("pegRatio")
+    peg = _as_float(info.get("trailingPegRatio")) or _as_float(info.get("pegRatio"))
     if peg is None:
-        earnings_growth = info.get("earningsGrowth")
+        earnings_growth = _as_float(info.get("earningsGrowth"))
         if trailing_pe is not None and earnings_growth:
             peg = trailing_pe / (earnings_growth * 100)
             r.used_fallback = True
 
     price_to_book = r.resolve(
-        info.get("priceToBook"), lambda: ratio(market_cap, stockholders_equity)
+        _as_float(info.get("priceToBook")), lambda: ratio(market_cap, stockholders_equity)
     )
     price_to_sales = r.resolve(
-        info.get("priceToSalesTrailing12Months"), lambda: ratio(market_cap, total_revenue)
+        _as_float(info.get("priceToSalesTrailing12Months")),
+        lambda: ratio(market_cap, total_revenue),
     )
     ev_ebitda = r.resolve(
-        info.get("enterpriseToEbitda"),
-        lambda: ratio(info.get("enterpriseValue"), info.get("ebitda")),
+        _as_float(info.get("enterpriseToEbitda")),
+        lambda: ratio(_as_float(info.get("enterpriseValue")), _as_float(info.get("ebitda"))),
     )
 
     gross_margin = r.resolve(
-        info.get("grossMargins"), lambda: ratio(r.financials_row(GROSS_PROFIT_ROWS), total_revenue)
+        _as_float(info.get("grossMargins")),
+        lambda: ratio(r.financials_row(GROSS_PROFIT_ROWS), total_revenue),
     )
     operating_margin = r.resolve(
-        info.get("operatingMargins"),
+        _as_float(info.get("operatingMargins")),
         lambda: ratio(r.financials_row(OPERATING_INCOME_ROWS), total_revenue),
     )
-    profit_margin = r.resolve(info.get("profitMargins"), lambda: ratio(net_income, total_revenue))
+    profit_margin = r.resolve(
+        _as_float(info.get("profitMargins")), lambda: ratio(net_income, total_revenue)
+    )
 
     return_on_equity = r.resolve(
-        info.get("returnOnEquity"), lambda: ratio(net_income, stockholders_equity)
+        _as_float(info.get("returnOnEquity")), lambda: ratio(net_income, stockholders_equity)
     )
     return_on_assets = r.resolve(
-        info.get("returnOnAssets"), lambda: ratio(net_income, total_assets)
+        _as_float(info.get("returnOnAssets")), lambda: ratio(net_income, total_assets)
     )
 
     def _debt_to_equity_from_statements() -> float | None:
@@ -181,16 +208,16 @@ def compute_fundamentals(
         value = ratio(total_liabilities, stockholders_equity)
         return value * 100 if value is not None else None
 
-    debt_to_equity = r.resolve(info.get("debtToEquity"), _debt_to_equity_from_statements)
+    debt_to_equity = r.resolve(_as_float(info.get("debtToEquity")), _debt_to_equity_from_statements)
 
     # No balance sheet/income statement line item is "free cash flow per
     # share" - it's always built, first from yfinance's own freeCashflow
     # total, falling back to operatingCashflow + capitalExpenditures
     # (capex is reported negative, so this subtracts it).
-    free_cash_flow = info.get("freeCashflow")
+    free_cash_flow = _as_float(info.get("freeCashflow"))
     if free_cash_flow is None:
-        operating_cashflow = info.get("operatingCashflow")
-        capital_expenditures = info.get("capitalExpenditures")
+        operating_cashflow = _as_float(info.get("operatingCashflow"))
+        capital_expenditures = _as_float(info.get("capitalExpenditures"))
         if operating_cashflow is not None and capital_expenditures is not None:
             free_cash_flow = operating_cashflow + capital_expenditures
     free_cash_flow_per_share = ratio(free_cash_flow, shares_outstanding)

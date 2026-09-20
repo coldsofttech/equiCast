@@ -42,6 +42,7 @@ packages = [
     "holdings",
     "transactions",
     "support",
+    "goals",
 ]
 
 [tool.pytest.ini_options]
