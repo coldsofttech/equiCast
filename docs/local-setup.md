@@ -347,13 +347,13 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 ## CI/CD workflows
 
 - `backend-ci.yml` — ruff, mypy, and pytest for `equicast-core` and the Django backend via `uv`
-- `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`, `equicast-metrics`, and `equicast-fx`
-- `stock-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
-  `equicast-stock`
-- `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
-  `equicast-etf`
+- `packages-ci.yml` — ruff, mypy, and pytest for every other package
+  (`equicast-datafeed`/`metrics`/`dividends`/`events`/`stock`/`etf`/`fx`/`benchmark`)
+  in one matrix job, one entry per package, each gated by whether that
+  package's own files actually changed (via `dorny/paths-filter`) so a
+  shared package like `equicast-datafeed` is tested once regardless of
+  how many others depend on it — not `equicast-forecasting` yet, see
+  equicast-support#147
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
   PR comment; on merge to `main`, `apply-dev` and `apply-prod` each wait for
