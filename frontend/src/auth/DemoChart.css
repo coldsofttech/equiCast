@@ -71,11 +71,29 @@
   box-shadow: var(--ec-shadow-sm);
 }
 
-.ec-demo-stats {
+.ec-demo-legend {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
   margin-bottom: var(--ec-s-12);
+}
+
+.ec-demo-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-6);
+  font-size: var(--ec-fs-13);
+  font-weight: 600;
+  color: var(--ec-text);
+}
+
+.ec-demo-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ec-accent);
+}
+
+.ec-demo-area {
+  fill: var(--ec-accent-soft);
 }
 
 .ec-demo-name {

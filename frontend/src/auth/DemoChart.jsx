@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getPublicDemoPrices } from "../api/publicMarket.js";
+import { readCachedDemoPrices, writeCachedDemoPrices } from "../utils/publicDemoPricesCache.js";
 import "./DemoChart.css";
 
 const WIDTH = 640;
@@ -27,7 +28,9 @@ function formatBarDate(dateStr) {
  * each ~1 month of real daily OHLC bars. Same daily-refresh cadence as
  * every other price shown once signed in (see the app's own market-data
  * disclaimer) — "live" here means "as current as equicast's data gets,"
- * not real-time/intraday.
+ * not real-time/intraday. Cached in localStorage for the rest of the
+ * calendar day (see publicDemoPricesCache.js), so repeat landing-page
+ * visits/reloads before sign-in don't re-hit this rate-limited endpoint.
  */
 function DemoChart() {
   const [tickers, setTickers] = useState(null);
@@ -38,10 +41,18 @@ function DemoChart() {
   const svgRef = useRef(null);
 
   useEffect(() => {
+    const cached = readCachedDemoPrices();
+    if (cached) {
+      setTickers(cached.tickers);
+      return undefined;
+    }
+
     let cancelled = false;
     getPublicDemoPrices()
       .then((result) => {
-        if (!cancelled) setTickers(result.tickers);
+        if (cancelled) return;
+        setTickers(result.tickers);
+        writeCachedDemoPrices(result);
       })
       .catch(() => {
         if (!cancelled) setError(true);
@@ -70,6 +81,8 @@ function DemoChart() {
   const yFor = (value) => PADDING + plotHeight * (1 - (value - min) / range);
 
   const linePath = bars.map((b, i) => `${i === 0 ? "M" : "L"}${xFor(i)},${yFor(b.close)}`).join(" ");
+  const bottomY = HEIGHT - PADDING;
+  const areaPath = bars.length ? `${linePath} L${xFor(bars.length - 1)},${bottomY} L${xFor(0)},${bottomY} Z` : "";
 
   const first = bars[0];
   const last = bars[bars.length - 1];
@@ -92,8 +105,8 @@ function DemoChart() {
       <span className="ec-section-eyebrow">See it in action</span>
       <h2 className="ec-features-title">Real tickers, tracked the way equiCast tracks them</h2>
       <p className="ec-demo-sub">
-        Live equiCast data for AAPL, NVDA and VOO — refreshed on the same daily ingestion cycle as
-        every price you'd see once signed in, not a real-time/intraday feed.
+        Real prices for AAPL, NVDA and VOO, updated once a day — the same prices you'd see once
+        signed in, just not live, minute-by-minute quotes.
       </p>
 
       <div className="ec-demo-card">
@@ -121,29 +134,26 @@ function DemoChart() {
                 ))}
               </div>
               <div className="ec-chart-toggle" role="group" aria-label="Chart type">
-                <button
-                  type="button"
-                  className={`ec-chart-toggle-btn${chartType === "candle" ? " is-active" : ""}`}
-                  onClick={() => setChartType("candle")}
-                >
-                  Candles
-                </button>
-                <button
-                  type="button"
-                  className={`ec-chart-toggle-btn${chartType === "line" ? " is-active" : ""}`}
-                  onClick={() => setChartType("line")}
-                >
-                  Line
-                </button>
+                {["line", "area", "candle"].map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    className={`ec-chart-toggle-btn${chartType === type ? " is-active" : ""}`}
+                    onClick={() => setChartType(type)}
+                  >
+                    {type === "candle" ? "Candles" : type === "line" ? "Line" : "Area"}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="ec-demo-stats">
-              <span className="ec-demo-name">
+            <div className="ec-demo-legend">
+              <span className="ec-demo-legend-item">
+                <span className="ec-demo-dot" aria-hidden="true" />
                 {ticker.name} <span className="ec-demo-symbol">{ticker.ticker}</span>
-              </span>
-              <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
-                {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
+                <span className={`ec-chart-change${isUp ? " is-up" : " is-down"}`}>
+                  {isUp ? "▲" : "▼"} {Math.abs(changePct).toFixed(1)}%
+                </span>
               </span>
             </div>
 
@@ -154,7 +164,9 @@ function DemoChart() {
               onMouseMove={handleMove}
               onMouseLeave={() => setHoverIndex(null)}
               role="img"
-              aria-label={`${chartType === "candle" ? "Candlestick" : "Line"} chart for ${ticker.name}`}
+              aria-label={`${
+                chartType === "candle" ? "Candlestick" : chartType === "area" ? "Area" : "Line"
+              } chart for ${ticker.name}`}
             >
               {[0.25, 0.5, 0.75].map((frac) => (
                 <line
@@ -167,9 +179,11 @@ function DemoChart() {
                 />
               ))}
 
-              {chartType === "line" ? (
+              {chartType === "area" && <path d={areaPath} className="ec-demo-area" />}
+              {(chartType === "line" || chartType === "area") && (
                 <path d={linePath} className="ec-chart-line" fill="none" />
-              ) : (
+              )}
+              {chartType === "candle" &&
                 bars.map((b, i) => (
                   <g key={labels[i]}>
                     <line
@@ -187,8 +201,7 @@ function DemoChart() {
                       className={b.close >= b.open ? "ec-chart-candle-up" : "ec-chart-candle-down"}
                     />
                   </g>
-                ))
-              )}
+                ))}
 
               {hoverIndex !== null && (
                 <line

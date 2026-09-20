@@ -3,6 +3,7 @@ import CandlestickSpearIcon from "../components/brand/CandlestickSpearIcon.jsx";
 import PublicHeader from "../components/shell/PublicHeader.jsx";
 import SiteFooter from "../components/shell/SiteFooter.jsx";
 import DemoChart from "./DemoChart.jsx";
+import RoadmapCarousel from "./RoadmapCarousel.jsx";
 import "./SignInScreen.css";
 
 const FEATURES = [
@@ -35,7 +36,7 @@ const FEATURES = [
   },
   {
     title: "Risk & valuation metrics",
-    desc: "Volatility, Sharpe ratio, max drawdown and CAGR — computed for every ticker you follow.",
+    desc: "Volatility, Sharpe ratio, max drawdown and CAGR from 1 to 10 years — computed for every ticker you follow.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
         <path d="M4 16V9M10 16V4M16 16v-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
@@ -44,7 +45,7 @@ const FEATURES = [
   },
   {
     title: "Dividends & corporate events",
-    desc: "Ex-dividend dates, earnings, rating changes and splits, tracked automatically.",
+    desc: "Ex-dividend dates, earnings, withholding tax rates and splits, tracked automatically.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
         <rect x="2.5" y="3.5" width="15" height="14" rx="2" stroke="currentColor" strokeWidth="1.6" />
@@ -90,7 +91,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "Import from CSV or Trading 212",
+    title: "Import Transactions",
     desc: "Bring in your existing transaction history in minutes — no manual re-entry.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
@@ -102,6 +103,36 @@ const FEATURES = [
           strokeLinejoin="round"
         />
         <path d="M3 13.5v1.8a1.7 1.7 0 001.7 1.7h10.6a1.7 1.7 0 001.7-1.7v-1.8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    title: "Buy/sell ratings",
+    desc: "See the current analyst consensus — buy, hold or sell — for every ticker you follow.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <path d="M6 13V7M6 7L3.5 9.5M6 7l2.5 2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M14 7v6M14 13l2.5-2.5M14 13l-2.5-2.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    title: "Diversification & benchmarking",
+    desc: "See your sector breakdown and how your portfolio stacks up against a benchmark.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <circle cx="10" cy="10" r="7" stroke="currentColor" strokeWidth="1.6" />
+        <path d="M10 3.2A6.8 6.8 0 0116.8 10h-6.8z" fill="currentColor" opacity="0.35" />
+        <path d="M10 10l4.8 4.8" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeDasharray="1.5 2" />
+      </svg>
+    ),
+  },
+  {
+    title: "Transaction-level tracking",
+    desc: "View a position's average cost basis, or drill into every individual buy and sell.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <path d="M4 5.5h12M4 10h12M4 14.5h8" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
       </svg>
     ),
   },
@@ -127,7 +158,7 @@ const ROADMAP = [
     title: "Fundamentals & screening",
     items: [
       "Company financials and key statistics for every holding",
-      "Analyst ratings and price targets",
+      "Analyst price targets",
       "Screeners to surface top performers by sector or growth",
     ],
   },
@@ -135,7 +166,7 @@ const ROADMAP = [
     tag: "Income & tax",
     title: "Dividend income & UK tax",
     items: [
-      "A payout calendar with 5-year income projections",
+      "Consolidated 5-year income projections, not just per-payout totals",
       "UK dividend allowance and capital gains tax, with a household-level view",
       "Cumulative income visualised across your whole portfolio",
     ],
@@ -144,7 +175,7 @@ const ROADMAP = [
     tag: "Unique to equiCast",
     title: "Portfolio intelligence",
     items: [
-      "Custom watchlists for tickers you don't hold yet",
+      "Custom watchlists",
       "Forecasts and a future-value growth simulator",
       "Sold-candidate and rebalancing suggestions",
       "Smarter sector-diversification and benchmark-comparison scoring",
@@ -155,7 +186,7 @@ const ROADMAP = [
     title: "More to track, everywhere you are",
     items: [
       "Futures, alongside stocks, ETFs and FX",
-      "Broker-linked import (starting with Trading 212), plus splits, spin-offs and other corporate actions",
+      "Broker-linked import, plus splits, spin-offs and other corporate actions",
       "Fully responsive layouts for phone and tablet",
     ],
   },
@@ -213,7 +244,15 @@ function SignInScreen({ onSignIn, error }) {
               </button>
             </div>
             <p className="ec-hero-fine">
-              Secured by Auth0 — by signing in you agree to the Terms and Privacy Notice.
+              Secured by Auth0 — by signing in you agree to the{" "}
+              <a href="https://www.okta.com/legal/terms-of-service/" target="_blank" rel="noopener noreferrer">
+                Terms
+              </a>{" "}
+              and{" "}
+              <a href="https://www.okta.com/legal/privacy-policy/" target="_blank" rel="noopener noreferrer">
+                Privacy Notice
+              </a>
+              .
             </p>
           </div>
 
@@ -269,19 +308,7 @@ function SignInScreen({ onSignIn, error }) {
           Core accounts, market data and risk metrics are live today — here&rsquo;s everywhere
           equiCast is headed next.
         </p>
-        <div className="ec-roadmap-grid">
-          {ROADMAP.map((group) => (
-            <div className="ec-roadmap-card" key={group.title}>
-              <span className="ec-roadmap-tag">{group.tag}</span>
-              <h3>{group.title}</h3>
-              <ul className="ec-roadmap-list">
-                {group.items.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
+        <RoadmapCarousel groups={ROADMAP} />
       </section>
 
       <SiteFooter />

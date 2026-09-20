@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getPublicDemoPrices } from "../api/publicMarket.js";
 import DemoChart from "./DemoChart.jsx";
 
@@ -31,6 +31,10 @@ const TICKERS = [
     prices: [{ date: "2026-01-02", open: 400, high: 405, low: 398, close: 402 }],
   },
 ];
+
+beforeEach(() => {
+  localStorage.clear();
+});
 
 afterEach(() => {
   vi.restoreAllMocks();

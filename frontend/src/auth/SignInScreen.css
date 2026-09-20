@@ -322,6 +322,7 @@
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
+  scroll-margin-top: var(--ec-public-header-h);
 }
 
 .ec-features-title {
@@ -401,14 +402,42 @@
   font-size: var(--ec-fs-14);
 }
 
-.ec-roadmap-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+.ec-roadmap-carousel {
+  --roadmap-card-w: 280px;
+  display: flex;
+  flex-direction: column;
   gap: var(--ec-s-16);
+}
+
+.ec-roadmap-track {
+  display: flex;
+  gap: var(--ec-s-16);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
   text-align: left;
+  cursor: grab;
+  padding-bottom: 2px;
+  /* Reserves trailing scroll room so every card — including the last
+     few, which would otherwise run out of content to its right — can
+     still be scrolled flush to the start. Without this, the browser
+     clamps scrollLeft once the tail of the track fills the viewport,
+     so the dots for those trailing cards land on the same position. */
+  padding-right: calc(100% - var(--roadmap-card-w));
+}
+
+.ec-roadmap-track::-webkit-scrollbar {
+  display: none;
+}
+
+.ec-roadmap-track:active {
+  cursor: grabbing;
 }
 
 .ec-roadmap-card {
+  flex: 0 0 var(--roadmap-card-w);
+  scroll-snap-align: start;
   padding: var(--ec-s-20);
   border-radius: var(--ec-r-12);
   border: 1px solid var(--ec-border);
@@ -475,6 +504,34 @@
   background: var(--ec-purple);
 }
 
+.ec-roadmap-dots {
+  display: flex;
+  justify-content: center;
+  gap: var(--ec-s-8);
+}
+
+.ec-roadmap-dot {
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: var(--ec-border-strong);
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    transform 0.15s;
+}
+
+.ec-roadmap-dot:hover {
+  background: var(--ec-text-subtle);
+}
+
+.ec-roadmap-dot--active {
+  background: var(--ec-purple);
+  transform: scale(1.25);
+}
+
 /* ----- Responsive ----- */
 @media (max-width: 860px) {
   .ec-hero-grid {
@@ -516,6 +573,10 @@
 
   .ec-hero-title {
     font-size: clamp(1.75rem, 1.3rem + 4vw, 2.5rem);
+  }
+
+  .ec-roadmap-carousel {
+    --roadmap-card-w: calc(100vw - 64px);
   }
 }
 
