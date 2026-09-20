@@ -55,22 +55,25 @@ permissions:
   contents: read
 
 jobs:
-  # One boolean output per package - each true only when that package's
-  # own directory (or the shared lockfile/composite action/this workflow
-  # file) changed in this push/PR, so the test matrix below only runs the
-  # package(s) actually affected instead of every package on any relevant
-  # change.
+  # `packages` is dorny/paths-filter's `changes` output - a JSON array of
+  # every filter name below whose own directory (or the shared lockfile/
+  # composite action/this workflow file) changed in this push/PR, e.g.
+  # '["datafeed","stock"]'. The test job's matrix is built directly from
+  # this array (fromJSON), so only the package(s) actually affected run,
+  # instead of every package on any relevant change.
+  #
+  # An earlier version of this workflow instead exposed one boolean output
+  # per package and gated each fixed matrix leg with
+  # `if: needs.changes.outputs[matrix.name] == 'true'` - GitHub rejects
+  # that at parse time ("Unrecognized named-value: 'matrix'"): a job-level
+  # `if:` can't index into another context with a `matrix.*` key, since
+  # the matrix hasn't been resolved yet at that point. Building the matrix
+  # itself from the changes list sidesteps needing `matrix` in an `if:`
+  # at all.
   changes:
     runs-on: ubuntu-latest
     outputs:
-      datafeed: ${{ steps.filter.outputs.datafeed }}
-      metrics: ${{ steps.filter.outputs.metrics }}
-      dividends: ${{ steps.filter.outputs.dividends }}
-      events: ${{ steps.filter.outputs.events }}
-      stock: ${{ steps.filter.outputs.stock }}
-      etf: ${{ steps.filter.outputs.etf }}
-      fx: ${{ steps.filter.outputs.fx }}
-      benchmark: ${{ steps.filter.outputs.benchmark }}
+      packages: ${{ steps.filter.outputs.changes }}
     steps:
       - uses: dorny/paths-filter@v3
         id: filter
@@ -108,12 +111,12 @@ jobs:
 
   test:
     needs: [changes]
-    if: needs.changes.outputs[matrix.name] == 'true'
+    if: needs.changes.outputs.packages != '[]'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        name: [datafeed, metrics, dividends, events, stock, etf, fx, benchmark]
+        name: ${{ fromJSON(needs.changes.outputs.packages) }}
     steps:
       - uses: actions/checkout@v4
 
