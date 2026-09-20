@@ -410,6 +410,8 @@ tickers:
     isin: US6703461052
   - ticker: NWG
     isin: GB00BM8PJY71
+  - ticker: NWG.L
+    isin: GB00BM8PJY71
   - ticker: NXT.L
     isin: GB0032089863
   - ticker: O

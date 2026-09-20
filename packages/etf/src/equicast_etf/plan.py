@@ -33,6 +33,17 @@ def chunk_tickers(
     return [tickers[i : i + effective_size] for i in range(0, len(tickers), effective_size)]
 
 
+def filter_tickers(tickers: list[ETFTicker], keys: str | None) -> list[ETFTicker]:
+    """Restrict `tickers` to the given `;`-separated list of ticker keys
+    (case-insensitive), or return `tickers` unchanged when `keys` is empty —
+    lets a manual run target just-added holdings (e.g. for a full load)
+    instead of every configured ticker."""
+    if not keys:
+        return tickers
+    wanted = {key.strip().upper() for key in keys.split(";") if key.strip()}
+    return [ticker for ticker in tickers if ticker.key in wanted]
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Split the configured ETF tickers into chunks for parallel processing."
@@ -46,6 +57,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
         type=int,
         default=GITHUB_ACTIONS_MAX_MATRIX_JOBS,
         help="Hard cap on the number of chunks (GitHub Actions allows at most 256 matrix jobs).",
+    )
+    parser.add_argument(
+        "--tickers",
+        default=None,
+        help="Optional `;`-separated list of tickers (e.g. 'AAPL;MSFT') to restrict the run to. "
+        "Omit to run against every ticker in --config.",
     )
     return parser
 
@@ -64,7 +81,7 @@ def _serialize_ticker(ticker: ETFTicker) -> str | dict:
 
 def main() -> None:
     args = build_arg_parser().parse_args()
-    tickers = load_etf_tickers(args.config)
+    tickers = filter_tickers(load_etf_tickers(args.config), args.tickers)
     chunks = chunk_tickers(tickers, args.chunk_size, args.max_chunks)
 
     print(json.dumps([[_serialize_ticker(ticker) for ticker in chunk] for chunk in chunks]))

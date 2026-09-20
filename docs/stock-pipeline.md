@@ -277,6 +277,7 @@ recomputing it.
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year. Ignored when `forecast_only` is set |
 | `chunk_size` | `300` | Target stock tickers per parallel chunk |
+| `tickers` | *(empty)* | Optional `;`-separated list of tickers (e.g. `NWG.L;AAPL`) to restrict this run to, instead of every ticker in the config — useful for a full load of just a newly-added holding. When set, `build-catalog` merges this run's tickers into the existing catalog instead of replacing it outright |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |

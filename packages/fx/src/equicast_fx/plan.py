@@ -31,6 +31,17 @@ def chunk_pairs(pairs: list[FxPair], chunk_size: int, max_chunks: int) -> list[l
     return [pairs[i : i + effective_size] for i in range(0, len(pairs), effective_size)]
 
 
+def filter_pairs(pairs: list[FxPair], keys: str | None) -> list[FxPair]:
+    """Restrict `pairs` to the given `;`-separated list of pair keys (e.g.
+    'GBPUSD;EURUSD', case-insensitive), or return `pairs` unchanged when
+    `keys` is empty — lets a manual run target specific pairs (e.g. for a
+    full load) instead of every configured pair."""
+    if not keys:
+        return pairs
+    wanted = {key.strip().upper() for key in keys.split(";") if key.strip()}
+    return [pair for pair in pairs if pair.key in wanted]
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Split the configured FX pairs into chunks for parallel processing."
@@ -45,12 +56,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=GITHUB_ACTIONS_MAX_MATRIX_JOBS,
         help="Hard cap on the number of chunks (GitHub Actions allows at most 256 matrix jobs).",
     )
+    parser.add_argument(
+        "--tickers",
+        default=None,
+        help="Optional `;`-separated list of pair keys (e.g. 'GBPUSD;EURUSD') to restrict the "
+        "run to. Omit to run against every pair in --config.",
+    )
     return parser
 
 
 def main() -> None:
     args = build_arg_parser().parse_args()
-    pairs = load_fx_pairs(args.config)
+    pairs = filter_pairs(load_fx_pairs(args.config), args.tickers)
     chunks = chunk_pairs(pairs, args.chunk_size, args.max_chunks)
 
     print(

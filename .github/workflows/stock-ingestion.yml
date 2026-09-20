@@ -35,6 +35,9 @@ on:
       chunk_size:
         description: "Target stock tickers per parallel chunk"
         default: "300"
+      tickers:
+        description: "Optional: restrict this run to specific tickers, separated by ; (e.g. NWG.L;AAPL). Leave blank to run against every configured ticker."
+        default: ""
       max_workers:
         description: "Concurrent fetches within each container"
         default: "5"
@@ -72,6 +75,7 @@ jobs:
       bucket: ${{ steps.env.outputs.bucket }}
       run_ingest: ${{ steps.env.outputs.run_ingest }}
       run_forecasting: ${{ steps.env.outputs.run_forecasting }}
+      targeted: ${{ steps.env.outputs.targeted }}
     steps:
       - uses: actions/checkout@v4
 
@@ -133,6 +137,15 @@ jobs:
           echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
           echo "run_ingest=$RUN_INGEST" >> "$GITHUB_OUTPUT"
           echo "run_forecasting=$RUN_FORECASTING" >> "$GITHUB_OUTPUT"
+          # Whether this run is restricted to a "tickers" subset — the
+          # build-catalog job below reads this to merge into the existing
+          # catalog instead of replacing it outright, since a targeted run's
+          # output only ever covers part of the full ticker list.
+          if [ -n "${{ github.event.inputs.tickers }}" ]; then
+            echo "targeted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "targeted=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compute stock ticker chunks
         id: plan
@@ -141,7 +154,8 @@ jobs:
           CHUNKS=$(uv run equicast-stock-plan \
             --config "${{ steps.env.outputs.config }}" \
             --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
-            --max-chunks 256)
+            --max-chunks 256 \
+            --tickers "${{ github.event.inputs.tickers || '' }}")
           echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
           if [ "$CHUNKS" = "[]" ]; then
             echo "has_chunks=false" >> "$GITHUB_OUTPUT"
@@ -243,6 +257,11 @@ jobs:
   # Skipped on a forecasting-only run (Saturday, or manual forecast_only) —
   # ingest didn't publish any profile artifacts that run, so there's nothing
   # new to rebuild the catalog from.
+  #
+  # A targeted run (plan.outputs.targeted, from the "tickers" input) only
+  # ever fetched a subset of the full ticker list, so its build-catalog step
+  # below passes --merge instead of letting equicast-core-build-catalog
+  # replace the whole catalog with just that subset.
   build-catalog:
     needs: [plan, ingest]
     if: needs.plan.outputs.has_chunks == 'true' && needs.plan.outputs.run_ingest == 'true'
@@ -281,7 +300,8 @@ jobs:
           uv run equicast-core-build-catalog \
             --asset-class stock \
             --output-dir "${{ github.workspace }}/output" \
-            --bucket "${{ needs.plan.outputs.bucket }}"
+            --bucket "${{ needs.plan.outputs.bucket }}" \
+            ${{ needs.plan.outputs.targeted == 'true' && '--merge' || '' }}
 
       # GitHub issue #215: consolidate tickers with no ISIN on record and
       # notify via a persistent parent GitHub issue with one native

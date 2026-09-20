@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from equicast_etf.config import ETFTicker
-from equicast_etf.plan import _serialize_ticker, chunk_tickers
+from equicast_etf.plan import _serialize_ticker, chunk_tickers, filter_tickers
 
 
 def _tickers(n: int) -> list[ETFTicker]:
@@ -34,6 +34,23 @@ def test_chunk_tickers_rejects_invalid_arguments() -> None:
         chunk_tickers(_tickers(1), chunk_size=0, max_chunks=256)
     with pytest.raises(ValueError):
         chunk_tickers(_tickers(1), chunk_size=1, max_chunks=0)
+
+
+def test_filter_tickers_returns_unchanged_when_keys_is_none() -> None:
+    tickers = _tickers(3)
+    assert filter_tickers(tickers, None) == tickers
+
+
+def test_filter_tickers_restricts_to_matching_keys() -> None:
+    tickers = [ETFTicker(ticker="VOO"), ETFTicker(ticker="QQQ"), ETFTicker(ticker="VUSA.L")]
+
+    assert [t.ticker for t in filter_tickers(tickers, "QQQ;VUSA.L")] == ["QQQ", "VUSA.L"]
+
+
+def test_filter_tickers_is_case_insensitive_and_ignores_blank_entries() -> None:
+    tickers = [ETFTicker(ticker="VOO"), ETFTicker(ticker="QQQ")]
+
+    assert [t.ticker for t in filter_tickers(tickers, " voo ; ;qqq ")] == ["VOO", "QQQ"]
 
 
 def test_serialize_ticker_plain_when_no_overrides() -> None:
@@ -106,3 +123,32 @@ def test_plan_cli_prints_json_chunks(tmp_path: Path, capsys: pytest.CaptureFixtu
 
     output = json.loads(capsys.readouterr().out)
     assert output == [["VOO"], ["QQQ"]]
+
+
+def test_plan_cli_restricts_to_given_tickers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from equicast_etf.plan import main
+
+    config = tmp_path / "etfs.yaml"
+    config.write_text("tickers:\n  - VOO\n  - QQQ\n  - VUSA.L\n")
+
+    import sys
+
+    old_argv = sys.argv
+    sys.argv = [
+        "equicast-etf-plan",
+        "--config",
+        str(config),
+        "--chunk-size",
+        "300",
+        "--tickers",
+        "QQQ;VUSA.L",
+    ]
+    try:
+        main()
+    finally:
+        sys.argv = old_argv
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == [["QQQ", "VUSA.L"]]
