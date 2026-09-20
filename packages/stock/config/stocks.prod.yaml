@@ -18,12 +18,607 @@
 #   - ticker: NVDA
 #     isin: US67066G1040
 tickers:
-  - AAPL
-  - MSFT
-  - GOOGL
-  - AMZN
-  - NVDA
-  - META
-  - TSLA
-  - QCOM
-  - AVGO
+  - ticker: AAPL
+    isin: US0378331005
+  - ticker: MSFT
+    isin: US5949181045
+  - ticker: GOOGL
+    isin: US02079K3059
+  - ticker: AMZN
+    isin: US0231351067
+  - ticker: NVDA
+    isin: US67066G1040
+  - ticker: META
+    isin: US30303M1027
+  - ticker: TSLA
+    isin: US88160R1014
+  - ticker: QCOM
+    isin: US7475251036
+  - ticker: AVGO
+    isin: US11135F1012
+  - ticker: AAL.L
+    isin: GB00BTK05J60
+  - ticker: ABBV
+    isin: US00287Y1091
+  - ticker: ABF.L
+    isin: GB0006731235
+  - ticker: ABT
+    isin: US0028241000
+  - ticker: ADBE
+    isin: US00724F1012
+  - ticker: ADC
+    isin: US0084921008
+  - ticker: ADM.L
+    isin: GB00B02J6398
+  - ticker: ADP
+    isin: US0530151036
+  - ticker: ADS.DE
+    isin: DE000A1EWWW0
+  - ticker: AEM
+    isin: CA0084741085
+  - ticker: AEP
+    isin: US0255371017
+  - ticker: AFL
+    isin: US0010551028
+  - ticker: AGNC
+    isin: US00123Q1040
+  - ticker: AMD
+    isin: US0079031078
+  - ticker: AMH
+    isin: US02665T3068
+  - ticker: AMT
+    isin: US03027X1000
+  - ticker: ANET
+    isin: US0404132054
+  - ticker: APD
+    isin: US0091581068
+  - ticker: APLD
+    isin: US0381692070
+  - ticker: APP
+    isin: US03831W1080
+  - ticker: ARCC
+    isin: US04010L1035
+  - ticker: ARE
+    isin: US0152711091
+  - ticker: ASML
+    isin: USN070592100
+  - ticker: ATO.PA
+    isin: FR001400X2S4
+  - ticker: AV.L
+    isin: GB00BPQY8M80
+  - ticker: AVB
+    isin: US0534841012
+  - ticker: AXP
+    isin: US0258161092
+  - ticker: AZN
+    isin: GB0009895292
+  - ticker: BA.L
+    isin: GB0002634946
+  - ticker: BAC
+    isin: US0605051046
+  - ticker: BARC.L
+    isin: GB0031348658
+  - ticker: BATS.L
+    isin: GB0002875804
+  - ticker: BBY.L
+    isin: GB0000961622
+  - ticker: BCAT
+    isin: US09260U1097
+  - ticker: BEZ.L
+    isin: GB00BYQ0JC66
+  - ticker: BKNG
+    isin: US09857L1089
+  - ticker: BKR
+    isin: US05722G1004
+  - ticker: BLK
+    isin: US09290D1019
+  - ticker: BME.L
+    isin: JE00BVSYJW51
+  - ticker: BMO
+    isin: CA0636711016
+  - ticker: BMY
+    isin: US1101221083
+  - ticker: BNS
+    isin: CA0641491075
+  - ticker: BNY
+    isin: US0640581007
+  - ticker: BP
+    isin: GB0007980591
+  - ticker: BREE.L
+    isin: GB00BM8NFJ84
+  - ticker: BRX
+    isin: US11120U1051
+  - ticker: BT-A.L
+    isin: GB0030913577
+  - ticker: BWLP
+    isin: SGXZ69436764
+  - ticker: BYIT.L
+    isin: GB00BMH18Q19
+  - ticker: C
+    isin: US1729674242
+  - ticker: CAH
+    isin: US14149Y1082
+  - ticker: CAT
+    isin: US1491231015
+  - ticker: CB
+    isin: CH0044328745
+  - ticker: CCI
+    isin: US22822V1017
+  - ticker: CCJ
+    isin: CA13321L1085
+  - ticker: CCL
+    isin: BMG2004J1036
+  - ticker: CCT.L
+    isin: GB0008976119
+  - ticker: CEG
+    isin: US21037T1097
+  - ticker: CHD
+    isin: US1713401024
+  - ticker: CL
+    isin: US1941621039
+  - ticker: CLX
+    isin: US1890541097
+  - ticker: CMG
+    isin: US1696561059
+  - ticker: CNQ
+    isin: CA1363851017
+  - ticker: COIN
+    isin: US19260Q1076
+  - ticker: COST
+    isin: US22160K1051
+  - ticker: CPT
+    isin: US1331311027
+  - ticker: CRM
+    isin: US79466L3024
+  - ticker: CRWD
+    isin: US22788C1053
+  - ticker: CSCO
+    isin: US17275R1023
+  - ticker: CTO
+    isin: US22948Q1013
+  - ticker: CVX
+    isin: US1667641005
+  - ticker: DANOY
+    isin: US23636T1007
+  - ticker: DDOG
+    isin: US23804L1035
+  - ticker: DE
+    isin: US2441991054
+  - ticker: DEC
+    isin: US25520W1071
+  - ticker: DHR
+    isin: US2358511028
+  - ticker: DIS
+    isin: US2546871060
+  - ticker: DLR
+    isin: US2538681030
+  - ticker: DNLM.L
+    isin: GB00B1CKQ739
+  - ticker: DOCN
+    isin: US25402D1028
+  - ticker: DOTD.L
+    isin: GB00B3W40C23
+  - ticker: DRI
+    isin: US2371941053
+  - ticker: DUK
+    isin: US26441C2044
+  - ticker: DX
+    isin: US26817Q8868
+  - ticker: DXCM
+    isin: US2521311074
+  - ticker: EA
+    isin: US2855121099
+  - ticker: ECL
+    isin: US2788651006
+  - ticker: ED
+    isin: US2091151041
+  - ticker: EFC
+    isin: US28852N1090
+  - ticker: EMR
+    isin: US2910111044
+  - ticker: ENPH
+    isin: US29355A1079
+  - ticker: EPR
+    isin: US26884U1097
+  - ticker: EQIX
+    isin: US29444U7000
+  - ticker: EQNR
+    isin: US29446M1027
+  - ticker: ESS
+    isin: US2971781057
+  - ticker: ETN
+    isin: IE00B8KQN827
+  - ticker: ETSY
+    isin: US29786A1060
+  - ticker: EXPE
+    isin: US30212P3038
+  - ticker: EZJ.L
+    isin: GB00B7KR2P84
+  - ticker: FCX
+    isin: US35671D8570
+  - ticker: FNV
+    isin: CA3518581051
+  - ticker: FQVLF
+    isin: CA3359341052
+  - ticker: FRES.L
+    isin: GB00B2QPKJ12
+  - ticker: FTC.L
+    isin: GB0003362992
+  - ticker: FTI
+    isin: GB00BDSFG982
+  - ticker: FTNT
+    isin: US34959E1091
+  - ticker: GAW.L
+    isin: GB0003718474
+  - ticker: GD
+    isin: US3695501086
+  - ticker: GE
+    isin: US3696043013
+  - ticker: GIS
+    isin: US3703341046
+  - ticker: GOOD
+    isin: US3765361080
+  - ticker: GPRK
+    isin: BMG383271050
+  - ticker: GSK
+    isin: GB00BN7SWP63
+  - ticker: GWW
+    isin: US3848021040
+  - ticker: H
+    isin: US4485791028
+  - ticker: HAFN
+    isin: SGXZ53070850
+  - ticker: HAS.L
+    isin: GB0004161021
+  - ticker: HD
+    isin: US4370761029
+  - ticker: HL
+    isin: US4227041062
+  - ticker: HLN
+    isin: GB00BMX86B70
+  - ticker: HLT
+    isin: US43300A2033
+  - ticker: HON
+    isin: US4385162056
+  - ticker: HONA
+    isin: US43849R1059
+  - ticker: HSBA.L
+    isin: GB0005405286
+  - ticker: HSY
+    isin: US4278661081
+  - ticker: HTGC
+    isin: US4270965084
+  - ticker: HVO.L
+    isin: GB00B9275X97
+  - ticker: IAG.MC
+    isin: ES0177542018
+  - ticker: IBE.MC
+    isin: ES0144580Y14
+  - ticker: IBM
+    isin: US4592001014
+  - ticker: IIPR
+    isin: US45781V1017
+  - ticker: IMB.L
+    isin: GB0004544929
+  - ticker: IMI.L
+    isin: GB00BGLP8L22
+  - ticker: INTC
+    isin: US4581401001
+  - ticker: INTU
+    isin: US4612021034
+  - ticker: INVH
+    isin: US46187W1071
+  - ticker: INVP.L
+    isin: GB00B17BBQ50
+  - ticker: ITW
+    isin: US4523081093
+  - ticker: IVR
+    isin: US46131B7047
+  - ticker: JEMI.L
+    isin: GB00B5ZZY915
+  - ticker: JNJ
+    isin: US4781601046
+  - ticker: JPM
+    isin: US46625H1005
+  - ticker: KAP.L
+    isin: US63253R2013
+  - ticker: KIM
+    isin: US49446R1095
+  - ticker: KMB
+    isin: US4943681035
+  - ticker: KNOS.L
+    isin: GB00BZ0D6727
+  - ticker: KO
+    isin: US1912161007
+  - ticker: LGEN.L
+    isin: GB0005603997
+  - ticker: LIN
+    isin: IE000S9YS762
+  - ticker: LIVE.L
+    isin: GB00BF0P7H59
+  - ticker: LLOY.L
+    isin: GB0008706128
+  - ticker: LLY
+    isin: US5324571083
+  - ticker: LOW
+    isin: US5486611073
+  - ticker: LTC
+    isin: US5021751020
+  - ticker: LYSDY
+    isin: US5510733075
+  - ticker: LYV
+    isin: US5380341090
+  - ticker: MA
+    isin: US57636Q1040
+  - ticker: MAIN
+    isin: US56035L1044
+  - ticker: MAR
+    isin: US5719032022
+  - ticker: MCD
+    isin: US5801351017
+  - ticker: MDB
+    isin: US60937P1066
+  - ticker: MDLZ
+    isin: US6092071058
+  - ticker: MICC
+    isin: NL0015002MS2
+  - ticker: MKS.L
+    isin: GB0031274896
+  - ticker: MLM
+    isin: US5732841060
+  - ticker: MMM
+    isin: US88579Y1010
+  - ticker: MNG.L
+    isin: GB00BKFB1C65
+  - ticker: MRK
+    isin: US58933Y1055
+  - ticker: MRNA
+    isin: US60770K1079
+  - ticker: MRVL
+    isin: US5738741041
+  - ticker: MS
+    isin: US6174464486
+  - ticker: NEE
+    isin: US65339F1012
+  - ticker: NEM
+    isin: US6516391066
+  - ticker: NESF.L
+    isin: GG00BJ0JVY01
+  - ticker: NESN.SW
+    isin: CH0038863350
+  - ticker: NET
+    isin: US18915M1071
+  - ticker: NFLX
+    isin: US64110L1061
+  - ticker: NG.L
+    isin: GB00BDR05C01
+  - ticker: NHYDY
+    isin: US6565316055
+  - ticker: NIO
+    isin: US62914V1061
+  - ticker: NKE
+    isin: US6541061031
+  - ticker: NLY
+    isin: US0357108390
+  - ticker: NOVN.SW
+    isin: CH0012005267
+  - ticker: NOW
+    isin: US81762P1021
+  - ticker: NUE
+    isin: US6703461052
+  - ticker: NWG
+    isin: GB00BM8PJY71
+  - ticker: NXT.L
+    isin: GB0032089863
+  - ticker: O
+    isin: US7561091049
+  - ticker: ORIT.L
+    isin: GB00BJM02935
+  - ticker: OSB.L
+    isin: GB00BLDRH360
+  - ticker: OXIG.L
+    isin: GB0006650450
+  - ticker: OXLC
+    isin: US6915438476
+  - ticker: PAAS
+    isin: CA6979001089
+  - ticker: PANW
+    isin: US6974351057
+  - ticker: PEP
+    isin: US7134481081
+  - ticker: PFE
+    isin: US7170811035
+  - ticker: PG
+    isin: US7427181091
+  - ticker: PH
+    isin: US7010941042
+  - ticker: PLD
+    isin: US74340W1036
+  - ticker: PLNT
+    isin: US72703H1014
+  - ticker: PLTR
+    isin: US69608A1088
+  - ticker: PNL.L
+    isin: GB00BM8B5H06
+  - ticker: PNR
+    isin: IE00BLS09M33
+  - ticker: PPG
+    isin: US6935061076
+  - ticker: PPL
+    isin: US69351T1060
+  - ticker: PRV.L
+    isin: GB0006963689
+  - ticker: PYPL
+    isin: US70450Y1038
+  - ticker: QSR
+    isin: CA76131D1033
+  - ticker: RCL
+    isin: LR0008862868
+  - ticker: REG
+    isin: US7588491032
+  - ticker: RGLD
+    isin: US7802871084
+  - ticker: RGTI
+    isin: US76655K1034
+  - ticker: RIO
+    isin: GB0007188757
+  - ticker: RITM
+    isin: US64828T2015
+  - ticker: RIVN
+    isin: US76954A1034
+  - ticker: RKT.L
+    isin: GB00BSZBP530
+  - ticker: RNWH.L
+    isin: GB0005359004
+  - ticker: ROK
+    isin: US7739031091
+  - ticker: ROP
+    isin: US7766961061
+  - ticker: RPM
+    isin: US7496851038
+  - ticker: RR.L
+    isin: GB00B63H8491
+  - ticker: RSI
+    isin: US7820111000
+  - ticker: RY
+    isin: CA7800871021
+  - ticker: SAN
+    isin: ES0113900J37
+  - ticker: SBAC
+    isin: US78410G1040
+  - ticker: SBRY.L
+    isin: GB00B019KW72
+  - ticker: SBSW
+    isin: US82575P1075
+  - ticker: SBUX
+    isin: US8552441094
+  - ticker: SCCO
+    isin: US84265V1052
+  - ticker: SCT.L
+    isin: GB00BYZDVK82
+  - ticker: SDLF.L
+    isin: GB00BGXQNP29
+  - ticker: SGLN.L
+    isin: IE00B4ND3602
+  - ticker: SGRO.L
+    isin: GB00B5ZN1N88
+  - ticker: SHEL
+    isin: GB00BP6MXD84
+  - ticker: SHOP
+    isin: CA82509L1076
+  - ticker: SHW
+    isin: US8243481061
+  - ticker: SLB
+    isin: AN8068571086
+  - ticker: SMT.L
+    isin: GB00BLDYK618
+  - ticker: SMWH.L
+    isin: GB00B2PDGW16
+  - ticker: SNOW
+    isin: US8334451098
+  - ticker: SOLS
+    isin: US83443Q1031
+  - ticker: SPG
+    isin: US8288061091
+  - ticker: SREI.L
+    isin: GB00B01HM147
+  - ticker: SSE.L
+    isin: GB0007908733
+  - ticker: STAG
+    isin: US85254J1025
+  - ticker: STX
+    isin: IE00BKVD2N49
+  - ticker: SUP.L
+    isin: GB00BDT89C08
+  - ticker: SYY
+    isin: US8718291078
+  - ticker: T
+    isin: US00206R1023
+  - ticker: TD
+    isin: CA8911605092
+  - ticker: TEAM
+    isin: US0494681010
+  - ticker: TENB
+    isin: US88025T1025
+  - ticker: TGT
+    isin: US87612E1064
+  - ticker: TJX
+    isin: US8725401090
+  - ticker: TMO
+    isin: US8835561023
+  - ticker: TRMD
+    isin: GB00BZ3CNK81
+  - ticker: TRNO
+    isin: US88146M1018
+  - ticker: TROW
+    isin: US74144T1088
+  - ticker: TSCO.L
+    isin: GB00BLGZ9862
+  - ticker: TSM
+    isin: US8740391003
+  - ticker: TTWO
+    isin: US8740541094
+  - ticker: TWO
+    isin: US90187B8046
+  - ticker: TXN
+    isin: US8825081040
+  - ticker: UBER
+    isin: US90353T1007
+  - ticker: UDR
+    isin: US9026531049
+  - ticker: UI
+    isin: US90353W1036
+  - ticker: UKW.L
+    isin: GB00B8SC6K54
+  - ticker: ULTA
+    isin: US90384S3031
+  - ticker: ULVR.L
+    isin: GB00BVZK7T90
+  - ticker: UNH
+    isin: US91324P1021
+  - ticker: UPST
+    isin: US91680M1071
+  - ticker: V
+    isin: US92826C8394
+  - ticker: VALE
+    isin: US91912E1055
+  - ticker: VLX.L
+    isin: GB0009390070
+  - ticker: VMC
+    isin: US9291601097
+  - ticker: VMRK
+    isin: US29476L1070
+  - ticker: VOD
+    isin: GB00BH4HKS39
+  - ticker: VRT
+    isin: US92537N1081
+  - ticker: VRTX
+    isin: US92532F1003
+  - ticker: VTR
+    isin: US92276F1003
+  - ticker: VZ
+    isin: US92343V1044
+  - ticker: W7L.L
+    isin: GB00BYMF3676
+  - ticker: WELL
+    isin: US95040Q1040
+  - ticker: WFC
+    isin: US9497461015
+  - ticker: WING
+    isin: US9741551033
+  - ticker: WISE.L
+    isin: JE00BQKY0816
+  - ticker: WMT
+    isin: US9311421039
+  - ticker: WPM
+    isin: CA9628791027
+  - ticker: XOM
+    isin: US30233Q1085
+  - ticker: XYL
+    isin: US98419M1009
+  - ticker: YU.L
+    isin: GB00BYQDPD80
+  - ticker: YUM
+    isin: US9884981013
+  - ticker: ZIM
+    isin: IL0065100930

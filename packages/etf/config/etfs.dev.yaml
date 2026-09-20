@@ -10,8 +10,13 @@
 #   - ticker: VOO
 #     isin: US9229083632
 tickers:
-  - VOO
-  - QQQ
-  - VTI
-  - AGG
-  - GLD
+  - ticker: VOO
+    isin: US9229083632
+  - ticker: QQQ
+    isin: US46090E1038
+  - ticker: VTI
+    isin: US9229087690
+  - ticker: AGG
+    isin: US4642872265
+  - ticker: GLD
+    isin: US78463V1070
