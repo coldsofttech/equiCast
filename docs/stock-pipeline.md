@@ -28,7 +28,7 @@ Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet,
 GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/stock/Dockerfile` containerizes the CLI. `stock-image.yml` builds
+`packages/stock/Dockerfile` containerizes the CLI. `images.yml` builds
 and pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-stock`).
 The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
@@ -248,10 +248,12 @@ configure there either.
 
 ## Publishing the image
 
-`stock-image.yml` builds and pushes `equicast-stock` to GHCR automatically on
-changes to `packages/datafeed/` or `packages/stock/` on `main`, or on demand
-via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
-*Run workflow*).
+`images.yml` builds and pushes `equicast-stock` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/stock/` on `main` or a
+`dev/**` release branch (pushing `:dev` instead of `:latest` on the
+latter — see `.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `stock` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 

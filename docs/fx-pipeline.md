@@ -24,7 +24,7 @@ Parquet files (profile.parquet, price.parquet, metrics.parquet)
 GitHub Actions (fx-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/fx/Dockerfile` containerizes the CLI. `fx-image.yml` builds and
+`packages/fx/Dockerfile` containerizes the CLI. `images.yml` builds and
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-fx`). The
 FX pairs config isn't baked in as the only input — pairs can also be passed
 at runtime via `--pairs-json`, which is how the scheduled workflow feeds each
@@ -179,10 +179,12 @@ error if the relevant variable is unset, instead of the `Invalid bucket name
 
 ## Publishing the image
 
-`fx-image.yml` builds and pushes `equicast-fx` to GHCR automatically on
-changes to `packages/datafeed/` or `packages/fx/` on `main`, or on demand via
-its `workflow_dispatch` trigger (Actions tab → *Build FX Image* → *Run
-workflow*).
+`images.yml` builds and pushes `equicast-fx` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/fx/` on `main` or a `dev/**`
+release branch (pushing `:dev` instead of `:latest` on the latter — see
+`.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `fx` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 

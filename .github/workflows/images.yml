@@ -1,0 +1,156 @@
+name: Build Images
+
+# Consolidates what used to be five near-identical single-image workflows
+# (stock-image.yml, etf-image.yml, fx-image.yml, benchmark-image.yml,
+# forecasting-image.yml - see GitHub issue equicast-support#186, follow-up
+# to equicast-support#151's workflow-generalisation proposal) into one
+# matrix job. Each used to trigger independently off its own `paths:`
+# list, so this keeps that same per-image granularity via the `changes`
+# job's dorny/paths-filter check below, rather than rebuilding every image
+# on any relevant push the way a single flat `paths:` list would. Actually
+# building/pushing an image is delegated to .github/actions/build-push-image
+# (equicast-support#186), shared with nothing else right now but kept as
+# its own composite action rather than inlined here, since that's the piece
+# every one of the five images' builds is otherwise identical on.
+#
+# No `futures` entry yet - packages/futures/Dockerfile doesn't exist. Add
+# one more `include` entry (name/dockerfile) and filter block once it does.
+on:
+  push:
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - see .github/actions/build-push-image
+    # for why a dev/** push never overwrites the :latest tag main pushes.
+    branches: [main, "dev/**"]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
+      - "packages/fx/**"
+      - "packages/benchmark/**"
+      - "packages/forecasting/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/images.yml"
+      - ".github/actions/build-push-image/**"
+  workflow_dispatch:
+    inputs:
+      asset_class:
+        description: "Build only this image (default: all five) - ignores the changes job below, same as the old per-image workflows' workflow_dispatch always building regardless of what changed"
+        type: choice
+        options:
+          - all
+          - stock
+          - etf
+          - fx
+          - benchmark
+          - forecasting
+        default: all
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  # Detects which asset class(es) actually changed in this push, so
+  # build-and-push's matrix can skip the ones that didn't - the same
+  # per-image granularity the old separate `paths:`-triggered workflows
+  # had. Every filter also matches this workflow file and the composite
+  # action itself, since an edit to shared plumbing here should rebuild
+  # every image, and packages/datafeed - every asset class's shared
+  # extraction layer. Only runs for a push - a workflow_dispatch always
+  # goes by its asset_class input instead (see build-and-push's `if`).
+  changes:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      stock: ${{ steps.filter.outputs.stock }}
+      etf: ${{ steps.filter.outputs.etf }}
+      fx: ${{ steps.filter.outputs.fx }}
+      benchmark: ${{ steps.filter.outputs.benchmark }}
+      forecasting: ${{ steps.filter.outputs.forecasting }}
+    steps:
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            shared: &shared
+              - "packages/datafeed/**"
+              - "pyproject.toml"
+              - "uv.lock"
+              - ".github/workflows/images.yml"
+              - ".github/actions/build-push-image/**"
+            stock:
+              - *shared
+              - "packages/metrics/**"
+              - "packages/dividends/**"
+              - "packages/events/**"
+              - "packages/stock/**"
+            etf:
+              - *shared
+              - "packages/metrics/**"
+              - "packages/dividends/**"
+              - "packages/events/**"
+              - "packages/etf/**"
+            fx:
+              - *shared
+              - "packages/fx/**"
+            benchmark:
+              - *shared
+              - "packages/benchmark/**"
+            forecasting:
+              - *shared
+              - "packages/dividends/**"
+              - "packages/forecasting/**"
+
+  build-and-push:
+    needs: [changes]
+    # `needs.changes.result == 'skipped'` covers the workflow_dispatch
+    # case (changes itself never runs then) - `always()` is required so
+    # this job still runs at all despite depending on a job that skipped
+    # rather than succeeded.
+    if: |
+      always() && (needs.changes.result == 'skipped' || needs.changes.result == 'success')
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: stock
+            dockerfile: packages/stock/Dockerfile
+          - name: etf
+            dockerfile: packages/etf/Dockerfile
+          - name: fx
+            dockerfile: packages/fx/Dockerfile
+          - name: benchmark
+            dockerfile: packages/benchmark/Dockerfile
+          - name: forecasting
+            dockerfile: packages/forecasting/Dockerfile
+    steps:
+      # Evaluated per matrix entry (not job-level `if`, since a step needs
+      # to run conditionally while later steps in the same job still see
+      # the checkout) - true for a manual run that asked for this class
+      # (or "all"), or a push where the changes job flagged this class.
+      - id: should_run
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            if [ "${{ inputs.asset_class }}" = "all" ] || [ "${{ inputs.asset_class }}" = "${{ matrix.name }}" ]; then
+              echo "run=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "run=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "run=${{ needs.changes.outputs[matrix.name] }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - if: steps.should_run.outputs.run == 'true'
+        uses: actions/checkout@v4
+
+      - if: steps.should_run.outputs.run == 'true'
+        name: Build and push equicast-${{ matrix.name }} (private)
+        uses: ./.github/actions/build-push-image
+        with:
+          image-name: equicast-${{ matrix.name }}
+          dockerfile: ${{ matrix.dockerfile }}

@@ -28,7 +28,7 @@ Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet,
 GitHub Actions (etf-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/etf/Dockerfile` containerizes the CLI. `etf-image.yml` builds and
+`packages/etf/Dockerfile` containerizes the CLI. `images.yml` builds and
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-etf`).
 The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
@@ -248,10 +248,12 @@ fx-pipeline.md) — nothing extra to configure there either.
 
 ## Publishing the image
 
-`etf-image.yml` builds and pushes `equicast-etf` to GHCR automatically on
-changes to `packages/datafeed/` or `packages/etf/` on `main`, or on demand
-via its `workflow_dispatch` trigger (Actions tab → *Build ETF Image* →
-*Run workflow*).
+`images.yml` builds and pushes `equicast-etf` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/etf/` on `main` or a
+`dev/**` release branch (pushing `:dev` instead of `:latest` on the
+latter — see `.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `etf` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 

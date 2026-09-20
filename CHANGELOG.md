@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - CI, Docker image builds, Terraform, and deploy now also run on `dev/`
   release-integration branches (e.g. `dev/v1.1`), the same as `main` -
   except production deploys/applies, which stay reachable only from `main`.
+- The five per-image Docker build workflows are now one workflow that only
+  rebuilds the image(s) actually affected by a push, instead of five
+  separately-triggered ones.
 
 ## [1.0.5] - 2026-09-20
 
