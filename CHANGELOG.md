@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-09-20
+
+### Fixed
+
+- Fixed the per-user data S3 bucket (accounts, pies, watchlists, holdings,
+  transactions, goals) never getting created when an environment is
+  destroyed and redeployed, since that path applied only part of the
+  Terraform configuration.
+
 ## [1.0.1] - 2026-09-20
 
 ### Fixed
