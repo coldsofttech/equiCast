@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.5] - 2026-09-20
+
+### Added
+
+- Added GDX.L and QNTG.L to the production ETF ticker list.
+
+### Fixed
+
+- Fixed the native price field on Add/Edit Transaction rejecting more than
+  2 decimal places.
+
 ## [1.0.4] - 2026-09-20
 
 ### Added

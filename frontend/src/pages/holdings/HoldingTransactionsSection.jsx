@@ -332,8 +332,8 @@ function TransactionForm({
             id="transaction-price"
             label={isAverageBuy ? "Average price (native)" : "Price (native)"}
             type="number"
-            min="0.01"
-            step="0.01"
+            min="0.000001"
+            step="any"
             required
             value={price}
             onChange={(event) => setPrice(event.target.value)}
