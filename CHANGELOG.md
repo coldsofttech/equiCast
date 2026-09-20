@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.4] - 2026-09-20
+
+### Added
+
+- Ingestion workflows (stock, ETF, FX, benchmark) can now be manually run
+  against specific tickers instead of the full config, so adding a new
+  holding no longer requires a costly full-load run across everything.
+- Added NWG.L to the production stock ticker list.
+
+### Fixed
+
+- Fixed the market data API returning a server error when a requested
+  ticker's data file doesn't exist yet (e.g. no dividend forecast on
+  record).
+
 ## [1.0.3] - 2026-09-20
 
 ### Fixed

@@ -205,6 +205,7 @@ ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each pair's entire history (all years) instead of just the current year |
 | `chunk_size` | `300` | Target FX pairs per parallel chunk |
+| `tickers` | *(empty)* | Optional `;`-separated list of pair keys (e.g. `GBPUSD;EURUSD`) to restrict this run to, instead of every pair in the config. When set, `build-catalog` merges this run's pairs into the existing catalog instead of replacing it outright |
 | `max_workers` | `5` | Concurrent fetches within each container |
 | `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |

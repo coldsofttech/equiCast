@@ -227,6 +227,14 @@ This needs no new S3 read permission for the ingestion role — it only
 ever reads the artifacts locally, then uploads the finished catalog with
 the same `s3:PutObject` access ingestion already had.
 
+Add `--merge` for a targeted (subset-of-tickers) run, where `--output-dir`
+only holds a fraction of the full ticker list: instead of replacing
+`catalog/<asset_class>.parquet` outright, it first downloads the existing
+catalog (via `download_catalog_rows`) and replaces just the rows for the
+tickers this run fetched (`merge_catalog_rows`), keeping every other
+ticker untouched. Each ingestion workflow's `plan` job passes this
+whenever its `tickers` dispatch input is set.
+
 ## `UserProfileClient` — DynamoDB user profiles
 
 Reads and upserts items in equicast's `user-profiles` DynamoDB table (one

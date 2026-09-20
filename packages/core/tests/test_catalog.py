@@ -4,7 +4,14 @@ import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
-from equicast_core.catalog import build_catalog_rows, catalog_key, main, upload_catalog
+from equicast_core.catalog import (
+    build_catalog_rows,
+    catalog_key,
+    download_catalog_rows,
+    main,
+    merge_catalog_rows,
+    upload_catalog,
+)
 from moto import mock_aws
 
 BUCKET = "equicast-market-data-test"
@@ -252,6 +259,78 @@ class TestUploadCatalog:
         upload_catalog(BUCKET, "stock", [], s3_client=s3_client)
 
         assert _read_catalog(s3_client, "catalog/stock.parquet") == []
+
+
+class TestDownloadCatalogRows:
+    def test_returns_empty_list_when_catalog_does_not_exist_yet(self, s3_client) -> None:
+        assert download_catalog_rows(BUCKET, "stock", s3_client=s3_client) == []
+
+    def test_returns_the_published_rows(self, s3_client) -> None:
+        upload_catalog(BUCKET, "stock", [{"ticker": "AAPL"}], s3_client=s3_client)
+
+        assert download_catalog_rows(BUCKET, "stock", s3_client=s3_client) == [
+            {**_EMPTY_ROW, "ticker": "AAPL"}
+        ]
+
+
+class TestMergeCatalogRows:
+    def test_adds_new_tickers_to_an_empty_catalog(self) -> None:
+        new_rows = [{"ticker": "AAPL"}, {"ticker": "MSFT"}]
+
+        assert merge_catalog_rows([], new_rows) == new_rows
+
+    def test_replaces_only_the_matching_tickers(self) -> None:
+        existing_rows = [
+            {"ticker": "AAPL", "current_price": 1.0},
+            {"ticker": "MSFT", "current_price": 2.0},
+        ]
+        new_rows = [{"ticker": "MSFT", "current_price": 3.0}]
+
+        assert merge_catalog_rows(existing_rows, new_rows) == [
+            {"ticker": "AAPL", "current_price": 1.0},
+            {"ticker": "MSFT", "current_price": 3.0},
+        ]
+
+    def test_keeps_untouched_existing_tickers_and_adds_brand_new_ones(self) -> None:
+        existing_rows = [{"ticker": "AAPL"}, {"ticker": "MSFT"}]
+        new_rows = [{"ticker": "NWG.L"}]
+
+        assert [r["ticker"] for r in merge_catalog_rows(existing_rows, new_rows)] == [
+            "AAPL",
+            "MSFT",
+            "NWG.L",
+        ]
+
+
+def test_main_merges_into_the_existing_catalog_when_targeted(
+    tmp_path: Path, s3_client, monkeypatch
+) -> None:
+    upload_catalog(
+        BUCKET,
+        "stock",
+        [{"ticker": "AAPL", "name": "Apple Inc."}, {"ticker": "MSFT", "name": "Microsoft Corp"}],
+        s3_client=s3_client,
+    )
+    _write_profile(tmp_path, "stock", "NWG.L", {"ticker": "NWG.L", "name": "NatWest Group"})
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "equicast-core-build-catalog",
+            "--asset-class",
+            "stock",
+            "--output-dir",
+            str(tmp_path),
+            "--bucket",
+            BUCKET,
+            "--merge",
+        ],
+    )
+    monkeypatch.setattr("equicast_core.catalog.boto3.client", lambda *a, **kw: s3_client)
+
+    main()
+
+    result = _read_catalog(s3_client, "catalog/stock.parquet")
+    assert sorted(r["ticker"] for r in result) == ["AAPL", "MSFT", "NWG.L"]
 
 
 def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypatch) -> None:

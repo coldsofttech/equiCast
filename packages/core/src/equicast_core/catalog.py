@@ -38,6 +38,7 @@ from typing import Any
 import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
+from pyarrow import BufferReader
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +163,44 @@ def upload_catalog(
     )
 
 
+def download_catalog_rows(
+    bucket: str,
+    asset_class: str,
+    s3_client: Any = None,
+    region_name: str | None = None,
+) -> list[dict[str, Any]]:
+    """Return every row of this asset class's existing `catalog/*.parquet`,
+    or an empty list if it hasn't been published yet. Used to merge a
+    targeted (subset-of-tickers) run's freshly-fetched rows into the
+    existing catalog instead of replacing it outright — see
+    `merge_catalog_rows`."""
+    s3 = s3_client or boto3.client("s3", region_name=region_name)
+    try:
+        response = s3.get_object(Bucket=bucket, Key=catalog_key(asset_class))
+    except s3.exceptions.NoSuchKey:
+        return []
+    return pq.read_table(BufferReader(response["Body"].read())).to_pylist()
+
+
+def merge_catalog_rows(
+    existing_rows: list[dict[str, Any]], new_rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Replace whichever `existing_rows` share a ticker with `new_rows`,
+    keep every other existing row untouched, and add any ticker `new_rows`
+    introduces that wasn't in the catalog before. Sorted by ticker, matching
+    `build_catalog_rows`' own ordering.
+
+    Used only for a targeted (--tickers) ingestion run, whose `output_dir`
+    holds just the subset of tickers that run fetched — a full
+    `upload_catalog` replace from that subset would drop every ticker the
+    run didn't touch. A full (untargeted) run keeps using the plain
+    replace, since its rows already are the complete, freshly-fetched
+    ticker list."""
+    merged = {row["ticker"]: row for row in existing_rows}
+    merged.update({row["ticker"]: row for row in new_rows})
+    return [merged[ticker] for ticker in sorted(merged)]
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Build and upload the catalog/<asset_class>.parquet search catalog from a "
@@ -182,6 +221,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--bucket", required=True, help="Market-data S3 bucket to upload to.")
     parser.add_argument("--region", default=None, help="AWS region (defaults to boto3's own).")
+    parser.add_argument(
+        "--merge",
+        action="store_true",
+        help="Merge these rows into the existing catalog instead of replacing it outright — "
+        "use for a targeted (subset-of-tickers) run, whose --output-dir doesn't reflect the "
+        "full ticker list.",
+    )
     return parser
 
 
@@ -189,8 +235,22 @@ def main() -> None:
     logging.basicConfig(level=logging.INFO)
     args = build_arg_parser().parse_args()
 
-    rows = build_catalog_rows(args.output_dir, args.asset_class)
-    logger.info("Built %d catalog row(s) for asset_class=%s", len(rows), args.asset_class)
+    fetched_rows = build_catalog_rows(args.output_dir, args.asset_class)
+    if args.merge:
+        existing_rows = download_catalog_rows(
+            args.bucket, args.asset_class, region_name=args.region
+        )
+        rows = merge_catalog_rows(existing_rows, fetched_rows)
+        logger.info(
+            "Merged %d freshly-fetched row(s) into the existing catalog for asset_class=%s "
+            "(%d row(s) total)",
+            len(fetched_rows),
+            args.asset_class,
+            len(rows),
+        )
+    else:
+        rows = fetched_rows
+        logger.info("Built %d catalog row(s) for asset_class=%s", len(rows), args.asset_class)
     upload_catalog(args.bucket, args.asset_class, rows, region_name=args.region)
 
 

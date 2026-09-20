@@ -175,6 +175,22 @@ data "aws_iam_policy_document" "backend_lambda_permissions" {
     resources = ["${module.market_data_bucket.bucket_arn}/*"]
   }
 
+  # s3:ListBucket, required alongside s3:GetObject above for the same reason
+  # as the user-data statement further down (see its comment and
+  # https://repost.aws/knowledge-center/s3-403-error-list-permissions):
+  # without it, a GetObject on a market-data key that doesn't exist yet
+  # (e.g. dividend/future.parquet for a ticker with no future dividends)
+  # returns AccessDenied instead of NoSuchKey, which
+  # MarketDataClient._read_parquet's `except self._s3.exceptions.NoSuchKey`
+  # doesn't catch — surfacing as a 500 on every endpoint reading that key.
+  # No s3:prefix condition, unlike the user-data statement — s3:GetObject
+  # above already covers this bucket's entire key space, so there's no
+  # narrower prefix to scope listing to.
+  statement {
+    actions   = ["s3:ListBucket"]
+    resources = [module.market_data_bucket.bucket_arn]
+  }
+
   statement {
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [module.user_profiles_table.table_arn]

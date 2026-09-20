@@ -29,6 +29,9 @@ on:
       chunk_size:
         description: "Target benchmarks per parallel chunk"
         default: "300"
+      tickers:
+        description: "Optional: restrict this run to specific benchmarks, separated by ; (e.g. SP500;FTSE100). Leave blank to run against every configured benchmark."
+        default: ""
       max_workers:
         description: "Concurrent fetches within each container"
         default: "5"
@@ -57,6 +60,7 @@ jobs:
       has_chunks: ${{ steps.plan.outputs.has_chunks }}
       environment: ${{ steps.env.outputs.environment }}
       bucket: ${{ steps.env.outputs.bucket }}
+      targeted: ${{ steps.env.outputs.targeted }}
     steps:
       - uses: actions/checkout@v4
 
@@ -98,6 +102,15 @@ jobs:
           echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "config=$CONFIG" >> "$GITHUB_OUTPUT"
+          # Whether this run is restricted to a "tickers" subset — the
+          # build-catalog job below reads this to merge into the existing
+          # catalog instead of replacing it outright, since a targeted run's
+          # output only ever covers part of the full benchmark list.
+          if [ -n "${{ github.event.inputs.tickers }}" ]; then
+            echo "targeted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "targeted=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compute benchmark chunks
         id: plan
@@ -106,7 +119,8 @@ jobs:
           CHUNKS=$(uv run equicast-benchmark-plan \
             --config "${{ steps.env.outputs.config }}" \
             --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
-            --max-chunks 256)
+            --max-chunks 256 \
+            --tickers "${{ github.event.inputs.tickers || '' }}")
           echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
           if [ "$CHUNKS" = "[]" ]; then
             echo "has_chunks=false" >> "$GITHUB_OUTPUT"
@@ -178,6 +192,11 @@ jobs:
   # single ingest leg above ever sees the full benchmark list. Needs no new
   # S3 permission beyond what ingest already has (s3:PutObject) — it reads
   # the profiles locally, from the downloaded artifacts, not back from S3.
+  #
+  # A targeted run (plan.outputs.targeted, from the "tickers" input) only
+  # ever fetched a subset of the full benchmark list, so its build-catalog
+  # step below passes --merge instead of letting equicast-core-build-catalog
+  # replace the whole catalog with just that subset.
   build-catalog:
     needs: [plan, ingest]
     if: needs.plan.outputs.has_chunks == 'true'
@@ -209,4 +228,5 @@ jobs:
           uv run equicast-core-build-catalog \
             --asset-class benchmark \
             --output-dir "${{ github.workspace }}/output" \
-            --bucket "${{ needs.plan.outputs.bucket }}"
+            --bucket "${{ needs.plan.outputs.bucket }}" \
+            ${{ needs.plan.outputs.targeted == 'true' && '--merge' || '' }}

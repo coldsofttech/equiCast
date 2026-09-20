@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 from equicast_benchmark.config import Benchmark
-from equicast_benchmark.plan import chunk_benchmarks
+from equicast_benchmark.plan import chunk_benchmarks, filter_benchmarks
 
 
 def _benchmarks(n: int) -> list[Benchmark]:
@@ -36,6 +36,29 @@ def test_chunk_benchmarks_rejects_invalid_arguments() -> None:
         chunk_benchmarks(_benchmarks(1), chunk_size=1, max_chunks=0)
 
 
+def test_filter_benchmarks_returns_unchanged_when_keys_is_none() -> None:
+    benchmarks = _benchmarks(3)
+    assert filter_benchmarks(benchmarks, None) == benchmarks
+
+
+def test_filter_benchmarks_restricts_to_matching_keys() -> None:
+    benchmarks = [
+        Benchmark(key="SP500", symbol="^GSPC"),
+        Benchmark(key="DAX", symbol="^GDAXI"),
+    ]
+
+    assert [b.key for b in filter_benchmarks(benchmarks, "DAX")] == ["DAX"]
+
+
+def test_filter_benchmarks_is_case_insensitive_and_ignores_blank_entries() -> None:
+    benchmarks = [
+        Benchmark(key="SP500", symbol="^GSPC"),
+        Benchmark(key="DAX", symbol="^GDAXI"),
+    ]
+
+    assert [b.key for b in filter_benchmarks(benchmarks, " sp500 ; ;dax ")] == ["SP500", "DAX"]
+
+
 def test_plan_cli_prints_json_chunks(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     from equicast_benchmark.plan import main
 
@@ -58,3 +81,34 @@ def test_plan_cli_prints_json_chunks(tmp_path: Path, capsys: pytest.CaptureFixtu
         [{"key": "SP500", "symbol": "^GSPC"}],
         [{"key": "DAX", "symbol": "^GDAXI"}],
     ]
+
+
+def test_plan_cli_restricts_to_given_tickers(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from equicast_benchmark.plan import main
+
+    config = tmp_path / "benchmarks.yaml"
+    config.write_text(
+        'benchmarks:\n  - key: SP500\n    symbol: "^GSPC"\n  - key: DAX\n    symbol: "^GDAXI"\n'
+    )
+
+    import sys
+
+    old_argv = sys.argv
+    sys.argv = [
+        "equicast-benchmark-plan",
+        "--config",
+        str(config),
+        "--chunk-size",
+        "300",
+        "--tickers",
+        "DAX",
+    ]
+    try:
+        main()
+    finally:
+        sys.argv = old_argv
+
+    output = json.loads(capsys.readouterr().out)
+    assert output == [[{"key": "DAX", "symbol": "^GDAXI"}]]
