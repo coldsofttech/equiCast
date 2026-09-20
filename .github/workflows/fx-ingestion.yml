@@ -184,10 +184,10 @@ jobs:
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       # Moved out of output/ before the S3 upload below so this chunk's
       # failures.json (if any - see equicast_fx.writer.write_failures_manifest,
@@ -255,10 +255,10 @@ jobs:
           merge-multiple: true
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Build and upload the FX search catalog
         working-directory: packages/core
