@@ -339,3 +339,34 @@ jobs:
             "FX" \
             "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             merged-failures.json
+
+  # GitHub issue equicast-support#169: fx-profiles-*'s per-chunk
+  # profile.parquet is only ever needed to hand off to build-catalog above
+  # (and, alongside it, each chunk's failures-<index>.json to report-status
+  # - see that job's own comments) within this one run - not for later
+  # reference. Deletes it once both are done rather than relying on
+  # retention-days: 1 to eventually reclaim it, so a run's artifacts list
+  # doesn't sit around holding already-consumed per-chunk data.
+  # needs.build-catalog.result == 'success' (guarded with always() so
+  # report-status's own result doesn't matter here) rather than the
+  # default "both needs succeeded" - the catalog must have actually built
+  # and pushed to S3 first, matching the issue's own wording, but
+  # report-status runs via if: always() and can legitimately end in any
+  # state once it's had its chance to read the artifacts.
+  cleanup-profile-artifacts:
+    needs: [build-catalog, report-status]
+    if: always() && needs.build-catalog.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Delete this run's per-chunk profile artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --paginate \
+            --jq '.artifacts[] | select(.name | startswith("fx-profiles-")) | .id' \
+          | while read -r id; do
+              gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+              echo "Deleted artifact $id"
+            done

@@ -14,6 +14,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GitHub Actions. A ticker/pair/benchmark that fails to fetch no longer
   takes down the rest of that run's batch.
 
+### Changed
+
+- Ingestion workflows (stock, ETF, FX, benchmark) now delete their
+  intermediate per-chunk profile artifacts once the catalog build and
+  failure reporting are done, instead of leaving them to expire.
+
 ## [1.0.5] - 2026-09-20
 
 ### Added
