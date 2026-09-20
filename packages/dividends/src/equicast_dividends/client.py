@@ -58,6 +58,13 @@ class DividendsClient:
         dividends = self._datafeed.get_dividends(self.symbol)
         fetched_at = datetime.now(UTC).isoformat()
 
+        # yfinance returns None (not an empty Series) rather than raising
+        # when it can't fetch this symbol's data at all (e.g. a 404 for a
+        # newly-listed/delisted ticker) - treat that the same as "no
+        # dividend history" instead of crashing on .empty/.items() below.
+        if dividends is None:
+            return []
+
         if not full_load and not dividends.empty:
             current_year = datetime.now(UTC).year
             dividends = dividends[dividends.index.year >= current_year]

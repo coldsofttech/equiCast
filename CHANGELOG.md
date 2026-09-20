@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-20
+
+### Fixed
+
+- Fixed the market data API returning server errors on every request in
+  production (surfaced in the browser as a CORS failure on the demo prices
+  endpoint).
+- Fixed ETF dividend ingestion crashing on tickers with no dividend data
+  available.
+- Fixed stock fundamentals ingestion crashing on tickers with unexpected
+  data from the market data provider.
+
 ## [1.0.0] - 2026-09-20
 
 ### Added
