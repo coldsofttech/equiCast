@@ -75,6 +75,13 @@ jobs:
     outputs:
       packages: ${{ steps.matrix.outputs.packages }}
     steps:
+      # dorny/paths-filter needs local git history to diff a push event
+      # against (unlike pull_request, which it can resolve via the API
+      # alone) - without this, it fails with "fatal: not a git repository"
+      # trying to read the current ref (same fix as images.yml's changes
+      # job needed).
+      - uses: actions/checkout@v4
+
       - uses: dorny/paths-filter@v3
         id: filter
         with:
