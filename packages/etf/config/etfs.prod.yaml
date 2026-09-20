@@ -16,8 +16,105 @@
 #   - ticker: VOO
 #     isin: US9229083632
 tickers:
-  - VOO
-  - QQQ
-  - VTI
-  - AGG
-  - GLD
+  - ticker: VOO
+    isin: US9229083632
+  - ticker: QQQ
+    isin: US46090E1038
+  - ticker: VTI
+    isin: US9229087690
+  - ticker: AGG
+    isin: US4642872265
+  - ticker: GLD
+    isin: US78463V1070
+  - ticker: DFND.L
+    isin: IE000U9ODG19
+  - ticker: DFNG.L
+    isin: IE000YYE6WK5
+  - ticker: EIMI.L
+    isin: IE00BKM4GZ66
+  - ticker: ESPO
+    isin: IE00BYWQWR46
+  - ticker: FRGD.L
+    isin: IE00BF2B0M76
+  - ticker: GDX
+    isin: IE00BQQP9F84
+  - ticker: GLGG.L
+    isin: IE00BK5BC891
+  - ticker: HEAL.L
+    isin: IE00BYZK4776
+  - ticker: IBZL
+    isin: IE00B0M63516
+  - ticker: ICGA.DE
+    isin: IE00BJ5JPG56
+  - ticker: IDVY.L
+    isin: IE00B0M62S72
+  - ticker: IJPH.L
+    isin: IE00B7XYN974
+  - ticker: IKOR.L
+    isin: IE00B0M63391
+  - ticker: INFR.L
+    isin: IE00B1FZS467
+  - ticker: INRG.L
+    isin: IE00B1XNHC34
+  - ticker: ISF.L
+    isin: IE0005042456
+  - ticker: ITWN
+    isin: IE00B0M63623
+  - ticker: IUIT.L
+    isin: IE00B3WJKG14
+  - ticker: IUKD.L
+    isin: IE00B0M63060
+  - ticker: IWDA.L
+    isin: IE00B4L5Y983
+  - ticker: JEDI.L
+    isin: IE000YU9K6K2
+  - ticker: NDIA.L
+    isin: IE00BZCQB185
+  - ticker: NUCG.L
+    isin: IE000M7V94E1
+  - ticker: QNTM.L
+    isin: IE0007Y8Y157
+  - ticker: RENG.L
+    isin: IE00BK5BCH80
+  - ticker: SMH
+    isin: IE00BMC38736
+  - ticker: SPGP.L
+    isin: IE00B6R52036
+  - ticker: SPOL.L
+    isin: IE00B4M7GH52
+  - ticker: SSHY.L
+    isin: IE00B7N3YW49
+  - ticker: SWRD.L
+    isin: IE00BFY0GT14
+  - ticker: V3AM.L
+    isin: IE00BNG8L385
+  - ticker: VAGP.L
+    isin: IE00BG47KG48
+  - ticker: VAPX.L
+    isin: IE00B9F5YL18
+  - ticker: VEUR
+    isin: IE00B945VV12
+  - ticker: VEVE
+    isin: IE00BKX55T58
+  - ticker: VFEM
+    isin: IE00B3VVMM84
+  - ticker: VGOV.L
+    isin: IE00B42WWV65
+  - ticker: VHYL
+    isin: IE00B8GKDB10
+  - ticker: VJPN
+    isin: IE00B95PGT31
+  - ticker: VMID
+    isin: IE00BKX55Q28
+  - ticker: VNRT
+    isin: IE00BKX55R35
+  - ticker: VUKG.L
+    isin: IE00BFMXYP42
+  - ticker: VUSA.L
+    isin: IE00B3XXRP09
+  - ticker: VWRL
+    isin: IE00B3RBWM25
+  - ticker: WINC.L
+    isin: IE000KJPDY61
+  - ticker: WQDS.L
+    isin: IE00BYYHSQ67

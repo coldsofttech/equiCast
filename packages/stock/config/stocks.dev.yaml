@@ -10,12 +10,21 @@
 #   - ticker: NVDA
 #     isin: US67066G1040
 tickers:
-  - AAPL
-  - MSFT
-  - GOOGL
-  - AMZN
-  - NVDA
-  - META
-  - TSLA
-  - QCOM
-  - AVGO
+  - ticker: AAPL
+    isin: US0378331005
+  - ticker: MSFT
+    isin: US5949181045
+  - ticker: GOOGL
+    isin: US02079K3059
+  - ticker: AMZN
+    isin: US0231351067
+  - ticker: NVDA
+    isin: US67066G1040
+  - ticker: META
+    isin: US30303M1027
+  - ticker: TSLA
+    isin: US88160R1014
+  - ticker: QCOM
+    isin: US7475251036
+  - ticker: AVGO
+    isin: US11135F1012
