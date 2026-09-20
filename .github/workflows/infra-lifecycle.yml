@@ -71,10 +71,11 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
 
@@ -106,10 +107,11 @@ jobs:
 
       - uses: hashicorp/setup-terraform@v3
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
       - run: terraform apply -auto-approve -input=false -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
@@ -148,10 +150,11 @@ jobs:
       - name: Build Lambda deployment package
         run: bash backend/scripts/build_lambda_package.sh
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Upload to S3 and update the Lambda function
         run: |
@@ -206,10 +209,11 @@ jobs:
           npm ci
           npm run build
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend

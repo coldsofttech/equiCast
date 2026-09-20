@@ -72,10 +72,11 @@ jobs:
         with:
           name: backend-lambda-package
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Upload to S3 and update the Lambda function
         id: upload
@@ -110,10 +111,11 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Promote dev artifact to prod
         run: |
@@ -230,10 +232,11 @@ jobs:
           npm ci
           npm run build
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend
@@ -284,10 +287,11 @@ jobs:
           npm ci
           npm run build
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend
