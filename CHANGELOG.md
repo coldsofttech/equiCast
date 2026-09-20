@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.6] - 2026-09-20
+
+### Added
+
+- Added VWRL.L and ITWN.L to the production ETF ticker list.
+
 ## [1.0.5] - 2026-09-20
 
 ### Added
