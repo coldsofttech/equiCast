@@ -28,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The per-asset-class package CI workflows (stock, ETF, FX, benchmark) are
   now one workflow that tests each shared package once instead of once per
   asset class that depends on it.
+- The frontend build step in deploy.yml, previously duplicated across the
+  cost-estimate, dev, and prod deploy jobs, is now a single shared action.
 - AWS OIDC credential setup, previously duplicated across the ingestion,
   deploy, terraform, and infra-lifecycle workflows, is now a single shared
   action.

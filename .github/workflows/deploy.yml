@@ -147,15 +147,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
 
       - name: Estimate incremental cost
         working-directory: frontend
@@ -217,20 +210,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_URL }}
-          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
+        with:
+          vite-api-base-url: ${{ vars.API_URL }}
+          vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
@@ -272,20 +258,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
       - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_URL }}
-          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
+        with:
+          vite-api-base-url: ${{ vars.API_URL }}
+          vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
