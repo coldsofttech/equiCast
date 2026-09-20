@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -279,6 +280,39 @@ def test_run_writes_profile_price_dividend_events_metrics_and_news_parquet_per_c
         assert (out_dir / f"stock={ticker}" / "events" / "current.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "metrics.parquet").exists()
         assert (out_dir / f"stock={ticker}" / "news.parquet").exists()
+
+
+def test_run_continues_past_a_failed_ticker_task_and_records_a_failures_manifest(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "stocks.yaml"
+    config.write_text("tickers:\n  - AAPL\n  - MSFT\n")
+    out_dir = tmp_path / "output"
+
+    def fake_stock_client(ticker: str, datafeed=None) -> MagicMock:
+        client = _fake_stock_client_factory()(ticker, datafeed=datafeed)
+        if ticker == "MSFT":
+            client.prices.side_effect = RuntimeError("yfinance boom")
+        return client
+
+    with (
+        patch("equicast_stock.cli.DatafeedClient"),
+        patch("equicast_stock.cli.StockClient", side_effect=fake_stock_client),
+        patch("equicast_stock.cli.DividendsClient", side_effect=_fake_dividends_client_factory()),
+        patch("equicast_stock.cli.EventsClient", side_effect=_fake_events_client_factory()),
+        patch("equicast_stock.cli.MetricsClient", side_effect=_fake_metrics_client_factory()),
+        patch("equicast_stock.cli.NewsClient", side_effect=_fake_news_client_factory()),
+    ):
+        written = run(config, out_dir, max_workers=2)
+
+    # MSFT's failed prices task doesn't stop AAPL's (or MSFT's own other)
+    # tasks from completing and being written.
+    assert out_dir / "stock=AAPL" / "price" / "current.parquet" in written
+    assert out_dir / "stock=MSFT" / "profile.parquet" in written
+    assert not (out_dir / "stock=MSFT" / "price" / "current.parquet").exists()
+
+    failures = json.loads((out_dir / "failures.json").read_text(encoding="utf-8"))
+    assert failures == [{"ticker": "MSFT", "task": "prices", "error": "yfinance boom"}]
 
 
 def test_run_derives_dividend_frequency_into_profile_parquet(tmp_path: Path) -> None:

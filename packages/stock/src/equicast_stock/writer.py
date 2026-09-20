@@ -206,6 +206,22 @@ def write_news_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[
     return [path]
 
 
+def write_failures_manifest(failures: list[dict[str, str]], output_dir: Path) -> Path | None:
+    """Write `failures` (each a `{"ticker", "task", "error"}` dict, one per
+    ticker/task that raised during this run - see `cli.run`) to
+    `<output_dir>/failures.json`, so a partial failure can be reported
+    without parsing container logs. Omitted entirely when `failures` is
+    empty, same convention as the optional per-ticker parquet writers above.
+    """
+    if not failures:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "failures.json"
+    path.write_text(json.dumps(failures, indent=2), encoding="utf-8")
+    return path
+
+
 def write_events_parquet(records: list[dict[str, Any]], output_dir: Path) -> list[Path]:
     """Write `records` to `<output_dir>/stock=<TICKER>/events/history.parquet` (every
     year before the current one) and/or `.../events/current.parquet` (the current year
