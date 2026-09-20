@@ -1,4 +1,7 @@
-# equiCast
+# <img src="frontend/public/brand/equicast-mark.png" alt="" width="40" valign="middle"> equiCast
+
+**v1.0.0** — see [Release notes](docs/release-notes.md) for what's new in
+this release.
 
 Equity and FX market data ingestion, storage, and forecasting toolkit.
 
@@ -8,10 +11,15 @@ Equity and FX market data ingestion, storage, and forecasting toolkit.
   yfinance and caches it as Parquet.
 - **Backend (Django REST API)** — exposes market data over HTTP, backed by
   `equicast`, for the frontend to consume. Also exposes Auth0-authenticated
-  user-owned data: a profile (DynamoDB) and CRUD for a user's investment
-  accounts (S3 JSON, capped at 5 per user).
-- **Frontend (React)** — a UI for looking up ticker history through the
-  backend API.
+  user-owned data (S3 JSON): a profile (DynamoDB), investment accounts
+  (capped at 5/user) each holding up to 20 pies, financial goals (capped at
+  10/user), holdings/transactions (including CSV/Trading 212 import), and a
+  support-ticket endpoint that files into a private GitHub repo.
+- **Frontend (React)** — a UI for looking up ticker history and, once
+  signed in, managing accounts/pies, goals, and holdings — since-inception
+  performance/invested-value charts, CSV/Trading 212 import, and an in-app
+  support form. Custom watchlists are on the roadmap but not live yet
+  (a `ComingSoonPage` stub).
 - **FX data pipeline (`equicast-datafeed`, `equicast-metrics`, `equicast-fx`)**
   — a scheduled pipeline that extracts FX pair data from Yahoo Finance and
   lands it in S3 as Parquet, ready for downstream analysis.
@@ -482,4 +490,4 @@ stock schedule so none of the four pipelines overlap.
   ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo
-- [Changelog](CHANGELOG.md)
+- [Release notes](docs/release-notes.md)
