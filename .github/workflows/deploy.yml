@@ -68,6 +68,12 @@ jobs:
     outputs:
       version_id: ${{ steps.upload.outputs.version_id }}
     steps:
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below - a
+      # local composite action can't be resolved without the repo checked
+      # out first (see build-push-image for the same constraint). Not
+      # needed for anything else in this job.
+      - uses: actions/checkout@v4
+
       - uses: actions/download-artifact@v4
         with:
           name: backend-lambda-package
@@ -111,6 +117,10 @@ jobs:
       id-token: write
       contents: read
     steps:
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below -
+      # see deploy-backend-dev's own comment for why.
+      - uses: actions/checkout@v4
+
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
         with:
