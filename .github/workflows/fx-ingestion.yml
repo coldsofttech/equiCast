@@ -160,6 +160,13 @@ jobs:
       matrix:
         chunk: ${{ fromJson(needs.plan.outputs.chunks) }}
     steps:
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below - a
+      # local composite action can't be resolved without the repo checked
+      # out first (see build-push-image for the same constraint). Not
+      # needed for anything else in this job - the docker/AWS CLI steps
+      # below don't read repo source.
+      - uses: actions/checkout@v4
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
