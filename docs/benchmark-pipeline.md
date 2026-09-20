@@ -26,7 +26,7 @@ Parquet files (profile.parquet, price.parquet, metrics.parquet, news.parquet)
 GitHub Actions (benchmark-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/benchmark/Dockerfile` containerizes the CLI. `benchmark-image.yml`
+`packages/benchmark/Dockerfile` containerizes the CLI. `images.yml`
 builds and pushes it to GHCR as a **private** image
 (`ghcr.io/<owner>/equicast-benchmark`). The benchmark config isn't baked in
 as the only input — benchmarks can also be passed at runtime via
@@ -157,10 +157,12 @@ FX/stock/ETF.
 
 ## Publishing the image
 
-`benchmark-image.yml` builds and pushes `equicast-benchmark` to GHCR
-automatically on changes to `packages/datafeed/` or `packages/benchmark/`
-on `main`, or on demand via its `workflow_dispatch` trigger (Actions tab →
-*Build Benchmark Image* → *Run workflow*).
+`images.yml` builds and pushes `equicast-benchmark` to GHCR automatically
+on changes to `packages/datafeed/` or `packages/benchmark/` on `main` or a
+`dev/**` release branch (pushing `:dev` instead of `:latest` on the
+latter — see `.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `benchmark` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 

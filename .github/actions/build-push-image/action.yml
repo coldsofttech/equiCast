@@ -1,0 +1,60 @@
+name: Build and push equicast Docker image
+description: >
+  Logs in to GHCR and builds/pushes a private equicast Docker image - the
+  per-image build step images.yml's build-and-push matrix calls once per
+  asset class (GitHub issue equicast-support#186, follow-up to
+  equicast-support#151's workflow-generalisation proposal; images.yml
+  itself replaced five near-identical single-image workflows - stock-
+  image.yml/etf-image.yml/fx-image.yml/benchmark-image.yml/forecasting-
+  image.yml). The calling workflow must check out the repo
+  (actions/checkout@v4) before this step - a *local* composite action
+  can't check itself out, since the runner needs this file on disk to
+  resolve `uses: ./...` in the first place.
+
+  Tags :dev instead of :latest on any branch other than main
+  (equicast-support#185) - the ingestion workflows' scheduled (cron) runs
+  always execute from main and pull :latest unconditionally, so a build
+  from a pre-release dev/vX.Y branch must never overwrite it. Every call
+  site's own ingestion workflow resolves which tag to pull the same way
+  (see e.g. stock-ingestion.yml's "plan" job).
+
+inputs:
+  image-name:
+    description: 'GHCR image name, e.g. "equicast-stock".'
+    required: true
+  dockerfile:
+    description: 'Path to the Dockerfile, e.g. "packages/stock/Dockerfile".'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Log in to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        # github.token, not secrets.GITHUB_TOKEN - composite actions can't
+        # read the secrets context directly, but github.token is the same
+        # value under the github context, which they can.
+        password: ${{ github.token }}
+
+    - name: Determine image tag
+      id: tag
+      shell: bash
+      run: |
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          echo "tag=latest" >> "$GITHUB_OUTPUT"
+        else
+          echo "tag=dev" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build and push
+      uses: docker/build-push-action@v6
+      with:
+        context: .
+        file: ${{ inputs.dockerfile }}
+        push: true
+        tags: |
+          ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
+          ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}:${{ github.sha }}

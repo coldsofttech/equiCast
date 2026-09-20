@@ -147,11 +147,12 @@ jobs:
             echo "targeted=false" >> "$GITHUB_OUTPUT"
           fi
 
-          # equicast-support#185: dev/vX.Y branches (see etf-image.yml/
-          # forecasting-image.yml) push a :dev tag rather than overwriting
-          # :latest - this run pulls whichever one matches the branch it's
-          # actually running from, so a dev/v1.1 run tests dev/v1.1's own
-          # image rather than silently falling back to main's.
+          # equicast-support#185: dev/vX.Y branches (see images.yml's
+          # build-push-image composite action) push a :dev tag rather than
+          # overwriting :latest - this run pulls whichever one matches the
+          # branch it's actually running from, so a dev/v1.1 run tests
+          # dev/v1.1's own image rather than silently falling back to
+          # main's.
           if [ "${{ github.ref }}" = "refs/heads/main" ]; then
             echo "image_tag=latest" >> "$GITHUB_OUTPUT"
           else
