@@ -915,3 +915,60 @@ class SearchViewTests(TestCase):
         self.assertEqual(data["count"], 0)
         self.assertEqual(data["total_pages"], 0)
         self.assertEqual(data["results"], [])
+
+
+class PublicDemoPricesViewTests(TestCase):
+    @patch("market_data.views._client")
+    def test_returns_the_fixed_allowlist_with_no_auth_required(self, mock_client) -> None:
+        def get_profile(asset_class, symbol):
+            return {"name": f"{symbol} Inc."}
+
+        def get_prices(asset_class, symbol, price_range):
+            self.assertEqual(price_range, "1m")
+            return {"currency": "USD", "prices": [{"date": "2026-01-02", "close": 100.0}]}
+
+        mock_client.get_profile.side_effect = get_profile
+        mock_client.get_prices.side_effect = get_prices
+
+        response = self.client.get(reverse("public-demo-prices"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "tickers": [
+                    {
+                        "ticker": "AAPL",
+                        "asset_class": "stock",
+                        "name": "AAPL Inc.",
+                        "currency": "USD",
+                        "prices": [{"date": "2026-01-02", "close": 100.0}],
+                    },
+                    {
+                        "ticker": "NVDA",
+                        "asset_class": "stock",
+                        "name": "NVDA Inc.",
+                        "currency": "USD",
+                        "prices": [{"date": "2026-01-02", "close": 100.0}],
+                    },
+                    {
+                        "ticker": "VOO",
+                        "asset_class": "etf",
+                        "name": "VOO Inc.",
+                        "currency": "USD",
+                        "prices": [{"date": "2026-01-02", "close": 100.0}],
+                    },
+                ]
+            },
+        )
+
+    @patch("market_data.views._client")
+    def test_falls_back_to_the_ticker_when_no_profile(self, mock_client) -> None:
+        mock_client.get_profile.return_value = None
+        mock_client.get_prices.return_value = {"currency": None, "prices": []}
+
+        response = self.client.get(reverse("public-demo-prices"))
+
+        self.assertEqual(response.status_code, 200)
+        names = [t["name"] for t in response.json()["tickers"]]
+        self.assertEqual(names, ["AAPL", "NVDA", "VOO"])

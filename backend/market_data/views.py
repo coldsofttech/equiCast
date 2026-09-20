@@ -3,9 +3,11 @@ import math
 from django.conf import settings
 from equicast_core import ASSET_CLASSES, PRICE_RANGES, MarketDataClient
 from identity.authentication import Auth0JWTAuthentication
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.authentication import BaseAuthentication
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 
 #: Default/max results per page for SearchView — a fixed default rather
@@ -14,6 +16,13 @@ from rest_framework.views import APIView
 #: forcing an arbitrarily large single response.
 DEFAULT_PAGE_SIZE = 50
 MAX_PAGE_SIZE = 200
+
+#: The landing page's pre-login demo chart (PublicDemoPricesView) — a
+#: fixed, small allowlist rather than an arbitrary ticker, since this is
+#: the one market_data endpoint with no IsAuthenticated at all (see that
+#: view's docstring). (asset_class, ticker) order here is also the
+#: response order.
+DEMO_TICKERS = [("stock", "AAPL"), ("stock", "NVDA"), ("etf", "VOO")]
 
 #: Max `items` a BulkProfileView/BulkMetricsView request can carry — these
 #: exist to replace a page's N individual GET .../profile/ or .../metrics/
@@ -374,3 +383,47 @@ class SearchView(APIView):
                 "results": results,
             }
         )
+
+
+class PublicDemoRateThrottle(AnonRateThrottle):
+    """A dedicated, IP-keyed scope (`"public_demo"` — rate set via
+    `DEFAULT_THROTTLE_RATES` in settings.py) for `PublicDemoPricesView`,
+    the one market_data endpoint with no `IsAuthenticated` at all. Every
+    other endpoint here is protected by `Auth0UserRateThrottle`'s
+    per-caller "user" scope, which needs a real identity; this one has
+    none to key off, so DRF's own IP-keyed `AnonRateThrottle` is the right
+    base instead of that class's rarely-exercised anonymous fallback."""
+
+    scope = "public_demo"
+
+
+class PublicDemoPricesView(APIView):
+    """GET, no auth — the pre-login landing page's demo chart (SignInScreen/
+    DemoChart.jsx) needs real price data before a visitor has signed in,
+    which every other market_data endpoint can't serve (all require
+    `IsAuthenticated`). Deliberately narrow rather than opening up
+    ProfileView/PricesView themselves: only ever serves `DEMO_TICKERS` (a
+    fixed, hardcoded allowlist — AAPL, NVDA, VOO), so this can't become a
+    way to scrape the full catalog unauthenticated. `PublicDemoRateThrottle`
+    (IP-keyed, not per-user) guards against that same risk from the demand
+    side."""
+
+    authentication_classes: list[type[BaseAuthentication]] = []
+    permission_classes = [AllowAny]
+    throttle_classes = [PublicDemoRateThrottle]
+
+    def get(self, request: Request) -> Response:
+        tickers = []
+        for asset_class, symbol in DEMO_TICKERS:
+            profile = _client.get_profile(asset_class, symbol)
+            prices = _client.get_prices(asset_class, symbol, price_range="1m")
+            tickers.append(
+                {
+                    "ticker": symbol,
+                    "asset_class": asset_class,
+                    "name": profile.get("name") if profile else symbol,
+                    "currency": prices.get("currency"),
+                    "prices": prices.get("prices", []),
+                }
+            )
+        return Response({"tickers": tickers})
