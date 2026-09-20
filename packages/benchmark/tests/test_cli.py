@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -130,6 +131,39 @@ def test_run_writes_profile_price_metrics_and_news_parquet_per_configured_benchm
         assert (out_dir / f"benchmark={key}" / "price" / "current.parquet").exists()
         assert (out_dir / f"benchmark={key}" / "metrics.parquet").exists()
         assert (out_dir / f"benchmark={key}" / "news.parquet").exists()
+
+
+def test_run_continues_past_a_failed_benchmark_task_and_records_a_failures_manifest(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "benchmarks.yaml"
+    config.write_text(
+        'benchmarks:\n  - key: SP500\n    symbol: "^GSPC"\n  - key: DAX\n    symbol: "^GDAXI"\n'
+    )
+    out_dir = tmp_path / "output"
+
+    def fake_benchmark_client(key: str, symbol: str, datafeed=None) -> MagicMock:
+        client = _fake_benchmark_client_factory()(key, symbol, datafeed=datafeed)
+        if key == "DAX":
+            client.prices.side_effect = RuntimeError("yfinance boom")
+        return client
+
+    with (
+        patch("equicast_benchmark.cli.DatafeedClient"),
+        patch("equicast_benchmark.cli.BenchmarkClient", side_effect=fake_benchmark_client),
+        patch("equicast_benchmark.cli.MetricsClient", side_effect=_fake_metrics_client_factory()),
+        patch("equicast_benchmark.cli.NewsClient", side_effect=_fake_news_client_factory()),
+    ):
+        written = run(config, out_dir, max_workers=2)
+
+    # DAX's failed prices task doesn't stop SP500's (or DAX's own other)
+    # tasks from completing and being written.
+    assert out_dir / "benchmark=SP500" / "price" / "current.parquet" in written
+    assert out_dir / "benchmark=DAX" / "profile.parquet" in written
+    assert not (out_dir / "benchmark=DAX" / "price" / "current.parquet").exists()
+
+    failures = json.loads((out_dir / "failures.json").read_text(encoding="utf-8"))
+    assert failures == [{"ticker": "DAX", "task": "prices", "error": "yfinance boom"}]
 
 
 def test_run_accepts_benchmarks_json_instead_of_config(tmp_path: Path) -> None:

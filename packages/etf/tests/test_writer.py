@@ -1,9 +1,11 @@
+import json
 from pathlib import Path
 
 import pandas as pd
 from equicast_etf.writer import (
     write_dividend_parquet,
     write_events_parquet,
+    write_failures_manifest,
     write_future_dividend_parquet,
     write_metrics_parquet,
     write_news_parquet,
@@ -302,3 +304,17 @@ def test_write_metrics_parquet_adds_ticker_identification(tmp_path: Path) -> Non
     assert path == tmp_path / "etf=VOO" / "metrics.parquet"
     result = pd.read_parquet(path)
     assert result.to_dict(orient="records") == [{"ticker": "VOO", **metrics}]
+
+
+def test_write_failures_manifest_writes_json(tmp_path: Path) -> None:
+    failures = [{"ticker": "VOO", "task": "prices", "error": "boom"}]
+
+    path = write_failures_manifest(failures, tmp_path)
+
+    assert path == tmp_path / "failures.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == failures
+
+
+def test_write_failures_manifest_empty_failures_writes_nothing(tmp_path: Path) -> None:
+    assert write_failures_manifest([], tmp_path) is None
+    assert list(tmp_path.iterdir()) == []

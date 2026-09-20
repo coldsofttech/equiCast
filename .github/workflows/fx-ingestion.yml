@@ -176,6 +176,21 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
 
+      # Moved out of output/ before the S3 upload below so this chunk's
+      # failures.json (if any - see equicast_fx.writer.write_failures_manifest,
+      # written whenever a pair's task fails; GitHub issue equicast-support#145)
+      # never lands in S3 alongside the Hive-partitioned fx=*/... data.
+      # Renamed with this leg's matrix index so multiple chunks' failures.json
+      # - each written to the same relative path inside its own chunk's
+      # output/ - don't collide once report-status downloads every chunk's
+      # artifact into one shared directory (see merge_failures.py).
+      - name: Set aside this chunk's failures manifest, if any
+        run: |
+          mkdir -p chunk-failures
+          if [ -f output/failures.json ]; then
+            mv output/failures.json "chunk-failures/failures-${{ strategy.job-index }}.json"
+          fi
+
       - name: Upload FX profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
 
@@ -184,12 +199,17 @@ jobs:
       # a matrix leg only ever sees its own chunk. Short retention: this
       # artifact only exists to hand off within this run, not for later
       # reference (see equicast_core.catalog's module docstring for why the
-      # catalog can't be built inside this per-chunk job at all).
+      # catalog can't be built inside this per-chunk job at all). Also
+      # carries this chunk's failures-<index>.json (see above), if any -
+      # report-status's failures merge step below needs every chunk's, the
+      # same way build-catalog needs every chunk's profile.parquet.
       - name: Publish this chunk's profiles for the catalog build
         uses: actions/upload-artifact@v4
         with:
           name: fx-profiles-${{ strategy.job-index }}
-          path: output/fx=*/profile.parquet
+          path: |
+            output/fx=*/profile.parquet
+            chunk-failures/failures-*.json
           retention-days: 1
 
   # Rebuilds catalog/fx.parquet (see equicast_core.catalog) from every
@@ -235,3 +255,87 @@ jobs:
             --output-dir "${{ github.workspace }}/output" \
             --bucket "${{ needs.plan.outputs.bucket }}" \
             ${{ needs.plan.outputs.targeted == 'true' && '--merge' || '' }}
+
+  # GitHub issue equicast-support#145: previously a failed run here was only
+  # visible via the red X on the Actions tab. Reports pipeline health to
+  # equicast-support (reusing sync-missing-isin-issue.sh's
+  # SUPPORT_ISSUE_TOKEN/SUPPORT_REPO pattern, see stock-ingestion.yml/
+  # etf-ingestion.yml) - a single rolling issue for overall job/infra health
+  # (see sync-pipeline-failure-issue.sh), plus one native sub-issue per pair
+  # whose own data extraction is currently failing (see
+  # sync-pipeline-failure-subissues.sh; a per-pair failure no longer fails
+  # the whole chunk - see equicast_fx.cli.run()). Runs regardless of whether
+  # plan/ingest/build-catalog succeeded, failed, or were skipped, so it can
+  # both report a new failure and auto-close a previously-reported one once
+  # a run succeeds again.
+  report-status:
+    needs: [plan, ingest, build-catalog]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine pipeline status
+        id: status
+        run: |
+          if [ "${{ needs.plan.result }}" = "failure" ] || [ "${{ needs.ingest.result }}" = "failure" ] || [ "${{ needs.build-catalog.result }}" = "failure" ]; then
+            echo "status=failure" >> "$GITHUB_OUTPUT"
+          elif [ "${{ needs.plan.result }}" = "cancelled" ] || [ "${{ needs.ingest.result }}" = "cancelled" ] || [ "${{ needs.build-catalog.result }}" = "cancelled" ]; then
+            echo "status=cancelled" >> "$GITHUB_OUTPUT"
+          else
+            echo "status=success" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find failed job names for this run
+        id: failed_jobs
+        if: steps.status.outputs.status == 'failure'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          NAMES=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
+            --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')
+          echo "names=$NAMES" >> "$GITHUB_OUTPUT"
+
+      - name: Sync pipeline failure tracking issue
+        id: sync_issue
+        if: steps.status.outputs.status != 'cancelled'
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+        run: |
+          PARENT_NUMBER=$(bash .github/scripts/sync-pipeline-failure-issue.sh \
+            "${{ vars.SUPPORT_REPO }}" \
+            "FX ingestion: pipeline failures" \
+            "${{ steps.status.outputs.status }}" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "${{ steps.failed_jobs.outputs.names }}")
+          echo "parent_number=$PARENT_NUMBER" >> "$GITHUB_OUTPUT"
+
+      # Only safe on a full, untargeted run where ingest actually attempted
+      # every configured pair - see sync-pipeline-failure-subissues.sh's
+      # header for why a targeted run (which never attempted most pairs)
+      # can't safely auto-close their sub-issues just because they're absent
+      # from this run's failures.
+      - name: Download every chunk's failures manifest
+        id: download_failures
+        if: steps.sync_issue.outcome == 'success' && needs.plan.outputs.targeted != 'true' && (needs.ingest.result == 'success' || needs.ingest.result == 'failure')
+        uses: actions/download-artifact@v4
+        with:
+          pattern: fx-profiles-*
+          path: output
+          merge-multiple: true
+
+      - name: Sync per-pair extraction-failure sub-issues
+        if: steps.download_failures.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+        run: |
+          python3 .github/scripts/merge_failures.py --output-dir output/chunk-failures > merged-failures.json
+          bash .github/scripts/sync-pipeline-failure-subissues.sh \
+            "${{ vars.SUPPORT_REPO }}" \
+            "${{ steps.sync_issue.outputs.parent_number }}" \
+            "FX" \
+            "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            merged-failures.json

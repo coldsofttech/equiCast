@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -76,3 +77,22 @@ def write_price_parquet(records: list[dict[str, Any]], output_dir: Path) -> list
         current_df.to_parquet(path, index=False)
         written.append(path)
     return written
+
+
+def write_failures_manifest(failures: list[dict[str, str]], output_dir: Path) -> Path | None:
+    """Write `failures` (each a `{"ticker", "task", "error"}` dict, one per
+    pair/task that raised during this run - see `cli.run`; the key is
+    literally `"ticker"` even though this pipeline's items are currency
+    pairs, so every ingestion package's failures.json shares one schema for
+    the report-pipeline-failures.py merge step) to
+    `<output_dir>/failures.json`, so a partial failure can be reported
+    without parsing container logs. Omitted entirely when `failures` is
+    empty, same convention as the optional per-pair parquet writers above.
+    """
+    if not failures:
+        return None
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    path = output_dir / "failures.json"
+    path.write_text(json.dumps(failures, indent=2), encoding="utf-8")
+    return path

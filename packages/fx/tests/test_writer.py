@@ -1,7 +1,13 @@
+import json
 from pathlib import Path
 
 import pandas as pd
-from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
+from equicast_fx.writer import (
+    write_failures_manifest,
+    write_metrics_parquet,
+    write_price_parquet,
+    write_profile_parquet,
+)
 
 
 def test_write_profile_parquet_partitions_by_pair(tmp_path: Path) -> None:
@@ -95,3 +101,17 @@ def test_write_metrics_parquet_adds_pair_identification(tmp_path: Path) -> None:
     assert result.to_dict(orient="records") == [
         {"from_currency": "GBP", "to_currency": "USD", **metrics}
     ]
+
+
+def test_write_failures_manifest_writes_json(tmp_path: Path) -> None:
+    failures = [{"ticker": "GBPUSD", "task": "prices", "error": "boom"}]
+
+    path = write_failures_manifest(failures, tmp_path)
+
+    assert path == tmp_path / "failures.json"
+    assert json.loads(path.read_text(encoding="utf-8")) == failures
+
+
+def test_write_failures_manifest_empty_failures_writes_nothing(tmp_path: Path) -> None:
+    assert write_failures_manifest([], tmp_path) is None
+    assert list(tmp_path.iterdir()) == []
