@@ -62,6 +62,8 @@ tickers:
     isin: IE0005042456
   - ticker: ITWN
     isin: IE00B0M63623
+  - ticker: ITWN.L
+    isin: IE00B0M63623
   - ticker: IUIT.L
     isin: IE00B3WJKG14
   - ticker: IUKD.L
@@ -117,6 +119,8 @@ tickers:
   - ticker: VUSA.L
     isin: IE00B3XXRP09
   - ticker: VWRL
+    isin: IE00B3RBWM25
+  - ticker: VWRL.L
     isin: IE00B3RBWM25
   - ticker: WINC.L
     isin: IE000KJPDY61
