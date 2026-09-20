@@ -7,48 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
-
-- Refreshed the pre-login landing page: `DemoChart` now fetches real
-  ~1-month daily OHLC bars for AAPL/NVDA/VOO from a new, deliberately
-  narrow unauthenticated endpoint (`GET /api/market/public/demo-prices/`,
-  IP-throttled via its own `public_demo` scope) instead of hand-authored
-  synthetic data. The "Live today"/"Coming next" copy was also brought up
-  to date — dropped "Custom watchlists" (never actually live, still a
-  `ComingSoonPage`), added what's shipped since this copy was last written
-  (portfolio pies, goals, since-inception performance charts, CSV/Trading
-  212 import), and refreshed the roadmap (UK tax, forecasts, news
-  sentiment, futures, broker-linked import, corporate actions, sold-
-  candidate suggestions, diversification/benchmark scoring, responsive
-  layouts).
-
-- Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
-  now file into the shared private `coldsofttech/equicast-support` repo
-  instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`
-  variable and `SUPPORT_ISSUE_TOKEN` secret the Support page's backend
-  already uses (`backend/support/views.py`), so internal
-  engineering/data-quality trackers stay off the public repo's issue
-  list. `.github/scripts/sync-missing-isin-issue.sh` now takes the
-  target repo as its first argument; the `build-catalog` job in both
-  `stock-ingestion.yml`/`etf-ingestion.yml` no longer needs its
-  `issues: write` permission override, since it no longer writes issues
-  into its own repo.
-
-- Account/pie price charts now plot a true since-inception reconstruction
-  instead of "what today's holdings would have been worth historically"
-  (GitHub issue #194): the blue line is point-in-time current value
-  (shares actually held on each date, valued at that date's own price) and
-  the new grey dashed line is point-in-time invested value (that position's
-  own running cost basis, reduced by average cost on a SELL) — both start
-  on the real date of the first BUY across the account's/pie's holdings and
-  run to today, so they move up and down together as positions build up,
-  get trimmed, and get re-priced over time. The old static "current price"
-  dashed reference line is gone — the blue line already is current value.
-  The date-range picker (`frontend/src/pages/priceRangeSlicing.js`'s new
-  `visibleRanges`) now only offers presets the actual investment history
-  could show (no "10Y" button for a 3-month-old position). A "compare
-  against" pie/account/benchmark is unaffected — it keeps the pre-existing
-  "today's shares" aggregate, with no invested/current overlay of its own.
+## [1.0.0] - 2026-09-20
 
 ### Added
 
@@ -206,216 +165,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   those tools are typically more mature on taxation/fees and generally
   show live prices, versus equicast's intentionally delayed, long-term-
   focused data.
-
-### Fixed
-
-- Removing a holding from a pie (via the pie drawer's reallocation) could
-  crash `PieDetailPage` with `Cannot read properties of undefined (reading
-  'currentValue')` in `PieCagrSection`. Its metrics-fetch effect never
-  reset `metricsByHolding` before re-fetching when the `holdings` prop
-  changed, so the component briefly rendered the *old* (longer)
-  `metricsByHolding` against the already-updated, shorter `valuations`
-  array — `weightedPortfolioMetric` (`PieBenchmarkRating.jsx`) indexes
-  both positionally, so the mismatch crashed on the out-of-range index.
-  Now resets to `null` synchronously when `holdings` changes (mirroring
-  `PieBenchmarkRating`'s own `setStatus("loading")` reset, which already
-  avoided this exact race). `weightedPortfolioMetric` itself also now
-  skips a missing `valuations[i]` instead of crashing, as a second line of
-  defense against the same class of mismatch.
-
-- ISIN capture for stock/etf ingestion (`feat/isin`): `StockClient.profile()`/
-  `ETFClient.profile()` now include an `isin` field, sourced from
-  yfinance's `Ticker.isin` lookup via a new `DatafeedClient.get_isin()` (`null`
-  when yfinance has no ISIN on record). Propagated into the search catalog
-  (`equicast_core.catalog.build_catalog_rows`/`CATALOG_SCHEMA`) and into
-  `MarketDataClient.search()`, which now substring-matches `isin` alongside
-  `ticker`/`name`. `stocks.dev/prod.yaml` and `etfs.dev/prod.yaml` entries can
-  now be a `{ticker, isin}` mapping instead of a plain string, to manually
-  override yfinance's lookup for a given ticker — the override always wins,
-  and survives being split into a `--tickers-json` GitHub Actions matrix
-  chunk (`equicast_stock`/`equicast_etf`'s `plan.py`). `equicast-forecasting`'s
-  own standalone ticker loader was updated to accept (and discard) the same
-  `{ticker, isin}` shape, since it reads the same config files/matrix chunks.
-  `/holdings/:id` shows ISIN as a new badge next to Quote type, when present.
-  FX/benchmark and futures were deliberately left out of this pass — tracked
-  as follow-ups in GitHub issues #208 and #207 respectively.
-
-- "Watchlists" and "Goals" entries in the account menu (`UserMenu.jsx`,
-  GitHub issue #170), each navigating to a new route (`/watchlists`,
-  `/goals`). Neither has a real page yet — Watchlists' backend already
-  exists (`backend/watchlists/`, already used elsewhere for
-  watchlist-scoped holdings) but has no frontend; Goals has no code on
-  `main` at all (an earlier `feat/goals` branch built a backend but was
-  never merged) — so both render a new shared `ComingSoonPage` for now,
-  to be replaced by the real UI in a follow-up issue rather than 404ing
-  or blocking this one on building two full features.
-
-- TRANSACTION-mode holdings now also auto-record their paid dividend
-  history as `DIVIDEND` transactions (GitHub issue #124, extending #123's
-  AVERAGE-mode version) — but backfilled across the whole trade history
-  rather than only from "now" forward: `compute_new_dividend_transactions`
-  (`equicast_core.transactions`) gained a `mode` parameter, and
-  TRANSACTION mode's share count for a payout is now the running
-  `BUY`/`SELL` balance as of that payout's own ex-date (a new
-  `_transaction_mode_shares_at` helper), not a single fixed quantity — so
-  a payout from years ago backfills correctly using the whole history,
-  and one landing while the balance is exactly zero (fully sold by then)
-  is skipped rather than recorded for $0.
-
-  A `BUY`/`SELL` created or deleted with a date on or before the
-  holding's `dividends_synced_through` watermark now rewinds it (new
-  `TransactionsClient.rewind_dividends_synced_through`, called from
-  `TransactionListView.post`/`TransactionDetailView.delete`) — a
-  backdated trade changes the share-count timeline for every payout after
-  it, so the reopened range needs a full recheck with the corrected
-  history (an ordinary new-today trade, after the watermark, leaves it
-  untouched). Same as issue #123, an already-created `DIVIDEND`
-  transaction's amount is never rewritten once it exists — a stale amount
-  from a since-added/removed trade is corrected by the user, by hand,
-  same as any dividend.
-
-- AVERAGE-mode holdings now auto-record their paid dividend history as
-  `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
-  mode's own version, issue #124), rather than requiring the user to
-  hand-enter every payout. New `equicast_core.transactions.
-  compute_new_dividend_transactions` turns each `"paid"` entry from
-  `MarketDataClient.get_dividends` not yet recorded into `{date,
-  amount_native}` (shares × per-share payout, using the holding's single
-  `BUY` position — nothing before that `BUY`'s own date qualifies, since
-  there's no share count on record to anchor an earlier payout to); new
-  `sync_dividends_for_holdings` (`backend/transactions/views.py`) turns
-  those into real transactions via `TransactionsClient.create_transaction`
-  and refreshes the holding's rollup. Runs from `GET /api/accounts/`,
-  `/api/accounts/<id>/`, `/api/pies/`, `/api/pies/<id>/`, and
-  `/api/holdings/` (list and detail) — the same point each already
-  resolves the caller's profile for market-data enrichment — so a
-  holding's dividends stay caught up on every read. A no-op for
-  TRANSACTION-mode users, watchlist/fx holdings, or a holding with no
-  `BUY` on record yet.
-
-  Each holding tracks a new `dividends_synced_through` watermark
-  (persisted alongside its transactions, `TransactionsClient.
-  get_dividends_synced_through`/`advance_dividends_synced_through`,
-  advanced via new `equicast_core.transactions.latest_paid_dividend_date`)
-  — every payout a sync even considers, created or skipped as pre-`BUY`,
-  moves it forward, and `create_transaction`/`update_transaction`/
-  `delete_transaction` always carry it forward untouched. Without this, a
-  payout the user deleted would look "missing" again — nothing recorded
-  for its ex-date — and the very next `GET` would just recreate it;
-  deleting an auto-created dividend is now a lasting correction.
-
-- TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
-  (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
-  previously this mode was read-only, only ever populated by whatever
-  transactions already existed. Both reuse the same `TransactionForm` the
-  AVERAGE mode's "Add Buy"/"Add Dividend" already used, generalized with a
-  `transactionType` prop to pick the right price field
-  (`price_native` for a TRANSACTION-mode trade vs. `average_price_native`
-  for an AVERAGE-mode position). "Add Sell" only offers holdings with net
-  shares > 0 recorded (a new `selectNetShares` in `holdingFinancials.js`);
-  the backend's own `InsufficientSharesError` (`equicast_core.transactions`)
-  is still the authority on whether a given quantity is actually sellable.
-  TRANSACTION-mode BUY/SELL records stay immutable (no edit — mirrors the
-  backend), but are now deletable from the trade cards and "See all" table,
-  the only way to correct a mistaken entry, same as an AVERAGE-mode one
-  already was.
-
-- Recent news headlines, via a new `equicast-news` package (`NewsClient`,
-  built on `equicast-datafeed` like `equicast-events`/`equicast-dividends`)
-  wrapping yfinance's `get_news`. Trimmed to the trailing month by design
-  (no historical archive), newest first. The stock, etf, and benchmark
-  ingestion pipelines each write it to a flat `news.parquet` per ticker
-  (not split into history/current like price/dividend/events, since there's
-  no history to separate out); the fx pipeline does not, by design (no fx
-  news). `MarketDataClient.get_news`/`GET /api/market/<asset_class>/
-  <symbol>/news/` (`market_data.views.NewsView`) expose it, 404 for a
-  ticker/pair with none published. On `/holdings/:ticker`, a new
-  `HoldingNewsSection` shows it as a card grid (3-4 per row) right after the
-  CAGR panel, capped with a "See all" Drawer for the rest; each card opens
-  the article in a new tab on click. Cached client-side the same-day
-  IndexedDB way dividends/metrics/prices are (`utils/newsCache.js`).
-
-- Sticky header rows on every signed-out page: `SignInScreen`'s
-  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
-  standalone logo header, now stay pinned to the top of the viewport while
-  scrolling — same `position: sticky` + `Topbar`-style opaque background/
-  bottom-border treatment `Topbar` itself already uses for signed-in
-  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
-  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
-  glow gradient), which silently breaks `position: sticky` for any
-  descendant, so the header couldn't stay pinned once you scrolled past
-  the hero section into the features/roadmap content below otherwise. It
-  no longer blends transparently into the hero glow as a result, matching
-  the other two pages' solid sticky bar instead.
-
-- New shared `PublicHeader` component (`frontend/src/components/shell/
-  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
-  replacing the three near-identical, independently-maintained sticky
-  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
-  grew their own copy of above. Fixes the logo sitting a few pixels lower
-  on the Privacy Policy/Terms and Conditions pages than on the sign-in
-  page (their header's asymmetric top/bottom padding vs. the sign-in
-  header's centered fixed height) by giving every signed-out page the
-  exact same markup/CSS instead of three copies that could drift apart.
-  Also adds the theme toggle to `PrivacyPolicyPage`/
-  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
-  had one before. Renamed token `--ec-landing-bar-h` →
-  `--ec-public-header-h` (`tokens.css`) to match.
-
-### Changed
-
-- `HoldingBuySellGauge`'s stacked sellers/buyers bar now grows in from 0%
-  on load instead of appearing at its final width (GitHub issue #174) —
-  same `revealed`-state pattern `HoldingCagrSection`/`PieCagrSection`
-  already use for their own bars: starts at 0%, flips to the real width
-  on the next frame so `.ec-buysell-bar-segment`'s new `transition: width`
-  (`HoldingTickerPage.css`) has an actual change to animate.
-
-- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
-  returns one bundled `{ticker, currency, last_updated, daily, weekly,
-  monthly}` response instead of defaulting to `range="max"`'s single
-  `prices` array — new `equicast_core.client.MarketDataClient.
-  get_price_history` computes all three segments (`daily`: the earlier of
-  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
-  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
-  one pass over the same Parquet rows `get_prices` reads. An explicit
-  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
-  `get_prices`, still returns the old single-`prices` shape — this only
-  changes what omitting `range` gets you. Frontend: the price chart
-  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
-  response once per ticker and slices it client-side (new
-  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
-  picks, instead of re-fetching on every range-picker click — fixes
-  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
-  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
-  holding's price series on every range click, now it fetches each once.
-
-- `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
-  longer return a `source` field ("yfinance" vs "equicast" — which fields
-  on that record came directly from yfinance versus needed an
-  equicast-computed fallback). New `equicast_core.client._without_source`
-  strips it from every one of these three methods' return values (`.../
-  dividends/` already lost its own `source` field via the separate
-  reshape below); the underlying Parquet files ingestion writes are
-  untouched — `source` is still there, still documented per pipeline
-  (e.g. [packages/stock/README.md](packages/stock/README.md)), just no
-  longer part of what the API hands back to a caller. No frontend change
-  needed — nothing read `.source` off any of these responses; the
-  `MarketProfile`/`MarketMetrics`/`PriceSeries` JSDoc typedefs
-  (`frontend/src/api/market.js`) are updated to match.
-
-- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
-  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
-  — those are the same across every row for one symbol, so they're now
-  surfaced once at the top level only (`last_updated` there is still the
-  *latest* of every contributing row's own, same as before). Each
-  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
-  `price`/`status` (GitHub issue #57). `equicast_core.client.
-  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
-  `DividendRecord` typedef updated to match; no frontend call site actually
-  read the removed per-record fields, so this needed no other UI changes.
-
-### Added
 
 - A cookie consent banner (`components/cookies/CookieBanner.jsx`) and a
   public `/cookie-policy` page, mounted app-wide (outside `RequireAuth`,
@@ -710,68 +459,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   around when switching ranges. A metric missing on either side is
   excluded from the score rather than guessed; renders a plain caption
   instead of a score when nothing overlaps yet.
-
-### Fixed
-
-- The holding/pie/account price chart blinked (flashed fully invisible for
-  a frame) on a same-entity time-range switch instead of updating smoothly
-  (GitHub issue #137). The reveal animations added for a chart's genuine
-  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
-  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
-  `revision`) were replaying on *every* successful fetch, including a
-  plain range switch — whose own "keep the previous chart up, dimmed via
-  is-refreshing" transition already had nothing to hide the reveal's own
-  "start from nothing" state behind, so the chart flashed blank right as
-  the dim lifted. `revision` now only bumps on a chart's real first paint
-  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
-  change; `PiePriceChart`'s equivalent, keyed off a content signature of
-  `holdings` rather than its own unstable array identity, the same fix
-  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
-  a same-entity range switch now just updates the chart's shape directly
-  under the existing dim/undim transition, no separate blink.
-- An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
-  `sector`/`industry` at all — yfinance doesn't populate either for a fund
-  — so every etf catalog row carried `None` for both, and a `/search`
-  Sector/Industry filter silently excluded every etf regardless of which
-  value was picked (the same "row missing the filtered field is excluded"
-  rule a stock row without a `sector` already hits). Both now default to
-  the fixed value `"Exchange Traded Fund"`.
-- `equicast_core.client.MarketDataClient.get_prices()` raised `KeyError:
-  'currency'` for any asset class whose price rows carry no `currency`
-  field — a pre-existing gap in `fx` (a pair converts *between* two
-  currencies rather than being priced *in* one, so its price rows never
-  had one) that `equicast-benchmark`'s prices inherited by copying the fx
-  writer's shape too closely. Surfaced as a benchmark comparison on the
-  holding page getting stuck on "Loading ... price history…" forever (the
-  request 500'd; found by reproducing it directly against a real
-  LocalStack-seeded bucket — `client.get_prices("fx", ...)` 500s the exact
-  same way, though nothing in the app calls it for fx today). Now reads
-  `rows[0].get("currency")`, degrading to `None` (same as
-  `holdingFinancials.formatPrice` already handles) instead of crashing.
-  Also gave `equicast_benchmark.client.BenchmarkClient.prices()` a real
-  `currency` field (an index *is* priced in one, unlike an fx pair — same
-  `get_info(...).get("currency")` `equicast-stock`'s prices() already
-  does), so a freshly re-ingested benchmark's price rows carry it
-  properly rather than relying on the `None` fallback.
-- `HoldingPriceChart`'s "compare against" overlay plotted the comparison
-  series on the main holding's own absolute price axis, which flattens the
-  comparison into an unreadable line near the bottom whenever the two
-  series' price growth differs by orders of magnitude (e.g. AAPL up
-  ~325,992% vs. the S&P 500's ~5,585% over "MAX" — both real, but 57x
-  apart). Switching to a linear "% change since range start" axis wasn't
-  enough either — a 57x gap in cumulative % is still a rounding error on a
-  scale that has to span 0 to 325,992. Comparison mode now plots
-  `log(close / firstClose)` for both series instead of a plain % or price
-  value, so equal vertical distance represents equal *rate* of growth
-  rather than equal absolute/percentage magnitude — the same "log scale"
-  treatment any real charting platform applies for exactly this case, and
-  it keeps both lines visibly dynamic and able to cross throughout the
-  whole range instead of one flatlining. The Line/Area/Candles toggle is
-  hidden while a comparison is active (OHLC candles and an area fill don't
-  carry meaning once both series are normalized to log-growth lines), and
-  a 0%-baseline reference line marks where both series started.
-
-### Added
 
 - The holding page's "Compare against" picker (`HoldingComparePicker`/
   `HoldingPriceChart`) now supports real benchmark comparisons, not just
@@ -1184,312 +871,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Stats/About columns) while the accounts list and/or the
   profile/metrics/transactions fetch are still loading, replacing the
   previous plain "Loading…" text.
-
-### Changed
-
-- The search catalog (`catalog/<asset_class>.json`) is now written/read as
-  Parquet (`catalog/<asset_class>.parquet`) instead of JSON —
-  `equicast_core.catalog.upload_catalog` writes against a new explicit
-  `CATALOG_SCHEMA` (so an empty ticker list still produces a valid file
-  rather than one with an unguessable/empty schema), and
-  `MarketDataClient.get_catalog` reads it via the same `_read_parquet`
-  helper `get_profile`/`get_prices` already use. Same format/tooling
-  (`pyarrow`) as every other published file now, and avoids JSON's
-  per-row repeated field names once the ticker universe grows well past
-  today's handful per asset class — `search()` still reads a catalog in
-  full on every call either way, so this doesn't change that access
-  pattern, just the bytes on disk.
-- `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
-  the pointer cursor/hover cue for a table with no row actions) removed
-  now that `SearchPage`'s rows — its only user — are clickable.
-- `data/` (the local Parquet/dev-data cache — see `docs/local-setup.md`) is
-  no longer partially tracked: removed the placeholder `data/.gitkeep` and
-  collapsed `.gitignore`'s two piecemeal `data/*.parquet`/
-  `data/localstack-seed/` entries into one `data/` rule. Nothing needs the
-  directory to exist via git — `scripts/local-dev.ps1` and the ingestion
-  CLIs already create it on demand.
-- `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
-  now decodes a stock profile's `ceos` field back into a real list before
-  returning it. `equicast_stock.writer.write_profile_parquet` deliberately
-  JSON-encodes `ceos` to a plain string column when writing `profile.parquet`
-  (a native `list<struct>` column round-trips fine through pandas/pyarrow,
-  but common Parquet viewers are JS-based and render it as
-  "[object Object]") — its docstring says "consumers `json.loads()` it
-  back", but `get_profile` never did, so every caller (the `ProfileView`
-  API endpoint included) got the raw JSON text through instead of a real
-  array. Surfaced by the frontend holding detail page's About section
-  always showing "—" for CEO even on tickers (e.g. AAPL, NVDA) with real
-  `companyOfficers` data. Only touches `ceos` when present and still a
-  string, so etf/fx profiles (which have no `ceos` field at all) are
-  unaffected. `packages/core/tests/test_client.py` gained regression
-  coverage for both the decode and the missing-field case.
-- Applied the same `history.parquet`/`current.parquet` split to
-  `equicast-etf`/`equicast-stock`'s dividend Parquet layout (fx has no
-  dividends) — `dividend/history.parquet` (every year before the current
-  one, written once by a `--full-load` run) and `dividend/current.parquet`
-  (the current year, rewritten by every run that has any current-year
-  ex-dividend rows), replacing `year=<YYYY>/dividend.parquet` per year, for
-  the same reasoning as the price split above: unchanged recurring monthly
-  PUT count/storage (each scheduled run already only touched one dividend
-  file), but the one-time `--full-load` backfill's combined price+dividend
-  PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
-  4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
-  tickers: 40,000 → 4,000 PUTs). Nothing currently reads dividend data back
-  from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
-  changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
-  Stock/ETF sections re-annotated again with the updated math; a real
-  `infracost breakdown` run confirms both projects' totals are still
-  unchanged (dev ~$0.05/month, prod ~$5.85/month).
-- Applied the same split to `equicast-etf`/`equicast-stock`'s events
-  Parquet layout, the last remaining `year=<YYYY>` partition —
-  `events/history.parquet` (every year before the current one) and
-  `events/current.parquet` (the current year *or later*, not an exact
-  match: earnings dates can be future-dated, e.g. a Q1 announcement
-  scheduled into next calendar year while this runs in December, and a
-  not-yet-happened event belongs in `current.parquet` regardless of which
-  calendar year it falls in — `write_events_parquet` masks on `date >=
-  current_year`, not `==`). Same reasoning as price/dividend: unchanged
-  recurring monthly PUT count/storage, but the one-time `--full-load`
-  backfill's combined price+dividend+events PUT count drops from up to
-  ~60/ticker (20 each) to at most 6 — still a 90% cut (9,000 stock
-  tickers: 540,000 → 54,000 PUTs). ETF's events specifically sees no
-  realistic PUT saving from this — a ticker has at most one split in its
-  whole history, so a full-load run already wrote at most 1 events PUT
-  before this split and still does after; only its storage accounting
-  changed (a split's row now lands in `events/history.parquet` rather
-  than a specific `year=<YYYY>/events.parquet`, same ~7KB either way).
-  Nothing currently reads events data back from S3, so no reader changes
-  were needed here either. `infra/infracost-usage.{dev,prod}.yml`'s
-  Stock/ETF sections re-annotated once more; a real `infracost breakdown`
-  run confirms both projects' totals are still unchanged (dev
-  ~$0.05/month, prod ~$5.85/month).
-- Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
-  layout from one `year=<YYYY>/price.parquet` per year of history to just
-  two files: `price/history.parquet` (every year before the current one,
-  written once by a `--full-load` run) and `price/current.parquet` (the
-  current year, rewritten by every run — scheduled or manual). Each
-  scheduled run only ever fetches `ytd` data, so it only ever touched one
-  price file either way — this doesn't change the recurring monthly PUT
-  count (still 990,000/month for stock, 110,000/month for ETF, per
-  `infra/infracost-usage.prod.yml`) or total storage (still ~850KB/stock
-  ticker, ~532KB/ETF ticker — consolidating years into one file doesn't
-  shrink the row data). What it does cut is the one-time `--full-load`
-  backfill's PUT count for price specifically: up to ~20 PUTs/ticker (one
-  per year of history) down to at most 2 — a 90% reduction (9,000 stock
-  tickers: 180,000 → 18,000 PUTs; 1,000 ETF tickers: 20,000 → 2,000), not
-  part of the scheduled-runs figure either way since that backfill is a
-  manual `workflow_dispatch` run. `equicast_core.MarketDataClient.get_prices()`
-  now reads `price/current.parquet` instead of the current year's
-  `year=<YYYY>/price.parquet` — its return value (current calendar year's
-  rows) is unchanged, only the S3 key. `dividend.parquet`/`events.parquet`
-  keep their existing one-file-per-year layout; only prices were affected
-  by their put/get volume being singled out. Re-annotated (not
-  re-numbered) `infra/infracost-usage.{dev,prod}.yml`'s Stock/ETF sections
-  with the storage/request math above — a real `infracost breakdown` run
-  confirms both projects' totals are unchanged (dev ~$0.05/month, prod
-  ~$5.85/month), as expected since only comments changed there, not the
-  usage values themselves.
-- Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
-  scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
-  22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —
-  after both the US (NYSE/NASDAQ) and UK (LSE) markets close, so each
-  weekday's fetch gets that day's complete OHLC bar. yfinance's
-  daily-interval history only changes once a trading day closes, so the
-  previous 6-hourly schedule bought no real freshness, just repeated S3
-  writes of the same data; both markets are shut every Saturday/Sunday, so
-  the added day-of-week filter (`1-5`) skips those runs entirely rather than
-  harmlessly re-fetching Friday's already-current close — it doesn't account
-  for weekday market holidays (Christmas, Thanksgiving, etc.), which still
-  trigger a run that harmlessly re-writes the last available close. The
-  15m/30m chain offsets between the three pipelines are unchanged. Re-sized
-  `infra/infracost-usage.prod.yml`'s `market_data_bucket` ingestion request
-  counts for the new ~22-runs/month weekday cadence (down from 120 at
-  6-hourly) — confirmed via a real `infracost breakdown` run: prod's
-  `market_data_bucket` PUT cost drops from ~$30.01/month to ~$5.50/month
-  (prod total ~$5.85/month, down from ~$30.36/month); dev is unaffected (it
-  was never on the scheduled trigger to begin with — see that file's
-  header).
-- Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
-  `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
-  previously shared one usage file, so the "dev" and "prod" cost estimates
-  were identical despite being very different deployments. Reworked the
-  numbers to actually reflect that: dev models ~2 users, no scheduled
-  ingestion (only ~12 manual `workflow_dispatch(environment=dev)` runs/month
-  against today's small `*.dev.yaml` pair/ticker lists), for development and
-  validation only; prod models ~50 active users and scheduled ingestion
-  sized against an expected ~10,000-instrument US/UK stock+ETF universe
-  (~9,000 stocks + ~1,000 ETFs, FX unchanged at 4 pairs) — a big jump from
-  today's small `*.prod.yaml` placeholders (see the prior "Split fx/stock/
-  etf ingestion configs" entry), reflected only in the cost model for now,
-  not the actual config files. Backend Lambda/API Gateway/DynamoDB/
-  `user_data_bucket` sizing now derives from an explicit per-session
-  request-count breakdown (identity, accounts, portfolios, watchlists,
-  holdings, transactions, market-data search — 15 HTTP calls/session, 20
-  sessions/user/month) instead of a flat unexplained "500 MAU" guess, with
-  dev/prod differing only in user count (2 vs. 50). `frontend_bucket`/
-  CloudFront page-load traffic scales the same way; `backend_deploy_bucket`
-  stays shared between dev/prod (deploy-frequency-driven, not
-  user-count-driven).
-- Tightened the three ingestion workflows' cron offsets from hours to
-  minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
-  (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
-  later (`15 */6 * * *`) instead of 4 hours later, and `stock-ingestion.yml`
-  now runs 30 minutes after ETF / 45 minutes after FX (`45 */6 * * *`)
-  instead of 2 hours after FX — swapping the stock/ETF run order in the
-  process (previously FX → stock → ETF, now FX → ETF → stock). Updated the
-  offset comments/docs (`docs/{fx,stock,etf}-pipeline.md`, root `README.md`,
-  `infra/infracost-usage.yml`) accordingly; the request-count estimates
-  themselves are unchanged since all three still run 4 times/day.
-- Split each ingestion pipeline's pair/ticker config into a `dev` and a
-  `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
-  `packages/stock/config/stocks.{dev,prod}.yaml`,
-  `packages/etf/config/etfs.{dev,prod}.yaml` — replacing the single
-  `fx_pairs.yaml`/`stocks.yaml`/`etfs.yaml` each package previously had.
-  `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`'s `plan` job
-  already resolved `dev`/`production` for which S3 bucket to upload to;
-  it now resolves the environment *before* computing chunks and picks the
-  matching config file for `equicast-{fx,stock,etf}-plan` too, so a manual
-  dev run and the scheduled production run can diverge on which
-  pairs/tickers get fetched, not just where the output lands. The `dev`
-  file in each pair keeps the previously-existing list; the `prod` file is
-  an exact copy for now (expand it independently as needed). Each
-  Dockerfile's default `CMD` and `scripts/smoke_test.py`'s default
-  `--config` now point at the `dev` file, since neither is used by the
-  ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
-  explicitly) — only by ad-hoc local runs, where dev is the safer default.
-- Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
-  & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
-  `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default
-  in-memory token cache was wiped on every hard reload, so refreshing any
-  authenticated route (e.g. `/accounts`) bounced back to the sign-in screen
-  even with a still-valid Auth0 session. (2) `DashboardPage`'s empty-state
-  "Create an account" now opens the same `Drawer`+`AccountForm` right there
-  instead of navigating to `/accounts` and needing a second click. (3)
-  `AccountForm`'s description field is no longer marked `required` — the
-  backend (`REQUIRED_CREATE_FIELDS` in `backend/accounts/views.py`) already
-  allowed it blank. (4) `AccountForm` gains a `defaultCurrency` prop, seeded
-  from the caller's own `profile.default_currency`, so a new account's
-  currency field starts pre-filled with the user's own default instead of
-  blank (editing an existing account still uses its own currency). (5)
-  `Drawer.css`'s `max-width` is now `900px` (previously `440px`), applying
-  to every drawer in the app. (6) `ConfirmDialog` now renders via `Modal`
-  instead of `Drawer` — a delete confirmation is a single yes/no decision,
-  not a form, so it no longer shares the wide side-drawer used for
-  account/pie editing. (7) `AccountsListPage`'s top-of-page "New account"
-  button is now hidden once the list has loaded and is empty (kept during
-  the initial load to avoid a flash), leaving only the centered empty-state
-  button, which duplicated it.
-
-  Also added: `frontend/src/api/sessionCache.js` (thin sessionStorage
-  read/write/clear helpers, tolerant of storage being unavailable) backs a
-  reworked `useCurrentUser.js` and a new `useAccounts.js`, both of which now
-  cache their GET result (`GET /api/identity/me/`, `GET /api/accounts/`) in
-  `sessionStorage` and serve every later mount of the hook (Topbar,
-  AccountsListPage, DashboardPage, ... each calls independently) from that
-  cache instead of re-fetching; a module-level in-flight promise in each
-  hook also collapses simultaneous first-mounts (e.g. Topbar + a page both
-  mounting on first load) into a single request. `setProfile`/`setAccounts`
-  write straight back to the cache, so a save from `SettingsModal` or a
-  create/edit/delete from `AccountsListPage`/`DashboardPage` is what every
-  later mount sees. `AccountDetailPage`/`PieDetailPage` load their own copy
-  via `getAccount`/`getPie` rather than the shared list, so their own
-  mutations (edit account, delete account, create/delete pie, allocation
-  sync) now also patch the cached accounts list directly, keeping
-  `/accounts`/`/dashboard` from showing stale data after a visit to a detail
-  page. Both caches are cleared on sign-out (`UserMenu.jsx`'s
-  `handleSignOut`) since `sessionStorage` survives the Auth0 logout/login
-  redirect round trip on the same tab — without this a different account
-  signing in on the same tab could briefly render the previous user's
-  cached profile/accounts.
-- `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
-  `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
-  existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With
-  `-StartFrontend`, the three values are now exported as
-  `VITE_AUTH0_DOMAIN`/`VITE_AUTH0_CLIENT_ID`/`VITE_AUTH0_AUDIENCE` into the
-  spawned `npm run dev` process — Vite gives an already-set environment
-  variable priority over `frontend/.env.local`, so the frontend's real
-  Auth0 login flow now works out of the box against LocalStack without
-  hand-creating that file. Previously only the backend's `AUTH0_DOMAIN`/
-  `AUTH0_AUDIENCE` were wired up this way, leaving `RequireAuth` stuck on
-  its "not configured" state for anyone running the script as documented.
-  `docs/auth0-setup.md`'s Step 3 also gains a step easy to miss on a fresh
-  tenant: the frontend Application needs an explicit **User-Delegated
-  Access** grant against the API (Application Access tab) before
-  `loginWithRedirect`'s `audience` param works — without it Auth0 returns
-  `invalid_request: Client "..." is not authorized to access resource
-  server "..."`, surfaced by the frontend as a generic "Something went
-  wrong signing in" (`RequireAuth.jsx`).
-- `backend-ci.yml`/`frontend-ci.yml` gain a `workflow_dispatch` trigger.
-  Surfaced by merging #36 (frontend CD infra): that PR's changes lived
-  entirely under `infra/`, `.github/workflows/deploy.yml`, and `docs/`, so
-  neither CI workflow's path filter matched and neither ran — and since
-  `deploy.yml` only triggers off `Backend CI`/`Frontend CI` completing via
-  `workflow_run`, the frontend build never happened either, leaving the
-  freshly-applied dev CloudFront distribution with nothing synced to its
-  bucket. Any infra- or docs-only merge to `main` hits the same gap.
-  `workflow_dispatch` lets a `main` run be kicked off by hand (Actions tab,
-  or `gh workflow run "Frontend CI" --ref main`) to chain into `deploy.yml`
-  without waiting on a matching code change.
-- Fixed two related backend production-hardening gaps, both surfaced by
-  manual testing of the Phase D accounts endpoints: (1) `infra/main.tf`'s
-  `backend_lambda` never set `DJANGO_DEBUG`, so every deployed environment
-  — dev and prod alike — silently fell back to `settings.py`'s
-  `DEBUG="true"` default; an unhandled exception in prod would have
-  rendered Django's full debug traceback page back to the caller instead
-  of a generic 500. Now set explicitly per environment
-  (`var.environment == "prod" ? "false" : "true"`) rather than left to the
-  code default. (2) `backend/equicast_api/settings.py` gains
-  `APPEND_SLASH = False`: a `POST`/`PATCH`/`DELETE` missing its trailing
-  slash (e.g. `POST /api/accounts` instead of `/api/accounts/`) previously
-  raised an unhandled `RuntimeError` — `CommonMiddleware` refuses to
-  redirect a non-safe method with a body, since doing so risks dropping it
-  — which combined with (1) meant that traceback was visible to the
-  caller in prod too. Every `urls.py` pattern already ends in a trailing
-  slash and every documented endpoint is written with one, so the
-  redirect-on-`GET` behavior `APPEND_SLASH` exists for isn't useful here
-  either; disabling it makes a missing trailing slash a plain `404` for
-  every HTTP method instead. `backend/accounts/tests.py` gains a
-  regression test asserting `404`, not `500`, for a slash-less `POST`.
-- `terraform.yml` now sets `concurrency: { group: terraform-${{ github.ref }},
-  cancel-in-progress: true }`. Since `development`/`production` gained
-  required-reviewer approval, a run left `waiting` on an unapproved gate
-  no longer gets superseded on its own — an older push's `apply-dev` could
-  sit waiting indefinitely alongside a newer one for the same ref, cluttering
-  the approval queue and risking someone approving stale infra. A newer push
-  now cancels the older run for the same `github.ref` outright.
-- Collapsed the `deploy-dev` GitHub Environment into `development`:
-  `deploy.yml`'s `deploy-backend-dev`/`deploy-frontend-dev` now gate on
-  `environment: development` (previously `deploy-dev`), the same
-  environment `terraform.yml`'s `apply-dev` already used. `apply-dev` was
-  previously ungated (`development` had no protection rules, relying only
-  on the Infracost PR comment as a soft review); it now requires the same
-  required-reviewer approval as the deploy jobs. Reason: an unreviewed PR
-  merge to `main` was able to both apply infra changes and push a new
-  backend build to dev fully automatically, with no approval gate at
-  all — a real risk of an unintended AWS cost spike in dev.
-  `docs/terraform-state-setup.md` and `docs/local-setup.md` updated to
-  describe two gated GitHub Environments (`development`, `production`)
-  instead of three.
-- `market_data`'s `ProfileView`/`PricesView` now require Auth0 authentication
-  (`authentication_classes = [Auth0JWTAuthentication]`,
-  `permission_classes = [IsAuthenticated]`), matching `identity.MeView`.
-  Previously these fell back to DRF's `AllowAny` default and were reachable
-  without a Bearer token — `REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]`
-  only *identifies* a caller, it doesn't by itself require authentication.
-  `backend/market_data/tests.py` updated to mock the Auth0 JWT flow and
-  assert 401 when no token is supplied.
-
-### Removed
-
-- `day_average`, `year_average`, `moving_average_50_days`, and
-  `moving_average_200_days` dropped from `equicast-stock`/`equicast-etf`/
-  `equicast-fx`'s `profile()` (and therefore `profile.parquet`) —
-  `StockClient`/`ETFClient`/`FXClient` (`packages/*/src/equicast_*/client.py`)
-  no longer compute or fetch these fields. Frontend fallbacks that read
-  `day_average` (`HoldingTickerPage.jsx`, `HoldingStatsPanel.jsx`,
-  `holdingFinancials.js`'s `resolveFxRate`) now use `day_close` alone.
-
-### Added
 
 - Frontend Phase 1 (Accounts & Pies): the first real domain pages, plus a
   core component library scoped to what they need — `frontend/src/components/core/`
@@ -2468,6 +1849,390 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Refreshed the pre-login landing page: `DemoChart` now fetches real
+  ~1-month daily OHLC bars for AAPL/NVDA/VOO from a new, deliberately
+  narrow unauthenticated endpoint (`GET /api/market/public/demo-prices/`,
+  IP-throttled via its own `public_demo` scope) instead of hand-authored
+  synthetic data. The "Live today"/"Coming next" copy was also brought up
+  to date — dropped "Custom watchlists" (never actually live, still a
+  `ComingSoonPage`), added what's shipped since this copy was last written
+  (portfolio pies, goals, since-inception performance charts, CSV/Trading
+  212 import), and refreshed the roadmap (UK tax, forecasts, news
+  sentiment, futures, broker-linked import, corporate actions, sold-
+  candidate suggestions, diversification/benchmark scoring, responsive
+  layouts).
+
+- Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
+  now file into the shared private `coldsofttech/equicast-support` repo
+  instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`
+  variable and `SUPPORT_ISSUE_TOKEN` secret the Support page's backend
+  already uses (`backend/support/views.py`), so internal
+  engineering/data-quality trackers stay off the public repo's issue
+  list. `.github/scripts/sync-missing-isin-issue.sh` now takes the
+  target repo as its first argument; the `build-catalog` job in both
+  `stock-ingestion.yml`/`etf-ingestion.yml` no longer needs its
+  `issues: write` permission override, since it no longer writes issues
+  into its own repo.
+
+- Account/pie price charts now plot a true since-inception reconstruction
+  instead of "what today's holdings would have been worth historically"
+  (GitHub issue #194): the blue line is point-in-time current value
+  (shares actually held on each date, valued at that date's own price) and
+  the new grey dashed line is point-in-time invested value (that position's
+  own running cost basis, reduced by average cost on a SELL) — both start
+  on the real date of the first BUY across the account's/pie's holdings and
+  run to today, so they move up and down together as positions build up,
+  get trimmed, and get re-priced over time. The old static "current price"
+  dashed reference line is gone — the blue line already is current value.
+  The date-range picker (`frontend/src/pages/priceRangeSlicing.js`'s new
+  `visibleRanges`) now only offers presets the actual investment history
+  could show (no "10Y" button for a 3-month-old position). A "compare
+  against" pie/account/benchmark is unaffected — it keeps the pre-existing
+  "today's shares" aggregate, with no invested/current overlay of its own.
+
+- `HoldingBuySellGauge`'s stacked sellers/buyers bar now grows in from 0%
+  on load instead of appearing at its final width (GitHub issue #174) —
+  same `revealed`-state pattern `HoldingCagrSection`/`PieCagrSection`
+  already use for their own bars: starts at 0%, flips to the real width
+  on the next frame so `.ec-buysell-bar-segment`'s new `transition: width`
+  (`HoldingTickerPage.css`) has an actual change to animate.
+
+- `GET /api/market/<asset_class>/<symbol>/prices/` with no `?range=` now
+  returns one bundled `{ticker, currency, last_updated, daily, weekly,
+  monthly}` response instead of defaulting to `range="max"`'s single
+  `prices` array — new `equicast_core.client.MarketDataClient.
+  get_price_history` computes all three segments (`daily`: the earlier of
+  6 months ago or this year's Jan 1 onward, unaggregated; `weekly`:
+  aggregated, from 2 years ago; `monthly`: aggregated, full history) in
+  one pass over the same Parquet rows `get_prices` reads. An explicit
+  `?range=` (one of `PRICE_RANGES`) is completely unchanged — still calls
+  `get_prices`, still returns the old single-`prices` shape — this only
+  changes what omitting `range` gets you. Frontend: the price chart
+  (`HoldingPriceChart.jsx`/`PiePriceChart.jsx`) fetches the bundled
+  response once per ticker and slices it client-side (new
+  `frontend/src/pages/priceRangeSlicing.js`) for whichever range the user
+  picks, instead of re-fetching on every range-picker click — fixes
+  GitHub issue #150. `PiePriceChart.jsx`'s per-holding fan-out
+  (`fetchAggregateBars`) benefits the most: it used to re-fetch every held
+  holding's price series on every range click, now it fetches each once.
+
+- `GET /api/market/.../profile/`, `.../metrics/`, and `.../prices/` no
+  longer return a `source` field ("yfinance" vs "equicast" — which fields
+  on that record came directly from yfinance versus needed an
+  equicast-computed fallback). New `equicast_core.client._without_source`
+  strips it from every one of these three methods' return values (`.../
+  dividends/` already lost its own `source` field via the separate
+  reshape below); the underlying Parquet files ingestion writes are
+  untouched — `source` is still there, still documented per pipeline
+  (e.g. [packages/stock/README.md](packages/stock/README.md)), just no
+  longer part of what the API hands back to a caller. No frontend change
+  needed — nothing read `.source` off any of these responses; the
+  `MarketProfile`/`MarketMetrics`/`PriceSeries` JSDoc typedefs
+  (`frontend/src/api/market.js`) are updated to match.
+
+- `GET /api/market/<asset_class>/<symbol>/dividends/` no longer repeats
+  `ticker`/`currency`/`last_updated`/`source` on every entry in `dividends`
+  — those are the same across every row for one symbol, so they're now
+  surfaced once at the top level only (`last_updated` there is still the
+  *latest* of every contributing row's own, same as before). Each
+  `dividends` entry now carries just `ex_dividend_date`/`payment_date`/
+  `price`/`status` (GitHub issue #57). `equicast_core.client.
+  MarketDataClient.get_dividends()` and `frontend/src/api/market.js`'s
+  `DividendRecord` typedef updated to match; no frontend call site actually
+  read the removed per-record fields, so this needed no other UI changes.
+
+- The search catalog (`catalog/<asset_class>.json`) is now written/read as
+  Parquet (`catalog/<asset_class>.parquet`) instead of JSON —
+  `equicast_core.catalog.upload_catalog` writes against a new explicit
+  `CATALOG_SCHEMA` (so an empty ticker list still produces a valid file
+  rather than one with an unguessable/empty schema), and
+  `MarketDataClient.get_catalog` reads it via the same `_read_parquet`
+  helper `get_profile`/`get_prices` already use. Same format/tooling
+  (`pyarrow`) as every other published file now, and avoids JSON's
+  per-row repeated field names once the ticker universe grows well past
+  today's handful per asset class — `search()` still reads a catalog in
+  full on every call either way, so this doesn't change that access
+  pattern, just the bytes on disk.
+- `frontend/src/styles/table.css`'s `.ec-table--static` modifier (dropped
+  the pointer cursor/hover cue for a table with no row actions) removed
+  now that `SearchPage`'s rows — its only user — are clickable.
+- `data/` (the local Parquet/dev-data cache — see `docs/local-setup.md`) is
+  no longer partially tracked: removed the placeholder `data/.gitkeep` and
+  collapsed `.gitignore`'s two piecemeal `data/*.parquet`/
+  `data/localstack-seed/` entries into one `data/` rule. Nothing needs the
+  directory to exist via git — `scripts/local-dev.ps1` and the ingestion
+  CLIs already create it on demand.
+- `MarketDataClient.get_profile` (`packages/core/src/equicast_core/client.py`)
+  now decodes a stock profile's `ceos` field back into a real list before
+  returning it. `equicast_stock.writer.write_profile_parquet` deliberately
+  JSON-encodes `ceos` to a plain string column when writing `profile.parquet`
+  (a native `list<struct>` column round-trips fine through pandas/pyarrow,
+  but common Parquet viewers are JS-based and render it as
+  "[object Object]") — its docstring says "consumers `json.loads()` it
+  back", but `get_profile` never did, so every caller (the `ProfileView`
+  API endpoint included) got the raw JSON text through instead of a real
+  array. Surfaced by the frontend holding detail page's About section
+  always showing "—" for CEO even on tickers (e.g. AAPL, NVDA) with real
+  `companyOfficers` data. Only touches `ceos` when present and still a
+  string, so etf/fx profiles (which have no `ceos` field at all) are
+  unaffected. `packages/core/tests/test_client.py` gained regression
+  coverage for both the decode and the missing-field case.
+- Applied the same `history.parquet`/`current.parquet` split to
+  `equicast-etf`/`equicast-stock`'s dividend Parquet layout (fx has no
+  dividends) — `dividend/history.parquet` (every year before the current
+  one, written once by a `--full-load` run) and `dividend/current.parquet`
+  (the current year, rewritten by every run that has any current-year
+  ex-dividend rows), replacing `year=<YYYY>/dividend.parquet` per year, for
+  the same reasoning as the price split above: unchanged recurring monthly
+  PUT count/storage (each scheduled run already only touched one dividend
+  file), but the one-time `--full-load` backfill's combined price+dividend
+  PUT count drops from up to ~40/ticker (20 price + 20 dividend) to at most
+  4 — a 90% cut (9,000 stock tickers: 360,000 → 36,000 PUTs; 1,000 ETF
+  tickers: 40,000 → 4,000 PUTs). Nothing currently reads dividend data back
+  from S3 (unlike price, via `MarketDataClient.get_prices()`), so no reader
+  changes were needed here. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated again with the updated math; a real
+  `infracost breakdown` run confirms both projects' totals are still
+  unchanged (dev ~$0.05/month, prod ~$5.85/month).
+- Applied the same split to `equicast-etf`/`equicast-stock`'s events
+  Parquet layout, the last remaining `year=<YYYY>` partition —
+  `events/history.parquet` (every year before the current one) and
+  `events/current.parquet` (the current year *or later*, not an exact
+  match: earnings dates can be future-dated, e.g. a Q1 announcement
+  scheduled into next calendar year while this runs in December, and a
+  not-yet-happened event belongs in `current.parquet` regardless of which
+  calendar year it falls in — `write_events_parquet` masks on `date >=
+  current_year`, not `==`). Same reasoning as price/dividend: unchanged
+  recurring monthly PUT count/storage, but the one-time `--full-load`
+  backfill's combined price+dividend+events PUT count drops from up to
+  ~60/ticker (20 each) to at most 6 — still a 90% cut (9,000 stock
+  tickers: 540,000 → 54,000 PUTs). ETF's events specifically sees no
+  realistic PUT saving from this — a ticker has at most one split in its
+  whole history, so a full-load run already wrote at most 1 events PUT
+  before this split and still does after; only its storage accounting
+  changed (a split's row now lands in `events/history.parquet` rather
+  than a specific `year=<YYYY>/events.parquet`, same ~7KB either way).
+  Nothing currently reads events data back from S3, so no reader changes
+  were needed here either. `infra/infracost-usage.{dev,prod}.yml`'s
+  Stock/ETF sections re-annotated once more; a real `infracost breakdown`
+  run confirms both projects' totals are still unchanged (dev
+  ~$0.05/month, prod ~$5.85/month).
+- Changed `equicast-fx`/`equicast-etf`/`equicast-stock`'s price Parquet
+  layout from one `year=<YYYY>/price.parquet` per year of history to just
+  two files: `price/history.parquet` (every year before the current one,
+  written once by a `--full-load` run) and `price/current.parquet` (the
+  current year, rewritten by every run — scheduled or manual). Each
+  scheduled run only ever fetches `ytd` data, so it only ever touched one
+  price file either way — this doesn't change the recurring monthly PUT
+  count (still 990,000/month for stock, 110,000/month for ETF, per
+  `infra/infracost-usage.prod.yml`) or total storage (still ~850KB/stock
+  ticker, ~532KB/ETF ticker — consolidating years into one file doesn't
+  shrink the row data). What it does cut is the one-time `--full-load`
+  backfill's PUT count for price specifically: up to ~20 PUTs/ticker (one
+  per year of history) down to at most 2 — a 90% reduction (9,000 stock
+  tickers: 180,000 → 18,000 PUTs; 1,000 ETF tickers: 20,000 → 2,000), not
+  part of the scheduled-runs figure either way since that backfill is a
+  manual `workflow_dispatch` run. `equicast_core.MarketDataClient.get_prices()`
+  now reads `price/current.parquet` instead of the current year's
+  `year=<YYYY>/price.parquet` — its return value (current calendar year's
+  rows) is unchanged, only the S3 key. `dividend.parquet`/`events.parquet`
+  keep their existing one-file-per-year layout; only prices were affected
+  by their put/get volume being singled out. Re-annotated (not
+  re-numbered) `infra/infracost-usage.{dev,prod}.yml`'s Stock/ETF sections
+  with the storage/request math above — a real `infracost breakdown` run
+  confirms both projects' totals are unchanged (dev ~$0.05/month, prod
+  ~$5.85/month), as expected since only comments changed there, not the
+  usage values themselves.
+- Switched `fx-ingestion.yml`/`etf-ingestion.yml`/`stock-ingestion.yml`'s
+  scheduled trigger from every 6 hours to once daily, Monday-Friday only, at
+  22:00/22:15/22:45 UTC (`0 22 * * 1-5`/`15 22 * * 1-5`/`45 22 * * 1-5`) —
+  after both the US (NYSE/NASDAQ) and UK (LSE) markets close, so each
+  weekday's fetch gets that day's complete OHLC bar. yfinance's
+  daily-interval history only changes once a trading day closes, so the
+  previous 6-hourly schedule bought no real freshness, just repeated S3
+  writes of the same data; both markets are shut every Saturday/Sunday, so
+  the added day-of-week filter (`1-5`) skips those runs entirely rather than
+  harmlessly re-fetching Friday's already-current close — it doesn't account
+  for weekday market holidays (Christmas, Thanksgiving, etc.), which still
+  trigger a run that harmlessly re-writes the last available close. The
+  15m/30m chain offsets between the three pipelines are unchanged. Re-sized
+  `infra/infracost-usage.prod.yml`'s `market_data_bucket` ingestion request
+  counts for the new ~22-runs/month weekday cadence (down from 120 at
+  6-hourly) — confirmed via a real `infracost breakdown` run: prod's
+  `market_data_bucket` PUT cost drops from ~$30.01/month to ~$5.50/month
+  (prod total ~$5.85/month, down from ~$30.36/month); dev is unaffected (it
+  was never on the scheduled trigger to begin with — see that file's
+  header).
+- Split `infra/infracost-usage.yml` into `infra/infracost-usage.dev.yml` and
+  `infra/infracost-usage.prod.yml` — `infracost.yml`'s two projects
+  previously shared one usage file, so the "dev" and "prod" cost estimates
+  were identical despite being very different deployments. Reworked the
+  numbers to actually reflect that: dev models ~2 users, no scheduled
+  ingestion (only ~12 manual `workflow_dispatch(environment=dev)` runs/month
+  against today's small `*.dev.yaml` pair/ticker lists), for development and
+  validation only; prod models ~50 active users and scheduled ingestion
+  sized against an expected ~10,000-instrument US/UK stock+ETF universe
+  (~9,000 stocks + ~1,000 ETFs, FX unchanged at 4 pairs) — a big jump from
+  today's small `*.prod.yaml` placeholders (see the prior "Split fx/stock/
+  etf ingestion configs" entry), reflected only in the cost model for now,
+  not the actual config files. Backend Lambda/API Gateway/DynamoDB/
+  `user_data_bucket` sizing now derives from an explicit per-session
+  request-count breakdown (identity, accounts, portfolios, watchlists,
+  holdings, transactions, market-data search — 15 HTTP calls/session, 20
+  sessions/user/month) instead of a flat unexplained "500 MAU" guess, with
+  dev/prod differing only in user count (2 vs. 50). `frontend_bucket`/
+  CloudFront page-load traffic scales the same way; `backend_deploy_bucket`
+  stays shared between dev/prod (deploy-frequency-driven, not
+  user-count-driven).
+- Tightened the three ingestion workflows' cron offsets from hours to
+  minutes: `fx-ingestion.yml` still runs first on `0 */6 * * *`
+  (00:00/06:00/12:00/18:00 UTC), but `etf-ingestion.yml` now runs 15 minutes
+  later (`15 */6 * * *`) instead of 4 hours later, and `stock-ingestion.yml`
+  now runs 30 minutes after ETF / 45 minutes after FX (`45 */6 * * *`)
+  instead of 2 hours after FX — swapping the stock/ETF run order in the
+  process (previously FX → stock → ETF, now FX → ETF → stock). Updated the
+  offset comments/docs (`docs/{fx,stock,etf}-pipeline.md`, root `README.md`,
+  `infra/infracost-usage.yml`) accordingly; the request-count estimates
+  themselves are unchanged since all three still run 4 times/day.
+- Split each ingestion pipeline's pair/ticker config into a `dev` and a
+  `prod` file — `packages/fx/config/fx_pairs.{dev,prod}.yaml`,
+  `packages/stock/config/stocks.{dev,prod}.yaml`,
+  `packages/etf/config/etfs.{dev,prod}.yaml` — replacing the single
+  `fx_pairs.yaml`/`stocks.yaml`/`etfs.yaml` each package previously had.
+  `fx-ingestion.yml`/`stock-ingestion.yml`/`etf-ingestion.yml`'s `plan` job
+  already resolved `dev`/`production` for which S3 bucket to upload to;
+  it now resolves the environment *before* computing chunks and picks the
+  matching config file for `equicast-{fx,stock,etf}-plan` too, so a manual
+  dev run and the scheduled production run can diverge on which
+  pairs/tickers get fetched, not just where the output lands. The `dev`
+  file in each pair keeps the previously-existing list; the `prod` file is
+  an exact copy for now (expand it independently as needed). Each
+  Dockerfile's default `CMD` and `scripts/smoke_test.py`'s default
+  `--config` now point at the `dev` file, since neither is used by the
+  ingestion workflows (which always pass `--pairs-json`/`--tickers-json`
+  explicitly) — only by ad-hoc local runs, where dev is the safer default.
+- Frontend accounts UX fixes surfaced by manual review of Phase 1's Accounts
+  & Pies work: (1) `Auth0ProviderWithNavigate.jsx` gains
+  `cacheLocation="localstorage"` + `useRefreshTokens` — the SDK's default
+  in-memory token cache was wiped on every hard reload, so refreshing any
+  authenticated route (e.g. `/accounts`) bounced back to the sign-in screen
+  even with a still-valid Auth0 session. (2) `DashboardPage`'s empty-state
+  "Create an account" now opens the same `Drawer`+`AccountForm` right there
+  instead of navigating to `/accounts` and needing a second click. (3)
+  `AccountForm`'s description field is no longer marked `required` — the
+  backend (`REQUIRED_CREATE_FIELDS` in `backend/accounts/views.py`) already
+  allowed it blank. (4) `AccountForm` gains a `defaultCurrency` prop, seeded
+  from the caller's own `profile.default_currency`, so a new account's
+  currency field starts pre-filled with the user's own default instead of
+  blank (editing an existing account still uses its own currency). (5)
+  `Drawer.css`'s `max-width` is now `900px` (previously `440px`), applying
+  to every drawer in the app. (6) `ConfirmDialog` now renders via `Modal`
+  instead of `Drawer` — a delete confirmation is a single yes/no decision,
+  not a form, so it no longer shares the wide side-drawer used for
+  account/pie editing. (7) `AccountsListPage`'s top-of-page "New account"
+  button is now hidden once the list has loaded and is empty (kept during
+  the initial load to avoid a flash), leaving only the centered empty-state
+  button, which duplicated it.
+
+  Also added: `frontend/src/api/sessionCache.js` (thin sessionStorage
+  read/write/clear helpers, tolerant of storage being unavailable) backs a
+  reworked `useCurrentUser.js` and a new `useAccounts.js`, both of which now
+  cache their GET result (`GET /api/identity/me/`, `GET /api/accounts/`) in
+  `sessionStorage` and serve every later mount of the hook (Topbar,
+  AccountsListPage, DashboardPage, ... each calls independently) from that
+  cache instead of re-fetching; a module-level in-flight promise in each
+  hook also collapses simultaneous first-mounts (e.g. Topbar + a page both
+  mounting on first load) into a single request. `setProfile`/`setAccounts`
+  write straight back to the cache, so a save from `SettingsModal` or a
+  create/edit/delete from `AccountsListPage`/`DashboardPage` is what every
+  later mount sees. `AccountDetailPage`/`PieDetailPage` load their own copy
+  via `getAccount`/`getPie` rather than the shared list, so their own
+  mutations (edit account, delete account, create/delete pie, allocation
+  sync) now also patch the cached accounts list directly, keeping
+  `/accounts`/`/dashboard` from showing stale data after a visit to a detail
+  page. Both caches are cleared on sign-out (`UserMenu.jsx`'s
+  `handleSignOut`) since `sessionStorage` survives the Auth0 logout/login
+  redirect round trip on the same tab — without this a different account
+  signing in on the same tab could briefly render the previous user's
+  cached profile/accounts.
+- `scripts/local-dev.ps1` gains `-Auth0ClientId` (defaulting to
+  `$env:AUTH0_CLIENT_ID`, mirroring `-Auth0Domain`/`-Auth0Audience`'s
+  existing `$env:AUTH0_DOMAIN`/`$env:AUTH0_AUDIENCE` defaults). With
+  `-StartFrontend`, the three values are now exported as
+  `VITE_AUTH0_DOMAIN`/`VITE_AUTH0_CLIENT_ID`/`VITE_AUTH0_AUDIENCE` into the
+  spawned `npm run dev` process — Vite gives an already-set environment
+  variable priority over `frontend/.env.local`, so the frontend's real
+  Auth0 login flow now works out of the box against LocalStack without
+  hand-creating that file. Previously only the backend's `AUTH0_DOMAIN`/
+  `AUTH0_AUDIENCE` were wired up this way, leaving `RequireAuth` stuck on
+  its "not configured" state for anyone running the script as documented.
+  `docs/auth0-setup.md`'s Step 3 also gains a step easy to miss on a fresh
+  tenant: the frontend Application needs an explicit **User-Delegated
+  Access** grant against the API (Application Access tab) before
+  `loginWithRedirect`'s `audience` param works — without it Auth0 returns
+  `invalid_request: Client "..." is not authorized to access resource
+  server "..."`, surfaced by the frontend as a generic "Something went
+  wrong signing in" (`RequireAuth.jsx`).
+- `backend-ci.yml`/`frontend-ci.yml` gain a `workflow_dispatch` trigger.
+  Surfaced by merging #36 (frontend CD infra): that PR's changes lived
+  entirely under `infra/`, `.github/workflows/deploy.yml`, and `docs/`, so
+  neither CI workflow's path filter matched and neither ran — and since
+  `deploy.yml` only triggers off `Backend CI`/`Frontend CI` completing via
+  `workflow_run`, the frontend build never happened either, leaving the
+  freshly-applied dev CloudFront distribution with nothing synced to its
+  bucket. Any infra- or docs-only merge to `main` hits the same gap.
+  `workflow_dispatch` lets a `main` run be kicked off by hand (Actions tab,
+  or `gh workflow run "Frontend CI" --ref main`) to chain into `deploy.yml`
+  without waiting on a matching code change.
+- Fixed two related backend production-hardening gaps, both surfaced by
+  manual testing of the Phase D accounts endpoints: (1) `infra/main.tf`'s
+  `backend_lambda` never set `DJANGO_DEBUG`, so every deployed environment
+  — dev and prod alike — silently fell back to `settings.py`'s
+  `DEBUG="true"` default; an unhandled exception in prod would have
+  rendered Django's full debug traceback page back to the caller instead
+  of a generic 500. Now set explicitly per environment
+  (`var.environment == "prod" ? "false" : "true"`) rather than left to the
+  code default. (2) `backend/equicast_api/settings.py` gains
+  `APPEND_SLASH = False`: a `POST`/`PATCH`/`DELETE` missing its trailing
+  slash (e.g. `POST /api/accounts` instead of `/api/accounts/`) previously
+  raised an unhandled `RuntimeError` — `CommonMiddleware` refuses to
+  redirect a non-safe method with a body, since doing so risks dropping it
+  — which combined with (1) meant that traceback was visible to the
+  caller in prod too. Every `urls.py` pattern already ends in a trailing
+  slash and every documented endpoint is written with one, so the
+  redirect-on-`GET` behavior `APPEND_SLASH` exists for isn't useful here
+  either; disabling it makes a missing trailing slash a plain `404` for
+  every HTTP method instead. `backend/accounts/tests.py` gains a
+  regression test asserting `404`, not `500`, for a slash-less `POST`.
+- `terraform.yml` now sets `concurrency: { group: terraform-${{ github.ref }},
+  cancel-in-progress: true }`. Since `development`/`production` gained
+  required-reviewer approval, a run left `waiting` on an unapproved gate
+  no longer gets superseded on its own — an older push's `apply-dev` could
+  sit waiting indefinitely alongside a newer one for the same ref, cluttering
+  the approval queue and risking someone approving stale infra. A newer push
+  now cancels the older run for the same `github.ref` outright.
+- Collapsed the `deploy-dev` GitHub Environment into `development`:
+  `deploy.yml`'s `deploy-backend-dev`/`deploy-frontend-dev` now gate on
+  `environment: development` (previously `deploy-dev`), the same
+  environment `terraform.yml`'s `apply-dev` already used. `apply-dev` was
+  previously ungated (`development` had no protection rules, relying only
+  on the Infracost PR comment as a soft review); it now requires the same
+  required-reviewer approval as the deploy jobs. Reason: an unreviewed PR
+  merge to `main` was able to both apply infra changes and push a new
+  backend build to dev fully automatically, with no approval gate at
+  all — a real risk of an unintended AWS cost spike in dev.
+  `docs/terraform-state-setup.md` and `docs/local-setup.md` updated to
+  describe two gated GitHub Environments (`development`, `production`)
+  instead of three.
+- `market_data`'s `ProfileView`/`PricesView` now require Auth0 authentication
+  (`authentication_classes = [Auth0JWTAuthentication]`,
+  `permission_classes = [IsAuthenticated]`), matching `identity.MeView`.
+  Previously these fell back to DRF's `AllowAny` default and were reachable
+  without a Bearer token — `REST_FRAMEWORK["DEFAULT_AUTHENTICATION_CLASSES"]`
+  only *identifies* a caller, it doesn't by itself require authentication.
+  `backend/market_data/tests.py` updated to mock the Auth0 JWT flow and
+  assert 401 when no token is supplied.
+
 - Re-sized `infra/infracost-usage.yml`'s Stock section from real per-file
   estimates instead of placeholders: profile.parquet ~30KB and
   metrics.parquet ~20KB (one-time snapshots), plus price.parquet ~20KB/year,
@@ -2574,3 +2339,226 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `storage_gb` stays `0.01` (still well under 1GB) but
   `monthly_tier_1_requests` (`4800` → `5900`) now covers four files/run
   (profile + price + dividend + metrics) instead of three.
+
+### Removed
+
+- `day_average`, `year_average`, `moving_average_50_days`, and
+  `moving_average_200_days` dropped from `equicast-stock`/`equicast-etf`/
+  `equicast-fx`'s `profile()` (and therefore `profile.parquet`) —
+  `StockClient`/`ETFClient`/`FXClient` (`packages/*/src/equicast_*/client.py`)
+  no longer compute or fetch these fields. Frontend fallbacks that read
+  `day_average` (`HoldingTickerPage.jsx`, `HoldingStatsPanel.jsx`,
+  `holdingFinancials.js`'s `resolveFxRate`) now use `day_close` alone.
+
+### Fixed
+
+- Removing a holding from a pie (via the pie drawer's reallocation) could
+  crash `PieDetailPage` with `Cannot read properties of undefined (reading
+  'currentValue')` in `PieCagrSection`. Its metrics-fetch effect never
+  reset `metricsByHolding` before re-fetching when the `holdings` prop
+  changed, so the component briefly rendered the *old* (longer)
+  `metricsByHolding` against the already-updated, shorter `valuations`
+  array — `weightedPortfolioMetric` (`PieBenchmarkRating.jsx`) indexes
+  both positionally, so the mismatch crashed on the out-of-range index.
+  Now resets to `null` synchronously when `holdings` changes (mirroring
+  `PieBenchmarkRating`'s own `setStatus("loading")` reset, which already
+  avoided this exact race). `weightedPortfolioMetric` itself also now
+  skips a missing `valuations[i]` instead of crashing, as a second line of
+  defense against the same class of mismatch.
+
+- ISIN capture for stock/etf ingestion (`feat/isin`): `StockClient.profile()`/
+  `ETFClient.profile()` now include an `isin` field, sourced from
+  yfinance's `Ticker.isin` lookup via a new `DatafeedClient.get_isin()` (`null`
+  when yfinance has no ISIN on record). Propagated into the search catalog
+  (`equicast_core.catalog.build_catalog_rows`/`CATALOG_SCHEMA`) and into
+  `MarketDataClient.search()`, which now substring-matches `isin` alongside
+  `ticker`/`name`. `stocks.dev/prod.yaml` and `etfs.dev/prod.yaml` entries can
+  now be a `{ticker, isin}` mapping instead of a plain string, to manually
+  override yfinance's lookup for a given ticker — the override always wins,
+  and survives being split into a `--tickers-json` GitHub Actions matrix
+  chunk (`equicast_stock`/`equicast_etf`'s `plan.py`). `equicast-forecasting`'s
+  own standalone ticker loader was updated to accept (and discard) the same
+  `{ticker, isin}` shape, since it reads the same config files/matrix chunks.
+  `/holdings/:id` shows ISIN as a new badge next to Quote type, when present.
+  FX/benchmark and futures were deliberately left out of this pass — tracked
+  as follow-ups in GitHub issues #208 and #207 respectively.
+
+- "Watchlists" and "Goals" entries in the account menu (`UserMenu.jsx`,
+  GitHub issue #170), each navigating to a new route (`/watchlists`,
+  `/goals`). Neither has a real page yet — Watchlists' backend already
+  exists (`backend/watchlists/`, already used elsewhere for
+  watchlist-scoped holdings) but has no frontend; Goals has no code on
+  `main` at all (an earlier `feat/goals` branch built a backend but was
+  never merged) — so both render a new shared `ComingSoonPage` for now,
+  to be replaced by the real UI in a follow-up issue rather than 404ing
+  or blocking this one on building two full features.
+
+- TRANSACTION-mode holdings now also auto-record their paid dividend
+  history as `DIVIDEND` transactions (GitHub issue #124, extending #123's
+  AVERAGE-mode version) — but backfilled across the whole trade history
+  rather than only from "now" forward: `compute_new_dividend_transactions`
+  (`equicast_core.transactions`) gained a `mode` parameter, and
+  TRANSACTION mode's share count for a payout is now the running
+  `BUY`/`SELL` balance as of that payout's own ex-date (a new
+  `_transaction_mode_shares_at` helper), not a single fixed quantity — so
+  a payout from years ago backfills correctly using the whole history,
+  and one landing while the balance is exactly zero (fully sold by then)
+  is skipped rather than recorded for $0.
+
+  A `BUY`/`SELL` created or deleted with a date on or before the
+  holding's `dividends_synced_through` watermark now rewinds it (new
+  `TransactionsClient.rewind_dividends_synced_through`, called from
+  `TransactionListView.post`/`TransactionDetailView.delete`) — a
+  backdated trade changes the share-count timeline for every payout after
+  it, so the reopened range needs a full recheck with the corrected
+  history (an ordinary new-today trade, after the watermark, leaves it
+  untouched). Same as issue #123, an already-created `DIVIDEND`
+  transaction's amount is never rewritten once it exists — a stale amount
+  from a since-added/removed trade is corrected by the user, by hand,
+  same as any dividend.
+
+- AVERAGE-mode holdings now auto-record their paid dividend history as
+  `DIVIDEND` transactions (GitHub issue #123 — a base for TRANSACTION
+  mode's own version, issue #124), rather than requiring the user to
+  hand-enter every payout. New `equicast_core.transactions.
+  compute_new_dividend_transactions` turns each `"paid"` entry from
+  `MarketDataClient.get_dividends` not yet recorded into `{date,
+  amount_native}` (shares × per-share payout, using the holding's single
+  `BUY` position — nothing before that `BUY`'s own date qualifies, since
+  there's no share count on record to anchor an earlier payout to); new
+  `sync_dividends_for_holdings` (`backend/transactions/views.py`) turns
+  those into real transactions via `TransactionsClient.create_transaction`
+  and refreshes the holding's rollup. Runs from `GET /api/accounts/`,
+  `/api/accounts/<id>/`, `/api/pies/`, `/api/pies/<id>/`, and
+  `/api/holdings/` (list and detail) — the same point each already
+  resolves the caller's profile for market-data enrichment — so a
+  holding's dividends stay caught up on every read. A no-op for
+  TRANSACTION-mode users, watchlist/fx holdings, or a holding with no
+  `BUY` on record yet.
+
+  Each holding tracks a new `dividends_synced_through` watermark
+  (persisted alongside its transactions, `TransactionsClient.
+  get_dividends_synced_through`/`advance_dividends_synced_through`,
+  advanced via new `equicast_core.transactions.latest_paid_dividend_date`)
+  — every payout a sync even considers, created or skipped as pre-`BUY`,
+  moves it forward, and `create_transaction`/`update_transaction`/
+  `delete_transaction` always carry it forward untouched. Without this, a
+  payout the user deleted would look "missing" again — nothing recorded
+  for its ex-date — and the very next `GET` would just recreate it;
+  deleting an auto-created dividend is now a lasting correction.
+
+- TRANSACTION-mode holdings can now record BUY and SELL trades from the UI
+  (`HoldingTransactionsSection.jsx`'s new "Add Buy"/"Add Sell" actions) —
+  previously this mode was read-only, only ever populated by whatever
+  transactions already existed. Both reuse the same `TransactionForm` the
+  AVERAGE mode's "Add Buy"/"Add Dividend" already used, generalized with a
+  `transactionType` prop to pick the right price field
+  (`price_native` for a TRANSACTION-mode trade vs. `average_price_native`
+  for an AVERAGE-mode position). "Add Sell" only offers holdings with net
+  shares > 0 recorded (a new `selectNetShares` in `holdingFinancials.js`);
+  the backend's own `InsufficientSharesError` (`equicast_core.transactions`)
+  is still the authority on whether a given quantity is actually sellable.
+  TRANSACTION-mode BUY/SELL records stay immutable (no edit — mirrors the
+  backend), but are now deletable from the trade cards and "See all" table,
+  the only way to correct a mistaken entry, same as an AVERAGE-mode one
+  already was.
+
+- Recent news headlines, via a new `equicast-news` package (`NewsClient`,
+  built on `equicast-datafeed` like `equicast-events`/`equicast-dividends`)
+  wrapping yfinance's `get_news`. Trimmed to the trailing month by design
+  (no historical archive), newest first. The stock, etf, and benchmark
+  ingestion pipelines each write it to a flat `news.parquet` per ticker
+  (not split into history/current like price/dividend/events, since there's
+  no history to separate out); the fx pipeline does not, by design (no fx
+  news). `MarketDataClient.get_news`/`GET /api/market/<asset_class>/
+  <symbol>/news/` (`market_data.views.NewsView`) expose it, 404 for a
+  ticker/pair with none published. On `/holdings/:ticker`, a new
+  `HoldingNewsSection` shows it as a card grid (3-4 per row) right after the
+  CAGR panel, capped with a "See all" Drawer for the rest; each card opens
+  the article in a new tab on click. Cached client-side the same-day
+  IndexedDB way dividends/metrics/prices are (`utils/newsCache.js`).
+
+- Sticky header rows on every signed-out page: `SignInScreen`'s
+  `.ec-landing-bar`, and `PrivacyPolicyPage`'s/`TermsAndConditionsPage`'s
+  standalone logo header, now stay pinned to the top of the viewport while
+  scrolling — same `position: sticky` + `Topbar`-style opaque background/
+  bottom-border treatment `Topbar` itself already uses for signed-in
+  pages. `SignInScreen`'s header moves out from inside `.ec-hero` to a
+  sibling of it — `.ec-hero` has `overflow: hidden` (clips its decorative
+  glow gradient), which silently breaks `position: sticky` for any
+  descendant, so the header couldn't stay pinned once you scrolled past
+  the hero section into the features/roadmap content below otherwise. It
+  no longer blends transparently into the hero glow as a result, matching
+  the other two pages' solid sticky bar instead.
+
+- New shared `PublicHeader` component (`frontend/src/components/shell/
+  PublicHeader.jsx`/`.css`) — logo (linked to `/`) plus `ThemeToggle`,
+  replacing the three near-identical, independently-maintained sticky
+  headers `SignInScreen`/`PrivacyPolicyPage`/`TermsAndConditionsPage` each
+  grew their own copy of above. Fixes the logo sitting a few pixels lower
+  on the Privacy Policy/Terms and Conditions pages than on the sign-in
+  page (their header's asymmetric top/bottom padding vs. the sign-in
+  header's centered fixed height) by giving every signed-out page the
+  exact same markup/CSS instead of three copies that could drift apart.
+  Also adds the theme toggle to `PrivacyPolicyPage`/
+  `TermsAndConditionsPage`'s header, which — unlike `SignInScreen` — never
+  had one before. Renamed token `--ec-landing-bar-h` →
+  `--ec-public-header-h` (`tokens.css`) to match.
+
+- The holding/pie/account price chart blinked (flashed fully invisible for
+  a frame) on a same-entity time-range switch instead of updating smoothly
+  (GitHub issue #137). The reveal animations added for a chart's genuine
+  first paint (`HoldingPriceChart`'s/`PiePriceChart`'s `stroke-dasharray`
+  line draw-in and `ec-chart-reveal` area/candle fade+rise, both keyed on
+  `revision`) were replaying on *every* successful fetch, including a
+  plain range switch — whose own "keep the previous chart up, dimmed via
+  is-refreshing" transition already had nothing to hide the reveal's own
+  "start from nothing" state behind, so the chart flashed blank right as
+  the dim lifted. `revision` now only bumps on a chart's real first paint
+  (`HoldingPriceChart`'s `hasRevealedRef`, reset on a genuine ticker
+  change; `PiePriceChart`'s equivalent, keyed off a content signature of
+  `holdings` rather than its own unstable array identity, the same fix
+  `DiversificationChart.jsx` already needed for an unrelated reveal bug) —
+  a same-entity range switch now just updates the chart's shape directly
+  under the existing dim/undim transition, no separate blink.
+- An etf profile (`equicast_etf.client.ETFClient.profile()`) never set
+  `sector`/`industry` at all — yfinance doesn't populate either for a fund
+  — so every etf catalog row carried `None` for both, and a `/search`
+  Sector/Industry filter silently excluded every etf regardless of which
+  value was picked (the same "row missing the filtered field is excluded"
+  rule a stock row without a `sector` already hits). Both now default to
+  the fixed value `"Exchange Traded Fund"`.
+- `equicast_core.client.MarketDataClient.get_prices()` raised `KeyError:
+  'currency'` for any asset class whose price rows carry no `currency`
+  field — a pre-existing gap in `fx` (a pair converts *between* two
+  currencies rather than being priced *in* one, so its price rows never
+  had one) that `equicast-benchmark`'s prices inherited by copying the fx
+  writer's shape too closely. Surfaced as a benchmark comparison on the
+  holding page getting stuck on "Loading ... price history…" forever (the
+  request 500'd; found by reproducing it directly against a real
+  LocalStack-seeded bucket — `client.get_prices("fx", ...)` 500s the exact
+  same way, though nothing in the app calls it for fx today). Now reads
+  `rows[0].get("currency")`, degrading to `None` (same as
+  `holdingFinancials.formatPrice` already handles) instead of crashing.
+  Also gave `equicast_benchmark.client.BenchmarkClient.prices()` a real
+  `currency` field (an index *is* priced in one, unlike an fx pair — same
+  `get_info(...).get("currency")` `equicast-stock`'s prices() already
+  does), so a freshly re-ingested benchmark's price rows carry it
+  properly rather than relying on the `None` fallback.
+- `HoldingPriceChart`'s "compare against" overlay plotted the comparison
+  series on the main holding's own absolute price axis, which flattens the
+  comparison into an unreadable line near the bottom whenever the two
+  series' price growth differs by orders of magnitude (e.g. AAPL up
+  ~325,992% vs. the S&P 500's ~5,585% over "MAX" — both real, but 57x
+  apart). Switching to a linear "% change since range start" axis wasn't
+  enough either — a 57x gap in cumulative % is still a rounding error on a
+  scale that has to span 0 to 325,992. Comparison mode now plots
+  `log(close / firstClose)` for both series instead of a plain % or price
+  value, so equal vertical distance represents equal *rate* of growth
+  rather than equal absolute/percentage magnitude — the same "log scale"
+  treatment any real charting platform applies for exactly this case, and
+  it keeps both lines visibly dynamic and able to cross throughout the
+  whole range instead of one flatlining. The Line/Area/Candles toggle is
+  hidden while a comparison is active (OHLC candles and an area fill don't
+  carry meaning once both series are normalized to log-growth lines), and
+  a 0%-baseline reference line marks where both series started.
