@@ -1,0 +1,75 @@
+name: Missing ISIN Fix
+
+# Fired by equicast-support's comment-trigger workflow once a maintainer
+# replies to a "<TICKER>: missing ISIN" sub-issue (see
+# sync-missing-isin-issue.sh) with `ISIN: <value>` - applies the override
+# to the owning pipeline's *.prod.yaml via apply_isin_override.py and opens
+# a PR. GitHub issue equicast-support#149.
+#
+# Always operates against main: repository_dispatch already only reads
+# this workflow's definition from the default branch, and the checkout
+# below pins `ref: main` explicitly rather than trusting anything in the
+# dispatch payload, so nothing here can be pointed at another branch.
+on:
+  repository_dispatch:
+    types: [missing-isin-provided]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  apply-isin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Apply the ISIN override
+        id: apply
+        working-directory: packages/stock
+        run: |
+          CONFIG_PATH=$(uv run python "${{ github.workspace }}/.github/scripts/apply_isin_override.py" \
+            --ticker "${{ github.event.client_payload.ticker }}" \
+            --isin "${{ github.event.client_payload.isin }}" \
+            --tax-domicile "${{ github.event.client_payload.tax_domicile }}" \
+            --config-path "${{ github.event.client_payload.config_path }}" \
+            --repo-root "${{ github.workspace }}")
+          echo "config_path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Open PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TICKER: ${{ github.event.client_payload.ticker }}
+          ISIN: ${{ github.event.client_payload.isin }}
+          ISSUE_URL: ${{ github.event.client_payload.issue_url }}
+          CONFIG_PATH: ${{ steps.apply.outputs.config_path }}
+        run: |
+          BRANCH="isin/${TICKER}"
+          git checkout -b "$BRANCH"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$CONFIG_PATH"
+          git commit -m "Add ISIN override for $TICKER"
+          git push -u origin "$BRANCH"
+          gh pr create --base main --head "$BRANCH" \
+            --title "Add ISIN override for $TICKER" \
+            --body "Adds the ISIN override for \`$TICKER\` (\`$ISIN\`) in \`$CONFIG_PATH\`, provided in $ISSUE_URL."
+
+      - name: Report failure back to the originating issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          ISSUE_URL: ${{ github.event.client_payload.issue_url }}
+          TICKER: ${{ github.event.client_payload.ticker }}
+        run: |
+          REPO=$(echo "$ISSUE_URL" | sed -E 's#https://github.com/([^/]+/[^/]+)/issues/.*#\1#')
+          NUMBER=$(echo "$ISSUE_URL" | sed -E 's#.*/issues/##')
+          gh issue comment "$NUMBER" --repo "$REPO" \
+            --body "The ISIN override for \`$TICKER\` couldn't be applied automatically - see the failed run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
