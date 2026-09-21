@@ -199,6 +199,9 @@ jobs:
           environment: dev
           auth0-domain: ${{ vars.AUTH0_DOMAIN }}
           auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
           support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
           support-repo: ${{ vars.SUPPORT_REPO }}
           support-rate-limit-per-minute: ${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }}
@@ -244,6 +247,9 @@ jobs:
           environment: prod
           auth0-domain: ${{ vars.AUTH0_DOMAIN }}
           auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
           support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
           support-repo: ${{ vars.SUPPORT_REPO }}
           support-rate-limit-per-minute: ${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }}
