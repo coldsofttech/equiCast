@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Docker images (stock, ETF, FX, benchmark, forecasting) are now tagged
   with a version number that increments on every build, and old versions
   are pruned automatically, keeping only the 3 most recent per image.
+- Destroying or redeploying dev/prod infrastructure now keeps Auth0's
+  login redirect URLs in sync automatically, instead of needing a manual
+  dashboard edit after every redeploy.
 
 ### Changed
 

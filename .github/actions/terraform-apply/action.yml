@@ -25,6 +25,14 @@ description: >
   apart, since they're now maintained in one place instead of by hand in
   two.
 
+  Also syncs the resulting frontend_url into the Auth0 SPA Application's
+  Allowed Callback/Logout/Web-Origin URLs after the infra/ apply - the
+  same reason infra-lifecycle.yml's redeploy-infra job does this: that
+  CloudFront domain is assigned fresh whenever the distribution is
+  (re)created, including on this workflow's very first apply for a new
+  environment, not just infra-lifecycle.yml's manual redeploys. See
+  .github/scripts/auth0_sync_redirect_uris.sh and docs/auth0-setup.md.
+
 inputs:
   environment:
     description: 'Environment to apply - "dev" or "prod". Sets both the state key prefix and the environment tfvar.'
@@ -34,6 +42,15 @@ inputs:
     required: true
   auth0-audience:
     description: 'auth0_audience tfvar.'
+    required: true
+  auth0-client-id:
+    description: 'Client ID of the Auth0 SPA Application whose redirect URLs get synced to the new frontend_url after apply.'
+    required: true
+  auth0-mgmt-client-id:
+    description: 'Client ID of the Auth0 Machine-to-Machine Application used to call the Auth0 Management API for the redirect-URL sync.'
+    required: true
+  auth0-mgmt-client-secret:
+    description: 'Client secret of the Auth0 Machine-to-Machine Application used to call the Auth0 Management API for the redirect-URL sync.'
     required: true
   support-issue-token:
     description: 'support_issue_token tfvar.'
@@ -100,6 +117,24 @@ runs:
         -var max_transactions_for_holding=${{ inputs.max-transactions-for-holding }}
         -var api_rate_limit_per_minute=${{ inputs.api-rate-limit-per-minute }}
         -var market_data_cache_ttl_seconds=${{ inputs.market-data-cache-ttl-seconds }}
+
+    # Terraform assigns this CloudFront distribution's domain fresh every
+    # time it's (re)created (see infra/outputs.tf's frontend_url comment)
+    # - the apply above is what just did that, including on a brand-new
+    # environment's very first apply.
+    - name: Capture frontend URL
+      id: frontend-url
+      uses: ./.github/actions/terraform-frontend-url
+
+    - name: Sync frontend URL to Auth0
+      uses: ./.github/actions/auth0-sync-redirect-uri
+      with:
+        action: add
+        frontend-url: ${{ steps.frontend-url.outputs.url }}
+        auth0-domain: ${{ inputs.auth0-domain }}
+        auth0-client-id: ${{ inputs.auth0-client-id }}
+        auth0-mgmt-client-id: ${{ inputs.auth0-mgmt-client-id }}
+        auth0-mgmt-client-secret: ${{ inputs.auth0-mgmt-client-secret }}
 
     - name: Terraform init (infra/user-data)
       shell: bash

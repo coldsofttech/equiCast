@@ -1,0 +1,50 @@
+name: Sync Auth0 redirect URI
+description: >
+  Adds or removes a frontend_url from the Auth0 SPA Application's Allowed
+  Callback/Logout/Web-Origin URLs, via
+  .github/scripts/auth0_sync_redirect_uris.sh - see that script and
+  docs/auth0-setup.md's Step 3.5 for the Management API mechanics and the
+  credentials required.
+
+  Shared by terraform-apply (add, after every infra/ apply, including a new
+  environment's very first) and infra-lifecycle.yml's destroy (remove) /
+  redeploy-infra (add) jobs, so the three call sites can't drift on how the
+  script is invoked.
+
+inputs:
+  action:
+    description: '"add" or "remove".'
+    required: true
+  frontend-url:
+    description: >
+      The frontend_url to add/remove, typically from
+      ./.github/actions/terraform-frontend-url's `url` output. Empty skips
+      the sync entirely rather than failing (e.g. a destroy run against an
+      environment with no recorded frontend_url yet).
+    required: false
+    default: ""
+  auth0-domain:
+    description: "AUTH0_DOMAIN."
+    required: true
+  auth0-client-id:
+    description: "Client ID of the Auth0 SPA Application being patched."
+    required: true
+  auth0-mgmt-client-id:
+    description: "Client ID of the Auth0 Machine-to-Machine Application used to call the Auth0 Management API."
+    required: true
+  auth0-mgmt-client-secret:
+    description: "Client secret of that Machine-to-Machine Application."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Sync frontend URL to Auth0
+      if: inputs.frontend-url != ''
+      shell: bash
+      env:
+        AUTH0_DOMAIN: ${{ inputs.auth0-domain }}
+        AUTH0_CLIENT_ID: ${{ inputs.auth0-client-id }}
+        AUTH0_MGMT_CLIENT_ID: ${{ inputs.auth0-mgmt-client-id }}
+        AUTH0_MGMT_CLIENT_SECRET: ${{ inputs.auth0-mgmt-client-secret }}
+      run: bash .github/scripts/auth0_sync_redirect_uris.sh ${{ inputs.action }} "${{ inputs.frontend-url }}"
