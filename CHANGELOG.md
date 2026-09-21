@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.8] - 2026-09-21
+
+### Added
+
+- Missing-ISIN sub-issues can now be resolved by replying with the ISIN — the fix is applied and a PR opened automatically.
+
 ## [1.0.7] - 2026-09-20
 
 ### Added
