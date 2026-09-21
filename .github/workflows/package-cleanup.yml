@@ -1,10 +1,19 @@
 name: Package Cleanup
 
-# Prunes old GHCR versions of the five equicast-* images down to the 3 most
-# recent (equicast-support#166) - each images.yml build now tags every push
-# with its own auto-incremented semantic version (see
-# .github/actions/build-push-image), so versions accumulate indefinitely
+# Prunes old GHCR versions of the five equicast-* images (equicast-support#166)
+# - each images.yml build now tags every push with its own semantic version
+# (see .github/actions/build-push-image), so versions accumulate indefinitely
 # without this.
+#
+# Retention is per branch, not per image - main and dev/** each keep their
+# own 3 most recent versions, so a run of dev pushes can never evict main's
+# releases (or vice versa). That's two delete-package-versions passes per
+# image rather than one: build-push-image tags main releases as a clean
+# MAJOR.MINOR.PATCH and dev/** pre-releases as MAJOR.MINOR.0-dev.N (see its
+# header for why), so `ignore-versions` can fully exclude the other branch's
+# versions from a pass's deletion candidates - a single min-versions-to-keep
+# pass across both would count dev churn and main releases against the same
+# budget.
 #
 # Deletion needs the GitHub Packages REST API, and this repo (coldsofttech/
 # equiCast) is owned by a user account rather than an org - the default
@@ -12,7 +21,7 @@ name: Package Cleanup
 # personal access token can (classic, with read:packages and delete:packages
 # scopes). That token must be added as the repo secret PACKAGES_CLEANUP_PAT
 # for this workflow to do anything; until then every run here fails at the
-# delete-package-versions step.
+# first delete-package-versions step.
 on:
   schedule:
     - cron: "0 3 * * 1" # weekly, Monday 03:00 UTC
@@ -29,10 +38,25 @@ jobs:
       matrix:
         name: [stock, etf, fx, benchmark, forecasting]
     steps:
-      - uses: actions/delete-package-versions@v5
+      - name: Keep 3 most recent dev/** versions
+        uses: actions/delete-package-versions@v5
         with:
           package-name: equicast-${{ matrix.name }}
           package-type: container
           owner: coldsofttech
           token: ${{ secrets.PACKAGES_CLEANUP_PAT }}
           min-versions-to-keep: 3
+          # Protects every main release tag (a bare MAJOR.MINOR.PATCH,
+          # never present on a dev/** version) from this pass entirely.
+          ignore-versions: '^[0-9]+\.[0-9]+\.[0-9]+$'
+
+      - name: Keep 3 most recent main versions
+        uses: actions/delete-package-versions@v5
+        with:
+          package-name: equicast-${{ matrix.name }}
+          package-type: container
+          owner: coldsofttech
+          token: ${{ secrets.PACKAGES_CLEANUP_PAT }}
+          min-versions-to-keep: 3
+          # Protects every dev/** pre-release tag from this pass entirely.
+          ignore-versions: "-dev\\.[0-9]+$"
