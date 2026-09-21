@@ -64,9 +64,19 @@ jobs:
           git add "$CONFIG_PATH"
           git commit -m "Add ISIN override for $TICKER"
           git push -u origin "$BRANCH"
+
+          # Cross-repo closing keyword: coldsofttech owns both repos, so
+          # this closes the originating equicast-support sub-issue as soon
+          # as the PR merges, rather than waiting on the next scheduled
+          # ingestion run to notice the ticker has an ISIN again.
+          ISSUE_REPO=$(echo "$ISSUE_URL" | sed -E 's#https://github.com/([^/]+/[^/]+)/issues/.*#\1#')
+          ISSUE_NUMBER=$(echo "$ISSUE_URL" | sed -E 's#.*/issues/##')
+
           gh pr create --base main --head "$BRANCH" \
             --title "Add ISIN override for $TICKER" \
-            --body "Adds the ISIN override for \`$TICKER\` (\`$ISIN\`) in \`$CONFIG_PATH\`, provided in $ISSUE_URL."
+            --body "Closes ${ISSUE_REPO}#${ISSUE_NUMBER}
+
+          Adds the ISIN override for \`$TICKER\` (\`$ISIN\`) in \`$CONFIG_PATH\`, provided in $ISSUE_URL."
 
       - name: Report failure back to the originating issue
         if: failure()

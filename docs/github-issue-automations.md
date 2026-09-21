@@ -43,11 +43,16 @@ own trigger/auth mechanism.
    triggering issue/comment.
 5. **Act** (`equicast`) — a `repository_dispatch`-triggered workflow applies
    the fix deterministically (no LLM/agent involved — see "Why no AI agent
-   in the loop" below) and opens a PR. The checkout step pins `ref: main`
-   explicitly rather than trusting anything in the payload, and the PR's
-   base is hardcoded to `main` — nothing here can be pointed at another
-   branch. On failure, a final step comments back on the originating
-   `equicast-support` issue so the maintainer isn't left guessing.
+   in the loop" below) and opens a PR whose body starts with GitHub's
+   `Closes <owner>/<repo>#<issue-number>` keyword, so the originating
+   `equicast-support` issue closes itself the moment the PR merges — this
+   relies on the merging account having write access to both repos, which
+   is the case here since both are owned by the same account. The checkout
+   step pins `ref: main` explicitly rather than trusting anything in the
+   payload, and the PR's base is hardcoded to `main` — nothing here can be
+   pointed at another branch. On failure, a final step comments back on the
+   originating `equicast-support` issue so the maintainer isn't left
+   guessing.
 6. **Clean up** (`equicast`) — once the fix PR merges, a
    `pull_request: closed` workflow deletes its head branch, scoped by name
    prefix (e.g. `isin/*`) rather than the repo-wide "delete head branches on
@@ -124,7 +129,12 @@ already provide).
   `.github/scripts/apply_isin_override.py` — cross-checks the ticker
   against every known `*.prod.yaml` (erroring loudly on a mismatch or
   ambiguity instead of guessing), edits only that entry's lines, re-parses
-  to validate before writing, and opens a PR from an `isin/<TICKER>` branch.
+  to validate before writing, and opens a PR from an `isin/<TICKER>` branch
+  whose body opens with `Closes <owner>/<repo>#<issue-number>` — GitHub's
+  cross-repo closing keyword, which closes the originating sub-issue the
+  moment the PR merges (works here because the account merging owns both
+  repos). Otherwise the sub-issue would sit open until the next scheduled
+  ingestion run confirms the ticker has an ISIN again.
 - **Clean up**: `cleanup-merged-isin-branches.yml` deletes the
   `isin/<TICKER>` branch once its PR merges.
 - Design history: GitHub issues equicast-support#149,
@@ -160,6 +170,14 @@ design, not a bug to silently work around.
 
 **A PAT stops working with no code change** — check its expiration first;
 none of these tokens is set to never expire.
+
+**The fix PR merges but the originating sub-issue stays open** — check the
+PR body actually starts with `Closes <owner>/<repo>#<issue-number>`
+(GitHub only honors the keyword, not a plain link) and that the account
+merging the PR has write access to `equicast-support`. Failing that, it
+still self-heals: the next scheduled ingestion run's
+`sync-missing-isin-issue.sh` closes any sub-issue whose ticker now has an
+ISIN on record, just not immediately.
 
 **The fix branch/commit exist but the run fails on `gh pr create` with
 `GitHub Actions is not permitted to create or approve pull requests`** —
