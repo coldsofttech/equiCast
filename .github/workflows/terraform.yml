@@ -60,7 +60,7 @@ jobs:
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 
@@ -74,7 +74,7 @@ jobs:
             infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Generate Infracost diff (this PR vs base)
         run: |
@@ -133,9 +133,9 @@ jobs:
       run:
         working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
       # -recursive also fmt-checks infra/user-data — a separate root
       # module (its own state, see that directory's backend.tf), not a
@@ -183,9 +183,9 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
@@ -228,9 +228,9 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws

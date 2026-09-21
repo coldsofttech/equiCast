@@ -7,7 +7,7 @@ description: >
   itself replaced five near-identical single-image workflows - stock-
   image.yml/etf-image.yml/fx-image.yml/benchmark-image.yml/forecasting-
   image.yml). The calling workflow must check out the repo
-  (actions/checkout@v4) before this step - a *local* composite action
+  (actions/checkout@v7) before this step - a *local* composite action
   can't check itself out, since the runner needs this file on disk to
   resolve `uses: ./...` in the first place.
 
@@ -66,7 +66,7 @@ runs:
   using: composite
   steps:
     - name: Log in to GHCR
-      uses: docker/login-action@v3
+      uses: docker/login-action@v4
       with:
         registry: ghcr.io
         username: ${{ github.actor }}
@@ -134,7 +134,7 @@ runs:
         echo "version=$next" >> "$GITHUB_OUTPUT"
 
     - name: Build and push
-      uses: docker/build-push-action@v6
+      uses: docker/build-push-action@v7
       with:
         context: .
         file: ${{ inputs.dockerfile }}
