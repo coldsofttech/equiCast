@@ -76,9 +76,9 @@ jobs:
       # against (unlike pull_request, which it can resolve via the API
       # alone) - without this, it fails with "fatal: not a git repository"
       # trying to read the current ref.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -166,7 +166,7 @@ jobs:
           fi
 
       - if: steps.should_run.outputs.run == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - if: steps.should_run.outputs.run == 'true'
         name: Build and push equicast-${{ matrix.name }} (private)

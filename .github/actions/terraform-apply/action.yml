@@ -10,8 +10,8 @@ description: >
   which stays in terraform.yml since a composite action can't set its
   caller's `environment:` key).
 
-  The calling job must check out the repo (actions/checkout@v4), install
-  Terraform (hashicorp/setup-terraform@v3), and configure AWS credentials
+  The calling job must check out the repo (actions/checkout@v7), install
+  Terraform (hashicorp/setup-terraform@v4), and configure AWS credentials
   (./.github/actions/configure-aws) before this step - a *local* composite
   action can't check itself out, since the runner needs this file on disk
   to resolve `uses: ./...` in the first place (see build-push-image for

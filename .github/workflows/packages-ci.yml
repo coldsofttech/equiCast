@@ -80,9 +80,9 @@ jobs:
       # alone) - without this, it fails with "fatal: not a git repository"
       # trying to read the current ref (same fix as images.yml's changes
       # job needed).
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: dorny/paths-filter@v3
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
@@ -137,7 +137,7 @@ jobs:
       matrix:
         name: ${{ fromJSON(needs.changes.outputs.packages) }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Lint, type-check, and test equicast-${{ matrix.name }}
         uses: ./.github/actions/python-package-ci

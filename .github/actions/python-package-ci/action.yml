@@ -2,13 +2,13 @@ name: Python package CI
 description: >
   Lints, type-checks, and tests one Python package directory (GitHub issue
   equicast-support#188, follow-up to equicast-support#151's workflow-
-  generalisation proposal) - replaces the identical astral-sh/setup-uv@v3
+  generalisation proposal) - replaces the identical astral-sh/setup-uv@v7
   + `uv sync` + `ruff check` + mypy/pytest steps duplicated across the old
   stock-ci.yml/etf-ci.yml/fx-ci.yml/benchmark-ci.yml (now packages-ci.yml's
   per-package matrix) and reused by backend-ci.yml for packages/core and
   backend/.
 
-  The calling workflow must check out the repo (actions/checkout@v4)
+  The calling workflow must check out the repo (actions/checkout@v7)
   before this step - a *local* composite action can't check itself out,
   since the runner needs this file on disk to resolve `uses: ./...` in
   the first place (see build-push-image for the same constraint).
@@ -38,7 +38,7 @@ runs:
   using: composite
   steps:
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
 

@@ -23,10 +23,10 @@ jobs:
     if: github.event.workflow_run.name == 'Backend CI' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -43,7 +43,7 @@ jobs:
             echo "Lambda's 250MB deployment package limit)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: backend-lambda-package
           path: backend/lambda_package.zip
@@ -72,9 +72,9 @@ jobs:
       # local composite action can't be resolved without the repo checked
       # out first (see build-push-image for the same constraint). Not
       # needed for anything else in this job.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: backend-lambda-package
 
@@ -119,7 +119,7 @@ jobs:
     steps:
       # Needed to resolve `uses: ./.github/actions/configure-aws` below -
       # see deploy-backend-dev's own comment for why.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
@@ -155,7 +155,7 @@ jobs:
     if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build frontend
         uses: ./.github/actions/build-frontend
@@ -218,7 +218,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build frontend
         uses: ./.github/actions/build-frontend
@@ -266,7 +266,7 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build frontend
         uses: ./.github/actions/build-frontend

@@ -41,6 +41,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AWS OIDC credential setup, previously duplicated across the ingestion,
   deploy, terraform, and infra-lifecycle workflows, is now a single shared
   action.
+- GitHub Actions used across CI/CD are updated to their latest major
+  versions.
 
 ## [1.0.5] - 2026-09-20
 

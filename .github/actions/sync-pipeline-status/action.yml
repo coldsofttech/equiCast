@@ -10,7 +10,7 @@ description: >
   duplicated across stock-ingestion.yml/etf-ingestion.yml/
   fx-ingestion.yml/benchmark-ingestion.yml.
 
-  The calling workflow must check out the repo (actions/checkout@v4)
+  The calling workflow must check out the repo (actions/checkout@v7)
   before this step - a *local* composite action can't check itself out
   (see build-push-image for the same constraint) - and this action's own
   steps shell out to .github/scripts/*.sh|py, which need the repo on disk
@@ -113,7 +113,7 @@ runs:
     - name: Download every chunk's failures manifest
       id: download_failures
       if: steps.sync_issue.outcome == 'success' && inputs.targeted != 'true' && inputs.run-ingest == 'true' && (inputs.ingest-result == 'success' || inputs.ingest-result == 'failure')
-      uses: actions/download-artifact@v4
+      uses: actions/download-artifact@v8
       with:
         pattern: ${{ inputs.artifact-prefix }}*
         path: output

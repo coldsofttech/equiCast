@@ -2,14 +2,14 @@ name: Build frontend
 description: >
   Installs Node and builds the frontend (GitHub issue equicast-support#191,
   follow-up to equicast-support#151's workflow-generalisation proposal) -
-  replaces the identical actions/setup-node@v4 + `npm ci` + `npm run build`
+  replaces the identical actions/setup-node@v7 + `npm ci` + `npm run build`
   block duplicated across deploy.yml's estimate-frontend, deploy-frontend-
   dev, and deploy-frontend-prod jobs. frontend-ci.yml's own build step is
   deliberately left out of this - it just checks the build succeeds, with
   no VITE_* config, so it has no use for the environment-specific inputs
   below.
 
-  The calling workflow must check out the repo (actions/checkout@v4)
+  The calling workflow must check out the repo (actions/checkout@v7)
   before this step - a *local* composite action can't check itself out,
   since the runner needs this file on disk to resolve `uses: ./...` in
   the first place (see build-push-image for the same constraint).
@@ -39,7 +39,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: actions/setup-node@v4
+    - uses: actions/setup-node@v7
       with:
         node-version: "22"
 
