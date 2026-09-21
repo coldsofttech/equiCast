@@ -50,7 +50,9 @@ on:
         default: all
 
 permissions:
-  contents: read
+  # write, not read - build-push-image commits the auto-bumped package
+  # version back to the triggering branch (equicast-support#166).
+  contents: write
   packages: write
 
 jobs:
@@ -126,14 +128,19 @@ jobs:
         include:
           - name: stock
             dockerfile: packages/stock/Dockerfile
+            package-dir: packages/stock
           - name: etf
             dockerfile: packages/etf/Dockerfile
+            package-dir: packages/etf
           - name: fx
             dockerfile: packages/fx/Dockerfile
+            package-dir: packages/fx
           - name: benchmark
             dockerfile: packages/benchmark/Dockerfile
+            package-dir: packages/benchmark
           - name: forecasting
             dockerfile: packages/forecasting/Dockerfile
+            package-dir: packages/forecasting
     steps:
       # Evaluated per matrix entry (not job-level `if`, since a step needs
       # to run conditionally while later steps in the same job still see
@@ -160,3 +167,4 @@ jobs:
         with:
           image-name: equicast-${{ matrix.name }}
           dockerfile: ${{ matrix.dockerfile }}
+          package-dir: ${{ matrix.package-dir }}

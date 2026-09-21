@@ -1,0 +1,38 @@
+name: Package Cleanup
+
+# Prunes old GHCR versions of the five equicast-* images down to the 3 most
+# recent (equicast-support#166) - each images.yml build now tags every push
+# with its own auto-incremented semantic version (see
+# .github/actions/build-push-image), so versions accumulate indefinitely
+# without this.
+#
+# Deletion needs the GitHub Packages REST API, and this repo (coldsofttech/
+# equiCast) is owned by a user account rather than an org - the default
+# GITHUB_TOKEN can't list or delete a user-owned package's versions, only a
+# personal access token can (classic, with read:packages and delete:packages
+# scopes). That token must be added as the repo secret PACKAGES_CLEANUP_PAT
+# for this workflow to do anything; until then every run here fails at the
+# delete-package-versions step.
+on:
+  schedule:
+    - cron: "0 3 * * 1" # weekly, Monday 03:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  packages: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: [stock, etf, fx, benchmark, forecasting]
+    steps:
+      - uses: actions/delete-package-versions@v5
+        with:
+          package-name: equicast-${{ matrix.name }}
+          package-type: container
+          owner: coldsofttech
+          token: ${{ secrets.PACKAGES_CLEANUP_PAT }}
+          min-versions-to-keep: 3
