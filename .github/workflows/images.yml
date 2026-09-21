@@ -50,9 +50,7 @@ on:
         default: all
 
 permissions:
-  # write, not read - build-push-image commits the auto-bumped package
-  # version back to the triggering branch (equicast-support#166).
-  contents: write
+  contents: read
   packages: write
 
 jobs:
@@ -168,3 +166,4 @@ jobs:
           image-name: equicast-${{ matrix.name }}
           dockerfile: ${{ matrix.dockerfile }}
           package-dir: ${{ matrix.package-dir }}
+          packages-token: ${{ secrets.PACKAGES_CLEANUP_PAT }}
