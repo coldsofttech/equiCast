@@ -48,6 +48,12 @@ own trigger/auth mechanism.
    base is hardcoded to `main` — nothing here can be pointed at another
    branch. On failure, a final step comments back on the originating
    `equicast-support` issue so the maintainer isn't left guessing.
+6. **Clean up** (`equicast`) — once the fix PR merges, a
+   `pull_request: closed` workflow deletes its head branch, scoped by name
+   prefix (e.g. `isin/*`) rather than the repo-wide "delete head branches on
+   merge" setting, so other branches are never touched regardless of how
+   their PR is merged. Each scenario's fix branches should use their own
+   short, distinct prefix so this stays easy to scope per scenario.
 
 ## Why no AI agent in the loop
 
@@ -71,6 +77,7 @@ before wiring it to fire automatically on every matching reply.
 | `SUPPORT_ISSUE_TOKEN` | `equicast` | `issues:write` on `equicast-support` | every `sync-*-issue.sh` script, and each scenario's fix workflow (failure-comment step) |
 | `vars.SUPPORT_REPO` | `equicast` | repo variable, e.g. `coldsofttech/equicast-support` | same scripts, and `backend/support/views.py` |
 | `EQUICAST_DISPATCH_TOKEN` | `equicast-support` | write access to `equicast` (fine-grained: Contents: Read and write; or a classic PAT scoped to `public_repo`) | each scenario's `dispatch_*.sh` script |
+| `PR_CREATE_TOKEN` | `equicast` | `contents:write` + `pull-requests:write` on `equicast` (fine-grained, single-repo) | each scenario's `repository_dispatch`-triggered fix workflow's PR-creation step — `github.token` can't create PRs unless the repo-wide "Allow GitHub Actions to create and approve pull requests" setting is on, which this project deliberately leaves off (it would grant the capability to every workflow, not just these) |
 
 A new scenario over the same repo pair reuses all three rather than minting
 new credentials — only add a new secret if a scenario needs a genuinely
@@ -117,7 +124,9 @@ already provide).
   `.github/scripts/apply_isin_override.py` — cross-checks the ticker
   against every known `*.prod.yaml` (erroring loudly on a mismatch or
   ambiguity instead of guessing), edits only that entry's lines, re-parses
-  to validate before writing, and opens a PR.
+  to validate before writing, and opens a PR from an `isin/<TICKER>` branch.
+- **Clean up**: `cleanup-merged-isin-branches.yml` deletes the
+  `isin/<TICKER>` branch once its PR merges.
 - Design history: GitHub issues equicast-support#149,
   equicast-support#197, equicast-support#198, equicast#289.
 
@@ -128,8 +137,10 @@ already provide).
   repo's `owner/name`.
 - Create `EQUICAST_DISPATCH_TOKEN` on the support repo, scoped to write
   access on `equicast` only.
-- Neither token needs any permission beyond what's in the inventory table
-  above — resist widening scope "just in case."
+- Create `PR_CREATE_TOKEN` on `equicast` itself, scoped to `contents:write`
+  + `pull-requests:write` on `equicast` only.
+- None of these tokens needs any permission beyond what's in the inventory
+  table above — resist widening scope "just in case."
 
 ## Troubleshooting
 
@@ -148,7 +159,15 @@ in the config path the issue named, or was found in more than one — by
 design, not a bug to silently work around.
 
 **A PAT stops working with no code change** — check its expiration first;
-neither token type here is set to never expire.
+none of these tokens is set to never expire.
+
+**The fix branch/commit exist but the run fails on `gh pr create` with
+`GitHub Actions is not permitted to create or approve pull requests`** —
+`PR_CREATE_TOKEN` is missing/expired on `equicast`, or the workflow's PR
+step is still using `github.token`. This is expected behavior, not a
+transient failure: GitHub blocks the default token from creating PRs
+unless the repo-wide setting is explicitly turned on, which this project
+deliberately leaves off (see the inventory table above).
 
 ## Security notes
 

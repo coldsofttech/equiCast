@@ -45,7 +45,13 @@ jobs:
 
       - name: Open PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          # github.token can't create pull requests unless the repo-wide
+          # "Allow GitHub Actions to create and approve pull requests"
+          # setting is on - deliberately left off, since that setting would
+          # grant the capability to every workflow in this repo, not just
+          # this one. PR_CREATE_TOKEN is a PAT scoped only to equicast,
+          # dedicated to this step.
+          GH_TOKEN: ${{ secrets.PR_CREATE_TOKEN }}
           TICKER: ${{ github.event.client_payload.ticker }}
           ISIN: ${{ github.event.client_payload.isin }}
           ISSUE_URL: ${{ github.event.client_payload.issue_url }}
