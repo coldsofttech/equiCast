@@ -120,6 +120,15 @@ jobs:
     if: |
       always() && (needs.changes.result == 'skipped' || needs.changes.result == 'success')
     runs-on: ubuntu-latest
+    # Serializes builds of the same image across triggers (a dev/v1.1
+    # push and a main push, e.g. around a release merge, would otherwise
+    # run concurrently) - each queues behind the other instead of both
+    # computing a version tag off the same stale GHCR read
+    # (equicast-support#166, see build-push-image's header for the race
+    # this closes).
+    concurrency:
+      group: build-image-${{ matrix.name }}
+      cancel-in-progress: false
     strategy:
       fail-fast: false
       matrix:

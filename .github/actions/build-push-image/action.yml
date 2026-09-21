@@ -20,16 +20,29 @@ description: >
 
   Also tags every push with a per-package semantic version
   (equicast-support#166), MAJOR.MINOR read from packages/<name>/
-  pyproject.toml (a manual edit - bump it there for a MAJOR/MINOR release)
-  and PATCH computed fresh each build as one past the highest existing
-  MAJOR.MINOR.* tag already in GHCR for that image. This intentionally
-  never writes back to the repo - dev/v1.1 (and main) reject direct pushes
-  under a "changes must be made through a pull request" ruleset, so an
-  earlier version of this action that committed the bumped version back to
-  pyproject.toml failed every build. Reading GHCR's existing tags instead
-  needs `packages-token` (a classic PAT - see package-cleanup.yml's header
-  for why GITHUB_TOKEN can't list a user-owned package's versions); until
-  that secret exists every build just retags MAJOR.MINOR.0.
+  pyproject.toml (a manual edit - bump it there for a MAJOR/MINOR release).
+  This intentionally never writes back to the repo - dev/v1.1 (and main)
+  reject direct pushes under a "changes must be made through a pull
+  request" ruleset, so an earlier version of this action that committed
+  the bumped version back to pyproject.toml failed every build. Reading
+  GHCR's existing tags instead needs `packages-token` (a classic PAT - see
+  package-cleanup.yml's header for why GITHUB_TOKEN can't list a
+  user-owned package's versions); until that secret exists every build
+  just retags MAJOR.MINOR.0.
+
+  PATCH is a separate counter per branch, not one shared between main and
+  dev/** - main gets a clean release tag (MAJOR.MINOR.PATCH, one past the
+  highest existing *clean* tag), dev/** gets a pre-release tag
+  (MAJOR.MINOR.0-dev.N, one past the highest existing *-dev.N* tag). The
+  two patterns can never produce the same string, so a dev build and a
+  main build can never end up fighting over one tag - an earlier version
+  of this action used one plain MAJOR.MINOR.PATCH counter for both
+  branches, and a dev push landing close to a main push (e.g. around a
+  release merge) could compute the same "next" patch as the main push
+  before either had pushed, silently overwriting one image's tag with the
+  other's. images.yml's per-image `concurrency` group is a second layer
+  against that same race (still possible within one branch's own counter
+  if two builds of the same image overlap).
 
 inputs:
   image-name:
@@ -72,12 +85,12 @@ runs:
           echo "tag=dev" >> "$GITHUB_OUTPUT"
         fi
 
-    # MAJOR.MINOR comes from pyproject.toml (developer-controlled). PATCH
-    # is one past the highest MAJOR.MINOR.* tag GHCR already has for this
-    # image - never written back to the repo (see the header comment for
-    # why). A 404 (image never published before) or an unauthorized call
+    # MAJOR.MINOR comes from pyproject.toml (developer-controlled). Never
+    # written back to the repo (see the header comment for why). A 404
+    # (image never published before) or an unauthorized call
     # (packages-token not set up yet) both fall through to an empty tag
-    # list, so the first-ever build for a MAJOR.MINOR is .0.
+    # list, so the first-ever build under a MAJOR.MINOR starts at .0 /
+    # -dev.0.
     - name: Determine next version
       id: bump
       shell: bash
@@ -90,20 +103,34 @@ runs:
         major=$(cut -d. -f1 <<< "$current")
         minor=$(cut -d. -f2 <<< "$current")
 
-        tags=$(gh api "users/${{ github.repository_owner }}/packages/container/${{ inputs.image-name }}/versions" \
+        all_tags=$(gh api "users/${{ github.repository_owner }}/packages/container/${{ inputs.image-name }}/versions" \
           --paginate --jq '.[].metadata.container.tags[]?' 2>/dev/null || true)
 
-        max_patch=-1
+        # main gets a clean release counter; dev/** gets its own
+        # pre-release counter that can never collide with main's (see the
+        # header comment).
+        if [ "${{ steps.tag.outputs.tag }}" = "latest" ]; then
+          pattern="^${major}\.${minor}\.([0-9]+)$"
+        else
+          pattern="^${major}\.${minor}\.0-dev\.([0-9]+)$"
+        fi
+
+        max_n=-1
         while IFS= read -r t; do
-          if [[ "$t" =~ ^${major}\.${minor}\.([0-9]+)$ ]]; then
-            p="${BASH_REMATCH[1]}"
-            if [ "$p" -gt "$max_patch" ]; then
-              max_patch="$p"
+          if [[ "$t" =~ $pattern ]]; then
+            n="${BASH_REMATCH[1]}"
+            if [ "$n" -gt "$max_n" ]; then
+              max_n="$n"
             fi
           fi
-        done <<< "$tags"
+        done <<< "$all_tags"
 
-        next="$major.$minor.$((max_patch + 1))"
+        next_n=$((max_n + 1))
+        if [ "${{ steps.tag.outputs.tag }}" = "latest" ]; then
+          next="$major.$minor.$next_n"
+        else
+          next="$major.$minor.0-dev.$next_n"
+        fi
         echo "version=$next" >> "$GITHUB_OUTPUT"
 
     - name: Build and push
