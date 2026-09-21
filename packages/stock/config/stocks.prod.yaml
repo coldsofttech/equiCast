@@ -604,6 +604,7 @@ tickers:
     isin: US92343V1044
   - ticker: W7L.L
     isin: GB00BYMF3676
+  - WDC
   - ticker: WELL
     isin: US95040Q1040
   - ticker: WFC

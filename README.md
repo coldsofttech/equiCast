@@ -490,4 +490,7 @@ stock schedule so none of the four pipelines overlap.
   ingestion), and how to troubleshoot it
 - [Auth0 setup](docs/auth0-setup.md) — creating the Auth0 tenant/API backing
   the backend's JWT authentication, and wiring its values into the repo
+- [GitHub issue automations](docs/github-issue-automations.md) — how issues
+  in the shared support repo trigger automation back in this repo (e.g. the
+  missing-ISIN auto-fix), and how to add a new scenario
 - [Release notes](docs/release-notes.md)

@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Missing-ISIN sub-issues can now be resolved by replying with the ISIN — the fix is applied and a PR opened automatically.
+- Added WDC to the production stock ticker list.
+- Documented how GitHub issue automations (like the missing-ISIN auto-fix) work and how to add new ones.
 
 ## [1.0.7] - 2026-09-20
 
