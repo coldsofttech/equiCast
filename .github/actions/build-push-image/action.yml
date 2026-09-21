@@ -18,13 +18,18 @@ description: >
   site's own ingestion workflow resolves which tag to pull the same way
   (see e.g. stock-ingestion.yml's "plan" job).
 
-  Also tags every push with a per-package semantic version read from
-  packages/<name>/pyproject.toml (equicast-support#166) - the PATCH
-  component is auto-incremented on every build and committed back to
-  packages/<name>/pyproject.toml, so MAJOR/MINOR stay a manual edit (bump
-  them there and the next build's PATCH continues from .0) while PATCH
-  never needs manual attention. The calling workflow needs `contents:
-  write` for the commit-back push to succeed.
+  Also tags every push with a per-package semantic version
+  (equicast-support#166), MAJOR.MINOR read from packages/<name>/
+  pyproject.toml (a manual edit - bump it there for a MAJOR/MINOR release)
+  and PATCH computed fresh each build as one past the highest existing
+  MAJOR.MINOR.* tag already in GHCR for that image. This intentionally
+  never writes back to the repo - dev/v1.1 (and main) reject direct pushes
+  under a "changes must be made through a pull request" ruleset, so an
+  earlier version of this action that committed the bumped version back to
+  pyproject.toml failed every build. Reading GHCR's existing tags instead
+  needs `packages-token` (a classic PAT - see package-cleanup.yml's header
+  for why GITHUB_TOKEN can't list a user-owned package's versions); until
+  that secret exists every build just retags MAJOR.MINOR.0.
 
 inputs:
   image-name:
@@ -35,6 +40,13 @@ inputs:
     required: true
   package-dir:
     description: 'Path to the package directory holding pyproject.toml, e.g. "packages/stock".'
+    required: true
+  packages-token:
+    description: >
+      Classic PAT (read:packages) used to list this image's existing GHCR
+      versions so the next PATCH can be computed. Same token package-
+      cleanup.yml uses (secrets.PACKAGES_CLEANUP_PAT) - GITHUB_TOKEN can't
+      list a user-owned package's versions.
     required: true
 
 runs:
@@ -60,41 +72,39 @@ runs:
           echo "tag=dev" >> "$GITHUB_OUTPUT"
         fi
 
-    # Bumps only PATCH - MAJOR/MINOR are whatever's already in
-    # pyproject.toml, left for a developer to change by hand. Commits and
-    # pushes the bumped file back to the triggering branch before the
-    # build below reads it as a tag, so the version recorded in git always
-    # matches the version on the pushed image. The push retries against a
-    # freshly-pulled HEAD a few times since this action runs once per
-    # image in a matrix and a sibling job's commit-back (to a different
-    # package's pyproject.toml) can land first.
-    - name: Bump package version
+    # MAJOR.MINOR comes from pyproject.toml (developer-controlled). PATCH
+    # is one past the highest MAJOR.MINOR.* tag GHCR already has for this
+    # image - never written back to the repo (see the header comment for
+    # why). A 404 (image never published before) or an unauthorized call
+    # (packages-token not set up yet) both fall through to an empty tag
+    # list, so the first-ever build for a MAJOR.MINOR is .0.
+    - name: Determine next version
       id: bump
       shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.packages-token }}
       run: |
         set -euo pipefail
         file="${{ inputs.package-dir }}/pyproject.toml"
         current=$(grep -oP '^version = "\K[^"]+' "$file")
-        IFS='.' read -r major minor patch <<< "$current"
-        next="$major.$minor.$((patch + 1))"
-        sed -i "s/^version = \"$current\"/version = \"$next\"/" "$file"
+        major=$(cut -d. -f1 <<< "$current")
+        minor=$(cut -d. -f2 <<< "$current")
+
+        tags=$(gh api "users/${{ github.repository_owner }}/packages/container/${{ inputs.image-name }}/versions" \
+          --paginate --jq '.[].metadata.container.tags[]?' 2>/dev/null || true)
+
+        max_patch=-1
+        while IFS= read -r t; do
+          if [[ "$t" =~ ^${major}\.${minor}\.([0-9]+)$ ]]; then
+            p="${BASH_REMATCH[1]}"
+            if [ "$p" -gt "$max_patch" ]; then
+              max_patch="$p"
+            fi
+          fi
+        done <<< "$tags"
+
+        next="$major.$minor.$((max_patch + 1))"
         echo "version=$next" >> "$GITHUB_OUTPUT"
-
-        git config user.name "github-actions[bot]"
-        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add "$file"
-        git commit -m "chore: bump ${{ inputs.image-name }} version to $next [skip ci]"
-
-        for attempt in 1 2 3 4 5; do
-          if git push origin "HEAD:${{ github.ref }}"; then
-            break
-          fi
-          if [ "$attempt" = 5 ]; then
-            echo "::error::failed to push version bump after 5 attempts" >&2
-            exit 1
-          fi
-          git pull --rebase origin "${{ github.ref_name }}"
-        done
 
     - name: Build and push
       uses: docker/build-push-action@v6
