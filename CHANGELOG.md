@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   automatically as tracking issues instead of only showing up as a red X on
   GitHub Actions. A ticker/pair/benchmark that fails to fetch no longer
   takes down the rest of that run's batch.
+- Docker images (stock, ETF, FX, benchmark, forecasting) are now tagged
+  with a version number that increments on every build, and old versions
+  are pruned automatically, keeping only the 3 most recent per image.
 
 ### Changed
 

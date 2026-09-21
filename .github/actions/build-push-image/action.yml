@@ -18,12 +18,23 @@ description: >
   site's own ingestion workflow resolves which tag to pull the same way
   (see e.g. stock-ingestion.yml's "plan" job).
 
+  Also tags every push with a per-package semantic version read from
+  packages/<name>/pyproject.toml (equicast-support#166) - the PATCH
+  component is auto-incremented on every build and committed back to
+  packages/<name>/pyproject.toml, so MAJOR/MINOR stay a manual edit (bump
+  them there and the next build's PATCH continues from .0) while PATCH
+  never needs manual attention. The calling workflow needs `contents:
+  write` for the commit-back push to succeed.
+
 inputs:
   image-name:
     description: 'GHCR image name, e.g. "equicast-stock".'
     required: true
   dockerfile:
     description: 'Path to the Dockerfile, e.g. "packages/stock/Dockerfile".'
+    required: true
+  package-dir:
+    description: 'Path to the package directory holding pyproject.toml, e.g. "packages/stock".'
     required: true
 
 runs:
@@ -49,6 +60,42 @@ runs:
           echo "tag=dev" >> "$GITHUB_OUTPUT"
         fi
 
+    # Bumps only PATCH - MAJOR/MINOR are whatever's already in
+    # pyproject.toml, left for a developer to change by hand. Commits and
+    # pushes the bumped file back to the triggering branch before the
+    # build below reads it as a tag, so the version recorded in git always
+    # matches the version on the pushed image. The push retries against a
+    # freshly-pulled HEAD a few times since this action runs once per
+    # image in a matrix and a sibling job's commit-back (to a different
+    # package's pyproject.toml) can land first.
+    - name: Bump package version
+      id: bump
+      shell: bash
+      run: |
+        set -euo pipefail
+        file="${{ inputs.package-dir }}/pyproject.toml"
+        current=$(grep -oP '^version = "\K[^"]+' "$file")
+        IFS='.' read -r major minor patch <<< "$current"
+        next="$major.$minor.$((patch + 1))"
+        sed -i "s/^version = \"$current\"/version = \"$next\"/" "$file"
+        echo "version=$next" >> "$GITHUB_OUTPUT"
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add "$file"
+        git commit -m "chore: bump ${{ inputs.image-name }} version to $next [skip ci]"
+
+        for attempt in 1 2 3 4 5; do
+          if git push origin "HEAD:${{ github.ref }}"; then
+            break
+          fi
+          if [ "$attempt" = 5 ]; then
+            echo "::error::failed to push version bump after 5 attempts" >&2
+            exit 1
+          fi
+          git pull --rebase origin "${{ github.ref_name }}"
+        done
+
     - name: Build and push
       uses: docker/build-push-action@v6
       with:
@@ -58,3 +105,4 @@ runs:
         tags: |
           ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}:${{ steps.tag.outputs.tag }}
           ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}:${{ github.sha }}
+          ghcr.io/${{ github.repository_owner }}/${{ inputs.image-name }}:${{ steps.bump.outputs.version }}
