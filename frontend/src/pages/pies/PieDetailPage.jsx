@@ -229,6 +229,13 @@ function PieDetailPage() {
   const syncedIso = minLastUpdated(pie.holdings ?? []);
   const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const accountName = accounts.find((a) => a.id === accountId)?.name;
+  // Holdings are shown ranked by current value, highest first (GitHub issue
+  // #194) — kept separate from `pie.holdings`/`holdingValuations` above,
+  // which stay in API order since the diversification/allocation/CAGR/
+  // heatmap sections below pair them up by index.
+  const sortedHoldings = (pie.holdings ?? [])
+    .map((holding, index) => ({ holding, valuation: holdingValuations[index] }))
+    .sort((a, b) => b.valuation.currentValue - a.valuation.currentValue);
 
   return (
     <AppShell
@@ -318,8 +325,7 @@ function PieDetailPage() {
         />
       ) : (
         <div className="ec-detail-row-list">
-          {pie.holdings.map((holding, index) => {
-            const valuation = holdingValuations[index];
+          {sortedHoldings.map(({ holding, valuation }) => {
             const tone = plTone(valuation.plPct);
             const plSign = valuation.plValue >= 0 ? "+" : "-";
             const targetPct = Number(holding.allocation_pct);
