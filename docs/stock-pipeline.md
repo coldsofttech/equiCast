@@ -360,6 +360,10 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
    `issues:write` on `equicast-support`) rather than this job's own
    `GITHUB_TOKEN`, since the latter only has write access to this repo —
    this job needs no `issues:write` permission of its own as a result.
+   Then (equicast-support#164) checks the same catalog's holding
+   currencies against the run's environment's `fx_pairs.<env>.yaml` and opens one
+   equicast-support issue per missing FX pair - see
+   [fx-pipeline.md](fx-pipeline.md#missing-fx-pairs-for-holding-currencies).
 
 ### S3 layout produced
 
