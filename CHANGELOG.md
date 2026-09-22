@@ -75,6 +75,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An account's page no longer shows the price chart when the account has
   no pies or holdings yet, instead of one with nothing to plot
   (equicast-support#172).
+- Fixed `AssetIcon` misaligning rows when a holding has no website
+  (equicast-support#178).
 
 ## [1.0.5] - 2026-09-20
 
