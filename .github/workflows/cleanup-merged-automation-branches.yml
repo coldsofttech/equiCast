@@ -1,14 +1,18 @@
 name: Cleanup Merged Automation Branches
 
-# Deletes an issue-automation fix branch (isin/<TICKER>,
-# config/<asset_class>-<environment>-<action>-<key>-<run_id>, ...) once
-# its PR merges, so these accumulate as auto-created noise rather than
-# lingering after they've served their purpose. Scoped to known prefixes
-# by name rather than flipping the repo-wide "Automatically delete head
-# branches" setting, so other branches are never touched regardless of
-# how their PR is merged. One shared cleanup workflow for every
-# issue-automation-fix.yml scenario - add a new prefix to PREFIXES below
-# when a new scenario picks its own (see docs/github-issue-automations.md).
+# Deletes an issue-automation fix branch once its PR merges, so these
+# accumulate as auto-created noise rather than lingering after they've
+# served their purpose. Scoped to known prefixes by name rather than
+# flipping the repo-wide "Automatically delete head branches" setting, so
+# other branches are never touched regardless of how their PR is merged.
+#
+# One shared cleanup workflow for every issue-automation-fix.yml scenario,
+# but each scenario gets its own step rather than a single generic
+# prefix-matching loop: today every scenario's cleanup is "delete the
+# branch," but a future scenario's may not be (e.g. also closing a related
+# issue), and a dedicated step keeps that easy to add without disturbing
+# the others. Add a new scenario by adding a new step below, gated on its
+# own prefix (see docs/github-issue-automations.md).
 on:
   pull_request:
     types: [closed]
@@ -21,16 +25,16 @@ jobs:
     if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
-      - name: Delete the merged branch if it's one of ours
+      - name: Delete merged missing-isin branch
+        if: startsWith(github.event.pull_request.head.ref, 'isin/')
         env:
           GH_TOKEN: ${{ github.token }}
           BRANCH: ${{ github.event.pull_request.head.ref }}
-        run: |
-          PREFIXES=("isin/" "config/")
-          for prefix in "${PREFIXES[@]}"; do
-            if [[ "$BRANCH" == "$prefix"* ]]; then
-              gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$BRANCH"
-              exit 0
-            fi
-          done
-          echo "'$BRANCH' doesn't match any known automation-branch prefix - leaving it alone."
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$BRANCH"
+
+      - name: Delete merged config-change branch
+        if: startsWith(github.event.pull_request.head.ref, 'config/')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: gh api -X DELETE "repos/${{ github.repository }}/git/refs/heads/$BRANCH"

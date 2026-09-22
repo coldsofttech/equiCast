@@ -74,11 +74,13 @@ scenario is a small, self-contained plugin dropped into each side — see
    guessing.
 6. **Clean up** (`equicast`) — once a fix PR merges, the single
    `cleanup-merged-automation-branches.yml` workflow (`pull_request: closed`)
-   deletes its head branch, matched against a small list of known prefixes
-   (`isin/`, `config/`, …) rather than the repo-wide "delete head branches
-   on merge" setting, so other branches are never touched regardless of how
-   their PR is merged. Each scenario should pick its own short, distinct
-   prefix and add it to that list.
+   deletes its head branch, via one step per scenario each gated on its
+   own prefix (`isin/`, `config/`, …) rather than the repo-wide "delete
+   head branches on merge" setting, so other branches are never touched
+   regardless of how their PR is merged. Each scenario should pick its own
+   short, distinct prefix and add its own step, so a future scenario whose
+   cleanup needs more than "delete the branch" has somewhere to put that
+   without touching the others.
 
 ## Why no AI agent in the loop
 
@@ -132,8 +134,10 @@ already provide).
    case arm to the "Open PR" step for the body text. Everything else
    (checkout pinned to `ref: main`, branch/commit/push, PR creation,
    auto-merge, failure-comment) is already shared.
-4. **equicast**: add your scenario's branch prefix to
-   `cleanup-merged-automation-branches.yml`'s `PREFIXES` list.
+4. **equicast**: add a step to `cleanup-merged-automation-branches.yml`,
+   gated on `startsWith(github.event.pull_request.head.ref, '<your-prefix>/')`,
+   that deletes the merged branch — or does whatever else your scenario's
+   cleanup needs.
 5. Add the new scenario to "Current scenarios" below.
 6. Update the secrets/variables table above only if the scenario needs
    something beyond what's already there.
@@ -257,10 +261,11 @@ transient failure: GitHub blocks the default token from creating PRs
 unless the repo-wide setting is explicitly turned on, which this project
 deliberately leaves off (see the inventory table above).
 
-**A merged fix branch isn't deleted** — check its prefix is actually in
-`cleanup-merged-automation-branches.yml`'s `PREFIXES` list; a new scenario
-that forgot step 4 of "Adding a new scenario" above will leave its
-branches lingering (harmlessly — just noise).
+**A merged fix branch isn't deleted** — check
+`cleanup-merged-automation-branches.yml` actually has a step gated on that
+branch's prefix; a new scenario that forgot step 4 of "Adding a new
+scenario" above will leave its branches lingering (harmlessly — just
+noise).
 
 ## Security notes
 
