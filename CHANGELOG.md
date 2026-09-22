@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- An account's Portfolios and Holdings lists on `/accounts/:accountId` are
+  now sorted by current value, highest first (equicast-support#193).
+- A pie's Holdings list on `/accounts/:accountId/pies/:pieId` is now
+  sorted by current value, highest first (equicast-support#194).
 - Ingestion workflows' (stock, ETF, FX, benchmark) `max_workers`/`max_calls`
   defaults raised from 5 to 8, moving both together since raising
   `max_workers` alone has no effect once thread count exceeds `max_calls`

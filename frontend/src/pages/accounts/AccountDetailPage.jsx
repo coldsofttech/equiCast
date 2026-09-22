@@ -216,6 +216,18 @@ function AccountDetailPage() {
 
   const directHoldings = account.holdings ?? [];
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  // Portfolios and holdings are both shown ranked by current value, highest
+  // first (GitHub issue #193) — valuations are computed here so they're sorted
+  // once rather than recomputed (and re-sorted) inside each row's own render.
+  const sortedPies = (account.pies ?? [])
+    .map((pie) => {
+      const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
+      return { pie, pieTotals: summarizeHoldingValuations(pie.holdings ?? [], pieValuations) };
+    })
+    .sort((a, b) => b.pieTotals.currentValue - a.pieTotals.currentValue);
+  const sortedHoldings = directHoldings
+    .map((holding) => ({ holding, valuation: computeHoldingValuation(holding) }))
+    .sort((a, b) => b.valuation.currentValue - a.valuation.currentValue);
   const syncedIso = minLastUpdated(allHoldings);
   const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const holdingValuations = allHoldings.map(computeHoldingValuation);
@@ -321,9 +333,7 @@ function AccountDetailPage() {
             />
           ) : (
             <div className="ec-detail-row-list">
-              {account.pies.map((pie) => {
-                const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
-                const pieTotals = summarizeHoldingValuations(pie.holdings ?? [], pieValuations);
+              {sortedPies.map(({ pie, pieTotals }) => {
                 const tone = plTone(pieTotals.plPct);
                 const plSign = pieTotals.plValue >= 0 ? "+" : "-";
                 return (
@@ -388,8 +398,7 @@ function AccountDetailPage() {
             />
           ) : (
             <div className="ec-detail-row-list">
-              {directHoldings.map((holding) => {
-                const valuation = computeHoldingValuation(holding);
+              {sortedHoldings.map(({ holding, valuation }) => {
                 const tone = plTone(valuation.plPct);
                 const plSign = valuation.plValue >= 0 ? "+" : "-";
                 return (
