@@ -65,12 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action.
 - GitHub Actions used across CI/CD are updated to their latest major
   versions.
-- An account's/pie's Sector and Industry diversification, previously two
-  always-expanded charts shown side by side, are now one combined chart:
-  Sector diversification by default, swapping in the clicked sector's own
-  Industry breakdown (with a "Back to sectors" way out) instead of always
-  rendering every industry across every sector at once, which could skew
-  the page for an account/pie spanning many sectors (equicast-support#192).
+- An account's/pie's Sector and Industry diversification charts are now combined into one, showing Sector by default with drill-down into Industry and a "Back to sectors" option (equicast-support#192).
 
 ### Fixed
 
@@ -78,16 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one full row at the panel's real width, instead of a fixed 4 - avoids a
   lone card left stretched full-width on its own row when narrower than
   ~930px only fits 3 across (equicast-support#177).
-- An account's or pie's page no longer shows the price chart when none of
-  its holdings actually have shares yet (e.g. a pie with holdings added
-  but nothing bought into, or fully sold down), instead of one with
-  nothing to plot but its own "No price history to chart yet" caption
-  (equicast-support#172).
-- The Holdings heatmap on an account's/pie's page no longer draws an
-  evenly-split tile per holding when none of them actually have shares -
-  it now correctly shows its "no holdings yet" empty state instead of a
-  heatmap implying real, equal-weighted positions that don't exist
-  (equicast-support#175).
+- An account's or pie's page no longer shows the price chart when none of its holdings actually have shares yet (equicast-support#172).
+- The Holdings heatmap on an account's/pie's page no longer draws an evenly-split tile per holding when none of them actually have shares (equicast-support#175).
 - Fixed `AssetIcon` misaligning rows when a holding has no website
   (equicast-support#178).
 
