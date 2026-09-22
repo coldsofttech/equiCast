@@ -79,6 +79,7 @@ from rest_framework.views import APIView
 from transactions.views import (
     TRANSACTABLE_ASSET_CLASSES,
     _refresh_holding_rollup,
+    _reverse_dividend_allowance,
     resolve_converted_amounts,
 )
 
@@ -673,7 +674,11 @@ def _commit_transaction_mode(
         # BUY/SELL can land inside the dividend watermark's already-synced
         # range, so reopen it here too — bulk import creates transactions
         # directly rather than going through that view.
-        _client.rewind_dividends_synced_through(user_id, holding_id, synthetic["date"])
+        dropped = _client.rewind_dividends_synced_through(user_id, holding_id, synthetic["date"])
+        # GitHub equicast-support#1: give back whatever UK dividend
+        # allowance each dropped auto-created DIVIDEND had consumed.
+        for dropped_transaction in dropped:
+            _reverse_dividend_allowance(user_id, dropped_transaction)
 
     if created_count == 0 and not errors:
         status = "skipped"

@@ -8,6 +8,7 @@ Django or any particular caller.
 
 from __future__ import annotations
 
+from decimal import Decimal
 from functools import cached_property
 from typing import Any
 
@@ -49,6 +50,14 @@ DEFAULT_TAX_RESIDENCY = "UK"
 #: band.
 DEFAULT_INCOME_TAX_BAND = "BASIC"
 
+#: Applied to a brand-new profile on first login (GitHub issue #212) — the
+#: running total of `UK_DIVIDEND_ALLOWANCE` a user has consumed, keyed by
+#: UK tax year label (`uk_dividend_tax.uk_tax_year_label`, e.g.
+#: `"2026-27"`), so a new tax year simply hasn't accumulated a key yet
+#: rather than needing an explicit reset. Updated via
+#: `add_dividend_allowance_used`, never written to directly by a caller.
+DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR: dict[str, Any] = {}
+
 
 class UserProfileClient:
     """Reads and upserts items in one DynamoDB user-profiles table."""
@@ -74,11 +83,14 @@ class UserProfileClient:
         `default_currency=DEFAULT_CURRENCY`/`transaction_type=
         DEFAULT_TRANSACTION_TYPE`/`fx_warmup_currencies=
         DEFAULT_FX_WARMUP_CURRENCIES`/`tax_residency=DEFAULT_TAX_RESIDENCY`/
-        `income_tax_band=DEFAULT_INCOME_TAX_BAND` if this is their first
-        login — or, for an existing profile that predates one or more of
-        `transaction_type`/`fx_warmup_currencies`/`tax_residency`/
-        `income_tax_band` (each introduced after `default_currency`),
-        backfilling just the missing attribute(s) onto it.
+        `income_tax_band=DEFAULT_INCOME_TAX_BAND`/`dividend_allowance_used_
+        by_tax_year=DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR` if this is
+        their first login — or, for an existing profile that predates one
+        or more of `transaction_type`/`fx_warmup_currencies`/
+        `tax_residency`/`income_tax_band`/
+        `dividend_allowance_used_by_tax_year` (each introduced after
+        `default_currency`), backfilling just the missing attribute(s)
+        onto it.
 
         The create is a conditional put (`attribute_not_exists(user_id)`) so
         a concurrent first login can't clobber a profile the user has
@@ -94,6 +106,10 @@ class UserProfileClient:
                     ("fx_warmup_currencies", DEFAULT_FX_WARMUP_CURRENCIES),
                     ("tax_residency", DEFAULT_TAX_RESIDENCY),
                     ("income_tax_band", DEFAULT_INCOME_TAX_BAND),
+                    (
+                        "dividend_allowance_used_by_tax_year",
+                        DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR,
+                    ),
                 )
                 if attr not in item
             }
@@ -116,6 +132,7 @@ class UserProfileClient:
             "fx_warmup_currencies": DEFAULT_FX_WARMUP_CURRENCIES,
             "tax_residency": DEFAULT_TAX_RESIDENCY,
             "income_tax_band": DEFAULT_INCOME_TAX_BAND,
+            "dividend_allowance_used_by_tax_year": DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR,
         }
         try:
             self._table.put_item(
@@ -215,3 +232,45 @@ class UserProfileClient:
         account-deletion flow). A no-op (no error) if they have no profile
         item yet, same as DynamoDB's own `delete_item`."""
         self._table.delete_item(Key={"user_id": user_id})
+
+    def add_dividend_allowance_used(
+        self, user_id: str, tax_year: str, amount: float
+    ) -> dict[str, Any]:
+        """Add `amount` to `user_id`'s `dividend_allowance_used_by_tax_year[
+        tax_year]` (GitHub issue #212 — `tax_year` a label from
+        `equicast_core.uk_dividend_tax.uk_tax_year_label`, e.g.
+        `"2026-27"`), creating their profile first (get_or_create_profile)
+        if this is called before their first login. `amount` may be
+        negative (GitHub equicast-support#1) — a DIVIDEND transaction being
+        edited, deleted, or dropped by `TransactionsClient.rewind_
+        dividends_synced_through` reverses whatever allowance it
+        previously consumed the same way, by adding the negation of its
+        own recorded `allowance_consumed` back here.
+
+        A DynamoDB nested `if_not_exists(...) + :amount` update, applied
+        atomically server-side rather than read-modify-write here — so
+        concurrent dividend events for the same user/tax-year (e.g. two
+        holdings syncing payouts in the same `sync_dividends_for_holdings`
+        pass) each land their own delta instead of one clobbering the
+        other. `amount` goes through its string form before `Decimal`
+        (same reasoning as `equicast_core.holdings._validate_allocation`)
+        rather than straight from `float`, since DynamoDB's number type
+        requires `Decimal` and a raw `float` would round-trip through
+        binary floating point first. Whether `amount` is sane (no larger in
+        magnitude than what `compute_uk_dividend_tax` actually attributed
+        to the allowance for the dividend it's tied to) is the caller's job
+        to check first — this client only knows about profiles, the same
+        way `update_transaction_type` leaves its own value check to its
+        caller."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression=(
+                "SET dividend_allowance_used_by_tax_year.#ty = "
+                "if_not_exists(dividend_allowance_used_by_tax_year.#ty, :zero) + :amount"
+            ),
+            ExpressionAttributeNames={"#ty": tax_year},
+            ExpressionAttributeValues={":zero": Decimal("0"), ":amount": Decimal(str(amount))},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])

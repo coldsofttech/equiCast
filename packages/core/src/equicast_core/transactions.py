@@ -717,6 +717,7 @@ class TransactionsClient:
         external_id: Any = None,
         sdrt: Any = None,
         fx_fee: Any = None,
+        allowance_consumed: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -763,6 +764,23 @@ class TransactionsClient:
         into `price`/`average_price` here — `compute_holding_rollup`
         subtracts both from a BUY's contribution to the *converted* cost
         basis only (never `_native`, since they're not in that currency).
+
+        `allowance_consumed` (GitHub equicast-support#1) is how much of the
+        UK dividend allowance this `DIVIDEND` transaction's own tax
+        calculation (`equicast_core.uk_dividend_tax.compute_uk_dividend_
+        tax`, run by the caller — see `backend.transactions.views._compute_
+        uk_dividend_tax_breakdown`) attributed to it, or `None` if that
+        calculation never ran for it at all (e.g. a non-GBP profile, or the
+        holding's account/pie had already been deleted) — distinct from
+        `0.0`, which means the calculation ran but this particular dividend
+        happened not to consume any allowance (an exempt wrapper type, or
+        the allowance was already exhausted for its tax year). Stored only
+        for `type == "DIVIDEND"`, `None` otherwise; this is what lets an
+        edit or delete of the record later reverse exactly the delta it
+        added (`UserProfileClient.add_dividend_allowance_used` with the
+        negated figure) instead of either leaving it permanently consumed
+        or guessing at what to reverse via recomputation against
+        potentially-since-changed tax settings.
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
@@ -856,6 +874,7 @@ class TransactionsClient:
                 "external_id": external_id,
                 "sdrt": sdrt if type == "BUY" else None,
                 "fx_fee": fx_fee if type in ("BUY", "SELL") else None,
+                "allowance_consumed": allowance_consumed if type == "DIVIDEND" else None,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -888,12 +907,17 @@ class TransactionsClient:
         Mutable records are an AVERAGE-mode `BUY` (position entry —
         `no_of_shares`/`average_price_native`/`average_price`/`fx_rate`/
         `date`) or any `DIVIDEND` entry in either mode
-        (`amount_native`/`amount`/`fx_rate`/`date`) — see module docstring
-        for why a dividend is mutable regardless of mode, and for the
-        native/converted split (`average_price`/`amount` here are the
-        already-resolved converted figures — the caller recomputes them
-        from the patched native value/date/`fx_rate` and passes them all
-        in together, the same as `create_transaction`). `external_id` is
+        (`amount_native`/`amount`/`fx_rate`/`date`/`allowance_consumed`) —
+        see module docstring for why a dividend is mutable regardless of
+        mode, and for the native/converted split (`average_price`/`amount`
+        here are the already-resolved converted figures — the caller
+        recomputes them from the patched native value/date/`fx_rate` and
+        passes them all in together, the same as `create_transaction`).
+        `allowance_consumed` (GitHub equicast-support#1) is likewise
+        recomputed and passed in by the caller alongside `amount`/`date`
+        whenever they change, since a DIVIDEND's converted amount or UK tax
+        year both feed straight into how much of the allowance it consumes
+        (see `create_transaction`'s docstring). `external_id` is
         deliberately absent from both allowed sets — it's immutable once set
         by `create_transaction`, so an import's dedup check can always trust
         it against the original import rather than a value that could have
@@ -921,7 +945,7 @@ class TransactionsClient:
                 )
             record_type = transactions[index]["type"]
             if record_type == "DIVIDEND":
-                allowed = {"date", "amount_native", "amount", "fx_rate"}
+                allowed = {"date", "amount_native", "amount", "fx_rate", "allowance_consumed"}
             elif mode == "AVERAGE" and record_type in ("BUY", None):
                 allowed = {
                     "date",
@@ -1074,7 +1098,7 @@ class TransactionsClient:
 
     def rewind_dividends_synced_through(
         self, user_id: str, holding_id: str, transaction_date: str
-    ) -> None:
+    ) -> list[dict[str, Any]]:
         """Clear `holding_id`'s `dividends_synced_through` watermark (see
         `advance_dividends_synced_through`) and drop every auto-created
         `DIVIDEND` on file, if `transaction_date` falls on or before the
@@ -1091,25 +1115,36 @@ class TransactionsClient:
         timeline, same tradeoff `TransactionsClient.update_transaction`
         makes for an AVERAGE-mode `BUY` edit — this also un-does any
         dividend the user previously edited or deleted by hand. A no-op
-        when the watermark is unset or already before `transaction_date`
-        (an ordinary new-today `BUY`/`SELL`, not a backdated correction) —
-        nothing already-examined needs rechecking. Called from
-        `TransactionListView.post`/`TransactionDetailView.delete`
-        (backend/transactions/views.py) for a TRANSACTION-mode `BUY`/`SELL`
-        only — AVERAGE mode has no `SELL`, and its one `BUY` can't be
-        created a second time."""
+        (returns `[]`) when the watermark is unset or already before
+        `transaction_date` (an ordinary new-today `BUY`/`SELL`, not a
+        backdated correction) — nothing already-examined needs rechecking.
+        Called from `TransactionListView.post`/`TransactionDetailView.
+        delete`/`transactions.import_views` (backend/transactions/) for a
+        TRANSACTION-mode `BUY`/`SELL` only — AVERAGE mode has no `SELL`,
+        and its one `BUY` can't be created a second time.
+
+        Returns every `DIVIDEND` transaction actually dropped (`[]` for the
+        no-op case above) — GitHub equicast-support#1: a dropped dividend
+        may have already consumed some of the user's UK dividend allowance
+        (`allowance_consumed`, see `create_transaction`), which the caller
+        needs to reverse (`UserProfileClient.add_dividend_allowance_used`)
+        now that this record no longer exists to justify it; this client
+        only knows about transactions, so which of the dropped records
+        actually need reversing (and how) is the caller's job, the same
+        way ownership/eligibility checks are throughout this class."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             transactions, current, etag = self._load(user_id, holding_id)
             if current is None or transaction_date > current:
-                return
-            transactions = [t for t in transactions if t["type"] != "DIVIDEND"]
+                return []
+            dropped = [t for t in transactions if t["type"] == "DIVIDEND"]
+            remaining = [t for t in transactions if t["type"] != "DIVIDEND"]
             try:
-                self._save(user_id, holding_id, transactions, None, etag)
+                self._save(user_id, holding_id, remaining, None, etag)
             except self._s3.exceptions.ClientError as exc:
                 if self._is_conflict(exc):
                     continue
                 raise
-            return
+            return dropped
         raise RuntimeError(
             f"Too many conflicting writes to transactions for holding '{holding_id}'."
         )
