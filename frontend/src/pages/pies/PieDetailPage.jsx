@@ -20,6 +20,7 @@ import PiePriceChart from "./PiePriceChart.jsx";
 import PieCagrSection from "./PieCagrSection.jsx";
 import PieDetailSkeleton from "./PieDetailSkeleton.jsx";
 import DiversificationChart from "../accounts/DiversificationChart.jsx";
+import SectorIndustryChart from "../accounts/SectorIndustryChart.jsx";
 import HoldingsHeatmap from "../accounts/HoldingsHeatmap.jsx";
 import { useApi } from "../../api/useApi.js";
 import { useAccounts } from "../../api/useAccounts.js";
@@ -75,8 +76,6 @@ function PieDetailPage() {
   const [pie, setPie] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-
-  const [selectedSector, setSelectedSector] = useState(null);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -213,10 +212,23 @@ function PieDetailPage() {
   }
 
   const holdingValuations = (pie.holdings ?? []).map((h) => computeHoldingValuation(h));
-  const heatmapWeights = (pie.holdings ?? []).map((h, index) => ({
-    ticker: h.ticker,
-    website: h.website,
-    value: holdingValuations[index].currentValue,
+  // Only holdings actually held (shares > 0) feed the heatmap and gate the
+  // price chart below — a pie holding record with no shares yet (or fully
+  // sold down) has no real weight or price history of its own. Including it
+  // in the heatmap used to fall into HoldingsHeatmap's zero-total "evenly
+  // split" fallback, drawing a tile for it as if it were a genuine
+  // equal-weighted holding (GitHub issue #175); rendering the price chart
+  // unconditionally let it render with nothing to plot but its own "No
+  // price history to chart yet" caption instead of not rendering at all
+  // (GitHub issue #172).
+  const heldEntries = (pie.holdings ?? [])
+    .map((h, index) => ({ holding: h, valuation: holdingValuations[index] }))
+    .filter(({ holding }) => Number(holding.no_of_shares) > 0);
+  const hasHeldHoldings = heldEntries.length > 0;
+  const heatmapWeights = heldEntries.map(({ holding, valuation }) => ({
+    ticker: holding.ticker,
+    website: holding.website,
+    value: valuation.currentValue,
   }));
   const totals = summarizeHoldingValuations(pie.holdings ?? [], holdingValuations);
   const totalsTone = plTone(totals.plPct);
@@ -295,15 +307,17 @@ function PieDetailPage() {
         />
       </div>
 
-      <PiePriceChart
-        holdings={pie.holdings ?? []}
-        currency={currency}
-        compareItems={siblingPies}
-        compareItemType="pie"
-        fetchCompareHoldings={fetchCompareHoldings}
-        investedTotal={totals.invested}
-        holdingValuations={holdingValuations}
-      />
+      {hasHeldHoldings && (
+        <PiePriceChart
+          holdings={pie.holdings ?? []}
+          currency={currency}
+          compareItems={siblingPies}
+          compareItemType="pie"
+          fetchCompareHoldings={fetchCompareHoldings}
+          investedTotal={totals.invested}
+          holdingValuations={holdingValuations}
+        />
+      )}
 
       <div className="ec-section-head">
         <h2 className="ec-section-title">Holdings</h2>
@@ -392,21 +406,7 @@ function PieDetailPage() {
       )}
 
       <div className="ec-divchart-grid">
-        <DiversificationChart
-          title="Sector diversification"
-          score={sectorScore ?? undefined}
-          data={sectorData}
-          caption="Click a sector to filter industries below; click it again to show all."
-          activeLabel={selectedSector}
-          onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
-        />
-
-        <DiversificationChart
-          title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
-          data={
-            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
-          }
-        />
+        <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
 
         <DiversificationChart title="Asset allocation" data={assetData} />
 

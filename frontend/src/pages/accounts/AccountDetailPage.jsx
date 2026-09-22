@@ -15,6 +15,7 @@ import StatTile from "../../components/core/StatTile.jsx";
 import Skeleton from "../../components/core/Skeleton.jsx";
 import AccountForm from "./AccountForm.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
+import SectorIndustryChart from "./SectorIndustryChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import AccountDetailSkeleton from "./AccountDetailSkeleton.jsx";
@@ -63,8 +64,6 @@ function AccountDetailPage() {
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-
-  const [selectedSector, setSelectedSector] = useState(null);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -239,10 +238,23 @@ function AccountDetailPage() {
   );
   const assetData = buildAssetAllocation(allHoldings, holdingValuations);
   const marketCapData = buildMarketCapAllocation(allHoldings, holdingValuations);
-  const heatmapWeights = allHoldings.map((h, index) => ({
-    ticker: h.ticker,
-    website: h.website,
-    value: holdingValuations[index].currentValue,
+  // Only holdings actually held (shares > 0) feed the heatmap and gate the
+  // price chart below — a pie/account holding record with no shares yet (or
+  // fully sold down) has no real weight or price history of its own.
+  // Including it in the heatmap used to fall into HoldingsHeatmap's
+  // zero-total "evenly split" fallback, drawing a tile for it as if it were
+  // a genuine equal-weighted holding (GitHub issue #175); including it in
+  // `hasPiesOrHoldings` below let the price chart render with nothing to
+  // plot but its own "No price history to chart yet" caption instead of not
+  // rendering at all (GitHub issue #172).
+  const heldEntries = allHoldings
+    .map((h, index) => ({ holding: h, valuation: holdingValuations[index] }))
+    .filter(({ holding }) => Number(holding.no_of_shares) > 0);
+  const hasHeldHoldings = heldEntries.length > 0;
+  const heatmapWeights = heldEntries.map(({ holding, valuation }) => ({
+    ticker: holding.ticker,
+    website: holding.website,
+    value: valuation.currentValue,
   }));
 
   return (
@@ -298,7 +310,7 @@ function AccountDetailPage() {
         />
       </div>
 
-      {hasPiesOrHoldings && (
+      {hasHeldHoldings && (
         <PiePriceChart
           holdings={allHoldings}
           currency={currency}
@@ -450,21 +462,7 @@ function AccountDetailPage() {
       </div>
 
       <div className="ec-divchart-grid">
-        <DiversificationChart
-          title="Sector diversification"
-          score={sectorScore ?? undefined}
-          data={sectorData}
-          caption="Click a sector to filter industries below; click it again to show all."
-          activeLabel={selectedSector}
-          onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
-        />
-
-        <DiversificationChart
-          title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
-          data={
-            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
-          }
-        />
+        <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
 
         <DiversificationChart title="Asset allocation" data={assetData} />
 
