@@ -103,18 +103,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The Holdings heatmap on an account's/pie's page no longer draws an evenly-split tile per holding when none of them actually have shares (equicast-support#175).
 - Fixed `AssetIcon` misaligning rows when a holding has no website
   (equicast-support#178).
-- Fixed the UK dividend tax allowance (`dividend_allowance_used_by_tax_year`,
-  GitHub issue #212) never being given back when a DIVIDEND transaction
-  that had already consumed some of it was edited, deleted, or dropped by
-  `TransactionsClient.rewind_dividends_synced_through` (a backdated
-  BUY/SELL, whether recorded through the API or a bulk import) —
-  previously it stayed permanently "used" against the user's real
-  allowance for that UK tax year no matter what happened to the dividend
-  that consumed it. Each DIVIDEND now records how much of the allowance
-  its own tax calculation attributed to it (`allowance_consumed`), so an
-  edit reverses the old figure before re-taxing against the new
-  amount/date, and a delete or rewind-triggered drop reverses it outright
-  (equicast-support#1).
+- The UK dividend tax allowance is no longer permanently "used" when a DIVIDEND transaction that had already consumed some of it is edited, deleted, or dropped by a backdated BUY/SELL (recorded via the API or a bulk import) — it's now reversed in each case instead (equicast-support#1).
 
 ## [1.0.5] - 2026-09-20
 
