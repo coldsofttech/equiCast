@@ -820,6 +820,89 @@ class ImportCommitViewTests(TestCase):
         _, kwargs = mock_client.create_transaction.call_args
         self.assertEqual(kwargs["external_id"], "dup-2")
 
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._holdings_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.import_views._client")
+    @patch("transactions.import_views._holdings_client")
+    @patch("transactions.import_views._profile_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_backdated_row_reverses_allowance_for_dividends_dropped_by_the_rewind(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_import_profile_client,
+        mock_import_holdings_client,
+        mock_import_client,
+        mock_views_market_data_client,
+        mock_views_client,
+        mock_views_holdings_client,
+        mock_views_profile_client,
+    ) -> None:
+        """GitHub equicast-support#1: bulk import creates transactions
+        directly (not via TransactionListView.post), but a backdated
+        BUY/SELL row can still drop already-created DIVIDENDs via the
+        rewind (GitHub issue #124) — each dropped dividend's
+        allowance_consumed must be given back."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_import_profile_client.get_or_create_profile.return_value = {
+            "transaction_type": "TRANSACTION",
+            "default_currency": "GBP",
+        }
+        holding = {
+            "id": "h-1",
+            "ticker": "VOD",
+            "asset_class": "stock",
+            "account_id": "acc-1",
+            "pie_id": None,
+            "watchlist_id": None,
+        }
+        mock_import_holdings_client.get_holding.return_value = holding
+        mock_import_client.list_transactions.return_value = []
+        mock_import_client.create_transaction.return_value = {"id": "t-new"}
+        dropped_dividend = {
+            "id": "t-div",
+            "type": "DIVIDEND",
+            "date": "2026-03-01",
+            "allowance_consumed": 10.0,
+        }
+        mock_import_client.rewind_dividends_synced_through.return_value = [dropped_dividend]
+        mock_views_market_data_client.get_profile.return_value = None
+        mock_views_client.list_transactions.return_value = []
+        mock_views_holdings_client.update_holding_financials.return_value = holding
+
+        response = self.client.post(
+            reverse("transactions-import-commit"),
+            data={
+                "selections": [
+                    {
+                        "ticker": "VOD",
+                        "asset_class": "stock",
+                        "target": {"type": "existing_holding", "id": "h-1"},
+                        "rows": [
+                            {
+                                "external_id": "row-1",
+                                "date": "2026-01-01",
+                                "type": "BUY",
+                                "no_of_shares": 10,
+                                "price_native": 100.0,
+                                "fx_rate": None,
+                            }
+                        ],
+                    }
+                ]
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_views_profile_client.add_dividend_allowance_used.assert_called_once_with(
+            "auth0|abc123", "2025-26", -10.0
+        )
+
     @patch("transactions.views._holdings_client")
     @patch("transactions.views._client")
     @patch("transactions.views._market_data_client")

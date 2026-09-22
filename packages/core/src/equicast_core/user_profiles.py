@@ -240,7 +240,12 @@ class UserProfileClient:
         tax_year]` (GitHub issue #212 — `tax_year` a label from
         `equicast_core.uk_dividend_tax.uk_tax_year_label`, e.g.
         `"2026-27"`), creating their profile first (get_or_create_profile)
-        if this is called before their first login.
+        if this is called before their first login. `amount` may be
+        negative (GitHub equicast-support#1) — a DIVIDEND transaction being
+        edited, deleted, or dropped by `TransactionsClient.rewind_
+        dividends_synced_through` reverses whatever allowance it
+        previously consumed the same way, by adding the negation of its
+        own recorded `allowance_consumed` back here.
 
         A DynamoDB nested `if_not_exists(...) + :amount` update, applied
         atomically server-side rather than read-modify-write here — so
@@ -251,11 +256,11 @@ class UserProfileClient:
         (same reasoning as `equicast_core.holdings._validate_allocation`)
         rather than straight from `float`, since DynamoDB's number type
         requires `Decimal` and a raw `float` would round-trip through
-        binary floating point first. Whether `amount` is sane (non-
-        negative, no larger than what `compute_uk_dividend_tax` actually
-        attributed to the allowance) is the caller's job to check first —
-        this client only knows about profiles, the same way
-        `update_transaction_type` leaves its own value check to its
+        binary floating point first. Whether `amount` is sane (no larger in
+        magnitude than what `compute_uk_dividend_tax` actually attributed
+        to the allowance for the dividend it's tied to) is the caller's job
+        to check first — this client only knows about profiles, the same
+        way `update_transaction_type` leaves its own value check to its
         caller."""
         self.get_or_create_profile(user_id)
         response = self._table.update_item(

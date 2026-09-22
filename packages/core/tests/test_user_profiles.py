@@ -541,3 +541,15 @@ def test_add_dividend_allowance_used_accumulates_within_the_same_tax_year(
     assert profile["dividend_allowance_used_by_tax_year"] == {"2026-27": Decimal("550")}
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored["dividend_allowance_used_by_tax_year"] == {"2026-27": Decimal("550")}
+
+
+def test_add_dividend_allowance_used_reverses_with_a_negative_amount(dynamodb_resource) -> None:
+    """GitHub equicast-support#1 — editing/deleting a DIVIDEND transaction
+    reverses whatever allowance it consumed by adding the negation of its
+    own recorded allowance_consumed back here."""
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+    client.add_dividend_allowance_used("auth0|existing", "2026-27", 300)
+
+    profile = client.add_dividend_allowance_used("auth0|existing", "2026-27", -300)
+
+    assert profile["dividend_allowance_used_by_tax_year"] == {"2026-27": Decimal("0")}

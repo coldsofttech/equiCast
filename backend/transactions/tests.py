@@ -317,6 +317,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-2",
             "AVERAGE",
+            allowance_consumed=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             price_native=None,
@@ -420,6 +421,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "AVERAGE",
+            allowance_consumed=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             average_price=None,
@@ -479,6 +481,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "AVERAGE",
+            allowance_consumed=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             average_price=122.0,
@@ -615,6 +618,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "TRANSACTION",
+            allowance_consumed=None,
             no_of_shares=10.0,
             average_price_native=None,
             average_price=None,
@@ -630,6 +634,51 @@ class TransactionListViewTests(TestCase):
         )
         mock_client.rewind_dividends_synced_through.assert_called_once_with(
             "auth0|abc123", "h-1", "2026-01-15"
+        )
+
+    @patch("transactions.views._market_data_client")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_reverses_allowance_for_dividends_dropped_by_the_rewind(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_market_data_client,
+    ) -> None:
+        """GitHub equicast-support#1: a backdated TRANSACTION-mode BUY/SELL
+        can drop already-created DIVIDENDs via the rewind (GitHub issue
+        #124) — each dropped dividend's allowance_consumed must be given
+        back too."""
+        _authenticate(mock_jwks_client, mock_decode)
+        dropped_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 10.0}
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_market_data_client.get_profile.return_value = None
+        mock_client.create_transaction.return_value = BUY_TRANSACTION
+        mock_client.rewind_dividends_synced_through.return_value = [dropped_dividend]
+
+        response = self.client.post(
+            reverse("transactions-list"),
+            data={
+                "holding_id": "h-1",
+                "no_of_shares": 10,
+                "price_native": 152.5,
+                "date": "2026-01-15",
+                "type": "BUY",
+            },
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_profile_client.add_dividend_allowance_used.assert_called_once_with(
+            "auth0|abc123", "2025-26", -10.0
         )
 
     @patch("transactions.views._market_data_client")
@@ -852,6 +901,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "AVERAGE",
+            allowance_consumed=None,
             no_of_shares=None,
             average_price_native=None,
             average_price=None,
@@ -905,6 +955,7 @@ class TransactionListViewTests(TestCase):
             "auth0|abc123",
             "h-1",
             "TRANSACTION",
+            allowance_consumed=None,
             no_of_shares=None,
             average_price_native=None,
             average_price=None,
@@ -1290,6 +1341,114 @@ class TransactionDetailViewTests(TestCase):
             amount_native=50.0,
             amount=None,
             fx_rate=None,
+            allowance_consumed=None,
+        )
+
+    @patch("transactions.views._compute_uk_dividend_tax_breakdown")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_reverses_old_allowance_and_persists_the_new_breakdown(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_compute_breakdown,
+    ) -> None:
+        """GitHub equicast-support#1: editing a taxed DIVIDEND's amount
+        must reverse whatever allowance the old amount had consumed
+        (add_dividend_allowance_used with the negated old figure) before
+        applying whatever the new amount consumes — never just leaving the
+        old consumption on top of a fresh one."""
+        _authenticate(mock_jwks_client, mock_decode)
+        existing_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 20.0}
+        mock_client.get_transaction.return_value = existing_dividend
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = {
+            **TRANSACTION_PROFILE,
+            "dividend_allowance_used_by_tax_year": {"2025-26": 20.0},
+        }
+        mock_compute_breakdown.return_value = {
+            "allowance_consumed": 30.0,
+            "new_allowance_used_ytd": 30.0,
+            "tax_year": "2025-26",
+        }
+        updated = {**existing_dividend, "amount_native": 60, "amount": 30.0}
+        mock_client.update_transaction.return_value = updated
+
+        response = self.client.patch(
+            reverse("transactions-detail", args=["h-1", "t-3"]),
+            data={"amount_native": 60, "fx_rate": 0.5},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_profile_client.add_dividend_allowance_used.assert_any_call(
+            "auth0|abc123", "2025-26", -20.0
+        )
+        mock_profile_client.add_dividend_allowance_used.assert_any_call(
+            "auth0|abc123", "2025-26", 30.0
+        )
+        self.assertEqual(mock_profile_client.add_dividend_allowance_used.call_count, 2)
+        mock_client.update_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "t-3",
+            "TRANSACTION",
+            amount_native=60.0,
+            amount=30.0,
+            fx_rate=0.5,
+            allowance_consumed=30.0,
+        )
+
+    @patch("transactions.views._compute_uk_dividend_tax_breakdown")
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_does_not_reverse_allowance_when_none_was_ever_consumed(
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_holdings_client,
+        mock_client,
+        mock_profile_client,
+        mock_compute_breakdown,
+    ) -> None:
+        """allowance_consumed is None (not 0) when the calculation never
+        ran for the original dividend — nothing to reverse in that case."""
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.get_transaction.return_value = DIVIDEND_TRANSACTION
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_compute_breakdown.return_value = None
+        updated = {**DIVIDEND_TRANSACTION, "amount_native": 60, "amount": 30.0}
+        mock_client.update_transaction.return_value = updated
+
+        response = self.client.patch(
+            reverse("transactions-detail", args=["h-1", "t-3"]),
+            data={"amount_native": 60, "fx_rate": 0.5},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_profile_client.add_dividend_allowance_used.assert_not_called()
+        mock_client.update_transaction.assert_called_once_with(
+            "auth0|abc123",
+            "h-1",
+            "t-3",
+            "TRANSACTION",
+            amount_native=60.0,
+            amount=30.0,
+            fx_rate=0.5,
+            allowance_consumed=None,
         )
 
     @patch("transactions.views._profile_client")
@@ -1373,6 +1532,64 @@ class TransactionDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 204)
         mock_client.rewind_dividends_synced_through.assert_not_called()
+        mock_profile_client.add_dividend_allowance_used.assert_not_called()
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_reverses_the_dividend_allowance_it_had_consumed(
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_client, mock_profile_client
+    ) -> None:
+        """GitHub equicast-support#1: deleting a DIVIDEND that had already
+        consumed some of the UK dividend allowance must give it back,
+        rather than leaving it permanently "used" against a payout that no
+        longer exists."""
+        _authenticate(mock_jwks_client, mock_decode)
+        taxed_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 42.10}
+        mock_client.get_transaction.return_value = taxed_dividend
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_client.list_transactions.return_value = []
+
+        response = self.client.delete(
+            reverse("transactions-detail", args=["h-1", "t-3"]), **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_profile_client.add_dividend_allowance_used.assert_called_once_with(
+            "auth0|abc123", "2025-26", -42.10
+        )
+
+    @patch("transactions.views._profile_client")
+    @patch("transactions.views._client")
+    @patch("transactions.views._holdings_client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_delete_reverses_allowance_for_dividends_dropped_by_the_rewind(
+        self, mock_jwks_client, mock_decode, mock_holdings_client, mock_client, mock_profile_client
+    ) -> None:
+        """GitHub equicast-support#1: deleting a TRANSACTION-mode BUY/SELL
+        can drop already-created DIVIDENDs via the rewind (GitHub issue
+        #124) — each dropped dividend's allowance_consumed must be given
+        back too, not just quietly discarded with the record."""
+        _authenticate(mock_jwks_client, mock_decode)
+        dropped_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 10.0}
+        mock_client.get_transaction.return_value = BUY_TRANSACTION
+        mock_client.rewind_dividends_synced_through.return_value = [dropped_dividend]
+        mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
+        mock_profile_client.get_or_create_profile.return_value = TRANSACTION_PROFILE
+        mock_client.list_transactions.return_value = []
+
+        response = self.client.delete(
+            reverse("transactions-detail", args=["h-1", "t-2"]), **AUTH_HEADER
+        )
+
+        self.assertEqual(response.status_code, 204)
+        mock_profile_client.add_dividend_allowance_used.assert_called_once_with(
+            "auth0|abc123", "2025-26", -10.0
+        )
 
     @patch("transactions.views._client")
     @patch("identity.authentication.jwt.decode")
@@ -1460,6 +1677,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "h-1",
             "AVERAGE",
             external_id="dividend:2026-03-01",
+            allowance_consumed=None,
             amount_native=5.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1519,6 +1737,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "h-1",
             "TRANSACTION",
             external_id="dividend:2026-03-01",
+            allowance_consumed=None,
             amount_native=3.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1746,6 +1965,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "h-1",
             "AVERAGE",
             external_id="dividend:2026-03-01",
+            allowance_consumed=None,
             amount_native=5.0,
             date="2026-03-01",
             type="DIVIDEND",
