@@ -273,13 +273,15 @@ s3://equicast-market-data-<env>/
 Stock and ETF holdings can be priced in any currency, but a holding can
 only be shown in a user's chosen currency if the FX pair between the two is
 ingested here. `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog`
-job checks this on every **production** run (equicast-support#164):
+job checks this on every run (equicast-support#164), against the FX config
+of the environment the run targets (`fx_pairs.prod.yaml` or
+`fx_pairs.dev.yaml`):
 
 1. `equicast-fx-find-missing-pairs` (`equicast_fx.missing_pairs`) reads the
    freshly-built catalog's `currency` column and, for every holding
    currency C and every UI currency T ≠ C (the closed set in
    `frontend/src/config/currencies.json`), requires **both** `C:T` and
-   `T:C` in `config/fx_pairs.prod.yaml`. `GBp` (pence) counts as `GBP`,
+   `T:C` in that FX config. `GBp` (pence) counts as `GBP`,
    same as `equicast_core.client` converts it; other non-ISO codes (e.g.
    `ZAc` - equicast-support#176) are skipped with a warning.
 2. `.github/scripts/sync-missing-fx-pair-issues.sh` opens one issue in
@@ -290,9 +292,12 @@ job checks this on every **production** run (equicast-support#164):
    completed is reopened if the pair goes missing again; one closed as
    *not planned* is left alone.
 
-Each issue carries the `ticker-request` + `production` labels and a
+Each issue carries the `ticker-request` label plus the run's environment
+label (`production` or `development`, the same labels the support form
+uses - issues are tracked separately per environment) and a
 `**Ticker:** FROM:TO` body line - the shape equicast-support's
-config-change automation expects - so replying `ASSET_CLASS: fx` opens a PR
-adding the pair via `manage_config_entry.py`, which closes the issue when
+config-change automation expects (it picks which `fx_pairs.<env>.yaml` to
+edit from that label) - so replying `ASSET_CLASS: fx` opens a PR adding the
+pair via `manage_config_entry.py`, which closes the issue when
 merged. Adding pairs changes the market-data bucket cost estimate - see
 `infra/infracost-usage.yml`.

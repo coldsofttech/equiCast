@@ -375,31 +375,40 @@ jobs:
       # equicast-support#164: every currency an ETF holding is priced in must
       # convert both to and from every currency the UI offers
       # (frontend/src/config/currencies.json) - one equicast-support issue
-      # per directed pair missing from fx_pairs.prod.yaml (see
-      # equicast_fx.missing_pairs and sync-missing-fx-pair-issues.sh).
-      # Production only: the issues are labelled for the config-change
-      # automation, which edits whichever config the label names, and only
-      # the prod catalog reflects what users actually hold.
-      - name: Find FX pairs missing for holding currencies
-        if: needs.plan.outputs.environment == 'production'
-        working-directory: packages/fx
+      # per directed pair missing from this run's environment's
+      # fx_pairs.<env>.yaml (see equicast_fx.missing_pairs and
+      # sync-missing-fx-pair-issues.sh). Each issue is labelled with that
+      # same environment ("production"/"development", matching the support
+      # form's labels), since equicast-support's config-change automation
+      # picks which fx_pairs file to edit from it.
+      - name: Resolve FX config and environment label
+        id: fx_env
         run: |
-          uv run equicast-fx-find-missing-pairs \
+          if [ "${{ needs.plan.outputs.environment }}" = "production" ]; then
+            echo "config=packages/fx/config/fx_pairs.prod.yaml" >> "$GITHUB_OUTPUT"
+            echo "label=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "config=packages/fx/config/fx_pairs.dev.yaml" >> "$GITHUB_OUTPUT"
+            echo "label=development" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find FX pairs missing for holding currencies
+        run: |
+          uv run --directory packages/fx equicast-fx-find-missing-pairs \
             --catalog "${{ github.workspace }}/catalog.parquet" \
-            --fx-config config/fx_pairs.prod.yaml \
+            --fx-config "${{ github.workspace }}/${{ steps.fx_env.outputs.config }}" \
             --ui-currencies "${{ github.workspace }}/frontend/src/config/currencies.json" \
-            > "${{ github.workspace }}/missing-fx-pairs.json"
+            > missing-fx-pairs.json
 
       - name: Sync missing FX pair issues
-        if: needs.plan.outputs.environment == 'production'
         env:
           GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
         run: |
           bash .github/scripts/sync-missing-fx-pair-issues.sh \
             "${{ vars.SUPPORT_REPO }}" \
-            "production" \
+            "${{ steps.fx_env.outputs.label }}" \
             "ETF" \
-            "packages/fx/config/fx_pairs.prod.yaml" \
+            "${{ steps.fx_env.outputs.config }}" \
             missing-fx-pairs.json
 
   # GitHub issue equicast-support#145: previously a failed run here was only
