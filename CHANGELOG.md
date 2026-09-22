@@ -65,6 +65,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   action.
 - GitHub Actions used across CI/CD are updated to their latest major
   versions.
+- An account's/pie's Sector and Industry diversification charts are now combined into one, showing Sector by default with drill-down into Industry and a "Back to sectors" option (equicast-support#192).
 
 ### Fixed
 
@@ -72,9 +73,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one full row at the panel's real width, instead of a fixed 4 - avoids a
   lone card left stretched full-width on its own row when narrower than
   ~930px only fits 3 across (equicast-support#177).
-- An account's page no longer shows the price chart when the account has
-  no pies or holdings yet, instead of one with nothing to plot
-  (equicast-support#172).
+- An account's or pie's page no longer shows the price chart when none of its holdings actually have shares yet (equicast-support#172).
+- The Holdings heatmap on an account's/pie's page no longer draws an evenly-split tile per holding when none of them actually have shares (equicast-support#175).
 - Fixed `AssetIcon` misaligning rows when a holding has no website
   (equicast-support#178).
 

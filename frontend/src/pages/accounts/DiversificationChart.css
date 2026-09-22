@@ -24,6 +24,16 @@
   margin-bottom: var(--ec-s-16);
 }
 
+/* Spans the full grid width — used by SectorIndustryChart in place of the
+   two side-by-side Sector/Industry cards it replaces (GitHub issue #192). */
+.ec-divchart-full {
+  grid-column: 1 / -1;
+}
+
+.ec-divchart-back {
+  margin-bottom: var(--ec-s-12);
+}
+
 .ec-divchart-title {
   font-size: var(--ec-fs-16);
   margin: 0;
