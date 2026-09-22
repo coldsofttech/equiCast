@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Ingestion workflows' (stock, ETF, FX, benchmark) `chunk_size` default
+  dropped from 300 to 20 tickers/pairs/benchmarks per matrix leg. At 300,
+  a config anywhere near (or under) that size collapsed to effectively one
+  chunk regardless of the `max-parallel: 20` matrix cap - stock's 300+
+  tickers, for example, ran almost entirely in a single container instead
+  of spreading across up to 20 parallel runners (equicast-support#168).
 - Ingestion workflows (stock, ETF, FX, benchmark) now delete their
   intermediate per-chunk profile artifacts once the catalog build and
   failure reporting are done, instead of leaving them to expire.

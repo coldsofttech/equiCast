@@ -48,7 +48,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--config", type=Path, required=True, help="Path to the FX pairs YAML.")
     parser.add_argument(
-        "--chunk-size", type=int, default=300, help="Target number of pairs per chunk."
+        "--chunk-size",
+        type=int,
+        default=20,
+        help="Target number of pairs per chunk (default: 20, chosen to keep the chunk "
+        "count close to the ingest job's own max-parallel of 20 - see equicast-support#168).",
     )
     parser.add_argument(
         "--max-chunks",

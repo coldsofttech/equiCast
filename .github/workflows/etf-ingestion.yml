@@ -33,7 +33,7 @@ on:
         default: false
       chunk_size:
         description: "Target ETF tickers per parallel chunk"
-        default: "300"
+        default: "20"
       tickers:
         description: "Optional: restrict this run to specific tickers, separated by ; (e.g. VOO;VUSA.L). Leave blank to run against every configured ticker."
         default: ""
@@ -165,7 +165,7 @@ jobs:
         run: |
           CHUNKS=$(uv run equicast-etf-plan \
             --config "${{ steps.env.outputs.config }}" \
-            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
+            --chunk-size "${{ github.event.inputs.chunk_size || '20' }}" \
             --max-chunks 256 \
             --tickers "${{ github.event.inputs.tickers || '' }}")
           echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
