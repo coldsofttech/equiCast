@@ -5,6 +5,7 @@ import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
 import ACCOUNT_TYPES from "../../config/accountTypes.json";
 import { ACCOUNT_ICON_OPTIONS, DEFAULT_ACCOUNT_ICON } from "../../config/accountIcons.js";
+import { ACCOUNT_VENDOR_SUGGESTIONS } from "../../config/accountVendors.js";
 
 /**
  * Shared create/edit body for AccountsListPage's "New account" drawer and
@@ -35,12 +36,17 @@ const EMPTY_VALUES = {
   description: "",
   account_type: ACCOUNT_TYPES[0],
   icon: DEFAULT_ACCOUNT_ICON,
+  vendor: "",
 };
 
 function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error }) {
   const [values, setValues] = useState({
     ...EMPTY_VALUES,
     ...initialValues,
+    // `vendor` is optional and stored as `null` when unset (see
+    // backend/accounts/views.py's OPTIONAL_CREATE_FIELDS) — coalesced to ""
+    // here so the input below stays a controlled component.
+    vendor: initialValues?.vendor ?? "",
   });
 
   const setField = (field) => (event) =>
@@ -48,7 +54,11 @@ function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error })
 
   const handleSubmit = (event) => {
     event.preventDefault();
-    onSubmit(values);
+    // Trim and fold a blank vendor back to `null` — matches what an account
+    // without one already stores server-side (see AccountsClient.create_account's
+    // `vendor: str | None = None`), rather than persisting an empty string.
+    const vendor = values.vendor.trim();
+    onSubmit({ ...values, vendor: vendor === "" ? null : vendor });
   };
 
   return (
@@ -89,6 +99,19 @@ function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error })
         onChange={(icon) => setValues((current) => ({ ...current, icon }))}
         hint="Optional — defaults to a bank icon if not set."
       />
+      <TextField
+        id="account-vendor"
+        label="Vendor"
+        list="account-vendor-suggestions"
+        value={values.vendor}
+        onChange={setField("vendor")}
+        hint="Optional — the platform or broker this account is held with, e.g. Trading212, Chip."
+      />
+      <datalist id="account-vendor-suggestions">
+        {ACCOUNT_VENDOR_SUGGESTIONS.map((vendor) => (
+          <option key={vendor} value={vendor} />
+        ))}
+      </datalist>
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancel

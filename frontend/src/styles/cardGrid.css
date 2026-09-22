@@ -48,6 +48,18 @@
   margin: 0;
 }
 
+/** Vendor tag (GitHub equicast-support#171) — `align-self: flex-start` so
+ * the badge stays compact instead of stretching to the card's full width,
+ * which `.ec-account-card`'s column flex layout would otherwise do by
+ * default (unlike `.ec-account-card-head`'s own row-direction badge, whose
+ * cross axis is vertical, not width). */
+.ec-account-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ec-s-8);
+  align-self: flex-start;
+}
+
 /** Sample current value / P&L row (see sampleFinancials.js) — same
  * value-then-P&L stacking as .ec-detail-row-value, just left-aligned since
  * this card is a vertical stack rather than a horizontal row. */

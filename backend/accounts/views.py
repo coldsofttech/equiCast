@@ -27,8 +27,11 @@ from transactions.views import sync_dividends_for_holdings
 REQUIRED_CREATE_FIELDS = {"name", "description", "account_type"}
 #: Optional at create time — an account without one falls back to a default
 #: icon client-side, same reasoning as pies/views.py's OPTIONAL_CREATE_FIELDS.
-OPTIONAL_CREATE_FIELDS = {"icon"}
-UPDATABLE_FIELDS = {"name", "description", "account_type", "icon"}
+#: `vendor` (GitHub equicast-support#171) is free text naming the platform/
+#: broker the account is held with (e.g. "Trading212", "Chip") — also
+#: optional, an account without one simply renders no vendor tag client-side.
+OPTIONAL_CREATE_FIELDS = {"icon", "vendor"}
+UPDATABLE_FIELDS = {"name", "description", "account_type", "icon", "vendor"}
 
 #: Valid values for account_type — a.k.a. wrapper_type (GitHub issue #94):
 #: which UK tax wrapper this account is. Previously free text (any string

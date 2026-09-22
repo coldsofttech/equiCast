@@ -62,6 +62,10 @@
  * @property {string|null} [icon] - bare bootstrap-icons name (e.g. "bank2"),
  *   `null`/absent for an account predating this field — see
  *   config/accountIcons.js's DEFAULT_ACCOUNT_ICON for the display fallback.
+ * @property {string|null} [vendor] - free text naming the platform/broker
+ *   this account is held with (e.g. "Trading212", "Chip") — GitHub
+ *   equicast-support#171. `null`/absent when not set; rendered as a tag on
+ *   AccountCard/AccountsListPage/AccountDetailPage only when present.
  * @property {Pie[]} [pies]
  * @property {Holding[]} [holdings]
  */
@@ -93,7 +97,7 @@ export function getAccount(api, accountId) {
  * POST /api/accounts/
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ name: string, description: string, account_type: string, icon?: string }} data
+ * @param {{ name: string, description: string, account_type: string, icon?: string, vendor?: string|null }} data
  * @returns {Promise<Account>}
  */
 export function createAccount(api, data) {
@@ -106,7 +110,7 @@ export function createAccount(api, data) {
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @param {string} accountId
- * @param {Partial<{ name: string, description: string, account_type: string, icon: string }>} fields
+ * @param {Partial<{ name: string, description: string, account_type: string, icon: string, vendor: string|null }>} fields
  * @returns {Promise<Account>}
  */
 export function updateAccount(api, accountId, fields) {

@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Accounts can now optionally record a vendor/platform (e.g. Trading212,
+  Chip), suggested via autocomplete when creating or editing an account and
+  shown as a tag on `/dashboard` and `/accounts` (equicast-support#171).
 - Ingestion pipeline failures (stock, ETF, FX, benchmark) are now reported
   automatically as tracking issues instead of only showing up as a red X on
   GitHub Actions. A ticker/pair/benchmark that fails to fetch no longer
