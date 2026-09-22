@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Destroying or redeploying dev/prod infrastructure now keeps Auth0's
   login redirect URLs in sync automatically, instead of needing a manual
   dashboard edit after every redeploy.
+- Stock and ETF ingestion now flag holdings whose currency can't be
+  converted to or from every currency the app offers, opening one support
+  issue per missing FX pair (equicast-support#164).
 
 ### Changed
 

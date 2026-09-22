@@ -373,6 +373,36 @@ jobs:
             "packages/stock/config/stocks.prod.yaml" \
             "${{ steps.missing_isin.outputs.tickers }}"
 
+      # equicast-support#164: every currency a stock holding is priced in must
+      # convert both to and from every currency the UI offers
+      # (frontend/src/config/currencies.json) - one equicast-support issue
+      # per directed pair missing from fx_pairs.prod.yaml (see
+      # equicast_fx.missing_pairs and sync-missing-fx-pair-issues.sh).
+      # Production only: the issues are labelled for the config-change
+      # automation, which edits whichever config the label names, and only
+      # the prod catalog reflects what users actually hold.
+      - name: Find FX pairs missing for holding currencies
+        if: needs.plan.outputs.environment == 'production'
+        working-directory: packages/fx
+        run: |
+          uv run equicast-fx-find-missing-pairs \
+            --catalog "${{ github.workspace }}/catalog.parquet" \
+            --fx-config config/fx_pairs.prod.yaml \
+            --ui-currencies "${{ github.workspace }}/frontend/src/config/currencies.json" \
+            > "${{ github.workspace }}/missing-fx-pairs.json"
+
+      - name: Sync missing FX pair issues
+        if: needs.plan.outputs.environment == 'production'
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+        run: |
+          bash .github/scripts/sync-missing-fx-pair-issues.sh \
+            "${{ vars.SUPPORT_REPO }}" \
+            "production" \
+            "stock" \
+            "packages/fx/config/fx_pairs.prod.yaml" \
+            missing-fx-pairs.json
+
   # GitHub issue equicast-support#145: previously a failed run here was only
   # visible via the red X on the Actions tab. Reports pipeline health to
   # equicast-support (reusing the missing-ISIN sync's

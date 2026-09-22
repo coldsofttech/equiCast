@@ -24,6 +24,7 @@ dev = [
 [project.scripts]
 equicast-fx = "equicast_fx.cli:main"
 equicast-fx-plan = "equicast_fx.plan:main"
+equicast-fx-find-missing-pairs = "equicast_fx.missing_pairs:main"
 
 [tool.uv.sources]
 equicast-datafeed = { workspace = true }
