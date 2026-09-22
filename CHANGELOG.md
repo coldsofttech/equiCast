@@ -75,6 +75,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An account's page no longer shows the price chart when the account has
   no pies or holdings yet, instead of one with nothing to plot
   (equicast-support#172).
+- `AssetIcon` now reserves its space with a blank placeholder instead of
+  rendering nothing when a holding has no website to derive a favicon
+  from - fixes ticker/name columns shifting out of alignment with their
+  header and with other rows on the pie Add Holdings editor, its ticker
+  search results, and every other list built on `AssetIcon`
+  (equicast-support#178).
 
 ## [1.0.5] - 2026-09-20
 
