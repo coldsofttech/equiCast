@@ -140,6 +140,39 @@ already provide).
 - Design history: GitHub issues equicast-support#149,
   equicast-support#197, equicast-support#198, equicast#289.
 
+### Config change (stock/etf/fx/benchmark add/update/delete)
+
+- **File**: no `sync-*-issue.sh` step here — the issue already exists.
+  The support form (`backend/support/views.py`'s `SupportView.post`,
+  category `ticker-request`) files it directly in `equicast-support`
+  with the `ticker-request` label plus a `production`/`development`
+  label, e.g. `[Ticker request] Ticker: BNC.L`
+  (equicast-support#173 is a worked example).
+- **Listen/Dispatch**: `equicast-support`'s `dispatch-config-change.yml` +
+  `dispatch_config_change.sh` — gated on author association, the
+  `ticker-request` label, and a `production`/`development` label (which
+  is how `ENVIRONMENT` is derived — never typed by the replying
+  maintainer). The reply is parsed as `FIELD: value` lines in any order:
+  `ASSET_CLASS` (required), `ACTION` (optional, defaults to `add`),
+  `KEY` (optional — falls back to the issue's own `**Ticker:**` line),
+  `ISIN`/`TAX_DOMICILE` (stock/etf), `SYMBOL` (benchmark). Fires the
+  `config-change-requested` event.
+- **Act**: `.github/workflows/manage-config-fix.yml` +
+  `.github/scripts/manage_config_entry.py` — applies the add/update/delete
+  via `ruamel.yaml`'s round-trip mode (preserves comments/quoting/
+  ordering) and opens a PR from a
+  `config/<asset_class>-<environment>-<action>-<key>-<run_id>` branch
+  whose body opens with `Closes <owner>/<repo>#<issue-number>`. Deeper
+  validation (idempotency, fx pairs having no overridable fields, etc.)
+  lives in this script, not the dispatch gate — see its own docstring.
+- **Clean up**: `cleanup-merged-config-branches.yml` deletes the
+  `config/*` branch once its PR merges.
+- Supersedes an earlier `workflow_dispatch`-form design
+  (equicast-support#6) in favor of this issue-driven shape, once it
+  became clear the input (a support ticket) already existed as a
+  GitHub issue rather than something a maintainer had to know to go
+  trigger by hand.
+
 ## Setting up a new environment/fork
 
 - Create `SUPPORT_ISSUE_TOKEN` on `equicast` (a token with `issues:write`
@@ -154,19 +187,23 @@ already provide).
 
 ## Troubleshooting
 
-**A reply on a sub-issue never triggers anything** — check, in order: the
-commenter's association is `OWNER`/`MEMBER`; the comment matches the
-scenario's exact expected format; `EQUICAST_DISPATCH_TOKEN` exists and
-hasn't expired on `equicast-support`; the sub-issue's parent is one of the
-titles the listening script checks for.
+**A reply never triggers anything** — check, in order: the commenter's
+association is `OWNER`/`MEMBER`; the comment matches the scenario's exact
+expected format; `EQUICAST_DISPATCH_TOKEN` exists and hasn't expired on
+`equicast-support`; the issue satisfies the scenario's own identity gate
+(for missing ISIN, that it's a sub-issue of one of the tracked parent
+titles; for config change, that it carries the `ticker-request` label
+plus a `production`/`development` label).
 
 **Dispatch fires (visible under `equicast-support`'s workflow run) but no
 PR appears in `equicast`** — check the corresponding
 `repository_dispatch`-triggered workflow's run under `equicast`'s Actions
-tab. For missing ISIN, the most likely cause is
-`apply_isin_override.py` refusing to write because the ticker wasn't found
-in the config path the issue named, or was found in more than one — by
-design, not a bug to silently work around.
+tab. For missing ISIN, the most likely cause is `apply_isin_override.py`
+refusing to write because the ticker wasn't found in the config path the
+issue named, or was found in more than one; for config change, the most
+likely cause is `manage_config_entry.py` refusing an `add` that already
+exists, an `update`/`delete` that doesn't, or an `update` on an fx pair —
+by design, not a bug to silently work around.
 
 **A PAT stops working with no code change** — check its expiration first;
 none of these tokens is set to never expire.

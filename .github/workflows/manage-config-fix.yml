@@ -1,0 +1,129 @@
+name: Manage Config Fix
+
+# Fired by equicast-support's dispatch-config-change.yml once a maintainer
+# replies to a support-filed "[Ticker request]" issue with what to
+# add/update/delete in a stock/etf/fx/benchmark ingestion config
+# (packages/*/config/*.yaml) - applies the edit via manage_config_entry.py
+# and opens a PR. equicast-support#6 - issue-driven follow-up to the
+# original workflow_dispatch design, modeled on missing-isin-fix.yml.
+#
+# Always operates against main: repository_dispatch already only reads
+# this workflow's definition from the default branch, and the checkout
+# below pins `ref: main` explicitly rather than trusting anything in the
+# dispatch payload, so nothing here can be pointed at another branch.
+on:
+  repository_dispatch:
+    types: [config-change-requested]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  manage-entry:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+
+      - name: Apply the config edit
+        id: edit
+        env:
+          ASSET_CLASS: ${{ github.event.client_payload.asset_class }}
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          ACTION: ${{ github.event.client_payload.action }}
+          KEY: ${{ github.event.client_payload.key }}
+          ISIN: ${{ github.event.client_payload.isin }}
+          TAX_DOMICILE: ${{ github.event.client_payload.tax_domicile }}
+          SYMBOL: ${{ github.event.client_payload.symbol }}
+        run: |
+          ARGS=(--asset-class "$ASSET_CLASS" --environment "$ENVIRONMENT" --action "$ACTION" --key "$KEY")
+          [ -n "$ISIN" ] && ARGS+=(--isin "$ISIN")
+          [ -n "$TAX_DOMICILE" ] && ARGS+=(--tax-domicile "$TAX_DOMICILE")
+          [ -n "$SYMBOL" ] && ARGS+=(--symbol "$SYMBOL")
+
+          SUMMARY=$(uv run --with ruamel.yaml python .github/scripts/manage_config_entry.py "${ARGS[@]}")
+          echo "$SUMMARY"
+          # A random delimiter, not a fixed "EOF" - $KEY/$ISIN/etc. (echoed
+          # back into $SUMMARY by the script above) came from an untrusted
+          # issue comment, so a fixed delimiter could in principle be
+          # spoofed into terminating this block early.
+          DELIM="EOF_$(uuidgen)"
+          {
+            echo "summary<<$DELIM"
+            echo "$SUMMARY"
+            echo "$DELIM"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open PR
+        env:
+          # github.token can't create pull requests unless the repo-wide
+          # "Allow GitHub Actions to create and approve pull requests"
+          # setting is on - deliberately left off, since that setting would
+          # grant the capability to every workflow in this repo, not just
+          # this one. PR_CREATE_TOKEN is a PAT scoped only to equicast,
+          # dedicated to this step (same token missing-isin-fix.yml uses).
+          GH_TOKEN: ${{ secrets.PR_CREATE_TOKEN }}
+          ASSET_CLASS: ${{ github.event.client_payload.asset_class }}
+          ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          ACTION: ${{ github.event.client_payload.action }}
+          KEY: ${{ github.event.client_payload.key }}
+          ISSUE_URL: ${{ github.event.client_payload.issue_url }}
+          SUMMARY: ${{ steps.edit.outputs.summary }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          # Only [A-Za-z0-9-] survive into the branch name - a raw KEY
+          # (e.g. "GBP:USD") isn't a valid git ref component on its own.
+          SAFE_KEY=$(echo "$KEY" | tr -c 'A-Za-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')
+          BRANCH="config/${ASSET_CLASS}-${ENVIRONMENT}-${ACTION}-${SAFE_KEY}-${RUN_ID}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add "packages/${ASSET_CLASS}/config/"*.yaml
+          git commit -m "$SUMMARY (${ASSET_CLASS}/${ENVIRONMENT})"
+          git push -u origin "$BRANCH"
+
+          # Cross-repo closing keyword: coldsofttech owns both repos, so
+          # this closes the originating equicast-support ticket as soon as
+          # the PR merges, rather than requiring a manual close.
+          ISSUE_REPO=$(echo "$ISSUE_URL" | sed -E 's#https://github.com/([^/]+/[^/]+)/issues/.*#\1#')
+          ISSUE_NUMBER=$(echo "$ISSUE_URL" | sed -E 's#.*/issues/##')
+
+          PR_URL=$(gh pr create --base main --head "$BRANCH" \
+            --title "$SUMMARY (${ASSET_CLASS}/${ENVIRONMENT})" \
+            --body "Closes ${ISSUE_REPO}#${ISSUE_NUMBER}
+
+          $SUMMARY (${ASSET_CLASS}/${ENVIRONMENT}), requested via $ISSUE_URL.
+
+          | Field | Value |
+          |---|---|
+          | asset_class | \`${ASSET_CLASS}\` |
+          | environment | \`${ENVIRONMENT}\` |
+          | action | \`${ACTION}\` |
+          | key | \`${KEY}\` |")
+          echo "$PR_URL" >> "$GITHUB_STEP_SUMMARY"
+
+          # Best-effort: only takes effect if this repo has "Allow
+          # auto-merge" enabled and the PR's required checks pass -
+          # otherwise it's left open for a manual merge like any other PR.
+          gh pr merge --auto --squash "$PR_URL" \
+            || echo "::warning::Auto-merge could not be enabled - merge $PR_URL manually once checks pass."
+
+      - name: Report failure back to the originating issue
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          ISSUE_URL: ${{ github.event.client_payload.issue_url }}
+          KEY: ${{ github.event.client_payload.key }}
+        run: |
+          REPO=$(echo "$ISSUE_URL" | sed -E 's#https://github.com/([^/]+/[^/]+)/issues/.*#\1#')
+          NUMBER=$(echo "$ISSUE_URL" | sed -E 's#.*/issues/##')
+          gh issue comment "$NUMBER" --repo "$REPO" \
+            --body "The config change for \`$KEY\` couldn't be applied automatically - see the failed run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

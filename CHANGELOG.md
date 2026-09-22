@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Ticker-request support tickets can now be resolved by replying with the config change — the entry is added/updated/deleted in the ingestion config and a PR opened automatically (equicast-support#6).
+
 ## [1.0.8] - 2026-09-21
 
 ### Added
