@@ -1,14 +1,30 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import Card from "../../components/core/Card.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import "./HoldingTickerPage.css";
 
-/** Up to this many articles show in the main (non-drawer) grid — the rest
- * are only reachable via "See all", same cap-then-drawer pattern
- * HoldingDividendsSection uses for upcoming-dividend cards. `news` is
- * already newest-first from the API (see api/market.js's getNews), so this
- * is simply the first N. */
-const MAIN_GRID_LIMIT = 4;
+/** Mirrors `.ec-news-grid`'s `grid-template-columns: repeat(auto-fit,
+ * minmax(MIN_CARD_WIDTH, 1fr))` and its gap (--ec-s-16) — used to work out
+ * how many cards the grid can actually fit in one row at its current
+ * width, so the main grid always shows a full row rather than a fixed
+ * count that can leave a lone card stretched full-width in a partial last
+ * row (equicast-support#177). */
+const MIN_CARD_WIDTH = 220;
+const GRID_GAP = 16;
+
+/** Grid width assumed before the first real ResizeObserver measurement,
+ * and in environments without ResizeObserver (e.g. jsdom in tests) —
+ * resolves to 4 columns via columnsForWidth, matching this panel's
+ * previous fixed default. */
+const DEFAULT_GRID_WIDTH = 960;
+
+/** How many cards fit in one row of `.ec-news-grid` at a given container
+ * width, following the same auto-fit/minmax math the CSS grid itself
+ * uses: columns keep growing while another MIN_CARD_WIDTH-wide track
+ * (plus its gap) still fits. */
+function columnsForWidth(width) {
+  return Math.max(1, Math.floor((width + GRID_GAP) / (MIN_CARD_WIDTH + GRID_GAP)));
+}
 
 /** Max characters for a title in the "See all" drawer's table before it's
  * truncated (word-boundary, like HoldingAboutSection's own `truncate`) —
@@ -85,10 +101,11 @@ function NewsTableRow({ article }) {
 }
 
 /**
- * Up to MAIN_GRID_LIMIT news cards (3-4 per row, responsive), newest first,
- * plus a "See all" button opening a Drawer with the full list as a table
- * (thumbnail, date, publisher, title) when there are more than that. Each
- * card/row opens the article in a new tab on click.
+ * A full row of news cards (column count follows the panel's real width,
+ * see columnsForWidth), newest first, plus a "See all" button opening a
+ * Drawer with the full list as a table (thumbnail, date, publisher, title)
+ * when there are more articles than fit in that row. Each card/row opens
+ * the article in a new tab on click.
  *
  * Renders nothing when `news` is null (no data published yet, including
  * every fx ticker - the fx ingestion pipeline never writes news.parquet)
@@ -98,12 +115,26 @@ function NewsTableRow({ article }) {
  */
 function HoldingNewsSection({ news }) {
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const gridRef = useRef(null);
+  const [gridWidth, setGridWidth] = useState(DEFAULT_GRID_WIDTH);
+
+  useLayoutEffect(() => {
+    const el = gridRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return undefined;
+    const observer = new ResizeObserver((entries) => {
+      const boxWidth = entries[0]?.contentRect.width;
+      if (boxWidth) setGridWidth(boxWidth);
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
 
   const articles = news?.news ?? [];
   if (articles.length === 0) return null;
 
-  const mainArticles = articles.slice(0, MAIN_GRID_LIMIT);
-  const hasMore = articles.length > MAIN_GRID_LIMIT;
+  const mainGridLimit = columnsForWidth(gridWidth);
+  const mainArticles = articles.slice(0, mainGridLimit);
+  const hasMore = articles.length > mainGridLimit;
 
   return (
     <Card className="ec-detail-section">
@@ -116,7 +147,7 @@ function HoldingNewsSection({ news }) {
         )}
       </div>
 
-      <div className="ec-news-grid">
+      <div className="ec-news-grid" ref={gridRef}>
         {mainArticles.map((article) => (
           <NewsCard article={article} key={article.id} />
         ))}

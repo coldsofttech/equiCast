@@ -62,6 +62,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions used across CI/CD are updated to their latest major
   versions.
 
+### Fixed
+
+- A ticker page's News panel now shows however many cards actually fit in
+  one full row at the panel's real width, instead of a fixed 4 - avoids a
+  lone card left stretched full-width on its own row when narrower than
+  ~930px only fits 3 across (equicast-support#177).
+
 ## [1.0.5] - 2026-09-20
 
 ### Added
