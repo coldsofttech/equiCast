@@ -36,6 +36,7 @@ def test_get_or_create_profile_creates_with_defaults_on_first_login(
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|new-user"})["Item"]
     assert stored == profile
@@ -51,6 +52,7 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
             "tax_residency": "UK",
             "income_tax_band": "HIGHER",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -65,6 +67,7 @@ def test_get_or_create_profile_returns_existing_profile_unchanged(dynamodb_resou
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -79,6 +82,7 @@ def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_
             "tax_residency": "UK",
             "income_tax_band": "HIGHER",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -93,6 +97,7 @@ def test_get_or_create_profile_backfills_transaction_type_onto_existing_profile_
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -109,6 +114,7 @@ def test_get_or_create_profile_backfills_fx_warmup_currencies_onto_existing_prof
             "tax_residency": "UK",
             "income_tax_band": "HIGHER",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -123,6 +129,7 @@ def test_get_or_create_profile_backfills_fx_warmup_currencies_onto_existing_prof
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -139,6 +146,7 @@ def test_get_or_create_profile_backfills_tax_residency_onto_existing_profile_mis
             "fx_warmup_currencies": ["EUR"],
             "income_tax_band": "HIGHER",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -153,6 +161,7 @@ def test_get_or_create_profile_backfills_tax_residency_onto_existing_profile_mis
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -169,6 +178,7 @@ def test_get_or_create_profile_backfills_income_tax_band_onto_existing_profile_m
             "fx_warmup_currencies": ["EUR"],
             "tax_residency": "UK",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -183,6 +193,7 @@ def test_get_or_create_profile_backfills_income_tax_band_onto_existing_profile_m
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -213,6 +224,39 @@ def test_get_or_create_profile_backfills_dividend_allowance_used_onto_existing_p
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
+    }
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored == profile
+
+
+def test_get_or_create_profile_backfills_dividend_tax_paid_onto_existing_profile_missing_it(
+    dynamodb_resource,
+) -> None:
+    dynamodb_resource.Table(TABLE).put_item(
+        Item={
+            "user_id": "auth0|existing",
+            "default_currency": "EUR",
+            "transaction_type": "TRANSACTION",
+            "fx_warmup_currencies": ["EUR"],
+            "tax_residency": "UK",
+            "income_tax_band": "HIGHER",
+            "dividend_allowance_used_by_tax_year": {"2025-26": Decimal("120")},
+        }
+    )
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.get_or_create_profile("auth0|existing")
+
+    assert profile == {
+        "user_id": "auth0|existing",
+        "default_currency": "EUR",
+        "transaction_type": "TRANSACTION",
+        "fx_warmup_currencies": ["EUR"],
+        "tax_residency": "UK",
+        "income_tax_band": "HIGHER",
+        "dividend_allowance_used_by_tax_year": {"2025-26": Decimal("120")},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -236,6 +280,7 @@ def test_get_or_create_profile_backfills_all_fields_when_none_are_present(
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -270,6 +315,7 @@ def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> 
             "tax_residency": "UK",
             "income_tax_band": "BASIC",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -284,6 +330,7 @@ def test_update_default_currency_updates_existing_profile(dynamodb_resource) -> 
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -302,6 +349,7 @@ def test_update_default_currency_creates_profile_first_if_missing(dynamodb_resou
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -315,6 +363,7 @@ def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> 
             "tax_residency": "UK",
             "income_tax_band": "BASIC",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -329,6 +378,7 @@ def test_update_transaction_type_updates_existing_profile(dynamodb_resource) -> 
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -347,6 +397,7 @@ def test_update_transaction_type_creates_profile_first_if_missing(dynamodb_resou
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -360,6 +411,7 @@ def test_update_fx_warmup_currencies_updates_existing_profile(dynamodb_resource)
             "tax_residency": "UK",
             "income_tax_band": "BASIC",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -374,6 +426,7 @@ def test_update_fx_warmup_currencies_updates_existing_profile(dynamodb_resource)
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -392,6 +445,7 @@ def test_update_fx_warmup_currencies_creates_profile_first_if_missing(dynamodb_r
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -405,6 +459,7 @@ def test_update_tax_residency_updates_existing_profile(dynamodb_resource) -> Non
             "tax_residency": "UK",
             "income_tax_band": "BASIC",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -419,6 +474,7 @@ def test_update_tax_residency_updates_existing_profile(dynamodb_resource) -> Non
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -437,6 +493,7 @@ def test_update_tax_residency_creates_profile_first_if_missing(dynamodb_resource
         "tax_residency": "UK",
         "income_tax_band": "BASIC",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -450,6 +507,7 @@ def test_update_income_tax_band_updates_existing_profile(dynamodb_resource) -> N
             "tax_residency": "UK",
             "income_tax_band": "BASIC",
             "dividend_allowance_used_by_tax_year": {},
+            "dividend_tax_paid_by_tax_year": {},
         }
     )
     client = UserProfileClient(TABLE, resource=dynamodb_resource)
@@ -464,6 +522,7 @@ def test_update_income_tax_band_updates_existing_profile(dynamodb_resource) -> N
         "tax_residency": "UK",
         "income_tax_band": "HIGHER",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
     stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
     assert stored == profile
@@ -482,6 +541,7 @@ def test_update_income_tax_band_creates_profile_first_if_missing(dynamodb_resour
         "tax_residency": "UK",
         "income_tax_band": "ADDITIONAL",
         "dividend_allowance_used_by_tax_year": {},
+        "dividend_tax_paid_by_tax_year": {},
     }
 
 
@@ -553,3 +613,50 @@ def test_add_dividend_allowance_used_reverses_with_a_negative_amount(dynamodb_re
     profile = client.add_dividend_allowance_used("auth0|existing", "2026-27", -300)
 
     assert profile["dividend_allowance_used_by_tax_year"] == {"2026-27": Decimal("0")}
+
+
+def test_add_dividend_tax_paid_creates_profile_first_if_missing(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+
+    profile = client.add_dividend_tax_paid("auth0|new-user", "2026-27", 8.75)
+
+    assert profile["dividend_tax_paid_by_tax_year"] == {"2026-27": Decimal("8.75")}
+
+
+def test_add_dividend_tax_paid_accumulates_within_the_same_tax_year(dynamodb_resource) -> None:
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+    client.add_dividend_tax_paid("auth0|existing", "2026-27", 8.75)
+
+    profile = client.add_dividend_tax_paid("auth0|existing", "2026-27", 5.25)
+
+    assert profile["dividend_tax_paid_by_tax_year"] == {"2026-27": Decimal("14")}
+    stored = dynamodb_resource.Table(TABLE).get_item(Key={"user_id": "auth0|existing"})["Item"]
+    assert stored["dividend_tax_paid_by_tax_year"] == {"2026-27": Decimal("14")}
+
+
+def test_add_dividend_tax_paid_reverses_with_a_negative_amount(dynamodb_resource) -> None:
+    """Mirrors add_dividend_allowance_used's own reversal — editing/
+    deleting a taxed DIVIDEND transaction (or wiping its holding, see
+    backend.transactions.views.reverse_dividend_allowance_for_holdings)
+    reverses whatever tax it paid by adding the negation of its own
+    recorded tax_paid back here."""
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+    client.add_dividend_tax_paid("auth0|existing", "2026-27", 8.75)
+
+    profile = client.add_dividend_tax_paid("auth0|existing", "2026-27", -8.75)
+
+    assert profile["dividend_tax_paid_by_tax_year"] == {"2026-27": Decimal("0")}
+
+
+def test_add_dividend_tax_paid_and_allowance_used_are_tracked_independently(
+    dynamodb_resource,
+) -> None:
+    """The two running totals are separate DynamoDB nested attributes —
+    updating one must never touch the other."""
+    client = UserProfileClient(TABLE, resource=dynamodb_resource)
+    client.add_dividend_allowance_used("auth0|existing", "2026-27", 500)
+
+    profile = client.add_dividend_tax_paid("auth0|existing", "2026-27", 12.5)
+
+    assert profile["dividend_allowance_used_by_tax_year"] == {"2026-27": Decimal("500")}
+    assert profile["dividend_tax_paid_by_tax_year"] == {"2026-27": Decimal("12.5")}

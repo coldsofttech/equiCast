@@ -26,6 +26,7 @@ from rest_framework.views import APIView
 from transactions.views import (
     build_transaction_fields,
     resolve_converted_amounts,
+    reverse_dividend_allowance_for_holdings,
     sync_dividends_for_holdings,
 )
 
@@ -317,5 +318,6 @@ class HoldingDetailView(APIView):
                 {"detail": "Pie-scoped holdings are removed via PUT /api/pies/<id>/holdings/."},
                 status=400,
             )
+        reverse_dividend_allowance_for_holdings(request.user.user_id, [holding_id])
         _transactions_client.delete_transactions_for_holdings(request.user.user_id, [holding_id])
         return Response(status=204)

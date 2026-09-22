@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 import pytest
 from equicast_core.uk_dividend_tax import compute_uk_dividend_tax, uk_tax_year_label
 
@@ -147,3 +149,25 @@ def test_gia_unknown_domicile_without_override_applies_no_withholding() -> None:
 
     assert result["withholding_pct_applied"] == 0.0
     assert result["net_of_withholding"] == 100.0
+
+
+def test_allowance_used_ytd_as_decimal_does_not_raise() -> None:
+    # UserProfileClient.get_or_create_profile reads dividend_allowance_used_
+    # by_tax_year straight out of DynamoDB, whose numeric attributes come
+    # back as Decimal, not float — a second taxable GIA dividend in the same
+    # tax year (the first already having persisted a Decimal allowance
+    # figure) used to raise TypeError: unsupported operand type(s) for -:
+    # 'float' and 'decimal.Decimal' computing allowance_remaining below.
+    result = compute_uk_dividend_tax(
+        wrapper_type="GIA",
+        tax_domicile="UK",
+        default_withholding_pct=None,
+        tax_override_pct=None,
+        income_tax_band="BASIC",
+        gross_amount=100.0,
+        allowance_used_ytd=Decimal("480"),
+    )
+
+    assert result["allowance_consumed"] == 20.0
+    assert result["taxable_amount"] == 80.0
+    assert result["new_allowance_used_ytd"] == 500.0

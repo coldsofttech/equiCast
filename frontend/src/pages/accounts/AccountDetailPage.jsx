@@ -177,6 +177,7 @@ function AccountDetailPage() {
       .then((holding) => {
         setAccount((current) => ({ ...current, holdings: [...(current.holdings ?? []), holding] }));
         patchCachedAccount((a) => ({ ...a, holdings: [...(a.holdings ?? []), holding] }));
+        setIsAddHoldingOpen(false);
       })
       .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
   };

@@ -13,6 +13,20 @@
  * @property {"NONE"|"BASIC"|"HIGHER"|"ADDITIONAL"} income_tax_band - GitHub
  *   issue #94. Self-declared UK income tax band ("NONE" = non-taxpayer,
  *   below the personal allowance) — defaults to "BASIC" on first login.
+ * @property {Record<string, number>} [dividend_allowance_used_by_tax_year] -
+ *   GitHub issue #212. How much of the £500 UK dividend allowance has been
+ *   consumed, keyed by "YYYY-YY" tax year label (e.g. "2026-27") — written
+ *   only by the backend as taxable (GIA) DIVIDEND transactions are
+ *   created/edited/deleted/rewound (see backend/transactions/views.py's
+ *   _persist_dividend_allowance/_reverse_dividend_allowance), never
+ *   directly by the user. Read-only here — see
+ *   pages/dividendTax/dividendTaxFinancials.js.
+ * @property {Record<string, number>} [dividend_tax_paid_by_tax_year] -
+ *   GitHub issue #212's follow-up. The income-tax-band-rate UK dividend tax
+ *   actually paid (never the foreign withholding amount, a separate
+ *   already-shown-per-holding concept), keyed the same way as
+ *   dividend_allowance_used_by_tax_year and written alongside it by the
+ *   same backend paths. Read-only here.
  */
 
 /**

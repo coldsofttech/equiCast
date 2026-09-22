@@ -718,6 +718,7 @@ class TransactionsClient:
         sdrt: Any = None,
         fx_fee: Any = None,
         allowance_consumed: Any = None,
+        tax_paid: Any = None,
     ) -> dict[str, Any]:
         """Create a transaction against `holding_id`, shaped by `mode`
         (`"AVERAGE"` or `"TRANSACTION"` — resolved by the caller from the
@@ -781,6 +782,16 @@ class TransactionsClient:
         negated figure) instead of either leaving it permanently consumed
         or guessing at what to reverse via recomputation against
         potentially-since-changed tax settings.
+
+        `tax_paid` mirrors `allowance_consumed` exactly, just for the
+        income-tax-band-rate UK dividend tax charged on whatever's left
+        after the allowance (`compute_uk_dividend_tax`'s `tax_amount`) —
+        stored only for `type == "DIVIDEND"`, `None` if the calculation
+        never ran, `0.0` if it ran but this dividend owed nothing (exempt
+        wrapper, `NONE` income tax band, or fully absorbed by the
+        allowance). Same reversal reasoning: lets an edit/delete later undo
+        exactly the delta it added (`UserProfileClient.add_dividend_tax_
+        paid` with the negated figure).
 
         Raises `TransactionAmountError` for a missing `date`, a `type` not
         valid for `mode`, or a non-positive `no_of_shares`/
@@ -875,6 +886,7 @@ class TransactionsClient:
                 "sdrt": sdrt if type == "BUY" else None,
                 "fx_fee": fx_fee if type in ("BUY", "SELL") else None,
                 "allowance_consumed": allowance_consumed if type == "DIVIDEND" else None,
+                "tax_paid": tax_paid if type == "DIVIDEND" else None,
                 "date": date,
                 "type": type,
                 "created_at": now,
@@ -907,19 +919,20 @@ class TransactionsClient:
         Mutable records are an AVERAGE-mode `BUY` (position entry —
         `no_of_shares`/`average_price_native`/`average_price`/`fx_rate`/
         `date`) or any `DIVIDEND` entry in either mode
-        (`amount_native`/`amount`/`fx_rate`/`date`/`allowance_consumed`) —
-        see module docstring for why a dividend is mutable regardless of
-        mode, and for the native/converted split (`average_price`/`amount`
-        here are the already-resolved converted figures — the caller
-        recomputes them from the patched native value/date/`fx_rate` and
-        passes them all in together, the same as `create_transaction`).
-        `allowance_consumed` (GitHub equicast-support#1) is likewise
-        recomputed and passed in by the caller alongside `amount`/`date`
-        whenever they change, since a DIVIDEND's converted amount or UK tax
-        year both feed straight into how much of the allowance it consumes
-        (see `create_transaction`'s docstring). `external_id` is
-        deliberately absent from both allowed sets — it's immutable once set
-        by `create_transaction`, so an import's dedup check can always trust
+        (`amount_native`/`amount`/`fx_rate`/`date`/`allowance_consumed`/
+        `tax_paid`) — see module docstring for why a dividend is mutable
+        regardless of mode, and for the native/converted split
+        (`average_price`/`amount` here are the already-resolved converted
+        figures — the caller recomputes them from the patched native
+        value/date/`fx_rate` and passes them all in together, the same as
+        `create_transaction`). `allowance_consumed`/`tax_paid` (GitHub
+        equicast-support#1) are likewise recomputed and passed in by the
+        caller alongside `amount`/`date` whenever they change, since a
+        DIVIDEND's converted amount or UK tax year both feed straight into
+        how much of the allowance it consumes and how much tax it owes (see
+        `create_transaction`'s docstring). `external_id` is deliberately
+        absent from both allowed sets — it's immutable once set by
+        `create_transaction`, so an import's dedup check can always trust
         it against the original import rather than a value that could have
         drifted since.
 
@@ -945,7 +958,14 @@ class TransactionsClient:
                 )
             record_type = transactions[index]["type"]
             if record_type == "DIVIDEND":
-                allowed = {"date", "amount_native", "amount", "fx_rate", "allowance_consumed"}
+                allowed = {
+                    "date",
+                    "amount_native",
+                    "amount",
+                    "fx_rate",
+                    "allowance_consumed",
+                    "tax_paid",
+                }
             elif mode == "AVERAGE" and record_type in ("BUY", None):
                 allowed = {
                     "date",

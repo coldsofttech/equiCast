@@ -439,8 +439,9 @@ def _persist_dividend_allowance(
     user_id: str, breakdown: dict[str, Any] | None, allowance_used_by_tax_year: dict[str, float]
 ) -> None:
     """Persist `breakdown`'s `allowance_consumed` (`UserProfileClient.
-    add_dividend_allowance_used`) and mirror it into the caller's running
-    `allowance_used_by_tax_year` — the write-half of
+    add_dividend_allowance_used`) and `tax_amount` (`UserProfileClient.
+    add_dividend_tax_paid`), and mirror the allowance delta into the
+    caller's running `allowance_used_by_tax_year` — the write-half of
     `_compute_uk_dividend_tax_breakdown`, called only once the DIVIDEND
     transaction it was computed for has actually been created/updated
     successfully, so a calculation never gets persisted for a write that
@@ -455,7 +456,10 @@ def _persist_dividend_allowance(
     correctly instead of each starting from the same stale snapshot. The
     persisted delta is still an atomic per-call DynamoDB add (see
     `add_dividend_allowance_used`), so this is a bookkeeping/ordering
-    convenience, not what makes concurrent writers safe.
+    convenience, not what makes concurrent writers safe. `tax_amount` needs
+    no equivalent running total threaded through — unlike the allowance, one
+    dividend's tax owed doesn't depend on how much another dividend in the
+    same pass already paid, only on its own `taxable_amount`.
 
     A no-op when `breakdown` is `None` (the calculation didn't apply — see
     `_compute_uk_dividend_tax_breakdown`). Never raises, same tolerance as
@@ -467,44 +471,93 @@ def _persist_dividend_allowance(
             _profile_client.add_dividend_allowance_used(
                 user_id, breakdown["tax_year"], breakdown["allowance_consumed"]
             )
+        if breakdown["tax_amount"] > 0:
+            _profile_client.add_dividend_tax_paid(
+                user_id, breakdown["tax_year"], breakdown["tax_amount"]
+            )
         allowance_used_by_tax_year[breakdown["tax_year"]] = breakdown["new_allowance_used_ytd"]
     except Exception:
         logger.exception(
-            "_persist_dividend_allowance: failed to update dividend_allowance_used_ytd for "
-            "user '%s'; allowance tracking may undercount this dividend",
+            "_persist_dividend_allowance: failed to update dividend_allowance_used_ytd/"
+            "dividend_tax_paid_ytd for user '%s'; allowance/tax tracking may undercount this "
+            "dividend",
             user_id,
         )
 
 
 def _reverse_dividend_allowance(user_id: str, transaction: dict[str, Any]) -> None:
     """Undo a DIVIDEND transaction's earlier UK dividend allowance
-    consumption (GitHub equicast-support#1) — called whenever a record
-    carrying a persisted `allowance_consumed` (i.e.
+    consumption and tax paid (GitHub equicast-support#1) — called whenever
+    a record carrying a persisted `allowance_consumed`/`tax_paid` (i.e.
     `_compute_uk_dividend_tax_breakdown`/`_persist_dividend_allowance`
     actually ran for it when it was created or last edited — `None` means
     they didn't, e.g. a non-GBP profile or an already-deleted holding at
-    the time) is edited, deleted (`TransactionDetailView.delete`), or
-    dropped by `TransactionsClient.rewind_dividends_synced_through`
+    the time) is edited, deleted (`TransactionDetailView.delete`), dropped
+    by `TransactionsClient.rewind_dividends_synced_through`
     (`TransactionListView.post`/`TransactionDetailView.delete`/
-    `transactions.import_views`), so its consumption doesn't permanently
-    reduce the user's real remaining allowance for that UK tax year. A
-    no-op when `allowance_consumed` is `None` or `0` (nothing was ever
-    added, so there's nothing to give back). Never raises — same tolerance
-    as `_compute_uk_dividend_tax_breakdown`/`_persist_dividend_allowance`."""
+    `transactions.import_views`), or wiped along with its holding
+    (`reverse_dividend_allowance_for_holdings`), so its consumption doesn't
+    permanently reduce the user's real remaining allowance, or overstate
+    their real tax paid, for that UK tax year. A no-op for whichever of
+    `allowance_consumed`/`tax_paid` is `None` or `0` on this record (nothing
+    was ever added for it, so there's nothing to give back) — the two are
+    reversed independently, since a dividend can have consumed allowance
+    without owing tax (fully absorbed by the allowance) but never the other
+    way round. Never raises — same tolerance as `_compute_uk_dividend_tax_
+    breakdown`/`_persist_dividend_allowance`."""
     allowance_consumed = transaction.get("allowance_consumed")
-    if not allowance_consumed:
+    tax_paid = transaction.get("tax_paid")
+    if not allowance_consumed and not tax_paid:
         return
+    tax_year = uk_tax_year_label(transaction["date"])
     try:
-        _profile_client.add_dividend_allowance_used(
-            user_id, uk_tax_year_label(transaction["date"]), -allowance_consumed
-        )
+        if allowance_consumed:
+            _profile_client.add_dividend_allowance_used(user_id, tax_year, -allowance_consumed)
+        if tax_paid:
+            _profile_client.add_dividend_tax_paid(user_id, tax_year, -tax_paid)
     except Exception:
         logger.exception(
-            "_reverse_dividend_allowance: failed to reverse dividend_allowance_used_ytd for "
-            "user '%s' transaction '%s'; allowance tracking may overcount going forward",
+            "_reverse_dividend_allowance: failed to reverse dividend_allowance_used_ytd/"
+            "dividend_tax_paid_ytd for user '%s' transaction '%s'; allowance/tax tracking may "
+            "overcount going forward",
             user_id,
             transaction.get("id"),
         )
+
+
+def reverse_dividend_allowance_for_holdings(user_id: str, holding_ids: list[str]) -> None:
+    """Reverse every DIVIDEND transaction's `allowance_consumed` (GitHub
+    issue #212) across `holding_ids`, in bulk — called by a holding/account/
+    pie deletion cascade (holdings/views.py's `HoldingDetailView.delete`,
+    accounts/views.py's force-delete, pies/views.py's force-delete)
+    immediately *before* `TransactionsClient.delete_transactions_for_
+    holdings` wipes their transaction files outright, since that wipe
+    doesn't know how to compute or persist a tax reversal itself (it's a
+    plain S3 object delete) — without this, deleting a holding that had
+    taxed dividends would leave the user's UK dividend allowance
+    permanently consumed even though the dividends (and the holding itself)
+    are gone.
+
+    Not called from identity/views.py's account-deletion (`MeView.delete`,
+    GitHub issue #158) — that wipes the user's whole profile right after,
+    including `dividend_allowance_used_by_tax_year` itself, so reversing it
+    first would be wasted work. Never raises — same tolerance as
+    `_reverse_dividend_allowance`, which this calls once per DIVIDEND
+    found."""
+    for holding_id in holding_ids:
+        try:
+            transactions = _client.list_transactions(user_id, holding_id=holding_id)
+        except Exception:
+            logger.exception(
+                "reverse_dividend_allowance_for_holdings: failed to list transactions for "
+                "user '%s' holding '%s'; allowance tracking may overcount going forward",
+                user_id,
+                holding_id,
+            )
+            continue
+        for transaction in transactions:
+            if transaction.get("type") == "DIVIDEND":
+                _reverse_dividend_allowance(user_id, transaction)
 
 
 def sync_dividends_for_holdings(
@@ -678,6 +731,7 @@ def _sync_dividends_for_one_holding(
                 mode,
                 external_id=f"dividend:{entry['date']}",
                 allowance_consumed=breakdown["allowance_consumed"] if breakdown else None,
+                tax_paid=breakdown["tax_amount"] if breakdown else None,
                 **fields,
             )
             _persist_dividend_allowance(user_id, breakdown, allowance_used_by_tax_year)
@@ -776,6 +830,7 @@ class TransactionListView(APIView):
                 holding_id,
                 mode,
                 allowance_consumed=breakdown["allowance_consumed"] if breakdown else None,
+                tax_paid=breakdown["tax_amount"] if breakdown else None,
                 **fields,
             )
         except TransactionAmountError:
@@ -969,6 +1024,9 @@ class TransactionDetailView(APIView):
                     new_dividend_tax_breakdown["allowance_consumed"]
                     if new_dividend_tax_breakdown
                     else None
+                )
+                fields["tax_paid"] = (
+                    new_dividend_tax_breakdown["tax_amount"] if new_dividend_tax_breakdown else None
                 )
 
         try:

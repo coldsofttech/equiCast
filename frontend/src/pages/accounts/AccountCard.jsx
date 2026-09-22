@@ -53,11 +53,6 @@ function AccountCard({ account, onClick, defaultCurrency }) {
         </div>
         <Badge tone="accent">{account.account_type}</Badge>
       </div>
-      {account.vendor && (
-        <div className="ec-account-card-tags">
-          <Badge tone="neutral">{account.vendor}</Badge>
-        </div>
-      )}
       <p className="ec-account-card-desc">{account.description}</p>
       <div className="ec-account-card-value">
         <Balance className="ec-account-card-current">
@@ -73,6 +68,7 @@ function AccountCard({ account, onClick, defaultCurrency }) {
         </span>
       </div>
       <div className="ec-account-card-meta">
+        {account.vendor && <Badge tone="neutral">{account.vendor}</Badge>}
         <span className="ec-account-card-counts">
           <span className="ec-account-card-count">{pies.length} pies</span>
           <span className="ec-account-card-count">{holdingsCount} holdings</span>
