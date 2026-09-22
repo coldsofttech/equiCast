@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Ingestion workflows' (stock, ETF, FX, benchmark) `max_workers`/`max_calls`
+  defaults raised from 5 to 8, moving both together since raising
+  `max_workers` alone has no effect once thread count exceeds `max_calls`
+  (extra threads just queue on the shared rate limiter) (equicast-support#168).
 - `equicast-datafeed`'s `DatafeedClient` now caches every fetch (`.info`,
   price history, dividends, etc.) for its own lifetime, keyed by method,
   symbol, and any args that change what's returned - dedupes redundant

@@ -280,8 +280,8 @@ recomputing it.
 | `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year. Ignored when `forecast_only` is set |
 | `chunk_size` | `20` | Target ETF tickers per parallel chunk |
 | `tickers` | *(empty)* | Optional `;`-separated list of tickers (e.g. `VOO;VUSA.L`) to restrict this run to, instead of every ticker in the config — useful for a full load of just a newly-added holding. When set, `build-catalog` merges this run's tickers into the existing catalog instead of replacing it outright |
-| `max_workers` | `5` | Concurrent fetches within each container |
-| `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
+| `max_workers` | `8` | Concurrent fetches within each container |
+| `max_calls` | `8` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 | `forecast_years` | `10` | Dividend forecast horizon in years (`equicast-forecasting`'s `--years`). Only used when forecasting actually runs (Saturday, or a manual run with `forecast_only`) |
 | `forecast_only` | `false` | Run only `equicast-forecasting` for this dispatch, skipping the regular ingest — mirrors the Saturday schedule, useful for testing forecasting on demand |
