@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Ticker-request support tickets can now be resolved by replying with the config change — the entry is added/updated/deleted in the ingestion config and a PR opened automatically (equicast-support#6).
 
+### Changed
+
+- Consolidated `missing-isin-fix.yml` and the new config-change fix logic into one shared `issue-automation-fix.yml` workflow, routed per scenario on the dispatch's event type, and merged their per-scenario branch-cleanup workflows into one `cleanup-merged-automation-branches.yml` — same behavior, gates, and PR/branch shape per scenario, so a future scenario plugs into the existing workflow pair instead of getting its own.
+
 ## [1.0.8] - 2026-09-21
 
 ### Added

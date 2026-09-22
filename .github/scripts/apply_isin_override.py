@@ -7,8 +7,9 @@ the rest of the file's comments/formatting are untouched.
 Cross-checks the ticker against every known *.prod.yaml (not just the one
 named by the caller) so a stale/mismatched config path on the triggering
 issue fails loudly instead of silently editing the wrong file. Used by
-missing-isin-fix.yml (GitHub issue equicast-support#149) once a maintainer
-replies to a "<TICKER>: missing ISIN" sub-issue with the ISIN.
+issue-automation-fix.yml's missing-isin-provided case (GitHub issue
+equicast-support#149) once a maintainer replies to a "<TICKER>: missing
+ISIN" sub-issue with the ISIN.
 """
 
 import argparse

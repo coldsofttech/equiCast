@@ -1,10 +1,10 @@
 """Adds/updates/deletes one entry in a stock/etf/fx/benchmark ingestion
 config YAML file (equicast-support#6) — the scriptable half of
-manage-config-fix.yml's repository_dispatch payload, fired once a
+issue-automation-fix.yml's config-change-requested case, fired once a
 maintainer replies to a support-filed "[Ticker request]" issue with what
-to change (see equicast-support's dispatch_config_change.sh). Never
-touches `main` directly; the workflow commits this script's edit on its
-own branch and opens a PR (see that workflow for why).
+to change (see equicast-support's .github/scripts/scenarios/config-change.sh).
+Never touches `main` directly; the workflow commits this script's edit on
+its own branch and opens a PR (see that workflow for why).
 
 Uses `ruamel.yaml` in round-trip mode rather than PyYAML, specifically to
 avoid the "YAML formatting/ordering preservation on write" problem the
