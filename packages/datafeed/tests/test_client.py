@@ -1,4 +1,5 @@
 import logging
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -138,6 +139,94 @@ def test_get_news_returns_list_and_passes_count_through() -> None:
     mock_ticker.assert_called_once_with("AAPL")
     mock_ticker.return_value.get_news.assert_called_once_with(count=10)
     assert result == [{"id": "abc"}]
+
+
+def test_get_info_is_cached_within_one_client() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.info = {"exchange": "CCY"}
+        client = _client()
+
+        first = client.get_info("GBPUSD=X")
+        second = client.get_info("GBPUSD=X")
+
+    mock_ticker.assert_called_once_with("GBPUSD=X")
+    assert first == second == {"exchange": "CCY"}
+
+
+def test_get_history_cache_is_keyed_by_period_and_interval() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.history.side_effect = ["one-year", "year-to-date"]
+        client = _client()
+
+        one_year = client.get_history("AAPL", period="1y", interval="1d")
+        ytd = client.get_history("AAPL", period="ytd", interval="1d")
+
+    # Different periods are genuinely different data, so both must still hit
+    # yfinance - only a call identical in every argument should be cached.
+    assert mock_ticker.return_value.history.call_count == 2
+    assert (one_year, ytd) == ("one-year", "year-to-date")
+
+
+def test_cache_does_not_span_separate_client_instances() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.info = {"exchange": "CCY"}
+        _client().get_info("GBPUSD=X")
+        _client().get_info("GBPUSD=X")
+
+    assert mock_ticker.call_count == 2
+
+
+def test_failed_fetch_is_cached_and_not_retried_by_a_later_call() -> None:
+    with patch(
+        "equicast_datafeed.client.yf.Ticker", side_effect=ConnectionError("boom")
+    ) as mock_ticker:
+        client = _client()
+        with pytest.raises(DatafeedError):
+            client.get_info("GBPUSD=X")
+        calls_for_first_failure = mock_ticker.call_count
+
+        with pytest.raises(DatafeedError):
+            client.get_info("GBPUSD=X")
+
+    # The second call re-raises the cached error instead of re-running the
+    # whole retry-with-backoff sequence against yfinance again.
+    assert mock_ticker.call_count == calls_for_first_failure
+
+
+def test_concurrent_first_requests_for_the_same_key_fetch_only_once() -> None:
+    call_count = 0
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_ticker(_symbol: str) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        started.set()
+        release.wait(timeout=5)
+        return MagicMock(info={"exchange": "CCY"})
+
+    with patch("equicast_datafeed.client.yf.Ticker", side_effect=slow_ticker):
+        client = _client()
+        results: list[dict] = []
+
+        def worker() -> None:
+            results.append(client.get_info("GBPUSD=X"))
+
+        first = threading.Thread(target=worker)
+        first.start()
+        assert started.wait(timeout=5), "first thread never reached the fetch"
+
+        second = threading.Thread(target=worker)
+        second.start()
+        release.set()
+        first.join(timeout=5)
+        second.join(timeout=5)
+
+    # The second thread arrived while the first was still mid-fetch for the
+    # same key - it must block on that in-flight fetch and reuse its result,
+    # not race it and trigger a second yfinance call.
+    assert call_count == 1
+    assert results == [{"exchange": "CCY"}, {"exchange": "CCY"}]
 
 
 def test_constructing_client_shows_yfinance_disclaimer_once(
