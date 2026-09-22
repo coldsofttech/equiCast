@@ -267,6 +267,7 @@ function AccountDetailPage() {
       titleBadges={
         <>
           <Badge tone="accent">{account.account_type}</Badge>
+          {account.vendor && <Badge tone="neutral">{account.vendor}</Badge>}
           {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
         </>
       }

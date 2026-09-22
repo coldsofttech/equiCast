@@ -46,4 +46,16 @@ describe("AccountCard", () => {
     expect(screen.getByText("0 pies")).toBeInTheDocument();
     expect(screen.getByText("0 holdings")).toBeInTheDocument();
   });
+
+  it("renders a vendor tag when the account has one", () => {
+    render(<AccountCard account={{ ...ACCOUNT, vendor: "Trading212" }} onClick={vi.fn()} />);
+
+    expect(screen.getByText("Trading212")).toBeInTheDocument();
+  });
+
+  it("renders no vendor tag when the account has none", () => {
+    render(<AccountCard account={ACCOUNT} onClick={vi.fn()} />);
+
+    expect(screen.queryByText("Trading212")).not.toBeInTheDocument();
+  });
 });
