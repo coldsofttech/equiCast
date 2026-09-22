@@ -24,15 +24,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `equicast-datafeed`'s `DatafeedClient` now caches every fetch (`.info`,
   price history, dividends, etc.) for its own lifetime, keyed by method,
-  symbol, and any args that change what's returned. Several tasks
-  independently re-fetched the same yfinance data for the same ticker
-  within one run - e.g. `.info` was fetched separately by profile,
-  dividends, future-dividends, prices, and fundamentals, up to 5 times per
-  stock ticker - all now share one cached result instead of hitting
-  yfinance again (equicast-support#168). Every asset-class package
-  (stock, ETF, FX, benchmark) and shared client (metrics, dividends,
-  events, news) gets this for free, with no changes of its own, since they
-  all already share one `DatafeedClient` per run.
+  symbol, and any args that change what's returned - dedupes redundant
+  same-run yfinance calls (e.g. `.info` was fetched up to 5 times per
+  stock ticker) across every asset-class package for free (equicast-support#168).
 - Ingestion workflows' (stock, ETF, FX, benchmark) `chunk_size` default
   dropped from 300 to 20 tickers/pairs/benchmarks per matrix leg. At 300,
   a config anywhere near (or under) that size collapsed to effectively one
