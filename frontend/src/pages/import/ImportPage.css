@@ -1,3 +1,40 @@
+.ec-import-source-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ec-s-8);
+}
+
+.ec-import-source-option {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-8);
+  padding: var(--ec-s-8) var(--ec-s-12);
+  border-radius: var(--ec-r-6);
+  border: 1px solid var(--ec-border-strong);
+  background: var(--ec-bg-elev);
+  color: var(--ec-text-muted);
+  font-size: var(--ec-fs-14);
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.ec-import-source-option:hover {
+  background: var(--ec-surface-hover);
+  color: var(--ec-text);
+}
+
+.ec-import-source-option:focus-visible {
+  outline: none;
+  border-color: var(--ec-accent);
+  box-shadow: var(--ec-shadow-focus);
+}
+
+.ec-import-source-option.is-selected {
+  border-color: var(--ec-accent);
+  background: var(--ec-accent-soft);
+  color: var(--ec-accent-soft-text);
+}
+
 .ec-import-section + .ec-import-section {
   margin-top: var(--ec-s-24);
 }

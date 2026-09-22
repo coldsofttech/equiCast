@@ -28,6 +28,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The import wizard's Source picker (`/import`) now shows an icon per
+  preset — Trading212's real favicon (via `AssetIcon`) and a CSV file
+  glyph for Generic CSV — instead of a plain text dropdown
+  (equicast-support#146).
 - An account's Portfolios and Holdings lists on `/accounts/:accountId` are
   now sorted by current value, highest first (equicast-support#193).
 - A pie's Holdings list on `/accounts/:accountId/pies/:pieId` is now
