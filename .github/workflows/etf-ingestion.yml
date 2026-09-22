@@ -39,10 +39,10 @@ on:
         default: ""
       max_workers:
         description: "Concurrent fetches within each container"
-        default: "5"
+        default: "8"
       max_calls:
         description: "Max yfinance calls per period-seconds, per container"
-        default: "5"
+        default: "8"
       period_seconds:
         description: "Rate-limit window in seconds, per container"
         default: "1.0"
@@ -219,8 +219,8 @@ jobs:
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \
-            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
-            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --max-workers "${{ github.event.inputs.max_workers || '8' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '8' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
       - name: Pull equicast-forecasting image
@@ -241,8 +241,8 @@ jobs:
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             --years "${{ github.event.inputs.forecast_years || '10' }}" \
-            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
-            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --max-workers "${{ github.event.inputs.max_workers || '8' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '8' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
       - name: Configure AWS credentials via OIDC
