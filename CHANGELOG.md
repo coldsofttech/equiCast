@@ -68,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one full row at the panel's real width, instead of a fixed 4 - avoids a
   lone card left stretched full-width on its own row when narrower than
   ~930px only fits 3 across (equicast-support#177).
+- An account's page no longer shows the price chart when the account has
+  no pies or holdings yet, instead of one with nothing to plot
+  (equicast-support#172).
 
 ## [1.0.5] - 2026-09-20
 

@@ -115,7 +115,7 @@ function AccountDetailPage() {
       .finally(() => setIsSaving(false));
   };
 
-  const needsForce = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
+  const hasPiesOrHoldings = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
 
   // Memoized (not just derived inline below) so its reference stays stable
   // across re-renders that don't actually change `account` — PieCagrSection
@@ -154,7 +154,7 @@ function AccountDetailPage() {
   const handleDelete = () => {
     setIsDeleting(true);
     setDeleteError(null);
-    deleteAccount(api, accountId, { force: needsForce })
+    deleteAccount(api, accountId, { force: hasPiesOrHoldings })
       .then(() => {
         setCachedAccounts((current) => current.filter((a) => a.id !== accountId));
         navigate("/accounts");
@@ -286,16 +286,18 @@ function AccountDetailPage() {
         />
       </div>
 
-      <PiePriceChart
-        holdings={allHoldings}
-        currency={currency}
-        entityLabel="account"
-        compareItems={compareItems}
-        compareItemType="account"
-        fetchCompareHoldings={fetchCompareHoldings}
-        investedTotal={totals.invested}
-        holdingValuations={holdingValuations}
-      />
+      {hasPiesOrHoldings && (
+        <PiePriceChart
+          holdings={allHoldings}
+          currency={currency}
+          entityLabel="account"
+          compareItems={compareItems}
+          compareItemType="account"
+          fetchCompareHoldings={fetchCompareHoldings}
+          investedTotal={totals.invested}
+          holdingValuations={holdingValuations}
+        />
+      )}
 
       <div className="ec-account-columns">
         <div>
@@ -468,7 +470,7 @@ function AccountDetailPage() {
         <div className="ec-danger-zone-text">
           <h3 className="ec-danger-zone-title">Delete this account</h3>
           <p className="ec-danger-zone-desc">
-            {needsForce
+            {hasPiesOrHoldings
               ? "This account still has pies and/or holdings. Deleting it will also delete all of them, along with any recorded transactions. This action is permanent and cannot be undone."
               : "This will permanently delete the account. This action is permanent and cannot be undone."}
           </p>
@@ -525,7 +527,7 @@ function AccountDetailPage() {
         open={isDeleteOpen}
         title="Delete account"
         message={
-          needsForce
+          hasPiesOrHoldings
             ? "This account still has pies and/or holdings. Deleting it will also delete all of them, along with any recorded transactions. This can't be undone."
             : "This will permanently delete the account. This can't be undone."
         }
