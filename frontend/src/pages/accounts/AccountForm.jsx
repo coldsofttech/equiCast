@@ -91,14 +91,6 @@ function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error })
           </option>
         ))}
       </SelectField>
-      <IconPicker
-        id="account-icon"
-        label="Icon"
-        icons={ACCOUNT_ICON_OPTIONS}
-        value={values.icon}
-        onChange={(icon) => setValues((current) => ({ ...current, icon }))}
-        hint="Optional — defaults to a bank icon if not set."
-      />
       <TextField
         id="account-vendor"
         label="Vendor"
@@ -112,6 +104,14 @@ function AccountForm({ initialValues, onSubmit, onCancel, isSubmitting, error })
           <option key={vendor} value={vendor} />
         ))}
       </datalist>
+      <IconPicker
+        id="account-icon"
+        label="Icon"
+        icons={ACCOUNT_ICON_OPTIONS}
+        value={values.icon}
+        onChange={(icon) => setValues((current) => ({ ...current, icon }))}
+        hint="Optional — defaults to a bank icon if not set."
+      />
       <div className="ec-form-actions">
         <Button type="button" variant="secondary" onClick={onCancel} disabled={isSubmitting}>
           Cancel

@@ -318,6 +318,7 @@ class TransactionListViewTests(TestCase):
             "h-2",
             "AVERAGE",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             price_native=None,
@@ -422,6 +423,7 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "AVERAGE",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             average_price=None,
@@ -482,6 +484,7 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "AVERAGE",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=10.0,
             average_price_native=152.5,
             average_price=122.0,
@@ -619,6 +622,7 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "TRANSACTION",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=10.0,
             average_price_native=None,
             average_price=None,
@@ -902,6 +906,7 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "AVERAGE",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=None,
             average_price_native=None,
             average_price=None,
@@ -956,6 +961,7 @@ class TransactionListViewTests(TestCase):
             "h-1",
             "TRANSACTION",
             allowance_consumed=None,
+            tax_paid=None,
             no_of_shares=None,
             average_price_native=None,
             average_price=None,
@@ -1342,6 +1348,7 @@ class TransactionDetailViewTests(TestCase):
             amount=None,
             fx_rate=None,
             allowance_consumed=None,
+            tax_paid=None,
         )
 
     @patch("transactions.views._compute_uk_dividend_tax_breakdown")
@@ -1365,7 +1372,7 @@ class TransactionDetailViewTests(TestCase):
         applying whatever the new amount consumes — never just leaving the
         old consumption on top of a fresh one."""
         _authenticate(mock_jwks_client, mock_decode)
-        existing_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 20.0}
+        existing_dividend = {**DIVIDEND_TRANSACTION, "allowance_consumed": 20.0, "tax_paid": 5.0}
         mock_client.get_transaction.return_value = existing_dividend
         mock_holdings_client.get_holding.return_value = ACCOUNT_HOLDING
         mock_profile_client.get_or_create_profile.return_value = {
@@ -1375,6 +1382,7 @@ class TransactionDetailViewTests(TestCase):
         mock_compute_breakdown.return_value = {
             "allowance_consumed": 30.0,
             "new_allowance_used_ytd": 30.0,
+            "tax_amount": 8.0,
             "tax_year": "2025-26",
         }
         updated = {**existing_dividend, "amount_native": 60, "amount": 30.0}
@@ -1395,6 +1403,9 @@ class TransactionDetailViewTests(TestCase):
             "auth0|abc123", "2025-26", 30.0
         )
         self.assertEqual(mock_profile_client.add_dividend_allowance_used.call_count, 2)
+        mock_profile_client.add_dividend_tax_paid.assert_any_call("auth0|abc123", "2025-26", -5.0)
+        mock_profile_client.add_dividend_tax_paid.assert_any_call("auth0|abc123", "2025-26", 8.0)
+        self.assertEqual(mock_profile_client.add_dividend_tax_paid.call_count, 2)
         mock_client.update_transaction.assert_called_once_with(
             "auth0|abc123",
             "h-1",
@@ -1404,6 +1415,7 @@ class TransactionDetailViewTests(TestCase):
             amount=30.0,
             fx_rate=0.5,
             allowance_consumed=30.0,
+            tax_paid=8.0,
         )
 
     @patch("transactions.views._compute_uk_dividend_tax_breakdown")
@@ -1449,6 +1461,7 @@ class TransactionDetailViewTests(TestCase):
             amount=30.0,
             fx_rate=0.5,
             allowance_consumed=None,
+            tax_paid=None,
         )
 
     @patch("transactions.views._profile_client")
@@ -1678,6 +1691,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "AVERAGE",
             external_id="dividend:2026-03-01",
             allowance_consumed=None,
+            tax_paid=None,
             amount_native=5.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1738,6 +1752,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "TRANSACTION",
             external_id="dividend:2026-03-01",
             allowance_consumed=None,
+            tax_paid=None,
             amount_native=3.0,
             date="2026-03-01",
             type="DIVIDEND",
@@ -1966,6 +1981,7 @@ class SyncDividendsForHoldingsTests(TestCase):
             "AVERAGE",
             external_id="dividend:2026-03-01",
             allowance_consumed=None,
+            tax_paid=None,
             amount_native=5.0,
             date="2026-03-01",
             type="DIVIDEND",

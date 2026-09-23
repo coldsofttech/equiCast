@@ -104,7 +104,11 @@ def compute_uk_dividend_tax(
     user has already consumed in `gross_amount`'s UK tax year (see
     `uk_tax_year_label`) — the caller's job to look up (e.g. from
     `UserProfileClient`'s `dividend_allowance_used_by_tax_year`) and, from
-    the returned `new_allowance_used_ytd`, persist back.
+    the returned `new_allowance_used_ytd`, persist back. Coerced to `float`
+    here rather than trusted as one: `UserProfileClient` reads this out of
+    DynamoDB, whose numeric attributes come back as `Decimal`, and
+    `Decimal - float` (the `allowance_remaining` line below) raises
+    `TypeError` rather than coercing implicitly the way `int`/`float` do.
 
     Returns a breakdown dict: `wrapper_taxable` (whether this wrapper type
     is taxable at all), `withholding_pct_applied`/`withholding_amount`,
@@ -115,6 +119,7 @@ def compute_uk_dividend_tax(
     minus `tax_amount` — the actual cash the user nets from this dividend),
     and `new_allowance_used_ytd` (`allowance_used_ytd + allowance_consumed`,
     for the caller to persist)."""
+    allowance_used_ytd = float(allowance_used_ytd)
     if wrapper_type in UK_TAX_EXEMPT_WRAPPER_TYPES:
         return {
             "wrapper_taxable": False,

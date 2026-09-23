@@ -58,6 +58,16 @@ DEFAULT_INCOME_TAX_BAND = "BASIC"
 #: `add_dividend_allowance_used`, never written to directly by a caller.
 DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR: dict[str, Any] = {}
 
+#: Applied to a brand-new profile on first login (GitHub issue #212's
+#: follow-up, equicast-support#205's dividend allowance page) — the running
+#: total of UK dividend tax (`compute_uk_dividend_tax`'s `tax_amount`, the
+#: income-tax-band-rate charge on whatever's left after the allowance —
+#: never the foreign withholding amount, a separate concept already shown
+#: per-holding as its own WHT %) a user has paid, keyed by UK tax year label
+#: same as `dividend_allowance_used_by_tax_year`. Updated via
+#: `add_dividend_tax_paid`, never written to directly by a caller.
+DEFAULT_DIVIDEND_TAX_PAID_BY_TAX_YEAR: dict[str, Any] = {}
+
 
 class UserProfileClient:
     """Reads and upserts items in one DynamoDB user-profiles table."""
@@ -84,11 +94,12 @@ class UserProfileClient:
         DEFAULT_TRANSACTION_TYPE`/`fx_warmup_currencies=
         DEFAULT_FX_WARMUP_CURRENCIES`/`tax_residency=DEFAULT_TAX_RESIDENCY`/
         `income_tax_band=DEFAULT_INCOME_TAX_BAND`/`dividend_allowance_used_
-        by_tax_year=DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR` if this is
-        their first login — or, for an existing profile that predates one
-        or more of `transaction_type`/`fx_warmup_currencies`/
-        `tax_residency`/`income_tax_band`/
-        `dividend_allowance_used_by_tax_year` (each introduced after
+        by_tax_year=DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR`/
+        `dividend_tax_paid_by_tax_year=DEFAULT_DIVIDEND_TAX_PAID_BY_TAX_YEAR`
+        if this is their first login — or, for an existing profile that
+        predates one or more of `transaction_type`/`fx_warmup_currencies`/
+        `tax_residency`/`income_tax_band`/`dividend_allowance_used_by_tax_
+        year`/`dividend_tax_paid_by_tax_year` (each introduced after
         `default_currency`), backfilling just the missing attribute(s)
         onto it.
 
@@ -109,6 +120,10 @@ class UserProfileClient:
                     (
                         "dividend_allowance_used_by_tax_year",
                         DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR,
+                    ),
+                    (
+                        "dividend_tax_paid_by_tax_year",
+                        DEFAULT_DIVIDEND_TAX_PAID_BY_TAX_YEAR,
                     ),
                 )
                 if attr not in item
@@ -133,6 +148,7 @@ class UserProfileClient:
             "tax_residency": DEFAULT_TAX_RESIDENCY,
             "income_tax_band": DEFAULT_INCOME_TAX_BAND,
             "dividend_allowance_used_by_tax_year": DEFAULT_DIVIDEND_ALLOWANCE_USED_BY_TAX_YEAR,
+            "dividend_tax_paid_by_tax_year": DEFAULT_DIVIDEND_TAX_PAID_BY_TAX_YEAR,
         }
         try:
             self._table.put_item(
@@ -268,6 +284,32 @@ class UserProfileClient:
             UpdateExpression=(
                 "SET dividend_allowance_used_by_tax_year.#ty = "
                 "if_not_exists(dividend_allowance_used_by_tax_year.#ty, :zero) + :amount"
+            ),
+            ExpressionAttributeNames={"#ty": tax_year},
+            ExpressionAttributeValues={":zero": Decimal("0"), ":amount": Decimal(str(amount))},
+            ReturnValues="ALL_NEW",
+        )
+        return dict(response["Attributes"])
+
+    def add_dividend_tax_paid(self, user_id: str, tax_year: str, amount: float) -> dict[str, Any]:
+        """Add `amount` to `user_id`'s `dividend_tax_paid_by_tax_year[
+        tax_year]` — the income-tax-band-rate UK dividend tax charged on
+        whatever's left after the allowance (`compute_uk_dividend_tax`'s
+        `tax_amount`), never the foreign withholding amount (a separate,
+        already-shown-per-holding concept). Same shape/reasoning throughout
+        as `add_dividend_allowance_used` (creates the profile first if
+        needed, `amount` may be negative to reverse an edited/deleted/
+        rewound/holding-deletion-cascaded DIVIDEND's own contribution, goes
+        through `Decimal(str(amount))` for the same binary-float-rounding
+        reason) — kept as a distinct running total rather than folded into
+        the allowance figure since the two answer different questions (how
+        much of the £500 cap is used vs. how much tax was actually paid)."""
+        self.get_or_create_profile(user_id)
+        response = self._table.update_item(
+            Key={"user_id": user_id},
+            UpdateExpression=(
+                "SET dividend_tax_paid_by_tax_year.#ty = "
+                "if_not_exists(dividend_tax_paid_by_tax_year.#ty, :zero) + :amount"
             ),
             ExpressionAttributeNames={"#ty": tax_year},
             ExpressionAttributeValues={":zero": Decimal("0"), ":amount": Decimal(str(amount))},

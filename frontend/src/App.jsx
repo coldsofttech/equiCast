@@ -11,6 +11,7 @@ import AccountDetailPage from "./pages/accounts/AccountDetailPage.jsx";
 import PieDetailPage from "./pages/pies/PieDetailPage.jsx";
 import SearchPage from "./pages/search/SearchPage.jsx";
 import HoldingTickerPage from "./pages/holdings/HoldingTickerPage.jsx";
+import DividendTaxPage from "./pages/dividendTax/DividendTaxPage.jsx";
 import CookiePolicyPage from "./pages/CookiePolicyPage.jsx";
 import { initAnalytics, trackPageview } from "./utils/analytics.js";
 import WatchlistsPage from "./pages/watchlists/WatchlistsPage.jsx";
@@ -51,6 +52,7 @@ function App() {
           <Route path="/accounts/:accountId/pies/:pieId" element={<PieDetailPage />} />
           <Route path="/search" element={<SearchPage />} />
           <Route path="/holdings/:ticker" element={<HoldingTickerPage />} />
+          <Route path="/div-tax" element={<DividendTaxPage />} />
           <Route path="/watchlists" element={<WatchlistsPage />} />
           <Route path="/goals" element={<GoalsListPage />} />
           <Route path="/import" element={<ImportPage />} />

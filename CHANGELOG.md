@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through an atomic DynamoDB nested increment). v1 only runs the
   calculation when the user's `default_currency` is `"GBP"`, since the
   allowance/band thresholds are GBP figures by law.
+- A new Dividend Allowance page, reachable from the user menu, shows this
+  UK tax year's allowance usage at a glance plus every tax year's
+  allowance used, tax deducted, and remaining allowance in a table.
 
 ### Changed
 
@@ -92,6 +95,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - GitHub Actions used across CI/CD are updated to their latest major
   versions.
 - An account's/pie's Sector and Industry diversification charts are now combined into one, showing Sector by default with drill-down into Industry and a "Back to sectors" option (equicast-support#192).
+- The "New account"/"Edit account" drawer now asks for vendor before icon.
+- An account card's vendor tag now sits alongside its pies/holdings counts instead of on its own row.
+- Adding a transaction now locks the whole form, not just the buttons, while it saves.
+- The import review screen now has Select all/Unselect all buttons for the ready-to-import holdings, and no longer requires reselecting the target account for a holding going into a brand-new, empty account.
 
 ### Fixed
 
@@ -104,6 +111,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed `AssetIcon` misaligning rows when a holding has no website
   (equicast-support#178).
 - The UK dividend tax allowance is no longer permanently "used" when a DIVIDEND transaction that had already consumed some of it is edited, deleted, or dropped by a backdated BUY/SELL (recorded via the API or a bulk import) — it's now reversed in each case instead (equicast-support#1).
+- Adding a holding now closes the drawer automatically once it's added.
+- Fixed a crash computing UK dividend tax for a second taxable dividend in the same tax year, which silently left it untaxed and out of the allowance count.
+- Deleting a holding, account, or pie that had taxed dividends recorded against it no longer leaves the UK dividend allowance permanently "used" for dividends that no longer exist.
+- The Holdings heatmap and Sector/Asset/Market cap diversification charts on an account's/pie's page no longer render when none of the holdings actually have shares.
+- Industry percentages in the Sector diversification drill-down now sum to 100% for the selected sector instead of that sector's overall share of the whole portfolio.
+- Truncated sector/industry names now show their full name as a tooltip on hover, and the "Back to sectors" button moved next to the diversification score badge.
 
 ## [1.0.5] - 2026-09-20
 

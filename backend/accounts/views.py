@@ -17,7 +17,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from transactions.views import sync_dividends_for_holdings
+from transactions.views import reverse_dividend_allowance_for_holdings, sync_dividends_for_holdings
 
 #: Fields required to create an account; description may be blank but must
 #: be present so a caller doesn't silently omit it. No `currency` field —
@@ -256,13 +256,14 @@ class AccountDetailView(APIView):
                     if h["pie_id"] in set(pie_ids)
                 ]
                 if pie_holding_ids:
+                    reverse_dividend_allowance_for_holdings(user_id, pie_holding_ids)
                     _transactions_client.delete_transactions_for_holdings(user_id, pie_holding_ids)
                 _holdings_client.delete_holdings_for_pies(user_id, pie_ids)
                 _pies_client.delete_pies_for_account(user_id, account_id)
             if force and direct_holdings:
-                _transactions_client.delete_transactions_for_holdings(
-                    user_id, [h["id"] for h in direct_holdings]
-                )
+                direct_holding_ids = [h["id"] for h in direct_holdings]
+                reverse_dividend_allowance_for_holdings(user_id, direct_holding_ids)
+                _transactions_client.delete_transactions_for_holdings(user_id, direct_holding_ids)
                 _holdings_client.delete_holdings_for_account(user_id, account_id)
             _client.delete_account(user_id, account_id)
         except AccountNotFoundError:

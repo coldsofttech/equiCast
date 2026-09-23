@@ -45,6 +45,8 @@ function DiversificationChart({ title, caption, data, score, onRowClick, activeL
     return () => cancelAnimationFrame(frame);
   }, [signature]);
 
+  if (data.length === 0) return null;
+
   return (
     <Card className="ec-divchart ec-detail-section">
       <div className="ec-divchart-head">
@@ -55,45 +57,43 @@ function DiversificationChart({ title, caption, data, score, onRowClick, activeL
           </Badge>
         )}
       </div>
-      {data.length === 0 ? (
-        <p className="ec-divchart-empty">Nothing to show for this filter.</p>
-      ) : (
-        <div className="ec-divchart-bars">
-          {data.map((entry, i) => {
-            const isActive = entry.label === activeLabel;
-            const row = (
-              <>
-                <span className="ec-divchart-label">{entry.label}</span>
-                <div className="ec-divchart-track">
-                  <div
-                    className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
-                    style={{
-                      width: revealed ? `${entry.pct}%` : "0%",
-                      transitionDelay: `${i * 60}ms`,
-                    }}
-                  />
-                </div>
-                <span className="ec-divchart-pct">{entry.pct}%</span>
-              </>
-            );
-            return onRowClick ? (
-              <button
-                type="button"
-                key={entry.label}
-                className={`ec-divchart-row ec-divchart-row--clickable${isActive ? " is-active" : ""}`}
-                aria-pressed={isActive}
-                onClick={() => onRowClick(entry.label)}
-              >
-                {row}
-              </button>
-            ) : (
-              <div className="ec-divchart-row" key={entry.label}>
-                {row}
+      <div className="ec-divchart-bars">
+        {data.map((entry, i) => {
+          const isActive = entry.label === activeLabel;
+          const row = (
+            <>
+              <span className="ec-divchart-label" title={entry.label}>
+                {entry.label}
+              </span>
+              <div className="ec-divchart-track">
+                <div
+                  className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
+                  style={{
+                    width: revealed ? `${entry.pct}%` : "0%",
+                    transitionDelay: `${i * 60}ms`,
+                  }}
+                />
               </div>
-            );
-          })}
-        </div>
-      )}
+              <span className="ec-divchart-pct">{entry.pct}%</span>
+            </>
+          );
+          return onRowClick ? (
+            <button
+              type="button"
+              key={entry.label}
+              className={`ec-divchart-row ec-divchart-row--clickable${isActive ? " is-active" : ""}`}
+              aria-pressed={isActive}
+              onClick={() => onRowClick(entry.label)}
+            >
+              {row}
+            </button>
+          ) : (
+            <div className="ec-divchart-row" key={entry.label}>
+              {row}
+            </div>
+          );
+        })}
+      </div>
       {caption && <p className="ec-chart-caption">{caption}</p>}
     </Card>
   );

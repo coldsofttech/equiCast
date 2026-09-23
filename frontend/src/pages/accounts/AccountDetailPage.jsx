@@ -177,6 +177,7 @@ function AccountDetailPage() {
       .then((holding) => {
         setAccount((current) => ({ ...current, holdings: [...(current.holdings ?? []), holding] }));
         patchCachedAccount((a) => ({ ...a, holdings: [...(a.holdings ?? []), holding] }));
+        setIsAddHoldingOpen(false);
       })
       .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
   };
@@ -232,25 +233,29 @@ function AccountDetailPage() {
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
-  const { sectorData, industryData, sectorScore } = buildDiversification(
-    allHoldings,
-    holdingValuations
-  );
-  const assetData = buildAssetAllocation(allHoldings, holdingValuations);
-  const marketCapData = buildMarketCapAllocation(allHoldings, holdingValuations);
-  // Only holdings actually held (shares > 0) feed the heatmap and gate the
-  // price chart below — a pie/account holding record with no shares yet (or
-  // fully sold down) has no real weight or price history of its own.
-  // Including it in the heatmap used to fall into HoldingsHeatmap's
-  // zero-total "evenly split" fallback, drawing a tile for it as if it were
-  // a genuine equal-weighted holding (GitHub issue #175); including it in
-  // `hasPiesOrHoldings` below let the price chart render with nothing to
-  // plot but its own "No price history to chart yet" caption instead of not
-  // rendering at all (GitHub issue #172).
+  // Only holdings actually held (shares > 0) feed the diversification
+  // charts and heatmap, and gate the price chart below — a pie/account
+  // holding record with no shares yet (or fully sold down) has no real
+  // weight or price history of its own. Including it in the heatmap used
+  // to fall into HoldingsHeatmap's zero-total "evenly split" fallback,
+  // drawing a tile for it as if it were a genuine equal-weighted holding
+  // (GitHub issue #175); including it in the diversification charts drew
+  // an all-"Other"/0%-weighted bar instead of hiding the chart. Including
+  // it in `hasPiesOrHoldings` below let the price chart render with
+  // nothing to plot but its own "No price history to chart yet" caption
+  // instead of not rendering at all (GitHub issue #172).
   const heldEntries = allHoldings
     .map((h, index) => ({ holding: h, valuation: holdingValuations[index] }))
     .filter(({ holding }) => Number(holding.no_of_shares) > 0);
   const hasHeldHoldings = heldEntries.length > 0;
+  const heldHoldings = heldEntries.map(({ holding }) => holding);
+  const heldValuations = heldEntries.map(({ valuation }) => valuation);
+  const { sectorData, industryData, sectorScore } = buildDiversification(
+    heldHoldings,
+    heldValuations
+  );
+  const assetData = buildAssetAllocation(heldHoldings, heldValuations);
+  const marketCapData = buildMarketCapAllocation(heldHoldings, heldValuations);
   const heatmapWeights = heldEntries.map(({ holding, valuation }) => ({
     ticker: holding.ticker,
     website: holding.website,
@@ -462,13 +467,15 @@ function AccountDetailPage() {
         </div>
       </div>
 
-      <div className="ec-divchart-grid">
-        <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
+      {hasHeldHoldings && (
+        <div className="ec-divchart-grid">
+          <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
 
-        <DiversificationChart title="Asset allocation" data={assetData} />
+          <DiversificationChart title="Asset allocation" data={assetData} />
 
-        <DiversificationChart title="Market cap allocation" data={marketCapData} />
-      </div>
+          <DiversificationChart title="Market cap allocation" data={marketCapData} />
+        </div>
+      )}
 
       <PieCagrSection holdings={allHoldings} valuations={holdingValuations} label="account" />
 

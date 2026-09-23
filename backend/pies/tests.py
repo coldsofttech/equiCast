@@ -433,6 +433,7 @@ class PieDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_pies.assert_not_called()
         mock_client.delete_pie.assert_not_called()
 
+    @patch("transactions.views._client")
     @patch("pies.views._transactions_client")
     @patch("pies.views._holdings_client")
     @patch("pies.views._client")
@@ -445,8 +446,10 @@ class PieDetailViewTests(TestCase):
         mock_client,
         mock_holdings_client,
         mock_transactions_client,
+        mock_reverse_allowance_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_reverse_allowance_client.list_transactions.return_value = []
         mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "pie_id": "pie-1"}]
 
         response = self.client.delete(

@@ -95,8 +95,7 @@ function toWeightedCells(weighted) {
  * `computeHoldingValuation`), so tile size reflects real weight in whatever
  * `label` names (e.g. "account" for every direct + pie-nested holding, or
  * "portfolio" for one pie's own holdings). An empty `weights` (no holdings
- * yet) renders an empty state instead of synthetic sample tickers, matching
- * DiversificationChart's "nothing to show" treatment.
+ * yet) renders nothing at all, rather than an empty-state card.
  */
 function HoldingsHeatmap({ weights = [], label = "portfolio" }) {
   const isEmpty = weights.length === 0;
@@ -124,43 +123,41 @@ function HoldingsHeatmap({ weights = [], label = "portfolio" }) {
   const layout = useMemo(() => squarify(cells, 0, 0, LAYOUT_W, LAYOUT_H), [cells]);
   const scale = containerWidth / LAYOUT_W;
 
+  if (isEmpty) return null;
+
   return (
     <Card className="ec-detail-section">
       <h3 className="ec-divchart-title">Holdings heatmap</h3>
 
-      {isEmpty ? (
-        <p className="ec-heatmap-empty">Nothing to show — this {label} has no holdings yet.</p>
-      ) : (
-        <div className="ec-heatmap" ref={containerRef}>
-          {layout.map((cell, i) => {
-            const tone = TILE_TONES[i % TILE_TONES.length];
-            const realW = cell.w * scale;
-            const realH = cell.h * scale;
-            const wideEnough = realW >= MIN_WIDTH_FOR_DETAIL;
-            const showPct = wideEnough && realH >= MIN_HEIGHT_FOR_PCT;
-            const showIcon = wideEnough && realH >= MIN_HEIGHT_FOR_ICON;
-            return (
-              <div
-                key={cell.ticker}
-                className="ec-heatmap-cell"
-                title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${label}`}
-                style={{
-                  left: `${(cell.x / LAYOUT_W) * 100}%`,
-                  top: `${(cell.y / LAYOUT_H) * 100}%`,
-                  width: `${(cell.w / LAYOUT_W) * 100}%`,
-                  height: `${(cell.h / LAYOUT_H) * 100}%`,
-                  background: tone.background,
-                  color: tone.color,
-                }}
-              >
-                {showIcon && <AssetIcon website={cell.website} size={20} />}
-                <span className="ec-heatmap-ticker">{cell.ticker}</span>
-                {showPct && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
-              </div>
-            );
-          })}
-        </div>
-      )}
+      <div className="ec-heatmap" ref={containerRef}>
+        {layout.map((cell, i) => {
+          const tone = TILE_TONES[i % TILE_TONES.length];
+          const realW = cell.w * scale;
+          const realH = cell.h * scale;
+          const wideEnough = realW >= MIN_WIDTH_FOR_DETAIL;
+          const showPct = wideEnough && realH >= MIN_HEIGHT_FOR_PCT;
+          const showIcon = wideEnough && realH >= MIN_HEIGHT_FOR_ICON;
+          return (
+            <div
+              key={cell.ticker}
+              className="ec-heatmap-cell"
+              title={`${cell.ticker} — ${cell.pct.toFixed(1)}% of the ${label}`}
+              style={{
+                left: `${(cell.x / LAYOUT_W) * 100}%`,
+                top: `${(cell.y / LAYOUT_H) * 100}%`,
+                width: `${(cell.w / LAYOUT_W) * 100}%`,
+                height: `${(cell.h / LAYOUT_H) * 100}%`,
+                background: tone.background,
+                color: tone.color,
+              }}
+            >
+              {showIcon && <AssetIcon website={cell.website} size={20} />}
+              <span className="ec-heatmap-ticker">{cell.ticker}</span>
+              {showPct && <span className="ec-heatmap-pct">{cell.pct.toFixed(1)}%</span>}
+            </div>
+          );
+        })}
+      </div>
     </Card>
   );
 }

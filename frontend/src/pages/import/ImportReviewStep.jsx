@@ -17,14 +17,15 @@ function targetKey(type, id) {
   return `${type}:${id}`;
 }
 
-function buildInitialSelection(group) {
+function buildInitialSelection(group, targets) {
   const firstExisting = group.existing_holdings[0];
+  const firstAccount = targets.find((target) => target.type === "account");
   return {
     include: group.resolved,
     ticker: group.ticker,
     assetClass: group.asset_class,
-    targetType: firstExisting ? "existing_holding" : "account",
-    targetId: firstExisting ? firstExisting.id : "",
+    targetType: firstExisting ? "existing_holding" : firstAccount ? "account" : "",
+    targetId: firstExisting ? firstExisting.id : firstAccount ? firstAccount.id : "",
     allocationPct: "",
   };
 }
@@ -57,13 +58,14 @@ function flattenNewHoldingTargets(accounts) {
  */
 function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) {
   const api = useApi();
+  const targets = flattenNewHoldingTargets(accounts);
   const [selections, setSelections] = useState(() =>
-    Object.fromEntries(preview.groups.map((group) => [group.ticker, buildInitialSelection(group)]))
+    Object.fromEntries(
+      preview.groups.map((group) => [group.ticker, buildInitialSelection(group, targets)])
+    )
   );
   const [error, setError] = useState(null);
   const [isCommitting, setIsCommitting] = useState(false);
-
-  const targets = flattenNewHoldingTargets(accounts);
 
   const updateSelection = (ticker, patch) => {
     setSelections((current) => ({ ...current, [ticker]: { ...current[ticker], ...patch } }));
@@ -96,6 +98,16 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
   const needsMappingGroups = sortedGroups.filter(
     (group) => !selections[group.ticker].assetClass
   );
+
+  const handleSelectAllReady = (include) => {
+    setSelections((current) => {
+      const next = { ...current };
+      for (const group of readyGroups) {
+        next[group.ticker] = { ...next[group.ticker], include };
+      }
+      return next;
+    });
+  };
 
   const handleCommit = () => {
     const payload = preview.groups
@@ -291,7 +303,27 @@ function ImportReviewStep({ preview, accounts, onBack, onCommitted, onCancel }) 
         {readyGroups.length === 0 ? (
           <p className="ec-loading">Nothing resolved yet — map a ticker below to include it.</p>
         ) : (
-          <div className="ec-import-groups">{readyGroups.map(renderGroupCard)}</div>
+          <>
+            <div className="ec-import-bulk-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => handleSelectAllReady(true)}
+                disabled={isCommitting}
+              >
+                Select all
+              </Button>
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => handleSelectAllReady(false)}
+                disabled={isCommitting}
+              >
+                Unselect all
+              </Button>
+            </div>
+            <div className="ec-import-groups">{readyGroups.map(renderGroupCard)}</div>
+          </>
         )}
       </details>
 

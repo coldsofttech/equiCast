@@ -64,6 +64,12 @@
   margin-top: var(--ec-s-12);
 }
 
+.ec-import-bulk-actions {
+  display: flex;
+  gap: var(--ec-s-8);
+  margin-top: var(--ec-s-12);
+}
+
 .ec-import-invalid-rows {
   margin: var(--ec-s-8) 0 0;
   padding-left: var(--ec-s-20);

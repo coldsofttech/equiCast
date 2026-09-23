@@ -212,19 +212,23 @@ function PieDetailPage() {
   }
 
   const holdingValuations = (pie.holdings ?? []).map((h) => computeHoldingValuation(h));
-  // Only holdings actually held (shares > 0) feed the heatmap and gate the
-  // price chart below — a pie holding record with no shares yet (or fully
-  // sold down) has no real weight or price history of its own. Including it
-  // in the heatmap used to fall into HoldingsHeatmap's zero-total "evenly
-  // split" fallback, drawing a tile for it as if it were a genuine
-  // equal-weighted holding (GitHub issue #175); rendering the price chart
-  // unconditionally let it render with nothing to plot but its own "No
-  // price history to chart yet" caption instead of not rendering at all
-  // (GitHub issue #172).
+  // Only holdings actually held (shares > 0) feed the diversification
+  // charts and heatmap, and gate the price chart below — a pie holding
+  // record with no shares yet (or fully sold down) has no real weight or
+  // price history of its own. Including it in the heatmap used to fall
+  // into HoldingsHeatmap's zero-total "evenly split" fallback, drawing a
+  // tile for it as if it were a genuine equal-weighted holding (GitHub
+  // issue #175); including it in the diversification charts drew an
+  // all-"Other"/0%-weighted bar instead of hiding the chart. Rendering the
+  // price chart unconditionally let it render with nothing to plot but its
+  // own "No price history to chart yet" caption instead of not rendering
+  // at all (GitHub issue #172).
   const heldEntries = (pie.holdings ?? [])
     .map((h, index) => ({ holding: h, valuation: holdingValuations[index] }))
     .filter(({ holding }) => Number(holding.no_of_shares) > 0);
   const hasHeldHoldings = heldEntries.length > 0;
+  const heldHoldings = heldEntries.map(({ holding }) => holding);
+  const heldValuations = heldEntries.map(({ valuation }) => valuation);
   const heatmapWeights = heldEntries.map(({ holding, valuation }) => ({
     ticker: holding.ticker,
     website: holding.website,
@@ -232,12 +236,9 @@ function PieDetailPage() {
   }));
   const totals = summarizeHoldingValuations(pie.holdings ?? [], holdingValuations);
   const totalsTone = plTone(totals.plPct);
-  const { sectorData, industryData, sectorScore } = buildDiversification(
-    pie.holdings ?? [],
-    holdingValuations
-  );
-  const assetData = buildAssetAllocation(pie.holdings ?? [], holdingValuations);
-  const marketCapData = buildMarketCapAllocation(pie.holdings ?? [], holdingValuations);
+  const { sectorData, industryData, sectorScore } = buildDiversification(heldHoldings, heldValuations);
+  const assetData = buildAssetAllocation(heldHoldings, heldValuations);
+  const marketCapData = buildMarketCapAllocation(heldHoldings, heldValuations);
   const syncedIso = minLastUpdated(pie.holdings ?? []);
   const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const accountName = accounts.find((a) => a.id === accountId)?.name;
@@ -405,13 +406,15 @@ function PieDetailPage() {
         </div>
       )}
 
-      <div className="ec-divchart-grid">
-        <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
+      {hasHeldHoldings && (
+        <div className="ec-divchart-grid">
+          <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
 
-        <DiversificationChart title="Asset allocation" data={assetData} />
+          <DiversificationChart title="Asset allocation" data={assetData} />
 
-        <DiversificationChart title="Market cap allocation" data={marketCapData} />
-      </div>
+          <DiversificationChart title="Market cap allocation" data={marketCapData} />
+        </div>
+      )}
 
       <PieCagrSection holdings={pie.holdings ?? []} valuations={holdingValuations} />
 
