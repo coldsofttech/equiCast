@@ -30,10 +30,6 @@
   grid-column: 1 / -1;
 }
 
-.ec-divchart-back {
-  margin-bottom: var(--ec-s-12);
-}
-
 .ec-divchart-title {
   font-size: var(--ec-fs-16);
   margin: 0;

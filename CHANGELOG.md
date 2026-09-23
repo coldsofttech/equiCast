@@ -114,6 +114,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Adding a holding now closes the drawer automatically once it's added.
 - Fixed a crash computing UK dividend tax for a second taxable dividend in the same tax year, which silently left it untaxed and out of the allowance count.
 - Deleting a holding, account, or pie that had taxed dividends recorded against it no longer leaves the UK dividend allowance permanently "used" for dividends that no longer exist.
+- The Holdings heatmap and Sector/Asset/Market cap diversification charts on an account's/pie's page no longer render when none of the holdings actually have shares.
+- Industry percentages in the Sector diversification drill-down now sum to 100% for the selected sector instead of that sector's overall share of the whole portfolio.
+- Truncated sector/industry names now show their full name as a tooltip on hover, and the "Back to sectors" button moved next to the diversification score badge.
 
 ## [1.0.5] - 2026-09-20
 

@@ -27,10 +27,26 @@ function scoreInfoFor(score) {
  * the caller) since nothing outside this chart depends on it. Reuses
  * DiversificationChart.css's row/bar styling and reveal-on-load animation.
  */
+// `industryData` entries carry `pct` of the *whole* portfolio, so a
+// straight filter by sector would sum to that sector's own overall share
+// (e.g. all of Technology's industries summing to 40.6%) instead of 100% —
+// re-derives each row's `pct` against the filtered subset's own total value
+// instead, the way a drill-down is expected to read.
+function rebaseToSector(entries) {
+  const total = entries.reduce((sum, entry) => sum + entry.value, 0);
+  if (total <= 0) return entries;
+  return entries.map((entry) => ({
+    ...entry,
+    pct: Math.round((entry.value / total) * 1000) / 10,
+  }));
+}
+
 function SectorIndustryChart({ sectorData, industryData, sectorScore }) {
   const [selectedSector, setSelectedSector] = useState(null);
   const isIndustryView = selectedSector !== null;
-  const data = isIndustryView ? industryData.filter((entry) => entry.sector === selectedSector) : sectorData;
+  const data = isIndustryView
+    ? rebaseToSector(industryData.filter((entry) => entry.sector === selectedSector))
+    : sectorData;
   const scoreInfo = !isIndustryView && typeof sectorScore === "number" ? scoreInfoFor(sectorScore) : null;
   const signature = data.map((entry) => `${entry.label}:${entry.pct}`).join("|");
   const [revealed, setRevealed] = useState(false);
@@ -40,6 +56,8 @@ function SectorIndustryChart({ sectorData, industryData, sectorScore }) {
     const frame = requestAnimationFrame(() => setRevealed(true));
     return () => cancelAnimationFrame(frame);
   }, [signature]);
+
+  if (!isIndustryView && data.length === 0) return null;
 
   return (
     <Card className="ec-divchart ec-divchart-full ec-detail-section">
@@ -52,19 +70,18 @@ function SectorIndustryChart({ sectorData, industryData, sectorScore }) {
             {sectorScore}/100 · {scoreInfo.label}
           </Badge>
         )}
+        {isIndustryView && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ec-divchart-back"
+            onClick={() => setSelectedSector(null)}
+          >
+            <i className="bi bi-arrow-left" aria-hidden="true" />
+            Back to sectors
+          </Button>
+        )}
       </div>
-
-      {isIndustryView && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="ec-divchart-back"
-          onClick={() => setSelectedSector(null)}
-        >
-          <i className="bi bi-arrow-left" aria-hidden="true" />
-          Back to sectors
-        </Button>
-      )}
 
       {data.length === 0 ? (
         <p className="ec-divchart-empty">Nothing to show for this filter.</p>
@@ -73,7 +90,9 @@ function SectorIndustryChart({ sectorData, industryData, sectorScore }) {
           {data.map((entry, i) => {
             const row = (
               <>
-                <span className="ec-divchart-label">{entry.label}</span>
+                <span className="ec-divchart-label" title={entry.label}>
+                  {entry.label}
+                </span>
                 <div className="ec-divchart-track">
                   <div
                     className={`ec-divchart-fill ec-divchart-fill--${BAR_TONES[i % BAR_TONES.length]}`}
