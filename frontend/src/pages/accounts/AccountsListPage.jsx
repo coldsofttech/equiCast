@@ -136,6 +136,7 @@ function AccountsListPage() {
               <tr>
                 <th>Name</th>
                 <th>Type</th>
+                <th>Vendor</th>
                 <th>Pies</th>
                 <th aria-label="Actions" />
               </tr>
@@ -155,6 +156,7 @@ function AccountsListPage() {
                   <td>
                     <Badge tone="accent">{account.account_type}</Badge>
                   </td>
+                  <td>{account.vendor && <Badge tone="neutral">{account.vendor}</Badge>}</td>
                   <td>{(account.pies ?? []).length}</td>
                   <td>
                     <div className="ec-table-actions">

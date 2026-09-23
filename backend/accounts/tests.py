@@ -211,6 +211,31 @@ class AccountListViewTests(TestCase):
         self.assertEqual(response.status_code, 201)
         mock_client.create_account.assert_called_once_with("auth0|abc123", **create_fields)
 
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_post_passes_vendor_through_when_given(
+        self, mock_jwks_client, mock_decode, mock_client
+    ) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        mock_client.create_account.return_value = {**ACCOUNT, "vendor": "Trading212"}
+
+        create_fields = {
+            "name": "ISA",
+            "description": "Stocks & shares ISA",
+            "account_type": "ISA",
+            "vendor": "Trading212",
+        }
+        response = self.client.post(
+            reverse("accounts-list"),
+            data=create_fields,
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 201)
+        mock_client.create_account.assert_called_once_with("auth0|abc123", **create_fields)
+
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_post_returns_400_when_a_required_field_is_missing(
@@ -429,6 +454,26 @@ class AccountDetailViewTests(TestCase):
         self.assertEqual(response.status_code, 200)
         mock_client.update_account.assert_called_once_with("auth0|abc123", "acc-1", icon="bank2")
 
+    @patch("accounts.views._client")
+    @patch("identity.authentication.jwt.decode")
+    @patch("identity.authentication._jwks_client")
+    def test_patch_updates_the_vendor(self, mock_jwks_client, mock_decode, mock_client) -> None:
+        _authenticate(mock_jwks_client, mock_decode)
+        updated = {**ACCOUNT, "vendor": "Trading212"}
+        mock_client.update_account.return_value = updated
+
+        response = self.client.patch(
+            reverse("accounts-detail", args=["acc-1"]),
+            data={"vendor": "Trading212"},
+            content_type="application/json",
+            **AUTH_HEADER,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        mock_client.update_account.assert_called_once_with(
+            "auth0|abc123", "acc-1", vendor="Trading212"
+        )
+
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_patch_returns_400_for_unknown_account_type(
@@ -541,6 +586,7 @@ class AccountDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_not_called()
 
+    @patch("transactions.views._client")
     @patch("accounts.views._transactions_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
@@ -555,8 +601,10 @@ class AccountDetailViewTests(TestCase):
         mock_pies_client,
         mock_holdings_client,
         mock_transactions_client,
+        mock_reverse_allowance_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_reverse_allowance_client.list_transactions.return_value = []
         mock_pies_client.list_pies.return_value = [{"id": "pie-1", "account_id": "acc-1"}]
 
         def list_holdings(user_id, account_id=None):
@@ -581,6 +629,7 @@ class AccountDetailViewTests(TestCase):
         mock_holdings_client.delete_holdings_for_account.assert_not_called()
         mock_client.delete_account.assert_called_once_with("auth0|abc123", "acc-1")
 
+    @patch("transactions.views._client")
     @patch("accounts.views._transactions_client")
     @patch("accounts.views._holdings_client")
     @patch("accounts.views._pies_client")
@@ -595,8 +644,10 @@ class AccountDetailViewTests(TestCase):
         mock_pies_client,
         mock_holdings_client,
         mock_transactions_client,
+        mock_reverse_allowance_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_reverse_allowance_client.list_transactions.return_value = []
         mock_pies_client.list_pies.return_value = []
         mock_holdings_client.list_holdings.return_value = [{"id": "h-1", "account_id": "acc-1"}]
 

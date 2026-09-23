@@ -2,14 +2,21 @@ name: Terraform
 
 on:
   push:
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - apply-dev below runs for these too;
+    # apply-prod stays main-only regardless (see its own if: condition).
+    branches: [main, "dev/**"]
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
+      - ".github/actions/configure-aws/**"
+      - ".github/actions/terraform-apply/**"
   pull_request:
     paths:
       - "infra/**"
       - ".github/workflows/terraform.yml"
+      - ".github/actions/configure-aws/**"
+      - ".github/actions/terraform-apply/**"
 
 # A run waiting on development/production's required-reviewer approval
 # doesn't get superseded on its own — an older push's apply-dev can sit
@@ -53,7 +60,7 @@ jobs:
         with:
           api-key: ${{ secrets.INFRACOST_API_KEY }}
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.base.ref }}
 
@@ -67,7 +74,7 @@ jobs:
             infracost breakdown --config-file=infracost.yml --format=json --out-file=/tmp/infracost-base.json
           fi
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Generate Infracost diff (this PR vs base)
         run: |
@@ -126,9 +133,9 @@ jobs:
       run:
         working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
       # -recursive also fmt-checks infra/user-data — a separate root
       # module (its own state, see that directory's backend.tf), not a
@@ -145,10 +152,11 @@ jobs:
       # -backend=false above was only for fmt/validate, which don't touch
       # state. plan previews against dev's state (read-only, no var passed
       # means it'd otherwise default to dev anyway, but be explicit).
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - run: terraform init -reconfigure -backend-config="key=equicast/dev/terraform.tfstate"
       - run: terraform plan -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }}
@@ -165,37 +173,55 @@ jobs:
   # PR could apply an unreviewed change straight to dev on its own.
   apply-dev:
     needs: plan
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # equicast-support#185: a dev/vX.Y push applies to the shared dev
+    # environment too, same as main - apply-prod below stays main-only
+    # regardless, so dev/** can never reach production from here.
+    if: (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/dev/')) && github.event_name == 'push'
     runs-on: ubuntu-latest
     environment: development
     permissions:
       id-token: write
       contents: read
-    defaults:
-      run:
-        working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - run: terraform init -backend-config="key=equicast/dev/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=dev -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
-
-      - run: terraform init -backend-config="key=equicast/dev/user-data-terraform.tfstate"
-        working-directory: infra/user-data
-      - run: terraform apply -auto-approve -input=false -var environment=dev
-        working-directory: infra/user-data
+      - name: Terraform apply
+        uses: ./.github/actions/terraform-apply
+        with:
+          environment: dev
+          auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
+          support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          support-repo: ${{ vars.SUPPORT_REPO }}
+          support-rate-limit-per-minute: ${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }}
+          max-accounts: ${{ vars.MAX_ACCOUNTS }}
+          max-pies: ${{ vars.MAX_PIES }}
+          max-watchlists: ${{ vars.MAX_WATCHLISTS }}
+          max-holdings-for-account: ${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }}
+          max-holdings-for-pie: ${{ vars.MAX_HOLDINGS_FOR_PIE }}
+          max-holdings-for-watchlist: ${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }}
+          max-transactions-for-holding: ${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }}
+          api-rate-limit-per-minute: ${{ vars.API_RATE_LIMIT_PER_MINUTE }}
+          market-data-cache-ttl-seconds: ${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
 
   # Gated behind the "production" GitHub Environment's required reviewers
   # (Settings -> Environments -> production) — a separate approval from
   # apply-dev's, since promoting to prod is a distinct decision from
-  # applying to dev even though both now require sign-off.
+  # applying to dev even though both now require sign-off. Deliberately
+  # stays main-only (equicast-support#185) - unlike apply-dev above, a
+  # dev/vX.Y push must never be able to reach production, even behind
+  # approval.
   apply-prod:
     needs: apply-dev
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -204,23 +230,35 @@ jobs:
     permissions:
       id-token: write
       contents: read
-    defaults:
-      run:
-        working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
-      - run: terraform init -backend-config="key=equicast/prod/terraform.tfstate"
-      - run: terraform apply -auto-approve -input=false -var environment=prod -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
-
-      - run: terraform init -backend-config="key=equicast/prod/user-data-terraform.tfstate"
-        working-directory: infra/user-data
-      - run: terraform apply -auto-approve -input=false -var environment=prod
-        working-directory: infra/user-data
+      - name: Terraform apply
+        uses: ./.github/actions/terraform-apply
+        with:
+          environment: prod
+          auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
+          support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          support-repo: ${{ vars.SUPPORT_REPO }}
+          support-rate-limit-per-minute: ${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }}
+          max-accounts: ${{ vars.MAX_ACCOUNTS }}
+          max-pies: ${{ vars.MAX_PIES }}
+          max-watchlists: ${{ vars.MAX_WATCHLISTS }}
+          max-holdings-for-account: ${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }}
+          max-holdings-for-pie: ${{ vars.MAX_HOLDINGS_FOR_PIE }}
+          max-holdings-for-watchlist: ${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }}
+          max-transactions-for-holding: ${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }}
+          api-rate-limit-per-minute: ${{ vars.API_RATE_LIMIT_PER_MINUTE }}
+          market-data-cache-ttl-seconds: ${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}

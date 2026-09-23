@@ -78,8 +78,13 @@ export function buildDiversification(holdings, valuations) {
   const sectorData = [...sectorTotals.entries()]
     .map(([label, value]) => ({ label, pct: toPct(value) }))
     .sort((a, b) => b.pct - a.pct);
+  // `value` (raw currentValue, not just `pct`) is kept on each industry row
+  // so the Sector→Industry drill-down (SectorIndustryChart) can re-base
+  // percentages to the selected sector's own total instead of the whole
+  // portfolio's — industries within one sector should sum to 100% of that
+  // sector, not to that sector's own share of the whole portfolio.
   const industryData = [...industryTotals.entries()]
-    .map(([label, { value, sector }]) => ({ label, sector, pct: toPct(value) }))
+    .map(([label, { value, sector }]) => ({ label, sector, value, pct: toPct(value) }))
     .sort((a, b) => b.pct - a.pct);
   const sectorScore = sectorData.length > 0 ? Math.round(100 - sectorData[0].pct) : null;
 

@@ -15,6 +15,7 @@ import StatTile from "../../components/core/StatTile.jsx";
 import Skeleton from "../../components/core/Skeleton.jsx";
 import AccountForm from "./AccountForm.jsx";
 import DiversificationChart from "./DiversificationChart.jsx";
+import SectorIndustryChart from "./SectorIndustryChart.jsx";
 import HoldingsHeatmap from "./HoldingsHeatmap.jsx";
 import CreatePortfolioDrawer from "./CreatePortfolioDrawer.jsx";
 import AccountDetailSkeleton from "./AccountDetailSkeleton.jsx";
@@ -63,8 +64,6 @@ function AccountDetailPage() {
   const [account, setAccount] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState(null);
-
-  const [selectedSector, setSelectedSector] = useState(null);
 
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -115,7 +114,7 @@ function AccountDetailPage() {
       .finally(() => setIsSaving(false));
   };
 
-  const needsForce = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
+  const hasPiesOrHoldings = account && ((account.pies?.length ?? 0) > 0 || (account.holdings?.length ?? 0) > 0);
 
   // Memoized (not just derived inline below) so its reference stays stable
   // across re-renders that don't actually change `account` — PieCagrSection
@@ -154,7 +153,7 @@ function AccountDetailPage() {
   const handleDelete = () => {
     setIsDeleting(true);
     setDeleteError(null);
-    deleteAccount(api, accountId, { force: needsForce })
+    deleteAccount(api, accountId, { force: hasPiesOrHoldings })
       .then(() => {
         setCachedAccounts((current) => current.filter((a) => a.id !== accountId));
         navigate("/accounts");
@@ -178,6 +177,7 @@ function AccountDetailPage() {
       .then((holding) => {
         setAccount((current) => ({ ...current, holdings: [...(current.holdings ?? []), holding] }));
         patchCachedAccount((a) => ({ ...a, holdings: [...(a.holdings ?? []), holding] }));
+        setIsAddHoldingOpen(false);
       })
       .catch((err) => setAddHoldingError(err.message ?? "Couldn't add the holding."));
   };
@@ -216,21 +216,50 @@ function AccountDetailPage() {
 
   const directHoldings = account.holdings ?? [];
   const currency = userProfile?.default_currency ?? FALLBACK_CURRENCY;
+  // Portfolios and holdings are both shown ranked by current value, highest
+  // first (GitHub issue #193) — valuations are computed here so they're sorted
+  // once rather than recomputed (and re-sorted) inside each row's own render.
+  const sortedPies = (account.pies ?? [])
+    .map((pie) => {
+      const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
+      return { pie, pieTotals: summarizeHoldingValuations(pie.holdings ?? [], pieValuations) };
+    })
+    .sort((a, b) => b.pieTotals.currentValue - a.pieTotals.currentValue);
+  const sortedHoldings = directHoldings
+    .map((holding) => ({ holding, valuation: computeHoldingValuation(holding) }))
+    .sort((a, b) => b.valuation.currentValue - a.valuation.currentValue);
   const syncedIso = minLastUpdated(allHoldings);
   const syncedDate = syncedIso && formatSyncedDate(syncedIso);
   const holdingValuations = allHoldings.map(computeHoldingValuation);
   const totals = summarizeHoldingValuations(allHoldings, holdingValuations);
   const totalsTone = plTone(totals.plPct);
+  // Only holdings actually held (shares > 0) feed the diversification
+  // charts and heatmap, and gate the price chart below — a pie/account
+  // holding record with no shares yet (or fully sold down) has no real
+  // weight or price history of its own. Including it in the heatmap used
+  // to fall into HoldingsHeatmap's zero-total "evenly split" fallback,
+  // drawing a tile for it as if it were a genuine equal-weighted holding
+  // (GitHub issue #175); including it in the diversification charts drew
+  // an all-"Other"/0%-weighted bar instead of hiding the chart. Including
+  // it in `hasPiesOrHoldings` below let the price chart render with
+  // nothing to plot but its own "No price history to chart yet" caption
+  // instead of not rendering at all (GitHub issue #172).
+  const heldEntries = allHoldings
+    .map((h, index) => ({ holding: h, valuation: holdingValuations[index] }))
+    .filter(({ holding }) => Number(holding.no_of_shares) > 0);
+  const hasHeldHoldings = heldEntries.length > 0;
+  const heldHoldings = heldEntries.map(({ holding }) => holding);
+  const heldValuations = heldEntries.map(({ valuation }) => valuation);
   const { sectorData, industryData, sectorScore } = buildDiversification(
-    allHoldings,
-    holdingValuations
+    heldHoldings,
+    heldValuations
   );
-  const assetData = buildAssetAllocation(allHoldings, holdingValuations);
-  const marketCapData = buildMarketCapAllocation(allHoldings, holdingValuations);
-  const heatmapWeights = allHoldings.map((h, index) => ({
-    ticker: h.ticker,
-    website: h.website,
-    value: holdingValuations[index].currentValue,
+  const assetData = buildAssetAllocation(heldHoldings, heldValuations);
+  const marketCapData = buildMarketCapAllocation(heldHoldings, heldValuations);
+  const heatmapWeights = heldEntries.map(({ holding, valuation }) => ({
+    ticker: holding.ticker,
+    website: holding.website,
+    value: valuation.currentValue,
   }));
 
   return (
@@ -243,6 +272,7 @@ function AccountDetailPage() {
       titleBadges={
         <>
           <Badge tone="accent">{account.account_type}</Badge>
+          {account.vendor && <Badge tone="neutral">{account.vendor}</Badge>}
           {syncedDate && <Badge tone={MARKET_PROFILE_BADGE_TONES.synced}>Synced: {syncedDate}</Badge>}
         </>
       }
@@ -286,16 +316,18 @@ function AccountDetailPage() {
         />
       </div>
 
-      <PiePriceChart
-        holdings={allHoldings}
-        currency={currency}
-        entityLabel="account"
-        compareItems={compareItems}
-        compareItemType="account"
-        fetchCompareHoldings={fetchCompareHoldings}
-        investedTotal={totals.invested}
-        holdingValuations={holdingValuations}
-      />
+      {hasHeldHoldings && (
+        <PiePriceChart
+          holdings={allHoldings}
+          currency={currency}
+          entityLabel="account"
+          compareItems={compareItems}
+          compareItemType="account"
+          fetchCompareHoldings={fetchCompareHoldings}
+          investedTotal={totals.invested}
+          holdingValuations={holdingValuations}
+        />
+      )}
 
       <div className="ec-account-columns">
         <div>
@@ -319,9 +351,7 @@ function AccountDetailPage() {
             />
           ) : (
             <div className="ec-detail-row-list">
-              {account.pies.map((pie) => {
-                const pieValuations = (pie.holdings ?? []).map(computeHoldingValuation);
-                const pieTotals = summarizeHoldingValuations(pie.holdings ?? [], pieValuations);
+              {sortedPies.map(({ pie, pieTotals }) => {
                 const tone = plTone(pieTotals.plPct);
                 const plSign = pieTotals.plValue >= 0 ? "+" : "-";
                 return (
@@ -386,8 +416,7 @@ function AccountDetailPage() {
             />
           ) : (
             <div className="ec-detail-row-list">
-              {directHoldings.map((holding) => {
-                const valuation = computeHoldingValuation(holding);
+              {sortedHoldings.map(({ holding, valuation }) => {
                 const tone = plTone(valuation.plPct);
                 const plSign = valuation.plValue >= 0 ? "+" : "-";
                 return (
@@ -438,27 +467,15 @@ function AccountDetailPage() {
         </div>
       </div>
 
-      <div className="ec-divchart-grid">
-        <DiversificationChart
-          title="Sector diversification"
-          score={sectorScore ?? undefined}
-          data={sectorData}
-          caption="Click a sector to filter industries below; click it again to show all."
-          activeLabel={selectedSector}
-          onRowClick={(label) => setSelectedSector((current) => (current === label ? null : label))}
-        />
+      {hasHeldHoldings && (
+        <div className="ec-divchart-grid">
+          <SectorIndustryChart sectorData={sectorData} industryData={industryData} sectorScore={sectorScore} />
 
-        <DiversificationChart
-          title={selectedSector ? `Industry diversification — ${selectedSector}` : "Industry diversification"}
-          data={
-            selectedSector ? industryData.filter((i) => i.sector === selectedSector) : industryData
-          }
-        />
+          <DiversificationChart title="Asset allocation" data={assetData} />
 
-        <DiversificationChart title="Asset allocation" data={assetData} />
-
-        <DiversificationChart title="Market cap allocation" data={marketCapData} />
-      </div>
+          <DiversificationChart title="Market cap allocation" data={marketCapData} />
+        </div>
+      )}
 
       <PieCagrSection holdings={allHoldings} valuations={holdingValuations} label="account" />
 
@@ -468,7 +485,7 @@ function AccountDetailPage() {
         <div className="ec-danger-zone-text">
           <h3 className="ec-danger-zone-title">Delete this account</h3>
           <p className="ec-danger-zone-desc">
-            {needsForce
+            {hasPiesOrHoldings
               ? "This account still has pies and/or holdings. Deleting it will also delete all of them, along with any recorded transactions. This action is permanent and cannot be undone."
               : "This will permanently delete the account. This action is permanent and cannot be undone."}
           </p>
@@ -525,7 +542,7 @@ function AccountDetailPage() {
         open={isDeleteOpen}
         title="Delete account"
         message={
-          needsForce
+          hasPiesOrHoldings
             ? "This account still has pies and/or holdings. Deleting it will also delete all of them, along with any recorded transactions. This can't be undone."
             : "This will permanently delete the account. This can't be undone."
         }

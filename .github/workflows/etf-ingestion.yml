@@ -33,16 +33,16 @@ on:
         default: false
       chunk_size:
         description: "Target ETF tickers per parallel chunk"
-        default: "300"
+        default: "20"
       tickers:
         description: "Optional: restrict this run to specific tickers, separated by ; (e.g. VOO;VUSA.L). Leave blank to run against every configured ticker."
         default: ""
       max_workers:
         description: "Concurrent fetches within each container"
-        default: "5"
+        default: "8"
       max_calls:
         description: "Max yfinance calls per period-seconds, per container"
-        default: "5"
+        default: "8"
       period_seconds:
         description: "Rate-limit window in seconds, per container"
         default: "1.0"
@@ -75,11 +75,12 @@ jobs:
       run_ingest: ${{ steps.env.outputs.run_ingest }}
       run_forecasting: ${{ steps.env.outputs.run_forecasting }}
       targeted: ${{ steps.env.outputs.targeted }}
+      image_tag: ${{ steps.env.outputs.image_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -146,13 +147,25 @@ jobs:
             echo "targeted=false" >> "$GITHUB_OUTPUT"
           fi
 
+          # equicast-support#185: dev/vX.Y branches (see images.yml's
+          # build-push-image composite action) push a :dev tag rather than
+          # overwriting :latest - this run pulls whichever one matches the
+          # branch it's actually running from, so a dev/v1.1 run tests
+          # dev/v1.1's own image rather than silently falling back to
+          # main's.
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            echo "image_tag=latest" >> "$GITHUB_OUTPUT"
+          else
+            echo "image_tag=dev" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Compute ETF ticker chunks
         id: plan
         working-directory: packages/etf
         run: |
           CHUNKS=$(uv run equicast-etf-plan \
             --config "${{ steps.env.outputs.config }}" \
-            --chunk-size "${{ github.event.inputs.chunk_size || '300' }}" \
+            --chunk-size "${{ github.event.inputs.chunk_size || '20' }}" \
             --max-chunks 256 \
             --tickers "${{ github.event.inputs.tickers || '' }}")
           echo "chunks=$CHUNKS" >> "$GITHUB_OUTPUT"
@@ -176,8 +189,15 @@ jobs:
       matrix:
         chunk: ${{ fromJson(needs.plan.outputs.chunks) }}
     steps:
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below - a
+      # local composite action can't be resolved without the repo checked
+      # out first (see build-push-image for the same constraint). Not
+      # needed for anything else in this job - the docker/AWS CLI steps
+      # below don't read repo source.
+      - uses: actions/checkout@v7
+
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -188,24 +208,24 @@ jobs:
 
       - name: Pull equicast-etf image
         if: needs.plan.outputs.run_ingest == 'true'
-        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-etf:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ needs.plan.outputs.image_tag }}
 
       - name: Extract this chunk's ETF ticker profiles and prices
         if: needs.plan.outputs.run_ingest == 'true'
         run: |
           docker run --rm \
             -v "${PWD}/output:/output" \
-            ghcr.io/${{ github.repository_owner }}/equicast-etf:latest \
+            ghcr.io/${{ github.repository_owner }}/equicast-etf:${{ needs.plan.outputs.image_tag }} \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             ${{ github.event.inputs.full_load == 'true' && '--full-load' || '' }} \
-            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
-            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --max-workers "${{ github.event.inputs.max_workers || '8' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '8' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
       - name: Pull equicast-forecasting image
         if: needs.plan.outputs.run_forecasting == 'true'
-        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest
+        run: docker pull ghcr.io/${{ github.repository_owner }}/equicast-forecasting:${{ needs.plan.outputs.image_tag }}
 
       # Independent of the equicast-etf step above — its own DividendsClient
       # fetch, not a read-back of dividend.parquet — but writes into the same
@@ -216,20 +236,36 @@ jobs:
         run: |
           docker run --rm \
             -v "${PWD}/output:/output" \
-            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:latest \
+            ghcr.io/${{ github.repository_owner }}/equicast-forecasting:${{ needs.plan.outputs.image_tag }} \
             --asset-class etf \
             --tickers-json '${{ toJson(matrix.chunk) }}' \
             --out /output \
             --years "${{ github.event.inputs.forecast_years || '10' }}" \
-            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
-            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --max-workers "${{ github.event.inputs.max_workers || '8' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '8' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      # Moved out of output/ before the S3 upload below so this chunk's
+      # failures.json (if any - see equicast_etf.writer.write_failures_manifest,
+      # written whenever a ticker's task fails; GitHub issue equicast-support#145)
+      # never lands in S3 alongside the Hive-partitioned etf=*/... data.
+      # Renamed with this leg's matrix index so multiple chunks' failures.json
+      # - each written to the same relative path inside its own chunk's
+      # output/ - don't collide once report-status downloads every chunk's
+      # artifact into one shared directory (see merge_failures.py).
+      - name: Set aside this chunk's failures manifest, if any
+        if: needs.plan.outputs.run_ingest == 'true'
+        run: |
+          mkdir -p chunk-failures
+          if [ -f output/failures.json ]; then
+            mv output/failures.json "chunk-failures/failures-${{ strategy.job-index }}.json"
+          fi
 
       - name: Upload ETF profiles, prices, and forecasts to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
@@ -239,13 +275,18 @@ jobs:
       # a matrix leg only ever sees its own chunk. Short retention: this
       # artifact only exists to hand off within this run, not for later
       # reference (see equicast_core.catalog's module docstring for why the
-      # catalog can't be built inside this per-chunk job at all).
+      # catalog can't be built inside this per-chunk job at all). Also
+      # carries this chunk's failures-<index>.json (see above), if any -
+      # report-status's failures merge step below needs every chunk's, the
+      # same way build-catalog needs every chunk's profile.parquet.
       - name: Publish this chunk's profiles for the catalog build
         if: needs.plan.outputs.run_ingest == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: etf-profiles-${{ strategy.job-index }}
-          path: output/etf=*/profile.parquet
+          path: |
+            output/etf=*/profile.parquet
+            chunk-failures/failures-*.json
           retention-days: 1
 
   # Rebuilds catalog/etf.parquet (see equicast_core.catalog) from every
@@ -273,25 +314,25 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Download every chunk's profiles
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: etf-profiles-*
           path: output
           merge-multiple: true
 
       - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Build and upload the ETF search catalog
         working-directory: packages/core
@@ -330,3 +371,107 @@ jobs:
             "ETF" \
             "packages/etf/config/etfs.prod.yaml" \
             "${{ steps.missing_isin.outputs.tickers }}"
+
+      # equicast-support#164: every currency an ETF holding is priced in must
+      # convert both to and from every currency the UI offers
+      # (frontend/src/config/currencies.json) - one equicast-support issue
+      # per directed pair missing from this run's environment's
+      # fx_pairs.<env>.yaml (see equicast_fx.missing_pairs and
+      # sync-missing-fx-pair-issues.sh). Each issue is labelled with that
+      # same environment ("production"/"development", matching the support
+      # form's labels), since equicast-support's config-change automation
+      # picks which fx_pairs file to edit from it.
+      - name: Resolve FX config and environment label
+        id: fx_env
+        run: |
+          if [ "${{ needs.plan.outputs.environment }}" = "production" ]; then
+            echo "config=packages/fx/config/fx_pairs.prod.yaml" >> "$GITHUB_OUTPUT"
+            echo "label=production" >> "$GITHUB_OUTPUT"
+          else
+            echo "config=packages/fx/config/fx_pairs.dev.yaml" >> "$GITHUB_OUTPUT"
+            echo "label=development" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Find FX pairs missing for holding currencies
+        run: |
+          uv run --directory packages/fx equicast-fx-find-missing-pairs \
+            --catalog "${{ github.workspace }}/catalog.parquet" \
+            --fx-config "${{ github.workspace }}/${{ steps.fx_env.outputs.config }}" \
+            --ui-currencies "${{ github.workspace }}/frontend/src/config/currencies.json" \
+            > missing-fx-pairs.json
+
+      - name: Sync missing FX pair issues
+        env:
+          GH_TOKEN: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+        run: |
+          bash .github/scripts/sync-missing-fx-pair-issues.sh \
+            "${{ vars.SUPPORT_REPO }}" \
+            "${{ steps.fx_env.outputs.label }}" \
+            "ETF" \
+            "${{ steps.fx_env.outputs.config }}" \
+            missing-fx-pairs.json
+
+  # GitHub issue equicast-support#145: previously a failed run here was only
+  # visible via the red X on the Actions tab. Reports pipeline health to
+  # equicast-support (reusing the missing-ISIN sync's
+  # SUPPORT_ISSUE_TOKEN/SUPPORT_REPO pattern above) - a single rolling issue
+  # for overall job/infra health (see sync-pipeline-failure-issue.sh), plus
+  # one native sub-issue per ticker whose own data extraction is currently
+  # failing (see sync-pipeline-failure-subissues.sh; a per-ticker failure no
+  # longer fails the whole chunk - see equicast_etf.cli.run()). Runs
+  # regardless of whether plan/ingest/build-catalog succeeded, failed, or
+  # were skipped, so it can both report a new failure and auto-close a
+  # previously-reported one once a run succeeds again.
+  report-status:
+    needs: [plan, ingest, build-catalog]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sync pipeline status
+        uses: ./.github/actions/sync-pipeline-status
+        with:
+          pipeline-label: ETF
+          artifact-prefix: etf-profiles-
+          plan-result: ${{ needs.plan.result }}
+          ingest-result: ${{ needs.ingest.result }}
+          build-catalog-result: ${{ needs.build-catalog.result }}
+          targeted: ${{ needs.plan.outputs.targeted }}
+          run-ingest: ${{ needs.plan.outputs.run_ingest }}
+          support-repo: ${{ vars.SUPPORT_REPO }}
+          support-issue-token: ${{ secrets.SUPPORT_ISSUE_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+  # GitHub issue equicast-support#169: etf-profiles-*'s per-chunk
+  # profile.parquet is only ever needed to hand off to build-catalog above
+  # (and, alongside it, each chunk's failures-<index>.json to report-status
+  # - see that job's own comments) within this one run - not for later
+  # reference. Deletes it once both are done rather than relying on
+  # retention-days: 1 to eventually reclaim it, so a run's artifacts list
+  # doesn't sit around holding already-consumed per-chunk data.
+  # needs.build-catalog.result == 'success' (guarded with always() so
+  # report-status's own result doesn't matter here) rather than the
+  # default "both needs succeeded" - the catalog must have actually built
+  # and pushed to S3 first, matching the issue's own wording, but
+  # report-status runs via if: always() and can legitimately end in any
+  # state once it's had its chance to read the artifacts.
+  cleanup-profile-artifacts:
+    needs: [build-catalog, report-status]
+    if: always() && needs.build-catalog.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      # Needed to resolve `uses: ./.github/actions/cleanup-artifacts` below
+      # - see cleanup-artifacts's own header comment for why.
+      - uses: actions/checkout@v7
+
+      - name: Delete per-chunk profile artifacts
+        uses: ./.github/actions/cleanup-artifacts
+        with:
+          artifact-prefix: etf-profiles-
+          github-token: ${{ secrets.GITHUB_TOKEN }}

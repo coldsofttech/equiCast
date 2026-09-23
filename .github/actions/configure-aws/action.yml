@@ -1,0 +1,33 @@
+name: Configure AWS credentials
+description: >
+  Assumes the AWS OIDC role and configures AWS credentials for the rest of
+  the job (GitHub issue equicast-support#187, follow-up to equicast-
+  support#151's workflow-generalisation proposal) - replaces the identical
+  aws-actions/configure-aws-credentials@v6 block duplicated 15 times across
+  the stock/etf/fx/benchmark-ingestion, deploy, terraform, and infra-
+  lifecycle workflows.
+
+  role-to-assume is passed in as an input since composite actions can't
+  read the calling workflow's secrets context directly (see build-push-
+  image's github.token comment for the same constraint). aws-region is
+  also passed in, but the 'eu-west-1' fallback now lives only here instead
+  of being repeated at every one of those call sites, where it could drift
+  out of sync.
+
+inputs:
+  role-to-assume:
+    description: 'ARN of the AWS IAM role to assume via OIDC.'
+    required: true
+  aws-region:
+    description: "AWS region to configure. Falls back to 'eu-west-1' if empty."
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - name: Configure AWS credentials via OIDC
+      uses: aws-actions/configure-aws-credentials@v6
+      with:
+        role-to-assume: ${{ inputs.role-to-assume }}
+        aws-region: ${{ inputs.aws-region || 'eu-west-1' }}

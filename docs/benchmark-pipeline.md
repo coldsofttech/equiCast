@@ -26,7 +26,7 @@ Parquet files (profile.parquet, price.parquet, metrics.parquet, news.parquet)
 GitHub Actions (benchmark-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/benchmark/Dockerfile` containerizes the CLI. `benchmark-image.yml`
+`packages/benchmark/Dockerfile` containerizes the CLI. `images.yml`
 builds and pushes it to GHCR as a **private** image
 (`ghcr.io/<owner>/equicast-benchmark`). The benchmark config isn't baked in
 as the only input — benchmarks can also be passed at runtime via
@@ -157,10 +157,12 @@ FX/stock/ETF.
 
 ## Publishing the image
 
-`benchmark-image.yml` builds and pushes `equicast-benchmark` to GHCR
-automatically on changes to `packages/datafeed/` or `packages/benchmark/`
-on `main`, or on demand via its `workflow_dispatch` trigger (Actions tab →
-*Build Benchmark Image* → *Run workflow*).
+`images.yml` builds and pushes `equicast-benchmark` to GHCR automatically
+on changes to `packages/datafeed/` or `packages/benchmark/` on `main` or a
+`dev/**` release branch (pushing `:dev` instead of `:latest` on the
+latter — see `.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `benchmark` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 
@@ -178,10 +180,10 @@ workflow*, any day) with these inputs:
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each benchmark's entire history (all years) instead of just the current year |
-| `chunk_size` | `300` | Target benchmarks per parallel chunk |
+| `chunk_size` | `20` | Target benchmarks per parallel chunk |
 | `tickers` | *(empty)* | Optional `;`-separated list of benchmark keys (e.g. `SP500;FTSE100`) to restrict this run to, instead of every benchmark in the config. When set, `build-catalog` merges this run's benchmarks into the existing catalog instead of replacing it outright |
-| `max_workers` | `5` | Concurrent fetches within each container |
-| `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
+| `max_workers` | `8` | Concurrent fetches within each container |
+| `max_calls` | `8` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
 The scheduled (cron) trigger always targets **production** — there's no

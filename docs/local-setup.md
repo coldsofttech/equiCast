@@ -347,13 +347,13 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 ## CI/CD workflows
 
 - `backend-ci.yml` — ruff, mypy, and pytest for `equicast-core` and the Django backend via `uv`
-- `fx-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`, `equicast-metrics`, and `equicast-fx`
-- `stock-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
-  `equicast-stock`
-- `etf-ci.yml` — ruff, mypy, and pytest for `equicast-datafeed`,
-  `equicast-metrics`, `equicast-dividends`, `equicast-events`, and
-  `equicast-etf`
+- `packages-ci.yml` — ruff, mypy, and pytest for every other package
+  (`equicast-datafeed`/`metrics`/`dividends`/`events`/`stock`/`etf`/`fx`/`benchmark`)
+  in one matrix job, one entry per package, each gated by whether that
+  package's own files actually changed (via `dorny/paths-filter`) so a
+  shared package like `equicast-datafeed` is tested once regardless of
+  how many others depend on it — not `equicast-forecasting` yet, see
+  equicast-support#147
 - `frontend-ci.yml` — eslint, vitest, and build for the React app
 - `terraform.yml` — `fmt`/`validate`/`plan` on PRs, plus an Infracost cost-diff
   PR comment; on merge to `main`, `apply-dev` and `apply-prod` each wait for
@@ -362,9 +362,12 @@ vitest (unit) for the React frontend. See `.pre-commit-config.yaml`.
 - `deploy.yml` — builds the backend image/frontend bundle once, posts a rough
   cost estimate, then `dev` and `prod` deploys each wait for approval on their
   own GitHub Environment (`development`, `production`) before pushing/syncing
-- `fx-image.yml` / `fx-ingestion.yml` — build the FX pipeline's image and run it on a
-  schedule; see [fx-pipeline.md](fx-pipeline.md) for details
-- `stock-image.yml` / `stock-ingestion.yml` — build the stock pipeline's image and run it
-  on a schedule; see [stock-pipeline.md](stock-pipeline.md) for details
-- `etf-image.yml` / `etf-ingestion.yml` — build the ETF pipeline's image and run it
-  on a schedule; see [etf-pipeline.md](etf-pipeline.md) for details
+- `images.yml` — builds and pushes every pipeline's Docker image (stock, ETF,
+  FX, benchmark, forecasting) in one matrix job, only rebuilding the ones a
+  push actually touched
+- `fx-ingestion.yml` — runs the FX pipeline's image on a schedule; see
+  [fx-pipeline.md](fx-pipeline.md) for details
+- `stock-ingestion.yml` — runs the stock pipeline's image on a schedule; see
+  [stock-pipeline.md](stock-pipeline.md) for details
+- `etf-ingestion.yml` — runs the ETF pipeline's image on a schedule; see
+  [etf-pipeline.md](etf-pipeline.md) for details

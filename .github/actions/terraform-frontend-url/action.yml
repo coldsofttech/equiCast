@@ -1,0 +1,28 @@
+name: Capture Terraform frontend URL
+description: >
+  Reads infra/'s frontend_url output and exposes it as this action's `url`
+  output. The caller must already have run `terraform init`/`apply` (or
+  `destroy`, before it runs - see infra-lifecycle.yml's destroy job) against
+  the target environment's state in infra/ before this step, since it only
+  reads the current state, it doesn't touch it.
+
+  Falls back to an empty `url` rather than failing the step if the output
+  isn't present in the current state (e.g. an environment that was never
+  fully applied) - callers that need the URL to exist should check for an
+  empty output themselves rather than relying on this action to fail.
+
+  Shared by terraform-apply and infra-lifecycle.yml's destroy/redeploy-infra
+  jobs so the three call sites can't drift on how this is read.
+
+outputs:
+  url:
+    description: "The frontend_url Terraform output, or empty if not present in the current state."
+    value: ${{ steps.capture.outputs.url }}
+
+runs:
+  using: composite
+  steps:
+    - id: capture
+      shell: bash
+      working-directory: infra
+      run: echo "url=$(terraform output -raw frontend_url 2>/dev/null || true)" >> "$GITHUB_OUTPUT"

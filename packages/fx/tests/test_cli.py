@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -84,6 +85,36 @@ def test_run_writes_profile_price_and_metrics_parquet_per_configured_pair(
         assert (out_dir / f"fx={pair_key}" / "profile.parquet").exists()
         assert (out_dir / f"fx={pair_key}" / "price" / "current.parquet").exists()
         assert (out_dir / f"fx={pair_key}" / "metrics.parquet").exists()
+
+
+def test_run_continues_past_a_failed_pair_task_and_records_a_failures_manifest(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "fx_pairs.yaml"
+    config.write_text("pairs:\n  - from: GBP\n    to: USD\n  - from: USD\n    to: GBP\n")
+    out_dir = tmp_path / "output"
+
+    def fake_fx_client(from_currency: str, to_currency: str, datafeed=None) -> MagicMock:
+        client = _fake_fx_client_factory()(from_currency, to_currency, datafeed=datafeed)
+        if (from_currency, to_currency) == ("USD", "GBP"):
+            client.prices.side_effect = RuntimeError("yfinance boom")
+        return client
+
+    with (
+        patch("equicast_fx.cli.DatafeedClient"),
+        patch("equicast_fx.cli.FXClient", side_effect=fake_fx_client),
+        patch("equicast_fx.cli.MetricsClient", side_effect=_fake_metrics_client_factory()),
+    ):
+        written = run(config, out_dir, max_workers=2)
+
+    # USDGBP's failed prices task doesn't stop GBPUSD's (or USDGBP's own
+    # other) tasks from completing and being written.
+    assert out_dir / "fx=GBPUSD" / "price" / "current.parquet" in written
+    assert out_dir / "fx=USDGBP" / "profile.parquet" in written
+    assert not (out_dir / "fx=USDGBP" / "price" / "current.parquet").exists()
+
+    failures = json.loads((out_dir / "failures.json").read_text(encoding="utf-8"))
+    assert failures == [{"ticker": "USDGBP", "task": "prices", "error": "yfinance boom"}]
 
 
 def test_run_accepts_pairs_json_instead_of_config(tmp_path: Path) -> None:

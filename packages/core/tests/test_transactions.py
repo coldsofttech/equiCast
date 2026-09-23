@@ -304,6 +304,57 @@ class TestCreateDividendTransaction:
                 date="2026-03-01",
             )
 
+    def test_create_persists_allowance_consumed(self, s3_client) -> None:
+        """GitHub equicast-support#1 — allowance_consumed is stored as
+        given for a DIVIDEND, so an edit/delete later knows exactly how
+        much UK dividend allowance to reverse."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            amount=42.10,
+            date="2026-03-01",
+            allowance_consumed=42.10,
+        )
+
+        assert transaction["allowance_consumed"] == 42.10
+
+    def test_create_leaves_allowance_consumed_unset_by_default(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="DIVIDEND",
+            amount_native=42.10,
+            date="2026-03-01",
+        )
+
+        assert transaction["allowance_consumed"] is None
+
+    def test_create_never_stores_allowance_consumed_for_a_buy(self, s3_client) -> None:
+        """allowance_consumed only ever applies to DIVIDEND records — a
+        caller accidentally passing it for a BUY doesn't leak through."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+            allowance_consumed=42.10,
+        )
+
+        assert transaction["allowance_consumed"] is None
+
     def test_does_not_trip_already_exists_after_a_buy_in_average_mode(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         client.create_transaction(
@@ -928,6 +979,54 @@ class TestUpdateTransaction:
         assert updated["amount"] == 16
         assert updated["date"] == "2026-03-02"
 
+    def test_update_allows_patching_allowance_consumed_on_a_dividend_record(
+        self, s3_client
+    ) -> None:
+        """GitHub equicast-support#1 — an edit that changes a dividend's
+        amount/date recomputes its allowance_consumed, so the caller must
+        be able to patch it in the same update_transaction call."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=15.75,
+            amount=12.6,
+            date="2026-03-01",
+            allowance_consumed=12.6,
+        )
+
+        updated = client.update_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            transaction["id"],
+            "TRANSACTION",
+            amount_native=20,
+            amount=16,
+            date="2026-03-02",
+            allowance_consumed=16.0,
+        )
+
+        assert updated["allowance_consumed"] == 16.0
+
+    def test_update_rejects_allowance_consumed_on_a_buy_record(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        transaction = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "AVERAGE",
+            type="BUY",
+            no_of_shares=10,
+            average_price_native=100,
+            date="2026-01-15",
+        )
+
+        with pytest.raises(ValueError):
+            client.update_transaction(
+                "auth0|abc123", HOLDING_ID, transaction["id"], "AVERAGE", allowance_consumed=5.0
+            )
+
     def test_update_allows_fx_rate_on_an_average_buy_record(self, s3_client) -> None:
         client = TransactionsClient(BUCKET, s3_client=s3_client)
         transaction = client.create_transaction(
@@ -1398,6 +1497,44 @@ class TestDividendsSyncedThroughWatermark:
 
         remaining = client.list_transactions("auth0|abc123", holding_id=HOLDING_ID)
         assert [t["type"] for t in remaining] == ["DIVIDEND"]
+
+    def test_rewind_returns_the_dropped_dividends(self, s3_client) -> None:
+        """GitHub equicast-support#1 — the caller needs the dropped
+        DIVIDEND records back (not just a bare drop) so it can reverse
+        whatever UK dividend allowance each one had already consumed."""
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="BUY",
+            no_of_shares=10,
+            price_native=100,
+            date="2026-01-15",
+        )
+        dividend = client.create_transaction(
+            "auth0|abc123",
+            HOLDING_ID,
+            "TRANSACTION",
+            type="DIVIDEND",
+            amount_native=5.0,
+            amount=4.0,
+            date="2026-03-01",
+            allowance_consumed=4.0,
+        )
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        dropped = client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-01-01")
+
+        assert dropped == [dividend]
+
+    def test_rewind_no_op_returns_an_empty_list(self, s3_client) -> None:
+        client = TransactionsClient(BUCKET, s3_client=s3_client)
+        client.advance_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-03-01")
+
+        dropped = client.rewind_dividends_synced_through("auth0|abc123", HOLDING_ID, "2026-06-01")
+
+        assert dropped == []
 
 
 class TestHasTransactionsForHoldings:

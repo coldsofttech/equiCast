@@ -3,7 +3,11 @@ name: Deploy
 on:
   workflow_run:
     workflows: ["Backend CI", "Frontend CI"]
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - deploy-backend-prod/deploy-frontend-
+    # prod below stay main-only regardless (see their own if: conditions),
+    # so a dev/vX.Y push only ever reaches the dev deploy jobs.
+    branches: [main, "dev/**"]
     types: [completed]
 
 # Baseline permissions; the active jobs below all declare their own more
@@ -19,10 +23,10 @@ jobs:
     if: github.event.workflow_run.name == 'Backend CI' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
@@ -39,7 +43,7 @@ jobs:
             echo "Lambda's 250MB deployment package limit)."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: backend-lambda-package
           path: backend/lambda_package.zip
@@ -64,14 +68,21 @@ jobs:
     outputs:
       version_id: ${{ steps.upload.outputs.version_id }}
     steps:
-      - uses: actions/download-artifact@v4
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below - a
+      # local composite action can't be resolved without the repo checked
+      # out first (see build-push-image for the same constraint). Not
+      # needed for anything else in this job.
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
         with:
           name: backend-lambda-package
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Upload to S3 and update the Lambda function
         id: upload
@@ -94,18 +105,27 @@ jobs:
   # the prod bucket, then points prod's Lambda function at that copy — the
   # same "promote the exact artifact that ran in dev" principle the old ECR
   # flow used (tagging one image as "prod" rather than rebuilding).
+  # Deliberately main-only (equicast-support#185) - unlike deploy-backend-dev
+  # above, a dev/vX.Y push must never be able to reach production, even
+  # behind approval.
   deploy-backend-prod:
     needs: deploy-backend-dev
+    if: github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      # Needed to resolve `uses: ./.github/actions/configure-aws` below -
+      # see deploy-backend-dev's own comment for why.
+      - uses: actions/checkout@v7
+
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Promote dev artifact to prod
         run: |
@@ -135,17 +155,10 @@ jobs:
     if: github.event.workflow_run.name == 'Frontend CI' && github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      - uses: actions/checkout@v7
 
       - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
 
       - name: Estimate incremental cost
         working-directory: frontend
@@ -205,27 +218,21 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      - uses: actions/checkout@v7
 
       - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_URL }}
-          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
+        with:
+          vite-api-base-url: ${{ vars.API_URL }}
+          vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend
@@ -247,36 +254,33 @@ jobs:
   # distributions), so unlike deploy-backend-prod there's no single
   # artifact to promote byte-for-byte. `needs: deploy-frontend-dev` is
   # kept for the same "prod only after dev" ordering the backend jobs use,
-  # not because it reuses dev's build.
+  # not because it reuses dev's build. Deliberately main-only
+  # (equicast-support#185) - unlike deploy-frontend-dev above, a dev/vX.Y
+  # push must never be able to reach production, even behind approval.
   deploy-frontend-prod:
     needs: deploy-frontend-dev
+    if: github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     environment: production
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
+      - uses: actions/checkout@v7
 
       - name: Build frontend
-        working-directory: frontend
-        env:
-          VITE_API_BASE_URL: ${{ vars.API_URL }}
-          VITE_AUTH0_DOMAIN: ${{ vars.AUTH0_DOMAIN }}
-          VITE_AUTH0_CLIENT_ID: ${{ vars.AUTH0_CLIENT_ID }}
-          VITE_AUTH0_AUDIENCE: ${{ vars.AUTH0_AUDIENCE }}
-        run: |
-          npm ci
-          npm run build
+        uses: ./.github/actions/build-frontend
+        with:
+          vite-api-base-url: ${{ vars.API_URL }}
+          vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend

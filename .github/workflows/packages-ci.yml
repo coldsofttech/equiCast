@@ -1,0 +1,146 @@
+name: Packages CI
+
+# Consolidates what used to be four workflows (stock-ci.yml, etf-ci.yml,
+# fx-ci.yml, benchmark-ci.yml - see GitHub issue equicast-support#2) into
+# one matrix job, one entry per unique package directory rather than one
+# per asset class - the old per-asset-class shape re-tested every shared
+# dependency package (equicast-datafeed/metrics/dividends/events) once
+# per workflow that happened to depend on it, up to 4x over on a single
+# datafeed change. Lint/type-check/test now run exactly once per package,
+# gated by whether that package's own files (or the shared lockfile/
+# composite action/this workflow) actually changed - see the `changes`
+# job below. The lint/type-check/test steps themselves live in the
+# .github/actions/python-package-ci composite action (equicast-support#188,
+# follow-up to equicast-support#151's workflow-generalisation proposal),
+# also reused by backend-ci.yml for packages/core and backend/.
+#
+# packages/core is tested inside backend-ci.yml (it's the Django backend's
+# dependency, not an asset-class pipeline's) and packages/forecasting
+# stays untested for now (equicast-support#147) - both deliberately kept
+# out of scope here.
+on:
+  push:
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - the same CI that runs on main.
+    branches: [main, "dev/**"]
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
+      - "packages/fx/**"
+      - "packages/benchmark/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/packages-ci.yml"
+      - ".github/actions/python-package-ci/**"
+  pull_request:
+    paths:
+      - "packages/datafeed/**"
+      - "packages/metrics/**"
+      - "packages/dividends/**"
+      - "packages/events/**"
+      - "packages/stock/**"
+      - "packages/etf/**"
+      - "packages/fx/**"
+      - "packages/benchmark/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - ".github/workflows/packages-ci.yml"
+      - ".github/actions/python-package-ci/**"
+
+permissions:
+  contents: read
+
+jobs:
+  # `packages` is dorny/paths-filter's `changes` output - a JSON array of
+  # every filter name below whose own directory (or the shared lockfile/
+  # composite action/this workflow file) changed in this push/PR, e.g.
+  # '["datafeed","stock"]'. The test job's matrix is built directly from
+  # this array (fromJSON), so only the package(s) actually affected run,
+  # instead of every package on any relevant change.
+  #
+  # An earlier version of this workflow instead exposed one boolean output
+  # per package and gated each fixed matrix leg with
+  # `if: needs.changes.outputs[matrix.name] == 'true'` - GitHub rejects
+  # that at parse time ("Unrecognized named-value: 'matrix'"): a job-level
+  # `if:` can't index into another context with a `matrix.*` key, since
+  # the matrix hasn't been resolved yet at that point. Building the matrix
+  # itself from the changes list sidesteps needing `matrix` in an `if:`
+  # at all.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      packages: ${{ steps.matrix.outputs.packages }}
+    steps:
+      # dorny/paths-filter needs local git history to diff a push event
+      # against (unlike pull_request, which it can resolve via the API
+      # alone) - without this, it fails with "fatal: not a git repository"
+      # trying to read the current ref (same fix as images.yml's changes
+      # job needed).
+      - uses: actions/checkout@v7
+
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            root: &root
+              - "pyproject.toml"
+              - "uv.lock"
+              - ".github/workflows/packages-ci.yml"
+              - ".github/actions/python-package-ci/**"
+            datafeed:
+              - *root
+              - "packages/datafeed/**"
+            metrics:
+              - *root
+              - "packages/metrics/**"
+            dividends:
+              - *root
+              - "packages/dividends/**"
+            events:
+              - *root
+              - "packages/events/**"
+            stock:
+              - *root
+              - "packages/stock/**"
+            etf:
+              - *root
+              - "packages/etf/**"
+            fx:
+              - *root
+              - "packages/fx/**"
+            benchmark:
+              - *root
+              - "packages/benchmark/**"
+
+      # dorny/paths-filter treats every top-level key of `filters:` as its
+      # own named filter - including `root` above, even though it's only
+      # meant to be reused via the `*root` alias, not checked on its own.
+      # Left as-is, `root` shows up in `changes` too (it matches whenever
+      # pyproject.toml/uv.lock/etc. change), which would otherwise flow
+      # into the matrix below as a nonexistent `packages/root/` entry.
+      # Drop it here before it becomes this job's output.
+      - id: matrix
+        run: |
+          packages=$(echo '${{ steps.filter.outputs.changes }}' | jq -c '. - ["root"]')
+          echo "packages=$packages" >> "$GITHUB_OUTPUT"
+
+  test:
+    needs: [changes]
+    if: needs.changes.outputs.packages != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        name: ${{ fromJSON(needs.changes.outputs.packages) }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Lint, type-check, and test equicast-${{ matrix.name }}
+        uses: ./.github/actions/python-package-ci
+        with:
+          working-directory: packages/${{ matrix.name }}
+          lint-path: packages/${{ matrix.name }}/

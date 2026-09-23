@@ -114,6 +114,7 @@ class AccountsClient:
         description: str,
         account_type: str,
         icon: str | None = None,
+        vendor: str | None = None,
     ) -> dict[str, Any]:
         """Append a new account, raising `AccountLimitExceededError` if the
         user is already at this client's `max_accounts`.
@@ -127,7 +128,12 @@ class AccountsClient:
         (e.g. "bank2", not "bi bi-bank2") and is optional — an account
         without one falls back to a default icon client-side (see
         frontend's DEFAULT_ACCOUNT_ICON), same reasoning as
-        PiesClient.create_pie's own `icon`."""
+        PiesClient.create_pie's own `icon`. `vendor` (GitHub
+        equicast-support#171) is free text naming the platform/broker the
+        account is held with (e.g. "Trading212", "Chip") and is optional too
+        — an account without one simply has nothing rendered for it
+        client-side (see frontend's AccountCard/AccountsListPage vendor
+        tag)."""
         for _ in range(_MAX_CONFLICT_RETRIES):
             accounts, etag = self._load(user_id)
             if any(a["name"].casefold() == name.casefold() for a in accounts):
@@ -145,6 +151,7 @@ class AccountsClient:
                 "description": description,
                 "account_type": account_type,
                 "icon": icon,
+                "vendor": vendor,
                 "created_at": now,
                 "updated_at": now,
             }

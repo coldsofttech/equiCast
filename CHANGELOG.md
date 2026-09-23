@@ -7,6 +7,124 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-09-23
+
+### Added
+
+- Accounts can now optionally record a vendor/platform (e.g. Trading212,
+  Chip), suggested via autocomplete when creating or editing an account and
+  shown as a tag on `/dashboard` and `/accounts` (equicast-support#171).
+- Ingestion pipeline failures (stock, ETF, FX, benchmark) are now reported
+  automatically as tracking issues instead of only showing up as a red X on
+  GitHub Actions. A ticker/pair/benchmark that fails to fetch no longer
+  takes down the rest of that run's batch.
+- Docker images (stock, ETF, FX, benchmark, forecasting) are now tagged
+  with a version number that increments on every build, and old versions
+  are pruned automatically, keeping only the 3 most recent per image.
+- Destroying or redeploying dev/prod infrastructure now keeps Auth0's
+  login redirect URLs in sync automatically, instead of needing a manual
+  dashboard edit after every redeploy.
+- Stock and ETF ingestion now flag holdings whose currency can't be
+  converted to or from every currency the app offers, opening one support
+  issue per missing FX pair (equicast-support#164).
+- UK dividend tax calculation engine (GitHub issue #212, the follow-up to
+  #94's data-model groundwork): `ISA`/`SIPP`/`LISA`/`JISA` wrapper-type
+  dividends stay untaxed; a `GIA` dividend applies its holding's
+  `tax_override_pct` (or the domicile-derived default withholding rate)
+  first, then the first £500 per UK tax year (6 Apr-5 Apr) tax-free, then
+  the user's `income_tax_band` rate (8.75%/33.75%/39.35% for
+  BASIC/HIGHER/ADDITIONAL) on the remainder. New
+  `equicast_core.uk_dividend_tax.compute_uk_dividend_tax` (pure, stateless)
+  runs once per DIVIDEND transaction — manually recorded or auto-synced
+  alike — from `backend/transactions/views.py`'s new
+  `_apply_uk_dividend_tax`/`_resolve_wrapper_type`, and the allowance
+  consumed is persisted via `UserProfileClient`'s new
+  `dividend_allowance_used_by_tax_year` (keyed per UK tax year, updated
+  through an atomic DynamoDB nested increment). v1 only runs the
+  calculation when the user's `default_currency` is `"GBP"`, since the
+  allowance/band thresholds are GBP figures by law.
+- A new Dividend Allowance page, reachable from the user menu, shows this
+  UK tax year's allowance usage at a glance plus every tax year's
+  allowance used, tax deducted, and remaining allowance in a table.
+
+### Changed
+
+- The import wizard's Source picker (`/import`) now shows an icon per
+  preset — Trading212's real favicon (via `AssetIcon`) and a CSV file
+  glyph for Generic CSV — instead of a plain text dropdown
+  (equicast-support#146).
+- An account's Portfolios and Holdings lists on `/accounts/:accountId` are
+  now sorted by current value, highest first (equicast-support#193).
+- A pie's Holdings list on `/accounts/:accountId/pies/:pieId` is now
+  sorted by current value, highest first (equicast-support#194).
+- Ingestion workflows' (stock, ETF, FX, benchmark) `max_workers`/`max_calls`
+  defaults raised from 5 to 8, moving both together since raising
+  `max_workers` alone has no effect once thread count exceeds `max_calls`
+  (extra threads just queue on the shared rate limiter) (equicast-support#168).
+- `equicast-datafeed`'s `DatafeedClient` now caches every fetch (`.info`,
+  price history, dividends, etc.) for its own lifetime, keyed by method,
+  symbol, and any args that change what's returned - dedupes redundant
+  same-run yfinance calls (e.g. `.info` was fetched up to 5 times per
+  stock ticker) across every asset-class package for free (equicast-support#168).
+- Ingestion workflows' (stock, ETF, FX, benchmark) `chunk_size` default
+  dropped from 300 to 20 tickers/pairs/benchmarks per matrix leg. At 300,
+  a config anywhere near (or under) that size collapsed to effectively one
+  chunk regardless of the `max-parallel: 20` matrix cap - stock's 300+
+  tickers, for example, ran almost entirely in a single container instead
+  of spreading across up to 20 parallel runners (equicast-support#168).
+- Ingestion workflows (stock, ETF, FX, benchmark) now delete their
+  intermediate per-chunk profile artifacts once the catalog build and
+  failure reporting are done, instead of leaving them to expire.
+- CI, Docker image builds, Terraform, and deploy now also run on `dev/`
+  release-integration branches (e.g. `dev/v1.1`), the same as `main` -
+  except production deploys/applies, which stay reachable only from `main`.
+- The five per-image Docker build workflows are now one workflow that only
+  rebuilds the image(s) actually affected by a push, instead of five
+  separately-triggered ones.
+- The per-asset-class package CI workflows (stock, ETF, FX, benchmark) are
+  now one workflow that tests each shared package once instead of once per
+  asset class that depends on it.
+- The ingestion workflows' (stock, ETF, FX, benchmark) pipeline-status
+  reporting and artifact cleanup steps, previously duplicated by hand
+  across all four, now share two actions.
+- The Terraform apply steps for dev and prod, previously duplicated by
+  hand in terraform.yml, now share a single action.
+- The frontend build step in deploy.yml, previously duplicated across the
+  cost-estimate, dev, and prod deploy jobs, is now a single shared action.
+- AWS OIDC credential setup, previously duplicated across the ingestion,
+  deploy, terraform, and infra-lifecycle workflows, is now a single shared
+  action.
+- GitHub Actions used across CI/CD are updated to their latest major
+  versions.
+- An account's/pie's Sector and Industry diversification charts are now combined into one, showing Sector by default with drill-down into Industry and a "Back to sectors" option (equicast-support#192).
+- The "New account"/"Edit account" drawer now asks for vendor before icon.
+- An account card's vendor tag now sits alongside its pies/holdings counts instead of on its own row.
+- Adding a transaction now locks the whole form, not just the buttons, while it saves.
+- The import review screen now has Select all/Unselect all buttons for the ready-to-import holdings, and no longer requires reselecting the target account for a holding going into a brand-new, empty account.
+- The home page now highlights UK dividend tax & allowance tracking as an available feature, and trims it from the roadmap section (equicast-support#203).
+- The home page's hero now shows more of equiCast's implemented concepts as floating chips, in alternating accent colors (equicast-support#203).
+- The home page no longer describes equiCast's data as "live", since prices refresh once a day rather than in real time (equicast-support#203).
+- The home page's demo chart now opens in line view by default instead of candles, and its Terms/Privacy Notice links now match the footer's link styling (equicast-support#203).
+- The home page's "Available today" section is now a spotlight list for its top 6 features, with a compact strip for the rest, instead of one large grid of 12 equal cards, plus a "Log in" call to action after both that section and the roadmap (equicast-support#203).
+
+### Fixed
+
+- A ticker page's News panel now shows however many cards actually fit in
+  one full row at the panel's real width, instead of a fixed 4 - avoids a
+  lone card left stretched full-width on its own row when narrower than
+  ~930px only fits 3 across (equicast-support#177).
+- An account's or pie's page no longer shows the price chart when none of its holdings actually have shares yet (equicast-support#172).
+- The Holdings heatmap on an account's/pie's page no longer draws an evenly-split tile per holding when none of them actually have shares (equicast-support#175).
+- Fixed `AssetIcon` misaligning rows when a holding has no website
+  (equicast-support#178).
+- The UK dividend tax allowance is no longer permanently "used" when a DIVIDEND transaction that had already consumed some of it is edited, deleted, or dropped by a backdated BUY/SELL (recorded via the API or a bulk import) — it's now reversed in each case instead (equicast-support#1).
+- Adding a holding now closes the drawer automatically once it's added.
+- Fixed a crash computing UK dividend tax for a second taxable dividend in the same tax year, which silently left it untaxed and out of the allowance count.
+- Deleting a holding, account, or pie that had taxed dividends recorded against it no longer leaves the UK dividend allowance permanently "used" for dividends that no longer exist.
+- The Holdings heatmap and Sector/Asset/Market cap diversification charts on an account's/pie's page no longer render when none of the holdings actually have shares.
+- Industry percentages in the Sector diversification drill-down now sum to 100% for the selected sector instead of that sector's overall share of the whole portfolio.
+- Truncated sector/industry names now show their full name as a tooltip on hover, and the "Back to sectors" button moved next to the diversification score badge.
+
 ## [1.0.9] - 2026-09-22
 
 ### Added

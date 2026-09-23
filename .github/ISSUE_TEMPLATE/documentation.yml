@@ -1,0 +1,27 @@
+name: Documentation issue
+description: Report incorrect, missing, or unclear documentation
+labels: ["documentation"]
+body:
+  - type: input
+    id: location
+    attributes:
+      label: Where is the issue?
+      placeholder: File path or URL, e.g. docs/release-notes.md or README.md
+    validations:
+      required: true
+
+  - type: textarea
+    id: issue
+    attributes:
+      label: What's wrong?
+      description: Incorrect, outdated, missing, or unclear - describe it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested fix
+      description: If you have one in mind.
+    validations:
+      required: false

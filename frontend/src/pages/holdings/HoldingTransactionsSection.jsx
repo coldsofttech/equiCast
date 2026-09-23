@@ -258,6 +258,7 @@ function TransactionForm({
           id="transaction-holding"
           label="Account"
           required
+          disabled={isSaving}
           value={holdingId}
           onChange={(event) => {
             const nextHoldingId = event.target.value;
@@ -286,6 +287,7 @@ function TransactionForm({
           id="transaction-type"
           label="Transaction type"
           required
+          disabled={isSaving}
           value={type}
           onChange={(event) => setType(event.target.value)}
         >
@@ -301,6 +303,7 @@ function TransactionForm({
         label="Date"
         type="date"
         required
+        disabled={isSaving}
         value={date}
         onChange={(event) => setDate(event.target.value)}
       />
@@ -312,6 +315,7 @@ function TransactionForm({
           min="0.01"
           step="0.01"
           required
+          disabled={isSaving}
           value={amount}
           onChange={(event) => setAmount(event.target.value)}
           hint="Total cash received, in this holding's native currency."
@@ -325,6 +329,7 @@ function TransactionForm({
             min="0.000001"
             step="any"
             required
+            disabled={isSaving}
             value={shares}
             onChange={(event) => setShares(event.target.value)}
           />
@@ -335,6 +340,7 @@ function TransactionForm({
             min="0.000001"
             step="any"
             required
+            disabled={isSaving}
             value={price}
             onChange={(event) => setPrice(event.target.value)}
           />
@@ -345,6 +351,7 @@ function TransactionForm({
               type="number"
               min="0"
               step="0.01"
+              disabled={isSaving}
               value={sdrt}
               onChange={(event) => setSdrt(event.target.value)}
               hint="Optional — leave blank if none was charged."
@@ -357,6 +364,7 @@ function TransactionForm({
               type="number"
               min="0"
               step="0.01"
+              disabled={isSaving}
               value={fxFee}
               onChange={(event) => setFxFee(event.target.value)}
               hint="Optional — leave blank if none was charged."
@@ -371,6 +379,7 @@ function TransactionForm({
           type="number"
           min="0.000001"
           step="any"
+          disabled={isSaving}
           value={fxRate}
           onChange={(event) => {
             setFxRate(event.target.value);

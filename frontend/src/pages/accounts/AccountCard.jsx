@@ -68,6 +68,7 @@ function AccountCard({ account, onClick, defaultCurrency }) {
         </span>
       </div>
       <div className="ec-account-card-meta">
+        {account.vendor && <Badge tone="neutral">{account.vendor}</Badge>}
         <span className="ec-account-card-counts">
           <span className="ec-account-card-count">{pies.length} pies</span>
           <span className="ec-account-card-count">{holdingsCount} holdings</span>

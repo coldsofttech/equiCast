@@ -24,7 +24,7 @@ Parquet files (profile.parquet, price.parquet, metrics.parquet)
 GitHub Actions (fx-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/fx/Dockerfile` containerizes the CLI. `fx-image.yml` builds and
+`packages/fx/Dockerfile` containerizes the CLI. `images.yml` builds and
 pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-fx`). The
 FX pairs config isn't baked in as the only input — pairs can also be passed
 at runtime via `--pairs-json`, which is how the scheduled workflow feeds each
@@ -179,10 +179,12 @@ error if the relevant variable is unset, instead of the `Invalid bucket name
 
 ## Publishing the image
 
-`fx-image.yml` builds and pushes `equicast-fx` to GHCR automatically on
-changes to `packages/datafeed/` or `packages/fx/` on `main`, or on demand via
-its `workflow_dispatch` trigger (Actions tab → *Build FX Image* → *Run
-workflow*).
+`images.yml` builds and pushes `equicast-fx` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/fx/` on `main` or a `dev/**`
+release branch (pushing `:dev` instead of `:latest` on the latter — see
+`.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `fx` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 
@@ -204,10 +206,10 @@ ingestion"](etf-pipeline.md#running-the-scheduled-ingestion) for why:
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each pair's entire history (all years) instead of just the current year |
-| `chunk_size` | `300` | Target FX pairs per parallel chunk |
+| `chunk_size` | `20` | Target FX pairs per parallel chunk |
 | `tickers` | *(empty)* | Optional `;`-separated list of pair keys (e.g. `GBPUSD;EURUSD`) to restrict this run to, instead of every pair in the config. When set, `build-catalog` merges this run's pairs into the existing catalog instead of replacing it outright |
-| `max_workers` | `5` | Concurrent fetches within each container |
-| `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
+| `max_workers` | `8` | Concurrent fetches within each container |
+| `max_calls` | `8` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 
 The scheduled (cron) trigger always targets **production** — there's no
@@ -265,3 +267,37 @@ s3://equicast-market-data-<env>/
         ├── history.parquet   (2003-2025, written once by a --full-load run)
         └── current.parquet   (2026, rewritten by every run)
 ```
+
+## Missing FX pairs for holding currencies
+
+Stock and ETF holdings can be priced in any currency, but a holding can
+only be shown in a user's chosen currency if the FX pair between the two is
+ingested here. `stock-ingestion.yml`/`etf-ingestion.yml`'s `build-catalog`
+job checks this on every run (equicast-support#164), against the FX config
+of the environment the run targets (`fx_pairs.prod.yaml` or
+`fx_pairs.dev.yaml`):
+
+1. `equicast-fx-find-missing-pairs` (`equicast_fx.missing_pairs`) reads the
+   freshly-built catalog's `currency` column and, for every holding
+   currency C and every UI currency T ≠ C (the closed set in
+   `frontend/src/config/currencies.json`), requires **both** `C:T` and
+   `T:C` in that FX config. `GBp` (pence) counts as `GBP`,
+   same as `equicast_core.client` converts it; other non-ISO codes (e.g.
+   `ZAc` - equicast-support#176) are skipped with a warning.
+2. `.github/scripts/sync-missing-fx-pair-issues.sh` opens one issue in
+   `equicast-support` **per missing directed pair** (e.g. "Missing FX pair:
+   USD:INR"), listing the holdings that need it. Stock and ETF share these
+   issues, so whichever run finds a pair first opens it. An issue is closed
+   automatically once its pair is configured; one previously closed as
+   completed is reopened if the pair goes missing again; one closed as
+   *not planned* is left alone.
+
+Each issue carries the `ticker-request` label plus the run's environment
+label (`production` or `development`, the same labels the support form
+uses - issues are tracked separately per environment) and a
+`**Ticker:** FROM:TO` body line - the shape equicast-support's
+config-change automation expects (it picks which `fx_pairs.<env>.yaml` to
+edit from that label) - so replying `ASSET_CLASS: fx` opens a PR adding the
+pair via `manage_config_entry.py`, which closes the issue when
+merged. Adding pairs changes the market-data bucket cost estimate - see
+`infra/infracost-usage.yml`.

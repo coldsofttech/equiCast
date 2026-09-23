@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -258,6 +259,39 @@ def test_run_writes_profile_price_dividend_events_metrics_and_news_parquet_per_c
         assert (out_dir / f"etf={ticker}" / "events" / "current.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "metrics.parquet").exists()
         assert (out_dir / f"etf={ticker}" / "news.parquet").exists()
+
+
+def test_run_continues_past_a_failed_ticker_task_and_records_a_failures_manifest(
+    tmp_path: Path,
+) -> None:
+    config = tmp_path / "etfs.yaml"
+    config.write_text("tickers:\n  - VOO\n  - QQQ\n")
+    out_dir = tmp_path / "output"
+
+    def fake_etf_client(ticker: str, datafeed=None) -> MagicMock:
+        client = _fake_etf_client_factory()(ticker, datafeed=datafeed)
+        if ticker == "QQQ":
+            client.prices.side_effect = RuntimeError("yfinance boom")
+        return client
+
+    with (
+        patch("equicast_etf.cli.DatafeedClient"),
+        patch("equicast_etf.cli.ETFClient", side_effect=fake_etf_client),
+        patch("equicast_etf.cli.DividendsClient", side_effect=_fake_dividends_client_factory()),
+        patch("equicast_etf.cli.EventsClient", side_effect=_fake_events_client_factory()),
+        patch("equicast_etf.cli.MetricsClient", side_effect=_fake_metrics_client_factory()),
+        patch("equicast_etf.cli.NewsClient", side_effect=_fake_news_client_factory()),
+    ):
+        written = run(config, out_dir, max_workers=2)
+
+    # QQQ's failed prices task doesn't stop VOO's (or QQQ's own other)
+    # tasks from completing and being written.
+    assert out_dir / "etf=VOO" / "price" / "current.parquet" in written
+    assert out_dir / "etf=QQQ" / "profile.parquet" in written
+    assert not (out_dir / "etf=QQQ" / "price" / "current.parquet").exists()
+
+    failures = json.loads((out_dir / "failures.json").read_text(encoding="utf-8"))
+    assert failures == [{"ticker": "QQQ", "task": "prices", "error": "yfinance boom"}]
 
 
 def test_run_applies_isin_override_to_profile(tmp_path: Path) -> None:

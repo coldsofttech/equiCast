@@ -1,10 +1,19 @@
 import { useState } from "react";
-import { SelectField } from "../../components/core/Field.jsx";
 import Button from "../../components/core/Button.jsx";
 import Alert from "../../components/core/Alert.jsx";
+import AssetIcon from "../../components/core/AssetIcon.jsx";
+import IconBadge from "../../components/core/IconBadge.jsx";
 import { useApi } from "../../api/useApi.js";
 import { previewImport } from "../../api/transactions.js";
 import "./ImportPage.css";
+
+//: The import presets offered below — `website` (resolved via AssetIcon's
+//: favicon lookup) for a preset backed by a real site, `icon` (a bare
+//: bootstrap-icons name, rendered via IconBadge) for one that isn't.
+const IMPORT_PRESETS = [
+  { value: "generic", label: "Generic CSV", icon: "filetype-csv" },
+  { value: "trading212", label: "Trading212", website: "https://www.trading212.com" },
+];
 
 /**
  * First wizard step: pick a preset and upload a file, then call
@@ -20,8 +29,8 @@ function ImportUploadStep({ onParsed, onCancel }) {
   const [error, setError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
 
-  const handlePresetChange = (event) => {
-    setPreset(event.target.value);
+  const handlePresetChange = (value) => {
+    setPreset(value);
     setFile(null);
   };
 
@@ -42,16 +51,36 @@ function ImportUploadStep({ onParsed, onCancel }) {
   return (
     <form onSubmit={handleSubmit} className="ec-form">
       {error && <Alert tone="danger">{error}</Alert>}
-      <SelectField
-        id="import-preset"
-        label="Source"
-        value={preset}
-        onChange={handlePresetChange}
-        disabled={isUploading}
-      >
-        <option value="generic">Generic CSV</option>
-        <option value="trading212">Trading212</option>
-      </SelectField>
+      <div className="ec-field">
+        <span id="import-preset-label" className="ec-field-label">
+          Source
+        </span>
+        <div
+          id="import-preset"
+          className="ec-import-source-picker"
+          role="radiogroup"
+          aria-labelledby="import-preset-label"
+        >
+          {IMPORT_PRESETS.map((option) => (
+            <button
+              key={option.value}
+              type="button"
+              role="radio"
+              aria-checked={preset === option.value}
+              className={`ec-import-source-option${preset === option.value ? " is-selected" : ""}`}
+              onClick={() => handlePresetChange(option.value)}
+              disabled={isUploading}
+            >
+              {option.website ? (
+                <AssetIcon website={option.website} size={20} />
+              ) : (
+                <IconBadge icon={option.icon} defaultIcon={option.icon} size={20} />
+              )}
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {preset === "trading212" ? (
         <Alert tone="info">

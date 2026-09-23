@@ -28,7 +28,7 @@ Parquet files (profile.parquet, price.parquet, dividend.parquet, events.parquet,
 GitHub Actions (stock-ingestion.yml)  ──▶  S3 (s3://equicast-market-data-<env>/)
 ```
 
-`packages/stock/Dockerfile` containerizes the CLI. `stock-image.yml` builds
+`packages/stock/Dockerfile` containerizes the CLI. `images.yml` builds
 and pushes it to GHCR as a **private** image (`ghcr.io/<owner>/equicast-stock`).
 The ticker config isn't baked in as the only input — tickers can also be
 passed at runtime via `--tickers-json`, which is how the scheduled workflow
@@ -248,10 +248,12 @@ configure there either.
 
 ## Publishing the image
 
-`stock-image.yml` builds and pushes `equicast-stock` to GHCR automatically on
-changes to `packages/datafeed/` or `packages/stock/` on `main`, or on demand
-via its `workflow_dispatch` trigger (Actions tab → *Build Stock Image* →
-*Run workflow*).
+`images.yml` builds and pushes `equicast-stock` to GHCR automatically on
+changes to `packages/datafeed/` or `packages/stock/` on `main` or a
+`dev/**` release branch (pushing `:dev` instead of `:latest` on the
+latter — see `.github/actions/build-push-image`), or on demand via its
+`workflow_dispatch` trigger (Actions tab → *Build Images* → *Run workflow*
+→ pick `stock` from the `asset_class` dropdown, or `all`).
 
 ## Running the scheduled ingestion
 
@@ -276,10 +278,10 @@ recomputing it.
 |---|---|---|
 | `environment` | `dev` | Which bucket to upload to — `dev` (`MARKET_DATA_BUCKET_DEV`) or `production` (`MARKET_DATA_BUCKET_PROD`). Ignored on the scheduled trigger — see below |
 | `full_load` | `false` | Fetch each ticker's entire history (all years) of prices/dividends/events instead of just the current year. Ignored when `forecast_only` is set |
-| `chunk_size` | `300` | Target stock tickers per parallel chunk |
+| `chunk_size` | `20` | Target stock tickers per parallel chunk |
 | `tickers` | *(empty)* | Optional `;`-separated list of tickers (e.g. `NWG.L;AAPL`) to restrict this run to, instead of every ticker in the config — useful for a full load of just a newly-added holding. When set, `build-catalog` merges this run's tickers into the existing catalog instead of replacing it outright |
-| `max_workers` | `5` | Concurrent fetches within each container |
-| `max_calls` | `5` | Max yfinance calls per `period_seconds`, per container |
+| `max_workers` | `8` | Concurrent fetches within each container |
+| `max_calls` | `8` | Max yfinance calls per `period_seconds`, per container |
 | `period_seconds` | `1.0` | Rate-limit window, in seconds, per container |
 | `forecast_years` | `10` | Dividend forecast horizon in years (`equicast-forecasting`'s `--years`). Only used when forecasting actually runs (Saturday, or a manual run with `forecast_only`) |
 | `forecast_only` | `false` | Run only `equicast-forecasting` for this dispatch, skipping the regular ingest — mirrors the Saturday schedule, useful for testing forecasting on demand |
@@ -358,6 +360,10 @@ The workflow has three jobs, structured identically to `fx-ingestion.yml`'s:
    `issues:write` on `equicast-support`) rather than this job's own
    `GITHUB_TOKEN`, since the latter only has write access to this repo —
    this job needs no `issues:write` permission of its own as a result.
+   Then (equicast-support#164) checks the same catalog's holding
+   currencies against the run's environment's `fx_pairs.<env>.yaml` and opens one
+   equicast-support issue per missing FX pair - see
+   [fx-pipeline.md](fx-pipeline.md#missing-fx-pairs-for-holding-currencies).
 
 ### S3 layout produced
 

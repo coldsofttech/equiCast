@@ -816,19 +816,29 @@ class HoldingDetailViewTests(TestCase):
 
         self.assertEqual(response.status_code, 404)
 
+    @patch("transactions.views._client")
     @patch("holdings.views._transactions_client")
     @patch("holdings.views._client")
     @patch("identity.authentication.jwt.decode")
     @patch("identity.authentication._jwks_client")
     def test_delete_removes_the_holding_and_its_transactions(
-        self, mock_jwks_client, mock_decode, mock_client, mock_transactions_client
+        self,
+        mock_jwks_client,
+        mock_decode,
+        mock_client,
+        mock_transactions_client,
+        mock_reverse_allowance_client,
     ) -> None:
         _authenticate(mock_jwks_client, mock_decode)
+        mock_reverse_allowance_client.list_transactions.return_value = []
 
         response = self.client.delete(reverse("holdings-detail", args=["h-1"]), **AUTH_HEADER)
 
         self.assertEqual(response.status_code, 204)
         mock_client.delete_holding.assert_called_once_with("auth0|abc123", "h-1")
+        mock_reverse_allowance_client.list_transactions.assert_called_once_with(
+            "auth0|abc123", holding_id="h-1"
+        )
         mock_transactions_client.delete_transactions_for_holdings.assert_called_once_with(
             "auth0|abc123", ["h-1"]
         )

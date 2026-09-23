@@ -2,13 +2,16 @@ name: Backend CI
 
 on:
   push:
-    branches: [main]
+    # dev/** covers the dev/vX.Y integration branches for a release about
+    # to ship (equicast-support#185) - the same CI that runs on main.
+    branches: [main, "dev/**"]
     paths:
       - "packages/core/**"
       - "backend/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/backend-ci.yml"
+      - ".github/actions/python-package-ci/**"
   # Lets a `main` run be triggered manually (Actions tab -> Run workflow,
   # or `gh workflow run "Backend CI" --ref main`) when a merge to `main`
   # didn't touch any of the paths above — e.g. an infra-only PR — so
@@ -21,6 +24,7 @@ on:
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/backend-ci.yml"
+      - ".github/actions/python-package-ci/**"
 
 permissions:
   contents: read
@@ -29,31 +33,24 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      # lint-path is left unset on both calls below - this workflow lints
+      # the whole repo in one `ruff check .` (it's the only workflow that
+      # also covers files outside packages/ and backend/, e.g.
+      # .github/scripts/*.py), rather than one per-package ruff check like
+      # packages-ci.yml's matrix.
+      - name: Type check and test equicast-core
+        uses: ./.github/actions/python-package-ci
         with:
-          enable-cache: true
-
-      - name: Install dependencies
-        run: uv sync --all-packages --extra dev
+          working-directory: packages/core
 
       - name: Lint
         run: uv run ruff check .
 
-      - name: Type check equicast-core
-        working-directory: packages/core
-        run: uv run mypy src/
-
-      - name: Type check Django backend
-        working-directory: backend
-        run: uv run mypy . --ignore-missing-imports
-
-      - name: Test equicast-core
-        working-directory: packages/core
-        run: uv run pytest
-
-      - name: Test Django backend
-        working-directory: backend
-        run: uv run pytest
+      - name: Type check and test Django backend
+        uses: ./.github/actions/python-package-ci
+        with:
+          working-directory: backend
+          mypy-target: '.'
+          mypy-args: '--ignore-missing-imports'

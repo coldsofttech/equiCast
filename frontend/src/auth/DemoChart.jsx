@@ -27,8 +27,8 @@ function formatBarDate(dateStr) {
  * function's own docstring) for a fixed three tickers (AAPL, NVDA, VOO),
  * each ~1 month of real daily OHLC bars. Same daily-refresh cadence as
  * every other price shown once signed in (see the app's own market-data
- * disclaimer) — "live" here means "as current as equicast's data gets,"
- * not real-time/intraday. Cached in localStorage for the rest of the
+ * disclaimer) — as current as equicast's data gets, not real-time/intraday.
+ * Cached in localStorage for the rest of the
  * calendar day (see publicDemoPricesCache.js), so repeat landing-page
  * visits/reloads before sign-in don't re-hit this rate-limited endpoint.
  */
@@ -36,7 +36,7 @@ function DemoChart() {
   const [tickers, setTickers] = useState(null);
   const [error, setError] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [chartType, setChartType] = useState("candle");
+  const [chartType, setChartType] = useState("line");
   const [hoverIndex, setHoverIndex] = useState(null);
   const svgRef = useRef(null);
 
@@ -105,13 +105,13 @@ function DemoChart() {
       <span className="ec-section-eyebrow">See it in action</span>
       <h2 className="ec-features-title">Real tickers, tracked the way equiCast tracks them</h2>
       <p className="ec-demo-sub">
-        Real prices for AAPL, NVDA and VOO, updated once a day — the same prices you'd see once
-        signed in, just not live, minute-by-minute quotes.
+        Prices for AAPL, NVDA and VOO — the same figures you'd see once signed in, refreshed daily
+        rather than minute-by-minute.
       </p>
 
       <div className="ec-demo-card">
-        {error && <p className="ec-demo-error">Live prices are temporarily unavailable.</p>}
-        {!error && !tickers && <p className="ec-demo-loading">Loading live prices…</p>}
+        {error && <p className="ec-demo-error">Prices are temporarily unavailable.</p>}
+        {!error && !tickers && <p className="ec-demo-loading">Loading prices…</p>}
 
         {!error && tickers && ticker && (
           <>

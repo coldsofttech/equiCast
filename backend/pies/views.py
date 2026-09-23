@@ -20,7 +20,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from transactions.views import sync_dividends_for_holdings
+from transactions.views import reverse_dividend_allowance_for_holdings, sync_dividends_for_holdings
 
 #: Fields required to create a pie; description may be blank but must be
 #: present so a caller doesn't silently omit it.
@@ -116,9 +116,7 @@ class PieListView(APIView):
         for holding in _enrich_holdings(request.user.user_id, holdings):
             holdings_by_pie.setdefault(holding["pie_id"], []).append(holding)
 
-        return Response(
-            [{**pie, "holdings": holdings_by_pie.get(pie["id"], [])} for pie in pies]
-        )
+        return Response([{**pie, "holdings": holdings_by_pie.get(pie["id"], [])} for pie in pies])
 
     def post(self, request: Request) -> Response:
         missing = REQUIRED_CREATE_FIELDS - request.data.keys()
@@ -183,8 +181,10 @@ class PieDetailView(APIView):
 
         try:
             if force and holdings:
+                holding_ids = [h["id"] for h in holdings]
+                reverse_dividend_allowance_for_holdings(request.user.user_id, holding_ids)
                 _transactions_client.delete_transactions_for_holdings(
-                    request.user.user_id, [h["id"] for h in holdings]
+                    request.user.user_id, holding_ids
                 )
                 _holdings_client.delete_holdings_for_pies(request.user.user_id, [pie_id])
             _client.delete_pie(request.user.user_id, pie_id)

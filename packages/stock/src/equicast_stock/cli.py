@@ -45,6 +45,7 @@ from equicast_stock.config import StockTicker, load_stock_tickers, parse_stock_t
 from equicast_stock.writer import (
     write_dividend_parquet,
     write_events_parquet,
+    write_failures_manifest,
     write_future_dividend_parquet,
     write_metrics_parquet,
     write_news_parquet,
@@ -234,7 +235,11 @@ def run(
     # metrics, and news tasks — all five only read immutable state and
     # delegate to the (thread-safe) shared datafeed, so calling them
     # concurrently on one instance is safe.
-    tasks: list[Callable[[], list[Path]]] = []
+    #
+    # Each task is tagged with its ticker key and a short task label (rather
+    # than a bare callable) so a failure below can be attributed back to
+    # "which ticker, which piece" for failures.json - see equicast-support#145.
+    tasks: list[tuple[str, str, Callable[[], list[Path]]]] = []
     for ticker in tickers:
         client = StockClient(ticker.ticker, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
@@ -242,27 +247,58 @@ def run(
         events_client = EventsClient(client.symbol, datafeed=datafeed)
         news_client = NewsClient(client.symbol, datafeed=datafeed)
         tasks.append(
-            partial(
-                _profile_and_dividends_task,
-                client,
-                dividends_client,
-                output_dir,
+            (
                 ticker.key,
-                full_load,
-                ticker.isin,
-                ticker.tax_domicile,
+                "profile/dividends",
+                partial(
+                    _profile_and_dividends_task,
+                    client,
+                    dividends_client,
+                    output_dir,
+                    ticker.key,
+                    full_load,
+                    ticker.isin,
+                    ticker.tax_domicile,
+                ),
             )
         )
-        tasks.append(partial(_prices_task, client, output_dir, ticker.key, full_load))
-        tasks.append(partial(_events_task, events_client, output_dir, ticker.key, full_load))
-        tasks.append(partial(_metrics_task, metrics_client, output_dir, ticker.key))
-        tasks.append(partial(_news_task, news_client, output_dir, ticker.key))
+        tasks.append(
+            (ticker.key, "prices", partial(_prices_task, client, output_dir, ticker.key, full_load))
+        )
+        tasks.append(
+            (
+                ticker.key,
+                "events",
+                partial(_events_task, events_client, output_dir, ticker.key, full_load),
+            )
+        )
+        tasks.append(
+            (ticker.key, "metrics", partial(_metrics_task, metrics_client, output_dir, ticker.key))
+        )
+        tasks.append((ticker.key, "news", partial(_news_task, news_client, output_dir, ticker.key)))
 
+    # A failed task no longer aborts the whole run (previously, the first
+    # future.result() to raise propagated straight out of this loop, losing
+    # every other ticker's already-fetched data too) - every other ticker's
+    # tasks still complete and get written/returned. Each failure is instead
+    # collected into failures.json (equicast-support#145) so the workflow can
+    # report exactly which ticker/piece failed, rather than the whole chunk.
     written: list[Path] = []
+    failures: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(task) for task in tasks]
-        for future in as_completed(futures):
-            written.extend(future.result())
+        future_to_task = {
+            executor.submit(task): (ticker_key, task_label)
+            for ticker_key, task_label, task in tasks
+        }
+        for future in as_completed(future_to_task):
+            ticker_key, task_label = future_to_task[future]
+            try:
+                written.extend(future.result())
+            except Exception as exc:
+                logger.exception("Failed to fetch %s for %s", task_label, ticker_key)
+                failures.append({"ticker": ticker_key, "task": task_label, "error": str(exc)})
+
+    write_failures_manifest(failures, output_dir)
     return written
 
 

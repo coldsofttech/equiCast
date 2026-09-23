@@ -1,0 +1,134 @@
+name: Sync ingestion pipeline status
+description: >
+  Reports one ingestion workflow's overall run health, plus per-ticker
+  extraction failures, to equicast-support (GitHub issue
+  equicast-support#189, follow-up to equicast-support#151's workflow-
+  generalisation proposal) - replaces the identical report-status job
+  steps (determine status, find failed jobs, sync the rolling pipeline-
+  failure tracking issue, download+merge every chunk's failures manifest,
+  sync one native sub-issue per still-failing ticker/pair/benchmark)
+  duplicated across stock-ingestion.yml/etf-ingestion.yml/
+  fx-ingestion.yml/benchmark-ingestion.yml.
+
+  The calling workflow must check out the repo (actions/checkout@v7)
+  before this step - a *local* composite action can't check itself out
+  (see build-push-image for the same constraint) - and this action's own
+  steps shell out to .github/scripts/*.sh|py, which need the repo on disk
+  regardless.
+
+  A composite action can't read its caller's `needs` context any more
+  than it can read `secrets`/`vars` (see configure-aws's role-to-assume
+  comment for the same constraint), so every needs.*.result/output the
+  original report-status job read is passed in below as an input
+  instead. The calling workflow keeps its own report-status job
+  declaration (with its existing `needs:`/`if: always()`), just calling
+  this action for the steps.
+
+  fx-ingestion.yml/benchmark-ingestion.yml have no forecast_only/
+  run_ingest concept - run-ingest defaults to 'true' so their
+  download-failures gate behaves exactly as it did with no such check at
+  all, while stock-ingestion.yml/etf-ingestion.yml pass their actual
+  plan.outputs.run_ingest value.
+
+inputs:
+  pipeline-label:
+    description: 'Human-readable pipeline name, e.g. "Stock", "ETF", "FX", "Benchmark". Used in the tracking issue title and the sub-issue asset-class label.'
+    required: true
+  artifact-prefix:
+    description: 'Per-chunk profile artifact name prefix, e.g. "stock-profiles-".'
+    required: true
+  plan-result:
+    description: 'needs.plan.result from the calling workflow.'
+    required: true
+  ingest-result:
+    description: 'needs.ingest.result from the calling workflow.'
+    required: true
+  build-catalog-result:
+    description: 'needs.build-catalog.result from the calling workflow.'
+    required: true
+  targeted:
+    description: 'needs.plan.outputs.targeted from the calling workflow ("true"/"false").'
+    required: true
+  run-ingest:
+    description: 'needs.plan.outputs.run_ingest from the calling workflow ("true"/"false"). Workflows with no forecast_only concept (fx, benchmark) omit this - defaults to "true".'
+    required: false
+    default: 'true'
+  support-repo:
+    description: 'vars.SUPPORT_REPO.'
+    required: true
+  support-issue-token:
+    description: 'secrets.SUPPORT_ISSUE_TOKEN.'
+    required: true
+  github-token:
+    description: "secrets.GITHUB_TOKEN, for querying this run's own jobs via the API."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Determine pipeline status
+      id: status
+      shell: bash
+      run: |
+        if [ "${{ inputs.plan-result }}" = "failure" ] || [ "${{ inputs.ingest-result }}" = "failure" ] || [ "${{ inputs.build-catalog-result }}" = "failure" ]; then
+          echo "status=failure" >> "$GITHUB_OUTPUT"
+        elif [ "${{ inputs.plan-result }}" = "cancelled" ] || [ "${{ inputs.ingest-result }}" = "cancelled" ] || [ "${{ inputs.build-catalog-result }}" = "cancelled" ]; then
+          echo "status=cancelled" >> "$GITHUB_OUTPUT"
+        else
+          echo "status=success" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Find failed job names for this run
+      id: failed_jobs
+      if: steps.status.outputs.status == 'failure'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        NAMES=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/jobs" --paginate \
+          --jq '[.jobs[] | select(.conclusion == "failure") | .name] | join(", ")')
+        echo "names=$NAMES" >> "$GITHUB_OUTPUT"
+
+    - name: Sync pipeline failure tracking issue
+      id: sync_issue
+      if: steps.status.outputs.status != 'cancelled'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.support-issue-token }}
+      run: |
+        PARENT_NUMBER=$(bash .github/scripts/sync-pipeline-failure-issue.sh \
+          "${{ inputs.support-repo }}" \
+          "${{ inputs.pipeline-label }} ingestion: pipeline failures" \
+          "${{ steps.status.outputs.status }}" \
+          "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          "${{ steps.failed_jobs.outputs.names }}")
+        echo "parent_number=$PARENT_NUMBER" >> "$GITHUB_OUTPUT"
+
+    # Only safe on a full, untargeted run where ingest actually attempted
+    # every configured ticker/pair/benchmark - see
+    # sync-pipeline-failure-subissues.sh's header for why a targeted or
+    # forecast-only run (which never attempted most/any of them) can't
+    # safely auto-close their sub-issues just because they're absent from
+    # this run's failures.
+    - name: Download every chunk's failures manifest
+      id: download_failures
+      if: steps.sync_issue.outcome == 'success' && inputs.targeted != 'true' && inputs.run-ingest == 'true' && (inputs.ingest-result == 'success' || inputs.ingest-result == 'failure')
+      uses: actions/download-artifact@v8
+      with:
+        pattern: ${{ inputs.artifact-prefix }}*
+        path: output
+        merge-multiple: true
+
+    - name: Sync per-ticker extraction-failure sub-issues
+      if: steps.download_failures.outcome == 'success'
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.support-issue-token }}
+      run: |
+        python3 .github/scripts/merge_failures.py --output-dir output/chunk-failures > merged-failures.json
+        bash .github/scripts/sync-pipeline-failure-subissues.sh \
+          "${{ inputs.support-repo }}" \
+          "${{ steps.sync_issue.outputs.parent_number }}" \
+          "${{ inputs.pipeline-label }}" \
+          "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+          merged-failures.json

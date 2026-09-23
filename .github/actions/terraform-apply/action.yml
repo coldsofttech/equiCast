@@ -1,0 +1,147 @@
+name: Terraform apply
+description: >
+  Applies both Terraform roots - infra/ (main) and infra/user-data (its own
+  state, see that directory's backend.tf) - for one environment (GitHub
+  issue equicast-support#190, follow-up to equicast-support#151's
+  workflow-generalisation proposal). Replaces the identical init/apply
+  sequence duplicated between terraform.yml's apply-dev and apply-prod
+  jobs, differing only by the `environment` input (and the GitHub
+  Environment/required-reviewer gate each job declares around this step,
+  which stays in terraform.yml since a composite action can't set its
+  caller's `environment:` key).
+
+  The calling job must check out the repo (actions/checkout@v7), install
+  Terraform (hashicorp/setup-terraform@v4), and configure AWS credentials
+  (./.github/actions/configure-aws) before this step - a *local* composite
+  action can't check itself out, since the runner needs this file on disk
+  to resolve `uses: ./...` in the first place (see build-push-image for
+  the same constraint).
+
+  All tfvars below are passed in as inputs rather than read from
+  vars/secrets directly, since composite actions can't read the calling
+  workflow's vars/secrets contexts (see configure-aws's role-to-assume
+  comment for the same constraint) - centralising them here removes the
+  risk of apply-dev's and apply-prod's `-var` lists silently drifting
+  apart, since they're now maintained in one place instead of by hand in
+  two.
+
+  Also syncs the resulting frontend_url into the Auth0 SPA Application's
+  Allowed Callback/Logout/Web-Origin URLs after the infra/ apply - the
+  same reason infra-lifecycle.yml's redeploy-infra job does this: that
+  CloudFront domain is assigned fresh whenever the distribution is
+  (re)created, including on this workflow's very first apply for a new
+  environment, not just infra-lifecycle.yml's manual redeploys. See
+  .github/scripts/auth0_sync_redirect_uris.sh and docs/auth0-setup.md.
+
+inputs:
+  environment:
+    description: 'Environment to apply - "dev" or "prod". Sets both the state key prefix and the environment tfvar.'
+    required: true
+  auth0-domain:
+    description: 'auth0_domain tfvar.'
+    required: true
+  auth0-audience:
+    description: 'auth0_audience tfvar.'
+    required: true
+  auth0-client-id:
+    description: 'Client ID of the Auth0 SPA Application whose redirect URLs get synced to the new frontend_url after apply.'
+    required: true
+  auth0-mgmt-client-id:
+    description: 'Client ID of the Auth0 Machine-to-Machine Application used to call the Auth0 Management API for the redirect-URL sync.'
+    required: true
+  auth0-mgmt-client-secret:
+    description: 'Client secret of the Auth0 Machine-to-Machine Application used to call the Auth0 Management API for the redirect-URL sync.'
+    required: true
+  support-issue-token:
+    description: 'support_issue_token tfvar.'
+    required: true
+  support-repo:
+    description: 'support_repo tfvar.'
+    required: true
+  support-rate-limit-per-minute:
+    description: 'support_rate_limit_per_minute tfvar.'
+    required: true
+  max-accounts:
+    description: 'max_accounts tfvar.'
+    required: true
+  max-pies:
+    description: 'max_pies tfvar.'
+    required: true
+  max-watchlists:
+    description: 'max_watchlists tfvar.'
+    required: true
+  max-holdings-for-account:
+    description: 'max_holdings_for_account tfvar.'
+    required: true
+  max-holdings-for-pie:
+    description: 'max_holdings_for_pie tfvar.'
+    required: true
+  max-holdings-for-watchlist:
+    description: 'max_holdings_for_watchlist tfvar.'
+    required: true
+  max-transactions-for-holding:
+    description: 'max_transactions_for_holding tfvar.'
+    required: true
+  api-rate-limit-per-minute:
+    description: 'api_rate_limit_per_minute tfvar.'
+    required: true
+  market-data-cache-ttl-seconds:
+    description: 'market_data_cache_ttl_seconds tfvar.'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Terraform init (infra)
+      shell: bash
+      working-directory: infra
+      run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
+
+    - name: Terraform apply (infra)
+      shell: bash
+      working-directory: infra
+      run: >-
+        terraform apply -auto-approve -input=false
+        -var environment=${{ inputs.environment }}
+        -var auth0_domain=${{ inputs.auth0-domain }}
+        -var auth0_audience=${{ inputs.auth0-audience }}
+        -var support_issue_token=${{ inputs.support-issue-token }}
+        -var support_repo=${{ inputs.support-repo }}
+        -var support_rate_limit_per_minute=${{ inputs.support-rate-limit-per-minute }}
+        -var max_accounts=${{ inputs.max-accounts }}
+        -var max_pies=${{ inputs.max-pies }}
+        -var max_watchlists=${{ inputs.max-watchlists }}
+        -var max_holdings_for_account=${{ inputs.max-holdings-for-account }}
+        -var max_holdings_for_pie=${{ inputs.max-holdings-for-pie }}
+        -var max_holdings_for_watchlist=${{ inputs.max-holdings-for-watchlist }}
+        -var max_transactions_for_holding=${{ inputs.max-transactions-for-holding }}
+        -var api_rate_limit_per_minute=${{ inputs.api-rate-limit-per-minute }}
+        -var market_data_cache_ttl_seconds=${{ inputs.market-data-cache-ttl-seconds }}
+
+    # Terraform assigns this CloudFront distribution's domain fresh every
+    # time it's (re)created (see infra/outputs.tf's frontend_url comment)
+    # - the apply above is what just did that, including on a brand-new
+    # environment's very first apply.
+    - name: Capture frontend URL
+      id: frontend-url
+      uses: ./.github/actions/terraform-frontend-url
+
+    - name: Sync frontend URL to Auth0
+      uses: ./.github/actions/auth0-sync-redirect-uri
+      with:
+        action: add
+        frontend-url: ${{ steps.frontend-url.outputs.url }}
+        auth0-domain: ${{ inputs.auth0-domain }}
+        auth0-client-id: ${{ inputs.auth0-client-id }}
+        auth0-mgmt-client-id: ${{ inputs.auth0-mgmt-client-id }}
+        auth0-mgmt-client-secret: ${{ inputs.auth0-mgmt-client-secret }}
+
+    - name: Terraform init (infra/user-data)
+      shell: bash
+      working-directory: infra/user-data
+      run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/user-data-terraform.tfstate"
+
+    - name: Terraform apply (infra/user-data)
+      shell: bash
+      working-directory: infra/user-data
+      run: terraform apply -auto-approve -input=false -var environment=${{ inputs.environment }}

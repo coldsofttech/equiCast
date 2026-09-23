@@ -67,16 +67,24 @@ jobs:
       run:
         working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
+
+      # Captured before the destroy below removes the state that backs
+      # this output — Auth0 cleanup after destroy needs the URL that's
+      # about to disappear, not one read after the fact.
+      - name: Capture current frontend URL
+        id: frontend-url
+        uses: ./.github/actions/terraform-frontend-url
 
       # user_data_bucket lives in ../user-data's own state (see that
       # directory's main.tf), not this one, so this destroy can never reach
@@ -85,6 +93,21 @@ jobs:
       # deploy artifacts), all of which are rebuilt from scratch by
       # redeploy-infra/redeploy-backend/redeploy-frontend.
       - run: terraform destroy -auto-approve -input=false -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }} -var force_destroy=true
+
+      # Removes this environment's frontend URL from the Auth0 SPA
+      # Application's Allowed Callback/Logout/Web-Origin URLs — the
+      # counterpart to redeploy-infra's "add" step below, so a destroyed
+      # environment's since-gone CloudFront domain doesn't linger as a
+      # stale, unreachable entry in Auth0.
+      - name: Remove frontend URL from Auth0
+        uses: ./.github/actions/auth0-sync-redirect-uri
+        with:
+          action: remove
+          frontend-url: ${{ steps.frontend-url.outputs.url }}
+          auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
 
   # Re-applies Terraform for the chosen environment. Needed before
   # redeploy-backend/redeploy-frontend since, after a destroy, the Lambda
@@ -102,17 +125,42 @@ jobs:
       run:
         working-directory: infra
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@v4
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - run: terraform init -backend-config="key=equicast/${{ inputs.environment }}/terraform.tfstate"
       - run: terraform apply -auto-approve -input=false -var environment=${{ inputs.environment }} -var auth0_domain=${{ vars.AUTH0_DOMAIN }} -var auth0_audience=${{ vars.AUTH0_AUDIENCE }} -var support_issue_token=${{ secrets.SUPPORT_ISSUE_TOKEN }} -var support_repo=${{ vars.SUPPORT_REPO }} -var support_rate_limit_per_minute=${{ vars.SUPPORT_RATE_LIMIT_PER_MINUTE }} -var max_accounts=${{ vars.MAX_ACCOUNTS }} -var max_pies=${{ vars.MAX_PIES }} -var max_watchlists=${{ vars.MAX_WATCHLISTS }} -var max_holdings_for_account=${{ vars.MAX_HOLDINGS_FOR_ACCOUNT }} -var max_holdings_for_pie=${{ vars.MAX_HOLDINGS_FOR_PIE }} -var max_holdings_for_watchlist=${{ vars.MAX_HOLDINGS_FOR_WATCHLIST }} -var max_transactions_for_holding=${{ vars.MAX_TRANSACTIONS_FOR_HOLDING }} -var api_rate_limit_per_minute=${{ vars.API_RATE_LIMIT_PER_MINUTE }} -var market_data_cache_ttl_seconds=${{ vars.MARKET_DATA_CACHE_TTL_SECONDS }}
+
+      # Terraform assigns this CloudFront distribution's domain fresh
+      # every time it's (re)created (see infra/outputs.tf's frontend_url
+      # comment) — the apply above is what just did that, so this reads
+      # the URL that needs registering with Auth0 now, not a possibly
+      # stale one from before this run.
+      - name: Capture new frontend URL
+        id: frontend-url
+        uses: ./.github/actions/terraform-frontend-url
+
+      # Adds this environment's (possibly new) frontend URL to the Auth0
+      # SPA Application's Allowed Callback/Logout/Web-Origin URLs so
+      # login works against the just-(re)created CloudFront distribution
+      # without the manual dashboard edit docs/auth0-setup.md Step 3
+      # otherwise describes.
+      - name: Add frontend URL to Auth0
+        uses: ./.github/actions/auth0-sync-redirect-uri
+        with:
+          action: add
+          frontend-url: ${{ steps.frontend-url.outputs.url }}
+          auth0-domain: ${{ vars.AUTH0_DOMAIN }}
+          auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
+          auth0-mgmt-client-id: ${{ secrets.AUTH0_MGMT_CLIENT_ID }}
+          auth0-mgmt-client-secret: ${{ secrets.AUTH0_MGMT_CLIENT_SECRET }}
 
       # user_data_bucket lives in ./user-data's own state (see that
       # directory's main.tf), separate from the root state applied above,
@@ -138,20 +186,21 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
       - name: Build Lambda deployment package
         run: bash backend/scripts/build_lambda_package.sh
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Upload to S3 and update the Lambda function
         run: |
@@ -189,9 +238,9 @@ jobs:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: "22"
 
@@ -206,10 +255,11 @@ jobs:
           npm ci
           npm run build
 
-      - uses: aws-actions/configure-aws-credentials@v4
+      - name: Configure AWS credentials via OIDC
+        uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ vars.AWS_REGION || 'eu-west-1' }}
+          aws-region: ${{ vars.AWS_REGION }}
 
       - name: Sync to S3
         working-directory: frontend

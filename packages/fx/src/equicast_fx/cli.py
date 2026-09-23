@@ -22,7 +22,12 @@ from equicast_metrics import MetricsClient
 
 from equicast_fx.client import FXClient
 from equicast_fx.config import FxPair, load_fx_pairs, parse_fx_pairs_json
-from equicast_fx.writer import write_metrics_parquet, write_price_parquet, write_profile_parquet
+from equicast_fx.writer import (
+    write_failures_manifest,
+    write_metrics_parquet,
+    write_price_parquet,
+    write_profile_parquet,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -116,28 +121,54 @@ def run(
     # prices, and metrics tasks — all three only read immutable state and
     # delegate to the (thread-safe) shared datafeed, so calling them
     # concurrently on one instance is safe.
-    tasks: list[Callable[[], list[Path]]] = []
+    #
+    # Each task is tagged with its pair key and a short task label (rather
+    # than a bare callable) so a failure below can be attributed back to
+    # "which pair, which piece" for failures.json - see equicast-support#145.
+    tasks: list[tuple[str, str, Callable[[], list[Path]]]] = []
     for pair in pairs:
         client = FXClient(pair.from_currency, pair.to_currency, datafeed=datafeed)
         metrics_client = MetricsClient(client.symbol, datafeed=datafeed)
-        tasks.append(partial(_profile_task, client, output_dir, pair.key))
-        tasks.append(partial(_prices_task, client, output_dir, pair.key, full_load))
+        tasks.append((pair.key, "profile", partial(_profile_task, client, output_dir, pair.key)))
         tasks.append(
-            partial(
-                _metrics_task,
-                metrics_client,
-                pair.from_currency,
-                pair.to_currency,
-                output_dir,
+            (pair.key, "prices", partial(_prices_task, client, output_dir, pair.key, full_load))
+        )
+        tasks.append(
+            (
                 pair.key,
+                "metrics",
+                partial(
+                    _metrics_task,
+                    metrics_client,
+                    pair.from_currency,
+                    pair.to_currency,
+                    output_dir,
+                    pair.key,
+                ),
             )
         )
 
+    # A failed task no longer aborts the whole run (previously, the first
+    # future.result() to raise propagated straight out of this loop, losing
+    # every other pair's already-fetched data too) - every other pair's
+    # tasks still complete and get written/returned. Each failure is instead
+    # collected into failures.json (equicast-support#145) so the workflow can
+    # report exactly which pair/piece failed, rather than the whole chunk.
     written: list[Path] = []
+    failures: list[dict[str, str]] = []
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(task) for task in tasks]
-        for future in as_completed(futures):
-            written.extend(future.result())
+        future_to_task = {
+            executor.submit(task): (pair_key, task_label) for pair_key, task_label, task in tasks
+        }
+        for future in as_completed(future_to_task):
+            pair_key, task_label = future_to_task[future]
+            try:
+                written.extend(future.result())
+            except Exception as exc:
+                logger.exception("Failed to fetch %s for %s", task_label, pair_key)
+                failures.append({"ticker": pair_key, "task": task_label, "error": str(exc)})
+
+    write_failures_manifest(failures, output_dir)
     return written
 
 

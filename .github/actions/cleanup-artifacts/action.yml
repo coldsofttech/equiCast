@@ -1,0 +1,38 @@
+name: Cleanup ingestion pipeline artifacts
+description: >
+  Deletes this run's per-chunk profile artifacts (GitHub issue
+  equicast-support#189, follow-up to equicast-support#151's workflow-
+  generalisation proposal) - replaces the identical cleanup-profile-
+  artifacts job step duplicated across stock-ingestion.yml/
+  etf-ingestion.yml/fx-ingestion.yml/benchmark-ingestion.yml.
+
+  The calling workflow keeps its own cleanup-profile-artifacts job
+  declaration (with its existing `needs:`/`if:`), just calling this
+  action for the step. No checkout needed before this one - unlike
+  sync-pipeline-status, it only calls the GitHub API, never a repo
+  script - but the runner still needs the repo checked out to resolve
+  `uses: ./...` at all (see build-push-image for that constraint), so
+  the calling job needs a checkout step regardless.
+
+inputs:
+  artifact-prefix:
+    description: 'Per-chunk profile artifact name prefix, e.g. "stock-profiles-".'
+    required: true
+  github-token:
+    description: "secrets.GITHUB_TOKEN, for listing/deleting this run's own artifacts via the API."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Delete this run's per-chunk profile artifacts
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+      run: |
+        gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts" --paginate \
+          --jq '.artifacts[] | select(.name | startswith("${{ inputs.artifact-prefix }}")) | .id' \
+        | while read -r id; do
+            gh api -X DELETE "repos/${{ github.repository }}/actions/artifacts/$id"
+            echo "Deleted artifact $id"
+          done

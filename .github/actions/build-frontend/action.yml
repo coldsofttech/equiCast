@@ -1,0 +1,56 @@
+name: Build frontend
+description: >
+  Installs Node and builds the frontend (GitHub issue equicast-support#191,
+  follow-up to equicast-support#151's workflow-generalisation proposal) -
+  replaces the identical actions/setup-node@v7 + `npm ci` + `npm run build`
+  block duplicated across deploy.yml's estimate-frontend, deploy-frontend-
+  dev, and deploy-frontend-prod jobs. frontend-ci.yml's own build step is
+  deliberately left out of this - it just checks the build succeeds, with
+  no VITE_* config, so it has no use for the environment-specific inputs
+  below.
+
+  The calling workflow must check out the repo (actions/checkout@v7)
+  before this step - a *local* composite action can't check itself out,
+  since the runner needs this file on disk to resolve `uses: ./...` in
+  the first place (see build-push-image for the same constraint).
+
+  All VITE_* inputs are optional and default to empty - estimate-frontend
+  calls this with none set, since it only needs to know the build's real
+  size before anyone approves a spend, not environment-specific config.
+
+inputs:
+  vite-api-base-url:
+    description: 'VITE_API_BASE_URL to bake into the build.'
+    required: false
+    default: ''
+  vite-auth0-domain:
+    description: 'VITE_AUTH0_DOMAIN to bake into the build.'
+    required: false
+    default: ''
+  vite-auth0-client-id:
+    description: 'VITE_AUTH0_CLIENT_ID to bake into the build.'
+    required: false
+    default: ''
+  vite-auth0-audience:
+    description: 'VITE_AUTH0_AUDIENCE to bake into the build.'
+    required: false
+    default: ''
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: "22"
+
+    - name: Build frontend
+      shell: bash
+      working-directory: frontend
+      env:
+        VITE_API_BASE_URL: ${{ inputs.vite-api-base-url }}
+        VITE_AUTH0_DOMAIN: ${{ inputs.vite-auth0-domain }}
+        VITE_AUTH0_CLIENT_ID: ${{ inputs.vite-auth0-client-id }}
+        VITE_AUTH0_AUDIENCE: ${{ inputs.vite-auth0-audience }}
+      run: |
+        npm ci
+        npm run build

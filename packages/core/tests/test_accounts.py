@@ -67,6 +67,22 @@ def test_create_account_persists_a_given_icon(s3_client) -> None:
     assert account["icon"] == "bank2"
 
 
+def test_create_account_defaults_vendor_to_none(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+
+    account = _create(client, "auth0|abc123")
+
+    assert account["vendor"] is None
+
+
+def test_create_account_persists_a_given_vendor(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+
+    account = _create(client, "auth0|abc123", vendor="Trading212")
+
+    assert account["vendor"] == "Trading212"
+
+
 def test_get_account_returns_the_matching_account(s3_client) -> None:
     client = AccountsClient(BUCKET, s3_client=s3_client)
     account = _create(client, "auth0|abc123")
@@ -142,6 +158,15 @@ def test_update_account_can_set_icon(s3_client) -> None:
     updated = client.update_account("auth0|abc123", account["id"], icon="bank2")
 
     assert updated["icon"] == "bank2"
+
+
+def test_update_account_can_set_vendor(s3_client) -> None:
+    client = AccountsClient(BUCKET, s3_client=s3_client)
+    account = _create(client, "auth0|abc123")
+
+    updated = client.update_account("auth0|abc123", account["id"], vendor="Chip")
+
+    assert updated["vendor"] == "Chip"
 
 
 def test_update_account_raises_for_unknown_id(s3_client) -> None:
