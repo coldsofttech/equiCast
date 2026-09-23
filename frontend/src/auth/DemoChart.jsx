@@ -105,8 +105,8 @@ function DemoChart() {
       <span className="ec-section-eyebrow">See it in action</span>
       <h2 className="ec-features-title">Real tickers, tracked the way equiCast tracks them</h2>
       <p className="ec-demo-sub">
-        Real prices for AAPL, NVDA and VOO, updated once a day — the same prices you'd see once
-        signed in, not minute-by-minute quotes.
+        Prices for AAPL, NVDA and VOO — the same figures you'd see once signed in, refreshed daily
+        rather than minute-by-minute.
       </p>
 
       <div className="ec-demo-card">
