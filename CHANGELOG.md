@@ -99,6 +99,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An account card's vendor tag now sits alongside its pies/holdings counts instead of on its own row.
 - Adding a transaction now locks the whole form, not just the buttons, while it saves.
 - The import review screen now has Select all/Unselect all buttons for the ready-to-import holdings, and no longer requires reselecting the target account for a holding going into a brand-new, empty account.
+- The home page now highlights UK dividend tax & allowance tracking as an available feature, and trims it from the roadmap section (equicast-support#203).
+- The home page's hero now shows more of equiCast's implemented concepts as floating chips, in alternating accent colors (equicast-support#203).
+- The home page no longer describes equiCast's data as "live", since prices refresh once a day rather than in real time (equicast-support#203).
+- The home page's demo chart now opens in line view by default instead of candles, and its Terms/Privacy Notice links now match the footer's link styling (equicast-support#203).
+- The home page's "Available today" section is now a spotlight list for its top 6 features, with a compact strip for the rest, instead of one large grid of 12 equal cards, plus a "Log in" call to action after both that section and the roadmap (equicast-support#203).
 
 ### Fixed
 

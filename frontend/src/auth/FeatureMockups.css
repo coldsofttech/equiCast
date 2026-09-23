@@ -1,0 +1,140 @@
+/* ----- Shared mockup frame ----- */
+.ec-mockup {
+  width: 100%;
+  max-width: 340px;
+  box-sizing: border-box;
+  padding: var(--ec-s-20);
+  border-radius: var(--ec-r-12);
+  background: var(--ec-surface);
+  border: 1px solid var(--ec-border);
+  box-shadow: var(--ec-shadow-md);
+}
+
+.ec-mockup-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 6px;
+  flex-shrink: 0;
+}
+
+.ec-mockup-dot--muted {
+  background: var(--ec-text-subtle);
+}
+
+.ec-mockup-dot--accent {
+  background: var(--ec-accent);
+}
+
+/* ----- Portfolio pies ----- */
+.ec-mockup-pie {
+  display: flex;
+  align-items: center;
+  gap: var(--ec-s-20);
+}
+
+.ec-mockup-pie-donut {
+  position: relative;
+  flex-shrink: 0;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+}
+
+.ec-mockup-pie-hole {
+  position: absolute;
+  inset: 18px;
+  border-radius: 50%;
+  background: var(--ec-surface);
+}
+
+.ec-mockup-pie-legend {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-8);
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-muted);
+}
+
+/* ----- Diversification & benchmarking ----- */
+.ec-mockup-diversification {
+  display: flex;
+  flex-direction: column;
+  gap: var(--ec-s-12);
+}
+
+.ec-mockup-bar {
+  display: flex;
+  height: 14px;
+  border-radius: var(--ec-r-pill);
+  overflow: hidden;
+}
+
+.ec-mockup-bar-segment {
+  height: 100%;
+}
+
+.ec-mockup-bar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--ec-s-8) var(--ec-s-12);
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-muted);
+}
+
+.ec-mockup-bar-legend-item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ec-mockup-benchmark-badge {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px var(--ec-s-8);
+  border-radius: var(--ec-r-pill);
+  background: var(--ec-success-soft);
+  color: var(--ec-success-soft-text);
+  font-size: var(--ec-fs-12);
+  font-weight: 700;
+}
+
+/* ----- Since-inception performance ----- */
+.ec-mockup-performance-svg {
+  display: block;
+  width: 100%;
+  height: 90px;
+}
+
+.ec-mockup-performance-area {
+  fill: var(--ec-accent-soft);
+}
+
+.ec-mockup-performance-line {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ec-mockup-performance-line--invested {
+  stroke: var(--ec-text-subtle);
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.ec-mockup-performance-line--current {
+  stroke: var(--ec-accent);
+  stroke-width: 2;
+}
+
+.ec-mockup-performance-legend {
+  display: flex;
+  gap: var(--ec-s-16);
+  margin-top: var(--ec-s-8);
+  font-size: var(--ec-fs-12);
+  color: var(--ec-text-muted);
+}

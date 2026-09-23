@@ -41,12 +41,12 @@ afterEach(() => {
 });
 
 describe("DemoChart", () => {
-  it("shows a loading state, then renders live tickers", async () => {
+  it("shows a loading state, then renders tickers", async () => {
     vi.mocked(getPublicDemoPrices).mockResolvedValue({ tickers: TICKERS });
 
     render(<DemoChart />);
 
-    expect(screen.getByText(/loading live prices/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading prices/i)).toBeInTheDocument();
 
     expect(await screen.findByRole("tab", { name: "AAPL" })).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: "NVDA" })).toBeInTheDocument();
@@ -71,6 +71,6 @@ describe("DemoChart", () => {
     render(<DemoChart />);
 
     expect(await screen.findByText(/temporarily unavailable/i)).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText(/loading live prices/i)).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/loading prices/i)).not.toBeInTheDocument());
   });
 });

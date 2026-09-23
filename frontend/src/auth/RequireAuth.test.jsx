@@ -53,7 +53,9 @@ describe("RequireAuth (Auth0 configured)", () => {
       </MemoryRouter>
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /log in/i }));
+    // The landing page repeats the "Log in" CTA in a couple of banners
+    // further down — click the hero's, the first one rendered.
+    fireEvent.click(screen.getAllByRole("button", { name: /log in/i })[0]);
     expect(loginWithRedirect).toHaveBeenCalledWith(
       expect.objectContaining({
         appState: expect.objectContaining({ returnTo: expect.any(String) }),
