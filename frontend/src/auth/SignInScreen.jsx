@@ -19,7 +19,7 @@ const FEATURES = [
     ),
   },
   {
-    title: "Live equity & FX data",
+    title: "Daily equity & FX data",
     desc: "Pricing for stocks, ETFs and FX pairs, kept ready to query.",
     icon: (
       <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
@@ -51,6 +51,21 @@ const FEATURES = [
         <rect x="2.5" y="3.5" width="15" height="14" rx="2" stroke="currentColor" strokeWidth="1.6" />
         <path d="M2.5 7.5h15" stroke="currentColor" strokeWidth="1.6" />
         <path d="M6 2v3M14 2v3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+  {
+    title: "UK dividend tax & allowance",
+    desc: "GIA dividends are taxed automatically against your income band, with the £500 UK allowance tracked per tax year on its own page.",
+    icon: (
+      <svg viewBox="0 0 20 20" width="20" height="20" fill="none" aria-hidden="true">
+        <path
+          d="M10 2.5l6 2.2v4.3c0 4-2.6 6.9-6 8.3-3.4-1.4-6-4.3-6-8.3V4.7L10 2.5z"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <path d="M7 10l2 2 4-4.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     ),
   },
@@ -139,7 +154,7 @@ const FEATURES = [
 ];
 
 // The fuller product vision — what equiCast is being built toward, not what's
-// live today (see FEATURES above for that). Each group's items are the
+// available today (see FEATURES above for that). Each group's items are the
 // visualisation/analysis layer on top of data equiCast already collects, not
 // a restatement of the raw-data items in FEATURES — deliberately kept
 // distinct so the two sections don't repeat each other.
@@ -167,7 +182,7 @@ const ROADMAP = [
     title: "Dividend income & UK tax",
     items: [
       "Consolidated 5-year income projections, not just per-payout totals",
-      "UK dividend allowance and capital gains tax, with a household-level view",
+      "Capital gains tax, with a household-level view",
       "Cumulative income visualised across your whole portfolio",
     ],
   },
@@ -218,7 +233,7 @@ function SignInScreen({ onSignIn, error }) {
             <span className="ec-hero-eyebrow">Forecasting</span>
             <h1 className="ec-hero-title">Cast your equity forward.</h1>
             <p className="ec-hero-sub">
-              One place to track multi-currency portfolios, live equity &amp; FX data, and the
+              One place to track multi-currency portfolios, daily equity &amp; FX data, and the
               risk metrics behind every ticker you follow — with forecasting on the way.
             </p>
             {error ? (
@@ -258,11 +273,19 @@ function SignInScreen({ onSignIn, error }) {
 
           <div className="ec-hero-visual" aria-hidden="true">
             <span className="ec-hero-chip ec-hero-chip--1">Stocks</span>
-            <span className="ec-hero-chip ec-hero-chip--2">ETFs</span>
-            <span className="ec-hero-chip ec-hero-chip--3">FX</span>
+            <span className="ec-hero-chip ec-hero-chip--2 ec-hero-chip--accent">ETFs</span>
+            <span className="ec-hero-chip ec-hero-chip--3 ec-hero-chip--purple">FX</span>
             <span className="ec-hero-chip ec-hero-chip--4">Portfolios</span>
-            <span className="ec-hero-chip ec-hero-chip--5">Forecasting</span>
-            <span className="ec-hero-chip ec-hero-chip--6">Analytics</span>
+            <span className="ec-hero-chip ec-hero-chip--5 ec-hero-chip--accent">Forecasting</span>
+            <span className="ec-hero-chip ec-hero-chip--6 ec-hero-chip--purple">Analytics</span>
+            <span className="ec-hero-chip ec-hero-chip--7">Benchmarks</span>
+            <span className="ec-hero-chip ec-hero-chip--8 ec-hero-chip--accent">Volatility</span>
+            <span className="ec-hero-chip ec-hero-chip--9 ec-hero-chip--purple">CAGR</span>
+            <span className="ec-hero-chip ec-hero-chip--10">Dividends</span>
+            <span className="ec-hero-chip ec-hero-chip--11 ec-hero-chip--accent">Taxation</span>
+            <span className="ec-hero-chip ec-hero-chip--12 ec-hero-chip--purple">Goals</span>
+            <span className="ec-hero-chip ec-hero-chip--13">Transactions</span>
+            <span className="ec-hero-chip ec-hero-chip--14 ec-hero-chip--accent">Diversification</span>
             <div className="ec-hero-badge">
               <CandlestickSpearIcon size={40} />
             </div>
@@ -286,7 +309,7 @@ function SignInScreen({ onSignIn, error }) {
       </div>
 
       <section className="ec-features" ref={featuresRef}>
-        <span className="ec-section-eyebrow">Live today</span>
+        <span className="ec-section-eyebrow">Available today</span>
         <h2 className="ec-features-title">Everything your portfolio needs, one login away.</h2>
         <div className="ec-feature-grid">
           {FEATURES.map((feature) => (
@@ -305,7 +328,7 @@ function SignInScreen({ onSignIn, error }) {
         <span className="ec-section-eyebrow">Coming next</span>
         <h2 className="ec-features-title">The best of the tools you already use, in one place.</h2>
         <p className="ec-roadmap-sub">
-          Core accounts, market data and risk metrics are live today — here&rsquo;s everywhere
+          Core accounts, market data and risk metrics are available today — here&rsquo;s everywhere
           equiCast is headed next.
         </p>
         <RoadmapCarousel groups={ROADMAP} />

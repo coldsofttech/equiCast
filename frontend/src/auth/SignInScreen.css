@@ -182,12 +182,20 @@
   font-size: var(--ec-fs-12);
 }
 
+.ec-hero-fine a {
+  color: var(--ec-text-subtle);
+}
+
+.ec-hero-fine a:hover {
+  color: var(--ec-text-muted);
+}
+
 /* ----- Hero visual ----- */
 .ec-hero-visual {
   position: relative;
   display: grid;
   place-items: center;
-  min-height: 320px;
+  min-height: 400px;
 }
 
 .ec-hero-badge {
@@ -252,6 +260,66 @@
   top: 62%;
   left: 22%;
   animation-delay: -5.5s;
+}
+
+.ec-hero-chip--7 {
+  top: 0%;
+  left: 26%;
+  animation-delay: -1s;
+}
+
+.ec-hero-chip--8 {
+  top: 0%;
+  right: 24%;
+  animation-delay: -3.5s;
+}
+
+.ec-hero-chip--9 {
+  top: 22%;
+  left: 4%;
+  animation-delay: -6s;
+}
+
+.ec-hero-chip--10 {
+  top: 20%;
+  right: 14%;
+  animation-delay: -2s;
+}
+
+.ec-hero-chip--11 {
+  top: 34%;
+  right: 20%;
+  animation-delay: -4.5s;
+}
+
+.ec-hero-chip--12 {
+  bottom: 34%;
+  right: 4%;
+  animation-delay: -0.75s;
+}
+
+.ec-hero-chip--13 {
+  top: 31%;
+  left: 10%;
+  animation-delay: -5s;
+}
+
+.ec-hero-chip--14 {
+  bottom: 22%;
+  right: 8%;
+  animation-delay: -2.75s;
+}
+
+.ec-hero-chip--accent {
+  background: var(--ec-accent-soft);
+  border-color: transparent;
+  color: var(--ec-accent-soft-text);
+}
+
+.ec-hero-chip--purple {
+  background: var(--ec-purple-soft);
+  border-color: transparent;
+  color: var(--ec-purple-soft-text);
 }
 
 .ec-hero-quote {
@@ -556,9 +624,14 @@
     min-height: 260px;
   }
 
-  .ec-hero-chip--4,
-  .ec-hero-chip--5,
-  .ec-hero-chip--6 {
+  .ec-hero-chip--7,
+  .ec-hero-chip--8,
+  .ec-hero-chip--9,
+  .ec-hero-chip--10,
+  .ec-hero-chip--11,
+  .ec-hero-chip--12,
+  .ec-hero-chip--13,
+  .ec-hero-chip--14 {
     display: none;
   }
 }
