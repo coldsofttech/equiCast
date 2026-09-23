@@ -1,0 +1,49 @@
+name: Feature request
+description: Propose a new feature or enhancement for equiCast
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: What's the gap or pain point today?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: What would you like to see happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Frontend
+        - Backend API
+        - Stock/ETF/FX ingestion
+        - Forecasting
+        - Infra/CI
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      description: Mockups, links, or anything else that might help.
+    validations:
+      required: false
