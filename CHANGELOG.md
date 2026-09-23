@@ -98,6 +98,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The "New account"/"Edit account" drawer now asks for vendor before icon.
 - An account card's vendor tag now sits alongside its pies/holdings counts instead of on its own row.
 - Adding a transaction now locks the whole form, not just the buttons, while it saves.
+- The import review screen now has Select all/Unselect all buttons for the ready-to-import holdings, and no longer requires reselecting the target account for a holding going into a brand-new, empty account.
 
 ### Fixed
 
