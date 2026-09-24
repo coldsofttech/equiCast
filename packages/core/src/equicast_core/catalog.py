@@ -251,6 +251,22 @@ def main() -> None:
     else:
         rows = fetched_rows
         logger.info("Built %d catalog row(s) for asset_class=%s", len(rows), args.asset_class)
+
+    # A real run - merge or full-replace - always has at least one row to
+    # publish; the only way `rows` ends up empty is upstream breakage (e.g.
+    # build_catalog_rows finding no profile.parquet files under
+    # --output-dir at all, as happened when a CI artifact path mismatch
+    # left it looking one directory too shallow). Refusing to publish
+    # turns that into a loud pipeline failure instead of a silently empty
+    # catalog/<asset_class>.parquet that makes search return nothing for
+    # every query with no error anywhere.
+    if not rows:
+        raise SystemExit(
+            f"Refusing to publish an empty catalog for asset_class={args.asset_class} - "
+            f"build_catalog_rows found no profile.parquet files under {args.output_dir}. "
+            "Check the ingestion job's artifact upload/download paths."
+        )
+
     upload_catalog(args.bucket, args.asset_class, rows, region_name=args.region)
 
 

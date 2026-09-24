@@ -4,6 +4,7 @@ import boto3
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
+from botocore.exceptions import ClientError
 from equicast_core.catalog import (
     build_catalog_rows,
     catalog_key,
@@ -363,3 +364,29 @@ def test_main_builds_and_uploads_end_to_end(tmp_path: Path, s3_client, monkeypat
             "current_price": 624.5,
         }
     ]
+
+
+def test_main_refuses_to_publish_an_empty_catalog(tmp_path: Path, s3_client, monkeypatch) -> None:
+    """No profile.parquet found under --output-dir (e.g. a CI artifact path
+    mismatch leaving it a directory too shallow) must fail the run loudly
+    rather than publish an empty catalog/<asset_class>.parquet that makes
+    search return nothing for every query with no error anywhere."""
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "equicast-core-build-catalog",
+            "--asset-class",
+            "etf",
+            "--output-dir",
+            str(tmp_path),
+            "--bucket",
+            BUCKET,
+        ],
+    )
+    monkeypatch.setattr("equicast_core.catalog.boto3.client", lambda *a, **kw: s3_client)
+
+    with pytest.raises(SystemExit):
+        main()
+
+    with pytest.raises(ClientError):
+        _read_catalog(s3_client, "catalog/etf.parquet")
