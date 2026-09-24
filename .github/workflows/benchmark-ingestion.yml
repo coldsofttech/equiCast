@@ -210,6 +210,20 @@ jobs:
       - name: Upload benchmark profiles and prices to S3
         run: aws s3 cp output/ "s3://${{ needs.plan.outputs.bucket }}/" --recursive
 
+      # Moved under output/ only now, after the S3 upload above, so both
+      # patterns below share output/ as their common root. upload-artifact
+      # strips whatever root the given patterns share before archiving -
+      # with output/benchmark=*/profile.parquet and
+      # chunk-failures/failures-*.json sharing no common directory, it fell
+      # back to the repo root and kept the leading "output/" on the profile
+      # path but not on chunk-failures, so build-catalog's download (which
+      # re-extracts into output/) landed profiles one directory too deep
+      # (output/output/benchmark=*/...) and its glob for
+      # output/benchmark=*/profile.parquet silently matched nothing - an
+      # empty catalog with no error anywhere.
+      - name: Move this chunk's failures manifest under output/ for the artifact upload
+        run: mv chunk-failures output/chunk-failures
+
       # Feeds build-catalog below — that job needs every chunk's
       # profile.parquet files in one place to build a complete catalog, and
       # a matrix leg only ever sees its own chunk. Short retention: this
@@ -225,7 +239,7 @@ jobs:
           name: benchmark-profiles-${{ strategy.job-index }}
           path: |
             output/benchmark=*/profile.parquet
-            chunk-failures/failures-*.json
+            output/chunk-failures/failures-*.json
           retention-days: 1
 
   # Rebuilds catalog/benchmark.parquet (see equicast_core.catalog) from every
