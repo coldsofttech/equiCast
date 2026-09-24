@@ -11,10 +11,9 @@ name: Build Images
 # building/pushing an image is delegated to .github/actions/build-push-image
 # (equicast-support#186), shared with nothing else right now but kept as
 # its own composite action rather than inlined here, since that's the piece
-# every one of the five images' builds is otherwise identical on.
-#
-# No `futures` entry yet - packages/futures/Dockerfile doesn't exist. Add
-# one more `include` entry (name/dockerfile) and filter block once it does.
+# every one of these images' builds is otherwise identical on. `future`
+# (packages/future/Dockerfile) was added later, the same way as the other
+# five - one more `include` entry plus filter block.
 on:
   push:
     # dev/** covers the dev/vX.Y integration branches for a release about
@@ -31,6 +30,7 @@ on:
       - "packages/fx/**"
       - "packages/benchmark/**"
       - "packages/forecasting/**"
+      - "packages/future/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/images.yml"
@@ -38,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       asset_class:
-        description: "Build only this image (default: all five) - ignores the changes job below, same as the old per-image workflows' workflow_dispatch always building regardless of what changed"
+        description: "Build only this image (default: all six) - ignores the changes job below, same as the old per-image workflows' workflow_dispatch always building regardless of what changed"
         type: choice
         options:
           - all
@@ -47,6 +47,7 @@ on:
           - fx
           - benchmark
           - forecasting
+          - future
         default: all
 
 permissions:
@@ -71,6 +72,7 @@ jobs:
       fx: ${{ steps.filter.outputs.fx }}
       benchmark: ${{ steps.filter.outputs.benchmark }}
       forecasting: ${{ steps.filter.outputs.forecasting }}
+      future: ${{ steps.filter.outputs.future }}
     steps:
       # dorny/paths-filter needs local git history to diff a push event
       # against (unlike pull_request, which it can resolve via the API
@@ -110,6 +112,10 @@ jobs:
               - *shared
               - "packages/dividends/**"
               - "packages/forecasting/**"
+            future:
+              - *shared
+              - "packages/metrics/**"
+              - "packages/future/**"
 
   build-and-push:
     needs: [changes]
@@ -148,6 +154,9 @@ jobs:
           - name: forecasting
             dockerfile: packages/forecasting/Dockerfile
             package-dir: packages/forecasting
+          - name: future
+            dockerfile: packages/future/Dockerfile
+            package-dir: packages/future
     steps:
       # Evaluated per matrix entry (not job-level `if`, since a step needs
       # to run conditionally while later steps in the same job still see
