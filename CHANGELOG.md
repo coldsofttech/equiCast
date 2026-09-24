@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.5] - 2026-09-24
+
+### Fixed
+
+- Fixed account/pie price charts failing to load for portfolios with many
+  holdings, caused by too many simultaneous price requests hitting the
+  rate limit.
+
 ## [1.1.4] - 2026-09-24
 
 ### Fixed

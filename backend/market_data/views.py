@@ -33,6 +33,18 @@ DEMO_TICKERS = [("stock", "AAPL"), ("stock", "NVDA"), ("etf", "VOO")]
 #: plays for SearchView.
 MAX_BULK_ITEMS = 200
 
+#: BulkPricesView's own, much lower ceiling than MAX_BULK_ITEMS above.
+#: Unlike a profile/metrics record (a handful of scalar fields), a price
+#: item is get_price_history's full {daily, weekly, monthly} bundle — for a
+#: ~20-year-old holding that's on the order of 45-65KB of JSON per item, so
+#: MAX_BULK_ITEMS worth of them in one response could approach API Gateway/
+#: Lambda's 10MB response cap. 100 keeps a full page comfortably under that
+#: even for a page of all long-history (~40yr) holdings (~6.5MB worst case)
+#: while still collapsing a large account's holdings into a small, fixed
+#: number of requests (frontend api/market.js's getBulkPrices chunks into
+#: pages of this size and calls this endpoint once per page).
+MAX_BULK_PRICE_ITEMS = 100
+
 #: One shared client for the process — cheap to construct, but no reason to
 #: rebuild it (and its boto3 client) on every request. Also the instance
 #: `lambda_handler.py` calls `warm_fx_cache()` on at Lambda cold start —
@@ -83,15 +95,20 @@ class MetricsView(APIView):
         return Response(metrics)
 
 
-def _validate_bulk_items(data: object) -> list[dict[str, str]] | Response:
-    """Shared request-body validation for BulkProfileView/BulkMetricsView —
-    both expect `{"items": [{"asset_class": str, "symbol": str}, ...]}`.
-    Returns the validated `items` list, or a ready-to-return 400 `Response`
-    describing what's wrong. An unknown `asset_class` on an individual item
-    is deliberately *not* validated here — that's a per-item "no data"
-    case each view resolves to `None` for, same as an unpublished symbol,
-    rather than failing the whole batch for one bad entry (a caller mixing
-    a typo'd item among otherwise-valid ones still gets the rest back)."""
+def _validate_bulk_items(
+    data: object, max_items: int = MAX_BULK_ITEMS
+) -> list[dict[str, str]] | Response:
+    """Shared request-body validation for BulkProfileView/BulkMetricsView/
+    BulkPricesView — all three expect `{"items": [{"asset_class": str,
+    "symbol": str}, ...]}`. Returns the validated `items` list, or a
+    ready-to-return 400 `Response` describing what's wrong. An unknown
+    `asset_class` on an individual item is deliberately *not* validated
+    here — that's a per-item "no data" case each view resolves to `None`
+    for, same as an unpublished symbol, rather than failing the whole batch
+    for one bad entry (a caller mixing a typo'd item among otherwise-valid
+    ones still gets the rest back). `max_items` defaults to MAX_BULK_ITEMS;
+    BulkPricesView passes its own, much lower MAX_BULK_PRICE_ITEMS (see
+    that constant's docstring)."""
     if not isinstance(data, dict) or not isinstance(data.get("items"), list):
         return Response(
             {"detail": 'Expected a JSON body: {"items": [{"asset_class", "symbol"}, ...]}.'},
@@ -101,8 +118,8 @@ def _validate_bulk_items(data: object) -> list[dict[str, str]] | Response:
     items = data["items"]
     if not items:
         return Response({"detail": "items must not be empty."}, status=400)
-    if len(items) > MAX_BULK_ITEMS:
-        return Response({"detail": f"items must not exceed {MAX_BULK_ITEMS}."}, status=400)
+    if len(items) > max_items:
+        return Response({"detail": f"items must not exceed {max_items}."}, status=400)
 
     for item in items:
         if (
@@ -169,6 +186,43 @@ class BulkMetricsView(APIView):
                 _client.get_metrics(asset_class, symbol) if asset_class in ASSET_CLASSES else None
             )
             results.append({"asset_class": asset_class, "symbol": symbol, "metrics": metrics})
+        return Response({"results": results})
+
+
+class BulkPricesView(APIView):
+    """POST counterpart to PricesView's no-`range` shape — see
+    BulkProfileView's docstring, identical shape/behavior with `prices`/
+    `MarketDataClient.get_price_history` in place of `profile`/
+    `get_profile`, except capped at MAX_BULK_PRICE_ITEMS rather than
+    MAX_BULK_ITEMS (see that constant's docstring for why). Exists for the
+    same reason as BulkProfileView/BulkMetricsView: a page charting N
+    holdings' price history at once (an account's direct + pie-nested
+    holdings, or a pie's own — see frontend pies/PiePriceChart.jsx's
+    fetchHoldingHistories) was firing N individual GET .../prices/ calls in
+    parallel, enough to trip the per-user request-rate throttle
+    (identity.throttling.Auth0UserRateThrottle) once a portfolio has more
+    than a handful of holdings. The frontend (api/market.js's
+    getBulkPrices) chunks a large holdings list into MAX_BULK_PRICE_ITEMS-
+    sized pages and calls this endpoint once per page, sequentially."""
+
+    authentication_classes = [Auth0JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request: Request) -> Response:
+        items = _validate_bulk_items(request.data, max_items=MAX_BULK_PRICE_ITEMS)
+        if isinstance(items, Response):
+            return items
+
+        results = []
+        for item in items:
+            asset_class = item["asset_class"]
+            symbol = item["symbol"]
+            prices = (
+                _client.get_price_history(asset_class, symbol)
+                if asset_class in ASSET_CLASSES
+                else None
+            )
+            results.append({"asset_class": asset_class, "symbol": symbol, "prices": prices})
         return Response({"results": results})
 
 
