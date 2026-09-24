@@ -689,6 +689,71 @@ class TestGetPrices:
             {"date": days[2].isoformat(), "open": 10, "high": 15, "low": 9, "close": 13.5}
         ]
 
+    @pytest.mark.parametrize("price_range", ["1y", "2y"])
+    def test_aggregation_ignores_a_row_with_no_high_or_low_published(
+        self, s3_client, price_range
+    ) -> None:
+        # A row can have open/close but no high/low (e.g. a partial/erroring
+        # ingestion day - see the NUCG.L incident this regression-tests):
+        # `max`/`min` over the bucket must skip it rather than raising
+        # TypeError comparing None to a float. Built as raw dicts (not via
+        # `_price_row`, which defaults a `None` high/low to `close`) so the
+        # published row genuinely carries `None`.
+        today = datetime.now(UTC).date()
+        monday = today - timedelta(days=today.weekday())
+        days = [monday, monday + timedelta(days=1)]
+        rows = [
+            {
+                "ticker": "VOO",
+                "currency": "USD",
+                "date": days[0].isoformat(),
+                "open": 10.0,
+                "high": None,
+                "low": None,
+                "close": 11.0,
+                "last_updated": f"{days[0].isoformat()}T21:00:00+00:00",
+                "source": "yfinance",
+            },
+            _price_row(days[1].isoformat(), open=11, high=15, low=10, close=14),
+        ]
+        by_year: dict[int, list[dict]] = {}
+        for d, row in zip(days, rows):
+            by_year.setdefault(d.year, []).append(row)
+        for y, year_rows in by_year.items():
+            _put_year(s3_client, "etf", "VOO", y, year_rows)
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_prices("etf", "voo", price_range=price_range)
+
+        assert result["prices"] == [
+            {"date": days[1].isoformat(), "open": 10.0, "high": 15, "low": 10, "close": 14}
+        ]
+
+    def test_aggregation_returns_none_high_low_when_no_row_in_the_bucket_has_them(
+        self, s3_client
+    ) -> None:
+        today = datetime.now(UTC).date()
+        monday = today - timedelta(days=today.weekday())
+        row = {
+            "ticker": "VOO",
+            "currency": "USD",
+            "date": monday.isoformat(),
+            "open": 10.0,
+            "high": None,
+            "low": None,
+            "close": 11.0,
+            "last_updated": f"{monday.isoformat()}T21:00:00+00:00",
+            "source": "yfinance",
+        }
+        _put_year(s3_client, "etf", "VOO", monday.year, [row])
+        client = MarketDataClient(BUCKET, s3_client=s3_client)
+
+        result = client.get_prices("etf", "voo", price_range="1y")
+
+        assert result["prices"] == [
+            {"date": monday.isoformat(), "open": 10.0, "high": None, "low": None, "close": 11.0}
+        ]
+
     @pytest.mark.parametrize("price_range", ["3y", "5y", "10y", "max"])
     def test_3y_and_up_aggregate_same_calendar_month_rows_into_one_bar(
         self, s3_client, price_range

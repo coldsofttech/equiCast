@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-24
+
+### Fixed
+
+- `/api/market/etf/<symbol>/prices/` (and the equivalent stock/fx/benchmark
+  endpoints) no longer 500s for a ticker whose price history has a day with
+  no published `high`/`low` (e.g. NUCG.L) — weekly/monthly aggregation now
+  skips a missing high/low instead of raising `TypeError` comparing `None`
+  to a `float`.
+
 ## [1.1.0] - 2026-09-23
 
 ### Added
