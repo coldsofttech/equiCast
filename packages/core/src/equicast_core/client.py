@@ -117,13 +117,26 @@ def _start_date_for_range(price_range: str, today: date) -> date | None:
     return date(year, month, day)
 
 
+def _high_low(group: list[dict[str, Any]]) -> tuple[float | None, float | None]:
+    """The bucket-wide `(high, low)` across `group`'s own `high`/`low`
+    values, skipping any row where one is `None` (e.g. a partial/erroring
+    ingestion day published open/close but not the full OHLC range — see
+    GitHub issue with NUCG.L) rather than letting `max`/`min` raise a
+    `TypeError` comparing `None` to a `float`. `None` for whichever of
+    high/low has no non-`None` value anywhere in the group."""
+    highs = [r["high"] for r in group if r["high"] is not None]
+    lows = [r["low"] for r in group if r["low"] is not None]
+    return (max(highs) if highs else None, min(lows) if lows else None)
+
+
 def _aggregate_prices(rows: list[dict[str, Any]], bucket: str) -> list[dict[str, Any]]:
     """Rolls up ascending-by-date `{date, open, high, low, close}` rows into
     one OHLC row per ISO week or calendar month (`bucket` = "week"/
     "month"), or returns `rows` unchanged for `bucket == "day"`. Each
     bucket's `date` is its last (most recent) trading day; `open`/`close`
     are its first/last row's own open/close; `high`/`low` are the max/min
-    across every row in the bucket."""
+    across every row in the bucket (see `_high_low` for how a `None` high/
+    low is handled)."""
     if bucket == "day" or not rows:
         return rows
 
@@ -133,16 +146,19 @@ def _aggregate_prices(rows: list[dict[str, Any]], bucket: str) -> list[dict[str,
         key = row_date.isocalendar()[:2] if bucket == "week" else (row_date.year, row_date.month)
         buckets.setdefault(key, []).append(row)
 
-    return [
-        {
-            "date": group[-1]["date"],
-            "open": group[0]["open"],
-            "high": max(r["high"] for r in group),
-            "low": min(r["low"] for r in group),
-            "close": group[-1]["close"],
-        }
-        for key, group in sorted(buckets.items())
-    ]
+    result = []
+    for key, group in sorted(buckets.items()):
+        high, low = _high_low(group)
+        result.append(
+            {
+                "date": group[-1]["date"],
+                "open": group[0]["open"],
+                "high": high,
+                "low": low,
+                "close": group[-1]["close"],
+            }
+        )
+    return result
 
 
 def _without_source(row: dict[str, Any]) -> dict[str, Any]:
