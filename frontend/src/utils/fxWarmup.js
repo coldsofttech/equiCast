@@ -25,7 +25,7 @@
  * warm-up has finished, for its own loading screen (see AppLoadingScreen.jsx).
  */
 
-import { getPrices } from "../api/market.js";
+import { getBulkPrices } from "../api/market.js";
 import { readCache, writeCache } from "../api/sessionCache.js";
 
 const CACHE_KEY = "ec_fx_warmed";
@@ -64,7 +64,19 @@ export function warmFxRates(api, profile) {
   // resolveFxRateOnDate tries first — warming the same pair that request
   // will actually try first, rather than relying on its own direct/
   // inverted-pair fallback to land on the same cached file regardless.
-  return Promise.allSettled(
-    pairs.map((currency) => getPrices(api, "fx", `${profile.default_currency}${currency}`))
-  ).then(() => undefined);
+  //
+  // Goes through getBulkPrices (one POST, or a few paged ones) rather than
+  // one getPrices call per pair in parallel — a user with several warmup
+  // currencies firing that many requests at once is the same per-user rate
+  // throttle risk PiePriceChart.jsx's fetchHoldingHistories hit before it
+  // moved to this same bulk endpoint (see getBulkPrices' own docstring).
+  // getBulkPrices already resolves a per-pair miss to `null` rather than
+  // rejecting, so only the request itself (not an individual pair) can
+  // throw here — caught to keep this call's own "never throws" contract.
+  return getBulkPrices(
+    api,
+    pairs.map((currency) => ({ assetClass: "fx", symbol: `${profile.default_currency}${currency}` }))
+  )
+    .catch(() => undefined)
+    .then(() => undefined);
 }

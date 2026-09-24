@@ -2,7 +2,7 @@ import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "re
 import Balance from "../../components/core/Balance.jsx";
 import Card from "../../components/core/Card.jsx";
 import { useApi } from "../../api/useApi.js";
-import { getPrices } from "../../api/market.js";
+import { getBulkPrices, getPrices } from "../../api/market.js";
 import { getBulkPositionCheckpoints } from "../../api/transactions.js";
 import { resolveBulkFxRates, formatPrice } from "../holdings/holdingFinancials.js";
 import { formatAxisDate, sliceForRange, visibleRanges } from "../priceRangeSlicing.js";
@@ -173,25 +173,38 @@ function buildAggregateBars(holdingSeries) {
  * with no further request (GitHub issue #150) — the previous version of
  * this function re-fetched every held holding on every range click, which
  * is the single biggest source of the extra API hits issue #150 flagged.
+ *
+ * Fetches via getBulkPrices (one POST /api/market/bulk/prices/ for
+ * whichever held holdings aren't already same-day cached) rather than one
+ * GET .../prices/ per holding — an account's direct + pie-nested holdings
+ * firing that many requests in parallel was enough to trip yfinance-side
+ * rate limiting (503s) once a portfolio had more than a handful of
+ * holdings.
  */
 async function fetchHoldingHistories(api, holdings, targetCurrency) {
   const heldHoldings = holdings.filter((h) => Number(h.no_of_shares) > 0);
   if (heldHoldings.length === 0) return [];
 
-  const histories = await Promise.all(
-    heldHoldings.map(async (holding) => {
-      try {
-        const history = await getPrices(api, holding.asset_class, holding.ticker);
-        if (history.daily.length === 0 && history.weekly.length === 0 && history.monthly.length === 0) {
-          return null;
-        }
-        return { holding, history };
-      } catch {
+  let priceSeries;
+  try {
+    priceSeries = await getBulkPrices(
+      api,
+      heldHoldings.map((h) => ({ assetClass: h.asset_class, symbol: h.ticker }))
+    );
+  } catch {
+    return [];
+  }
+
+  const valid = heldHoldings
+    .map((holding, index) => {
+      const history = priceSeries[index];
+      if (!history) return null;
+      if (history.daily.length === 0 && history.weekly.length === 0 && history.monthly.length === 0) {
         return null;
       }
+      return { holding, history };
     })
-  );
-  const valid = histories.filter(Boolean);
+    .filter(Boolean);
   if (valid.length === 0) return [];
 
   const fxRates = await resolveBulkFxRates(

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed exchange rate warm-up on login firing one request per currency pair
+  at once, which could hit the same rate limit as the account/pie price
+  charts for users with several currencies configured.
+
+## [1.1.5] - 2026-09-24
+
+### Fixed
+
+- Fixed account/pie price charts failing to load for portfolios with many
+  holdings, caused by too many simultaneous price requests hitting the
+  rate limit.
+
+## [1.1.4] - 2026-09-24
+
+### Fixed
+
+- Fixed ticker search returning no results for any query, caused by the
+  nightly market data ingestion silently publishing an empty search index.
+
 ## [1.1.3] - 2026-09-24
 
 ### Fixed

@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { hasWarmedFxRates, warmFxRates } from "./fxWarmup.js";
-import { getPrices } from "../api/market.js";
+import { getBulkPrices } from "../api/market.js";
 
-vi.mock("../api/market.js", () => ({ getPrices: vi.fn() }));
+vi.mock("../api/market.js", () => ({ getBulkPrices: vi.fn() }));
 
 const PROFILE = {
   user_id: "auth0|abc",
@@ -13,7 +13,10 @@ const PROFILE = {
 
 beforeEach(() => {
   sessionStorage.clear();
-  vi.mocked(getPrices).mockResolvedValue({ ticker: "GBPUSD", daily: [], weekly: [], monthly: [] });
+  vi.mocked(getBulkPrices).mockResolvedValue([
+    { ticker: "GBPUSD", daily: [], weekly: [], monthly: [] },
+    { ticker: "GBPEUR", daily: [], weekly: [], monthly: [] },
+  ]);
 });
 
 afterEach(() => {
@@ -21,17 +24,17 @@ afterEach(() => {
 });
 
 describe("warmFxRates", () => {
-  it("fetches one pair's full history per configured currency, skipping the default currency itself", () => {
+  it("fetches one pair's full history per configured currency, skipping the default currency itself, in one bulk call", () => {
     const api = vi.fn();
 
     warmFxRates(api, PROFILE);
 
-    expect(getPrices).toHaveBeenCalledTimes(2);
-    const pairs = vi.mocked(getPrices).mock.calls.map(([, assetClass, symbol]) => [assetClass, symbol]);
-    expect(pairs).toEqual(
+    expect(getBulkPrices).toHaveBeenCalledTimes(1);
+    const [, items] = vi.mocked(getBulkPrices).mock.calls[0];
+    expect(items).toEqual(
       expect.arrayContaining([
-        ["fx", "GBPUSD"],
-        ["fx", "GBPEUR"],
+        { assetClass: "fx", symbol: "GBPUSD" },
+        { assetClass: "fx", symbol: "GBPEUR" },
       ])
     );
   });
@@ -41,7 +44,7 @@ describe("warmFxRates", () => {
 
     warmFxRates(api, null);
 
-    expect(getPrices).not.toHaveBeenCalled();
+    expect(getBulkPrices).not.toHaveBeenCalled();
   });
 
   it("only fires once per session, even across multiple calls", () => {
@@ -50,20 +53,18 @@ describe("warmFxRates", () => {
     warmFxRates(api, PROFILE);
     warmFxRates(api, PROFILE);
 
-    expect(getPrices).toHaveBeenCalledTimes(2);
+    expect(getBulkPrices).toHaveBeenCalledTimes(1);
   });
 
-  it("never throws when a lookup rejects", async () => {
-    vi.mocked(getPrices).mockRejectedValue(new Error("no data"));
+  it("never throws when the bulk lookup rejects", async () => {
+    vi.mocked(getBulkPrices).mockRejectedValue(new Error("no data"));
     const api = vi.fn();
 
     expect(() => warmFxRates(api, PROFILE)).not.toThrow();
   });
 
-  it("resolves once every lookup has settled, including a rejected one", async () => {
-    vi.mocked(getPrices)
-      .mockResolvedValueOnce({ ticker: "GBPUSD", daily: [], weekly: [], monthly: [] })
-      .mockRejectedValueOnce(new Error("no data"));
+  it("resolves once the bulk lookup has settled, even when it rejects", async () => {
+    vi.mocked(getBulkPrices).mockRejectedValueOnce(new Error("no data"));
     const api = vi.fn();
 
     await expect(warmFxRates(api, PROFILE)).resolves.toBeUndefined();
