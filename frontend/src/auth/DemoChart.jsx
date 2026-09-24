@@ -63,7 +63,13 @@ function DemoChart() {
   }, []);
 
   const ticker = tickers?.[activeIndex];
-  const bars = useMemo(() => ticker?.prices ?? [], [ticker]);
+  const bars = useMemo(
+    () =>
+      (ticker?.prices ?? []).filter(
+        (b) => b.open != null && b.high != null && b.low != null && b.close != null
+      ),
+    [ticker]
+  );
   const labels = useMemo(() => bars.map((b) => formatBarDate(b.date)), [bars]);
 
   const { min, max } = useMemo(() => {
