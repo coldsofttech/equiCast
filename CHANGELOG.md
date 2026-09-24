@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed news dates showing as the ingestion run date instead of each
+  article's real publish date, caused by fetching yfinance's live
+  "latest" news feed instead of its full archive (equicast-support#231).
 - Fixed the "Something went wrong" error page showing the signed-in
   Topbar (ticker search, account menu) to signed-out visitors, caused by
   it always rendering the signed-in chrome regardless of auth state.

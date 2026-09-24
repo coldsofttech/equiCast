@@ -29,6 +29,17 @@ NEWS_DEFAULT_DAYS = 30
 #: actually bounds the result.
 NEWS_DEFAULT_COUNT = 50
 
+#: yfinance's `get_news(tab=...)` default ("news") maps to Yahoo's
+#: "latestNews" feed - a live, homepage-style rolling stream where
+#: `content.pubDate` tracks when an article is *currently surfacing* in
+#: that feed rather than when it was actually published, so re-running
+#: ingestion on a heavily-covered symbol (e.g. AAPL) can come back with
+#: most or all of `count` articles dated "today" regardless of their real
+#: age (equicast-support#231). "all" maps to Yahoo's "newsAll" feed - the
+#: fuller archive - whose `content.pubDate` reflects each article's own
+#: publish date instead.
+NEWS_TAB = "all"
+
 
 class NewsClient:
     """Fetches recent news headlines for any yfinance symbol - generic
@@ -60,7 +71,7 @@ class NewsClient:
         fetched_at = datetime.now(UTC).isoformat()
         cutoff = datetime.now(UTC) - timedelta(days=days)
 
-        articles = self._datafeed.get_news(self.symbol, count=count)
+        articles = self._datafeed.get_news(self.symbol, count=count, tab=NEWS_TAB)
         records = [
             record
             for article in articles
