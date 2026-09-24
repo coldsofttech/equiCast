@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     BulkMetricsView,
+    BulkPricesView,
     BulkProfileView,
     DividendsView,
     EventsView,
@@ -20,6 +21,7 @@ urlpatterns = [
     path("fx-rate/<str:from_currency>/<str:to_currency>/", FxRateView.as_view(), name="fx-rate"),
     path("bulk/profile/", BulkProfileView.as_view(), name="bulk-profile"),
     path("bulk/metrics/", BulkMetricsView.as_view(), name="bulk-metrics"),
+    path("bulk/prices/", BulkPricesView.as_view(), name="bulk-prices"),
     path("<str:asset_class>/<str:symbol>/profile/", ProfileView.as_view(), name="profile"),
     path("<str:asset_class>/<str:symbol>/prices/", PricesView.as_view(), name="prices"),
     path("<str:asset_class>/<str:symbol>/metrics/", MetricsView.as_view(), name="metrics"),

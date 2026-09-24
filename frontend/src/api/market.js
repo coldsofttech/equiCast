@@ -597,6 +597,74 @@ export async function getPrices(api, assetClass, symbol) {
   return result;
 }
 
+// A price item is get_price_history's full {daily, weekly, monthly}
+// bundle, not a handful of profile/metrics scalars — for a ~20-year-old
+// holding that's on the order of 45-65KB of JSON, so a page of them can't
+// be as large as getBulkProfiles/getBulkMetrics' own MAX_BULK_ITEMS (200)
+// without risking API Gateway/Lambda's 10MB response cap. Must match the
+// backend's own MAX_BULK_PRICE_ITEMS (backend/market_data/views.py) — 100
+// keeps a full page comfortably under that cap (~6.5MB worst case, a page
+// of all ~40yr-old holdings) while still collapsing a large account's
+// holdings into a small, fixed number of requests.
+const BULK_PRICES_PAGE_SIZE = 100;
+
+/**
+ * Cache-aware bulk counterpart to getPrices — see getBulkProfiles' own
+ * docstring for the full rationale (GitHub issue #203); same `prices`/POST
+ * /api/market/bulk/prices/ (backend/market_data/views.py's BulkPricesView)
+ * shape as getBulkProfiles/getBulkMetrics, but paged: whichever `items`
+ * aren't already same-day cached are split into BULK_PRICES_PAGE_SIZE-sized
+ * pages and posted one page at a time, awaited sequentially rather than in
+ * parallel — a large account's holdings firing that many *pages* at once
+ * would recreate the exact request-burst problem this bulk endpoint exists
+ * to avoid (the per-user rate throttle, not a per-page size limit, is what
+ * pagination can't fix on its own).
+ *
+ * PiePriceChart.jsx's fetchHoldingHistories (an account's direct + pie-
+ * nested holdings, or a pie's own) used to fire one GET .../prices/ per
+ * held holding in parallel via Promise.all — fine for a handful of
+ * holdings, but enough of them at once was tripping the per-user rate
+ * throttle (503 Service Unavailable) for larger portfolios.
+ *
+ * @param {(path: string, options?: object) => Promise<unknown>} api
+ * @param {BulkItem[]} items
+ * @returns {Promise<(PriceSeries|null)[]>}
+ */
+export async function getBulkPrices(api, items) {
+  if (items.length === 0) return [];
+
+  const cacheKeys = items.map((item) => priceCacheKey(item.assetClass, item.symbol));
+  const results = await Promise.all(cacheKeys.map((key) => readCachedPrices(key)));
+
+  const missingIndexes = results.reduce((indexes, value, index) => {
+    if (!value) indexes.push(index);
+    return indexes;
+  }, /** @type {number[]} */ ([]));
+
+  for (let start = 0; start < missingIndexes.length; start += BULK_PRICES_PAGE_SIZE) {
+    const pageIndexes = missingIndexes.slice(start, start + BULK_PRICES_PAGE_SIZE);
+    const response = /** @type {{ results: { prices: PriceSeries|null }[] }} */ (
+      await api("/market/bulk/prices/", {
+        method: "POST",
+        body: {
+          items: pageIndexes.map((index) => ({
+            asset_class: items[index].assetClass,
+            symbol: items[index].symbol,
+          })),
+        },
+      })
+    );
+
+    pageIndexes.forEach((index, i) => {
+      const prices = response.results[i].prices;
+      results[index] = prices;
+      if (prices) writeCachedPrices(cacheKeys[index], prices);
+    });
+  }
+
+  return results;
+}
+
 // The historical (as of a given date) FX rate a transaction form needs is
 // resolved entirely client-side, from an fx pair's own bundled price
 // history (getPrices below, already IndexedDB-cached) — see
