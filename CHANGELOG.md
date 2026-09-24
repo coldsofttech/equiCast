@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-09-24
+
 ### Fixed
 
 - `/api/market/etf/<symbol>/prices/` (and the equivalent stock/fx/benchmark
