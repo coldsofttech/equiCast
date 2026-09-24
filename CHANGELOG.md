@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-09-24
+
+### Fixed
+
+- The `sync-pipeline-status` composite action (stock/ETF/FX/benchmark
+  ingestion workflows) no longer fails with `Invalid format` after
+  successfully syncing the pipeline-failure tracking issue —
+  `sync-pipeline-failure-issue.sh`'s `gh issue comment`/`reopen`/`close`
+  calls were leaking their own stdout output into the script's captured
+  return value, corrupting the `GITHUB_OUTPUT` write.
+
 ## [1.1.1] - 2026-09-24
 
 ### Fixed
