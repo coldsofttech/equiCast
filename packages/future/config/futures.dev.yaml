@@ -1,0 +1,41 @@
+# Used for local runs and manual "dev" workflow_dispatch runs. Currently
+# mirrors futures.prod.yaml; expand independently as needed.
+#
+# Changing this list changes the market_data_bucket cost estimate:
+# infra/infracost-usage.dev.yml's module.market_data_bucket.aws_s3_bucket.this
+# usage (storage_gb, monthly_tier_1_requests) is computed from this file's
+# future count — update those numbers whenever futures are added or removed
+# here.
+futures:
+  - key: GOLD
+    symbol: "GC=F"
+  - key: SILVER
+    symbol: "SI=F"
+  - key: PLATINUM
+    symbol: "PL=F"
+  - key: PALLADIUM
+    symbol: "PA=F"
+  - key: CRUDE_OIL_WTI
+    symbol: "CL=F"
+  - key: BRENT_CRUDE
+    symbol: "BZ=F"
+  - key: NATURAL_GAS
+    symbol: "NG=F"
+  - key: HEATING_OIL
+    symbol: "HO=F"
+  - key: COPPER
+    symbol: "HG=F"
+  - key: ALUMINUM
+    symbol: "ALI=F"
+  - key: WHEAT
+    symbol: "ZW=F"
+  - key: CORN
+    symbol: "ZC=F"
+  - key: SOYBEANS
+    symbol: "ZS=F"
+  - key: COFFEE
+    symbol: "KC=F"
+  - key: COTTON
+    symbol: "CT=F"
+  - key: SUGAR
+    symbol: "SB=F"

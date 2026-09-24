@@ -32,6 +32,7 @@ on:
       - "packages/etf/**"
       - "packages/fx/**"
       - "packages/benchmark/**"
+      - "packages/future/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/packages-ci.yml"
@@ -46,6 +47,7 @@ on:
       - "packages/etf/**"
       - "packages/fx/**"
       - "packages/benchmark/**"
+      - "packages/future/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/packages-ci.yml"
@@ -115,6 +117,9 @@ jobs:
             benchmark:
               - *root
               - "packages/benchmark/**"
+            future:
+              - *root
+              - "packages/future/**"
 
       # dorny/paths-filter treats every top-level key of `filters:` as its
       # own named filter - including `root` above, even though it's only
