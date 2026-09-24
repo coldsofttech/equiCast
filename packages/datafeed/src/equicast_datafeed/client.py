@@ -125,16 +125,24 @@ class DatafeedClient:
         split), indexed by split date."""
         return self._call(lambda: yf.Ticker(symbol).splits, symbol, ("splits", symbol))
 
-    def get_news(self, symbol: str, count: int = 50) -> list[dict[str, Any]]:
+    def get_news(
+        self, symbol: str, count: int = 50, tab: str = "news"
+    ) -> list[dict[str, Any]]:
         """Return up to `count` of `symbol`'s most recent news articles
         (yfinance's own newest-first order), each a raw, nested dict (not a
         DataFrame - unlike every other method here, this is yfinance's only
         list-of-dicts-shaped call). No date-range parameter exists on
         yfinance's side; a caller wanting only the trailing N days filters
         the returned `content.pubDate` values itself (see
-        `equicast_news.NewsClient`)."""
+        `equicast_news.NewsClient`).
+
+        `tab` is yfinance's own `get_news(tab=...)` parameter ("news" by
+        default, matching yfinance's own default) - `equicast_news.NewsClient`
+        requests "all" instead (see its own docstring for why)."""
         return self._call(
-            lambda: yf.Ticker(symbol).get_news(count=count), symbol, ("news", symbol, count)
+            lambda: yf.Ticker(symbol).get_news(count=count, tab=tab),
+            symbol,
+            ("news", symbol, count, tab),
         )
 
     def _call(self, fetch: Any, symbol: str, cache_key: tuple[Any, ...]) -> Any:

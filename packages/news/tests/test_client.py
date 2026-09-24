@@ -188,7 +188,7 @@ def test_news_passes_count_through_to_datafeed() -> None:
 
     client.news(count=10)
 
-    datafeed.get_news.assert_called_once_with("AAPL", count=10)
+    datafeed.get_news.assert_called_once_with("AAPL", count=10, tab="all")
 
 
 def test_news_uses_default_count() -> None:
@@ -197,4 +197,18 @@ def test_news_uses_default_count() -> None:
 
     client.news()
 
-    datafeed.get_news.assert_called_once_with("AAPL", count=NEWS_DEFAULT_COUNT)
+    datafeed.get_news.assert_called_once_with("AAPL", count=NEWS_DEFAULT_COUNT, tab="all")
+
+
+def test_news_requests_the_all_tab_not_the_live_latest_feed() -> None:
+    """Regression test for equicast-support#231 - "news" maps to yfinance's
+    live "latestNews" feed, whose `pubDate` tracks feed-recency rather than
+    each article's real publish date; "all" maps to the fuller archive
+    where `pubDate` is the genuine publish date (see NEWS_TAB)."""
+    datafeed = _datafeed()
+    client = NewsClient("AAPL", datafeed=datafeed)
+
+    client.news()
+
+    _, kwargs = datafeed.get_news.call_args
+    assert kwargs["tab"] == "all"

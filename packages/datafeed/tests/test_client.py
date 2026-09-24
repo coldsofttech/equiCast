@@ -137,8 +137,33 @@ def test_get_news_returns_list_and_passes_count_through() -> None:
         result = _client().get_news("AAPL", count=10)
 
     mock_ticker.assert_called_once_with("AAPL")
-    mock_ticker.return_value.get_news.assert_called_once_with(count=10)
+    mock_ticker.return_value.get_news.assert_called_once_with(count=10, tab="news")
     assert result == [{"id": "abc"}]
+
+
+def test_get_news_passes_tab_through() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.get_news.return_value = [{"id": "abc"}]
+
+        _client().get_news("AAPL", count=10, tab="all")
+
+    mock_ticker.return_value.get_news.assert_called_once_with(count=10, tab="all")
+
+
+def test_get_news_cache_is_keyed_by_tab() -> None:
+    with patch("equicast_datafeed.client.yf.Ticker") as mock_ticker:
+        mock_ticker.return_value.get_news.side_effect = [
+            [{"id": "latest"}],
+            [{"id": "all"}],
+        ]
+        client = _client()
+
+        news_tab = client.get_news("AAPL", tab="news")
+        all_tab = client.get_news("AAPL", tab="all")
+
+    assert news_tab == [{"id": "latest"}]
+    assert all_tab == [{"id": "all"}]
+    assert mock_ticker.return_value.get_news.call_count == 2
 
 
 def test_get_info_is_cached_within_one_client() -> None:
