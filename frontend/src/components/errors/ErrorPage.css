@@ -53,3 +53,13 @@
 .ec-errorpage-action {
   margin-top: var(--ec-s-24);
 }
+
+/* AppErrorPage's signed-out layout: PublicHeader + SiteFooter around the
+   same centered icon/title/message/action body used elsewhere on this
+   page, instead of AppShell's Topbar (see AppErrorPage.jsx). */
+.ec-errorpage-public {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--ec-bg);
+}
