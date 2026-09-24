@@ -12,8 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Fixed a crash on the landing page's demo price chart when a ticker's
-  price history included a day with a missing price, which took down the
-  whole page instead of just that chart.
+  price history had a missing price, which took down the whole page.
 
 ## [1.1.2] - 2026-09-24
 
