@@ -1,6 +1,6 @@
 # <img src="frontend/public/brand/equicast-mark.png" alt="" width="40" valign="middle"> equiCast
 
-**v1.1.1** — see [Release notes](docs/release-notes.md) for what's new in
+**v1.1.0** — see [Release notes](docs/release-notes.md) for what's new in
 this release.
 
 Equity and FX market data ingestion, storage, and forecasting toolkit.

@@ -4,18 +4,6 @@ User-facing summary of what shipped in each release. For the full,
 implementation-level history (every change, fix, and why), see
 [CHANGELOG.md](../CHANGELOG.md).
 
-## v1.1.1 - 2026-09-24
-
-Bugfix release:
-
-- **ETF/stock/FX/benchmark price history** — fixed a 500 error on the
-  prices endpoint for a ticker whose published history has a day with no
-  `high`/`low` recorded (e.g. NUCG.L), which crashed weekly/monthly price
-  aggregation.
-
-See [CHANGELOG.md](../CHANGELOG.md) for the complete list of changes
-behind this release.
-
 ## v1.1.0 - 2026-09-23
 
 Highlights:
