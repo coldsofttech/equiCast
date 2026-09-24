@@ -59,18 +59,24 @@ if [ -z "$PARENT_NUMBER" ]; then
   echo "Created parent issue #$PARENT_NUMBER" >&2
 fi
 
+# >/dev/null on every gh issue mutation below: `gh issue comment`/`reopen`/
+# `close` print their own result (e.g. the new comment's URL) to stdout,
+# which would otherwise leak into the caller's `PARENT_NUMBER=$(bash
+# sync-pipeline-failure-issue.sh ...)` capture ahead of this script's own
+# trailing `echo "$PARENT_NUMBER"` - corrupting the single-line stdout
+# contract documented above and breaking the caller's GITHUB_OUTPUT write.
 if [ "$STATUS" = "failure" ]; then
   JOBS="${FAILED_JOBS:-(unspecified job)}"
   if [ "$PARENT_STATE" = "CLOSED" ]; then
-    gh issue reopen "$PARENT_NUMBER" --repo "$TARGET_REPO"
+    gh issue reopen "$PARENT_NUMBER" --repo "$TARGET_REPO" >/dev/null
   fi
   gh issue comment "$PARENT_NUMBER" --repo "$TARGET_REPO" \
-    --body "Run failed: $RUN_URL — failed job(s): $JOBS."
+    --body "Run failed: $RUN_URL — failed job(s): $JOBS." >/dev/null
   echo "Reported failure on parent issue #$PARENT_NUMBER" >&2
 elif [ "$PARENT_STATE" = "OPEN" ]; then
   gh issue comment "$PARENT_NUMBER" --repo "$TARGET_REPO" \
-    --body "Resolved by a successful run: $RUN_URL"
-  gh issue close "$PARENT_NUMBER" --repo "$TARGET_REPO"
+    --body "Resolved by a successful run: $RUN_URL" >/dev/null
+  gh issue close "$PARENT_NUMBER" --repo "$TARGET_REPO" >/dev/null
   echo "Closed resolved parent issue #$PARENT_NUMBER" >&2
 fi
 
