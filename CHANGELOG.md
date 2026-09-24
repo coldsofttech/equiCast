@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Fixed the "Something went wrong" error page showing the signed-in
+  Topbar (ticker search, account menu) to signed-out visitors, caused by
+  it always rendering the signed-in chrome regardless of auth state.
 - Fixed exchange rate warm-up on login firing one request per currency pair
   at once, which could hit the same rate limit as the account/pie price
   charts for users with several currencies configured.
