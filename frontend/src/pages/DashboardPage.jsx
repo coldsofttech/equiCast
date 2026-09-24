@@ -13,6 +13,7 @@ import GoalCard from "./goals/GoalCard.jsx";
 import GoalForm from "./goals/GoalForm.jsx";
 import ServiceUnavailablePage from "./errors/ServiceUnavailablePage.jsx";
 import isServiceUnavailableError from "../components/errors/isServiceUnavailableError.js";
+import WatchlistsPanel from "./watchlists/WatchlistsPanel.jsx";
 import { useApi } from "../api/useApi.js";
 import { useCurrentUser } from "../api/useCurrentUser.js";
 import { useAccounts } from "../api/useAccounts.js";
@@ -212,6 +213,8 @@ function DashboardPage() {
           ))}
         </div>
       )}
+
+      <WatchlistsPanel />
 
       <Drawer open={isCreateOpen} onClose={closeCreate} title="New account">
         <AccountForm

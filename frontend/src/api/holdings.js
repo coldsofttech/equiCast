@@ -4,13 +4,16 @@
 
 /**
  * POST /api/holdings/ — see backend/holdings/views.py's HoldingListView.post.
- * Only account-direct holdings are created this way from the frontend so
- * far (pie holdings go through pies.js's syncPieHoldings instead, since a
- * pie's holdings must always sum to exactly 100% allocation — a plain
- * single-item create can't maintain that).
+ * Exactly one of `account_id`/`watchlist_id` is required (never both) —
+ * account-direct and watchlist holdings are both created this way from the
+ * frontend; pie holdings go through pies.js's syncPieHoldings instead,
+ * since a pie's holdings must always sum to exactly 100% allocation, which
+ * a plain single-item create can't maintain. A watchlist holding never
+ * carries a nested `transaction` (see HoldingListView.post's docstring —
+ * transactions aren't supported for watchlist holdings).
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
- * @param {{ ticker: string, asset_class: string, account_id: string }} data
+ * @param {{ ticker: string, asset_class: string, account_id?: string, watchlist_id?: string }} data
  * @returns {Promise<Holding>}
  */
 export function createHolding(api, data) {
