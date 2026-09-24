@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Fixed exchange rate warm-up on login firing one request per currency pair
   at once, which could hit the same rate limit as the account/pie price
   charts for users with several currencies configured.
+- Fixed a CI warning on the packages workflow caused by parallel jobs
+  racing to save the same dependency cache.
 
 ## [1.1.5] - 2026-09-24
 

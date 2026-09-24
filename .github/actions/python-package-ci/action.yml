@@ -41,6 +41,16 @@ runs:
       uses: astral-sh/setup-uv@v7
       with:
         enable-cache: true
+        # Without this, every caller of this action shares one cache key
+        # (derived from the lockfile alone) - fine for a single job, but
+        # packages-ci.yml's test job runs this action once per changed
+        # package across parallel matrix legs, and backend-ci.yml calls it
+        # twice in the same job (packages/core, then backend). Either way,
+        # more than one "Install uv" step ends up racing to save under the
+        # identical key, which fails with "another job may be creating this
+        # cache" (equicast-support#207). Suffixing with working-directory
+        # gives each caller its own key instead.
+        cache-suffix: ${{ inputs.working-directory }}
 
     - name: Install dependencies
       shell: bash
