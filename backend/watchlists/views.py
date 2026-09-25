@@ -40,12 +40,15 @@ SYSTEM_WATCHLISTS: list[dict[str, Any]] = [
 #: Deliberately a separate lookup from SYSTEM_WATCHLISTS itself rather than
 #: a third field on each entry there, so `**w` below only ever echoes
 #: display fields (id/name) to the frontend, never this internal wiring
-#: detail. A system watchlist with no entry here (every one but Global
-#: Markets, for now) always comes back with `holdings: []` — how each of
-#: those gets populated (global market movers, the caller's own accounts'
-#: movers, …) is deliberately separate, not-yet-built work.
+#: detail. A system watchlist with no entry here (the two "(Your Accounts)"
+#: ones, for now) always comes back with `holdings: []` — ranking a
+#: caller's own accounts' movers is deliberately separate, not-yet-built
+#: work; Top Winners/Top Losers themselves rank the whole stock/ETF
+#: universe (see equicast_watchlist.movers), not anyone's own holdings.
 _SYSTEM_WATCHLIST_STORAGE_KEYS: dict[str, str] = {
     "global-markets": "GLOBAL_MARKETS",
+    "top-winners": "TOP_WINNERS",
+    "top-losers": "TOP_LOSERS",
 }
 
 #: One shared client for the process, mirroring accounts/views.py's

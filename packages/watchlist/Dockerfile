@@ -8,9 +8,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 COPY pyproject.toml uv.lock ./
 COPY packages/datafeed/ packages/datafeed/
+COPY packages/metrics/ packages/metrics/
+COPY packages/dividends/ packages/dividends/
+COPY packages/events/ packages/events/
 COPY packages/fx/ packages/fx/
 COPY packages/benchmark/ packages/benchmark/
 COPY packages/future/ packages/future/
+COPY packages/stock/ packages/stock/
+COPY packages/etf/ packages/etf/
 COPY packages/watchlist/ packages/watchlist/
 
 WORKDIR /app/packages/watchlist

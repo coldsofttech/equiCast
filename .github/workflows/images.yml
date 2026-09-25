@@ -122,9 +122,14 @@ jobs:
               - "packages/future/**"
             watchlist:
               - *shared
+              - "packages/metrics/**"
+              - "packages/dividends/**"
+              - "packages/events/**"
               - "packages/fx/**"
               - "packages/benchmark/**"
               - "packages/future/**"
+              - "packages/stock/**"
+              - "packages/etf/**"
               - "packages/watchlist/**"
 
   build-and-push:
