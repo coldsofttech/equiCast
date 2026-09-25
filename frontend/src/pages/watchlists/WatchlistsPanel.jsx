@@ -23,14 +23,14 @@ import "./WatchlistsPanel.css";
  * The /dashboard watchlists panel: one Card, tabbed across the five system
  * defaults (see backend/watchlists/views.py's SYSTEM_WATCHLISTS — always
  * present, always first) followed by the caller's own custom watchlists
- * (up to MAX_WATCHLISTS, currently 5). Global Markets, Top Winners, and Top
- * Losers are the three system tabs with real content — built weekly by
- * equicast-watchlist (packages/watchlist) and read back via
- * `_SYSTEM_WATCHLIST_STORAGE_KEYS` in the backend view (Top Winners/Losers
- * rank the whole stock/ETF universe by trailing 1-year CAGR — see
- * equicast_watchlist.movers — rather than Global Markets' hand-curated fx/
- * future/benchmark list); the two "(Your Accounts)" tabs still come back
- * with `holdings: []` until their own population logic exists. A custom
+ * (up to MAX_WATCHLISTS, currently 5). All five system tabs have real
+ * content, computed live at request time by backend/watchlists/
+ * system_watchlists.py from what fx/stock/etf/benchmark/future-ingestion.yml
+ * already publish — no separate ingestion pipeline. Global Markets looks up
+ * a hand-curated fx/future/benchmark list; Top Winners/Top Losers rank the
+ * whole stock/ETF universe by trailing 1-year CAGR; Your Top Winners/Your
+ * Top Losers apply that same ranking to just the caller's own account/pie
+ * holdings. A custom
  * watchlist's holdings are real — added/removed here via the same
  * POST/DELETE /api/holdings/ a direct account holding uses (see
  * TickerSearchField/handleAddHolding), just with `watchlist_id` instead of

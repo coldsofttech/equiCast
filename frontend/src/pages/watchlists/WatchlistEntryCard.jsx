@@ -22,30 +22,32 @@ function ChangeStat({ label, pct }) {
 }
 
 /**
- * One watchlist entry as a card — a real holding (custom watchlist) or a
- * system watchlist's reference row (e.g. Global Markets — see
- * backend/watchlists/views.py's SYSTEM_WATCHLISTS/`_SYSTEM_WATCHLIST_
- * STORAGE_KEYS`), rendered identically either way: logo, name, ticker,
- * current price in the entry's own **native** currency (never the
+ * One watchlist entry as a card — a real holding (custom watchlist, or
+ * Your Top Winners/Your Top Losers) or a system watchlist's reference row
+ * (Global Markets/Top Winners/Top Losers — see backend/watchlists/
+ * system_watchlists.py, computed live from each asset class's own
+ * published catalog), rendered identically either way: logo, name,
+ * ticker, current price in the entry's own **native** currency (never the
  * caller's own default_currency — a system watchlist has no single owner
  * to convert it for, and a real holding's card here deliberately matches
  * that for visual consistency across tabs), and 1-week/1-month % change,
  * colored green/red. `current_price_native` (a real holding) takes
- * precedence over `current_price` (a system entry's own field is already
- * native — see equicast_watchlist.builder) so this works for both shapes
- * without the caller needing to know which one it has.
+ * precedence over `current_price` (a reference row's own field is already
+ * native) so this works for both shapes without the caller needing to
+ * know which one it has.
  *
- * A system entry has no `website` (fx/future/benchmark profiles never
- * carry one — see equicast_core.catalog.build_catalog_rows), so its logo
- * slot renders nothing; that's expected, not a bug. A system entry also
- * has no `id` (it isn't a stored Holding), so a caller keys its list off
- * `ticker` instead — only a real holding is removable, since a system
- * entry isn't something the caller added.
+ * A Global Markets/Top Winners/Top Losers reference row has no `website`
+ * (fx/future/benchmark reference rows carry none at all; a stock/etf one
+ * doesn't carry it through either), so its logo slot renders nothing;
+ * that's expected, not a bug. A reference row also has no `id` (it isn't a
+ * stored Holding), so a caller keys its list off `ticker` instead — only a
+ * real holding is removable, since a reference row isn't something the
+ * caller added.
  *
- * `change_1y_pct` is only ever present on Top Winners/Top Losers entries
- * (it's the trailing 1-year CAGR those two watchlists are ranked by — see
- * equicast_watchlist.movers) — rendered as a third stat only when set, so
- * every other watchlist's cards keep their usual two.
+ * `change_1y_pct` is present on Top Winners/Top Losers and Your Top
+ * Winners/Your Top Losers entries alike (it's the trailing 1-year CAGR
+ * each is ranked by) — rendered as a third stat only when set, so every
+ * other watchlist's cards keep their usual two.
  *
  * @param {{
  *   holding: {

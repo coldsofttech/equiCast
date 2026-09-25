@@ -12,9 +12,8 @@ name: Build Images
 # (equicast-support#186), shared with nothing else right now but kept as
 # its own composite action rather than inlined here, since that's the piece
 # every one of these images' builds is otherwise identical on. `future`
-# and `watchlist` (packages/future/Dockerfile, packages/watchlist/Dockerfile)
-# were added later, the same way as the other five - one more `include`
-# entry plus filter block each.
+# (packages/future/Dockerfile) was added later, the same way as the other
+# five - one more `include` entry plus filter block.
 on:
   push:
     # dev/** covers the dev/vX.Y integration branches for a release about
@@ -32,7 +31,6 @@ on:
       - "packages/benchmark/**"
       - "packages/forecasting/**"
       - "packages/future/**"
-      - "packages/watchlist/**"
       - "pyproject.toml"
       - "uv.lock"
       - ".github/workflows/images.yml"
@@ -40,7 +38,7 @@ on:
   workflow_dispatch:
     inputs:
       asset_class:
-        description: "Build only this image (default: all seven) - ignores the changes job below, same as the old per-image workflows' workflow_dispatch always building regardless of what changed"
+        description: "Build only this image (default: all six) - ignores the changes job below, same as the old per-image workflows' workflow_dispatch always building regardless of what changed"
         type: choice
         options:
           - all
@@ -50,7 +48,6 @@ on:
           - benchmark
           - forecasting
           - future
-          - watchlist
         default: all
 
 permissions:
@@ -76,7 +73,6 @@ jobs:
       benchmark: ${{ steps.filter.outputs.benchmark }}
       forecasting: ${{ steps.filter.outputs.forecasting }}
       future: ${{ steps.filter.outputs.future }}
-      watchlist: ${{ steps.filter.outputs.watchlist }}
     steps:
       # dorny/paths-filter needs local git history to diff a push event
       # against (unlike pull_request, which it can resolve via the API
@@ -120,17 +116,6 @@ jobs:
               - *shared
               - "packages/metrics/**"
               - "packages/future/**"
-            watchlist:
-              - *shared
-              - "packages/metrics/**"
-              - "packages/dividends/**"
-              - "packages/events/**"
-              - "packages/fx/**"
-              - "packages/benchmark/**"
-              - "packages/future/**"
-              - "packages/stock/**"
-              - "packages/etf/**"
-              - "packages/watchlist/**"
 
   build-and-push:
     needs: [changes]
@@ -172,9 +157,6 @@ jobs:
           - name: future
             dockerfile: packages/future/Dockerfile
             package-dir: packages/future
-          - name: watchlist
-            dockerfile: packages/watchlist/Dockerfile
-            package-dir: packages/watchlist
     steps:
       # Evaluated per matrix entry (not job-level `if`, since a step needs
       # to run conditionally while later steps in the same job still see

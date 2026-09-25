@@ -228,28 +228,36 @@ jobs:
         run: mv chunk-failures output/chunk-failures
 
       # Feeds build-catalog below — that job needs every chunk's
-      # profile.parquet files in one place to build a complete catalog, and
-      # a matrix leg only ever sees its own chunk. Short retention: this
-      # artifact only exists to hand off within this run, not for later
-      # reference (see equicast_core.catalog's module docstring for why the
-      # catalog can't be built inside this per-chunk job at all). Also
-      # carries this chunk's failures-<index>.json (see above), if any -
-      # report-status's failures merge step below needs every chunk's, the
-      # same way build-catalog needs every chunk's profile.parquet.
-      - name: Publish this chunk's profiles for the catalog build
+      # profile.parquet (and, since equicast_core.catalog folds cagr_1y/
+      # change_1w_pct/change_1m_pct into the catalog too, each pair's
+      # sibling metrics.parquet) in one place to build a complete catalog,
+      # and a matrix leg only ever sees its own chunk. Publishing
+      # metrics.parquet here — rather than having build-catalog read it
+      # back from S3 per pair — keeps that job to the one S3 read per asset
+      # class it already does (the catalog itself), no per-pair S3 calls
+      # added. Short retention: this artifact only exists to hand off
+      # within this run, not for later reference (see equicast_core.
+      # catalog's module docstring for why the catalog can't be built
+      # inside this per-chunk job at all). Also carries this chunk's
+      # failures-<index>.json (see above), if any - report-status's
+      # failures merge step below needs every chunk's, the same way
+      # build-catalog needs every chunk's profile.parquet.
+      - name: Publish this chunk's profiles and metrics for the catalog build
         uses: actions/upload-artifact@v7
         with:
           name: fx-profiles-${{ strategy.job-index }}
           path: |
             output/fx=*/profile.parquet
+            output/fx=*/metrics.parquet
             output/chunk-failures/failures-*.json
           retention-days: 1
 
   # Rebuilds catalog/fx.parquet (see equicast_core.catalog) from every
-  # chunk's freshly-fetched profiles, merged back together here since no
-  # single ingest leg above ever sees the full pair list. Needs no new S3
-  # permission beyond what ingest already has (s3:PutObject) — it reads the
-  # profiles locally, from the downloaded artifacts, not back from S3.
+  # chunk's freshly-fetched profiles and metrics, merged back together here
+  # since no single ingest leg above ever sees the full pair list. Needs no
+  # new S3 permission beyond what ingest already has (s3:PutObject) — it
+  # reads the profiles/metrics locally, from the downloaded artifacts, not
+  # back from S3.
   #
   # A targeted run (plan.outputs.targeted, from the "tickers" input) only
   # ever fetched a subset of the full pair list, so its build-catalog step
@@ -267,7 +275,7 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Download every chunk's profiles
+      - name: Download every chunk's profiles and metrics
         uses: actions/download-artifact@v8
         with:
           pattern: fx-profiles-*
