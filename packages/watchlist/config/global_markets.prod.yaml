@@ -1,0 +1,134 @@
+# The "Global Markets" system watchlist's production membership — every
+# instrument it shows, fetched fresh from yfinance each run (see
+# equicast_watchlist.builder), independent of whether
+# fx/future/benchmark-ingestion.yml have published anything for these
+# symbols yet.
+#
+# Used for scheduled (cron) runs and manual "production" workflow_dispatch
+# runs — the dev environment uses global_markets.dev.yaml's smaller list
+# instead (see that file's header for why), sized in the same spirit as
+# MAX_HOLDINGS_FOR_WATCHLIST's own dev/prod split (see
+# backend/equicast_api/settings.py) even though this list isn't actually
+# capped by that setting — a system watchlist's entries never go through
+# HoldingsClient at all, they're a separate, config-driven fetch.
+#
+# Each entry's shape depends on its `asset_class`:
+#   - fx:        `from`/`to` currency codes (same shape as
+#                packages/fx/config/fx_pairs.*.yaml) — built via
+#                equicast_fx.FXClient.
+#   - future:    `key`/`symbol` (same shape as
+#                packages/future/config/futures.*.yaml) — built via
+#                equicast_future.FutureClient. Every future currently
+#                configured there (see that file) is included here too.
+#   - benchmark: `key`/`symbol` (same shape as
+#                packages/benchmark/config/benchmarks.*.yaml) — built via
+#                equicast_benchmark.BenchmarkClient.
+#
+# `name` is a fallback display label only, used when a live yfinance fetch
+# doesn't return one (down/rate-limited) — the real fetch's own name always
+# wins once available. Configurable independently of the individual
+# fx/future/benchmark pipelines' own configs: trimming or growing this list
+# only changes what equicast-watchlist fetches for this one watchlist, it
+# doesn't add/remove anything from those pipelines' own S3 output.
+entries:
+  # --- Futures (every contract in packages/future/config/futures.*.yaml) ---
+  - asset_class: future
+    key: GOLD
+    symbol: "GC=F"
+    name: Gold
+  - asset_class: future
+    key: SILVER
+    symbol: "SI=F"
+    name: Silver
+  - asset_class: future
+    key: PLATINUM
+    symbol: "PL=F"
+    name: Platinum
+  - asset_class: future
+    key: PALLADIUM
+    symbol: "PA=F"
+    name: Palladium
+  - asset_class: future
+    key: CRUDE_OIL_WTI
+    symbol: "CL=F"
+    name: Crude Oil (WTI)
+  - asset_class: future
+    key: BRENT_CRUDE
+    symbol: "BZ=F"
+    name: Brent Crude
+  - asset_class: future
+    key: NATURAL_GAS
+    symbol: "NG=F"
+    name: Natural Gas
+  - asset_class: future
+    key: HEATING_OIL
+    symbol: "HO=F"
+    name: Heating Oil
+  - asset_class: future
+    key: COPPER
+    symbol: "HG=F"
+    name: Copper
+  - asset_class: future
+    key: ALUMINUM
+    symbol: "ALI=F"
+    name: Aluminum
+  - asset_class: future
+    key: WHEAT
+    symbol: "ZW=F"
+    name: Wheat
+  - asset_class: future
+    key: CORN
+    symbol: "ZC=F"
+    name: Corn
+  - asset_class: future
+    key: SOYBEANS
+    symbol: "ZS=F"
+    name: Soybeans
+  - asset_class: future
+    key: COFFEE
+    symbol: "KC=F"
+    name: Coffee
+  - asset_class: future
+    key: COTTON
+    symbol: "CT=F"
+    name: Cotton
+  - asset_class: future
+    key: SUGAR
+    symbol: "SB=F"
+    name: Sugar
+
+  # --- Currencies ---
+  - asset_class: fx
+    from: EUR
+    to: USD
+    name: EUR/USD
+  - asset_class: fx
+    from: GBP
+    to: USD
+    name: GBP/USD
+  - asset_class: fx
+    from: USD
+    to: JPY
+    name: USD/JPY
+  - asset_class: fx
+    from: USD
+    to: CNY
+    name: USD/CNY
+
+  # --- Benchmarks ---
+  - asset_class: benchmark
+    key: SP500
+    symbol: "^GSPC"
+    name: S&P 500
+  - asset_class: benchmark
+    key: FTSE100
+    symbol: "^FTSE"
+    name: FTSE 100
+  - asset_class: benchmark
+    key: NASDAQ100
+    symbol: "^NDX"
+    name: Nasdaq 100
+  - asset_class: benchmark
+    key: VIX
+    symbol: "^VIX"
+    name: VIX

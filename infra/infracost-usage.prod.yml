@@ -90,7 +90,7 @@ resource_usage:
       monthly_tier_2_requests: 14000 # GET — 280 reads/user/month (session model above) * 50 users
 
   # FX + stock + ETF + benchmark + future profile data (and the backend's
-  # on-demand search/profile/price cache reads) lands here. Five independent
+  # on-demand search/profile/price cache reads) lands here. Six independent
   # scheduled pipelines write into this one bucket — broken out per pipeline below,
   # then summed into the storage_gb/monthly_tier_1_requests values actually
   # used. Recompute a pipeline's own lines if its ticker count or schedule
@@ -98,19 +98,19 @@ resource_usage:
   #
   # FX pairs aren't "holdings" in the same sense as a listed stock/ETF, and
   # weren't part of the 10,000-instrument scale-up — packages/fx/config/
-  # fx_pairs.prod.yaml stays at today's 4 pairs.
+  # fx_pairs.prod.yaml stays at today's 7 pairs.
   #
-  # --- FX (packages/fx/config/fx_pairs.prod.yaml, currently 4 pairs) ---
+  # --- FX (packages/fx/config/fx_pairs.prod.yaml, currently 7 pairs) ---
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
   #             price.parquet ~20KB (current year only — full_load isn't
   #             passed on schedule) = ~45KB/pair
-  #   storage:  4 pairs * 45KB = 180KB
+  #   storage:  7 pairs * 45KB = 315KB
   #   schedule: fx-ingestion.yml, cron "0 22 * * 1-5" -> ~22 runs/month
   #             (1/weekday — ~4.35 weeks/month * 5 weekdays; markets are
   #             shut both weekend days, so those runs are skipped entirely
   #             rather than harmlessly re-fetching Friday's close twice)
   #   requests: 3 files/pair (profile + metrics + price), all PUT
-  #             22 runs * 4 pairs * 3 files = 264 PUTs -> 300 (rounded up)
+  #             22 runs * 7 pairs * 3 files = 462 PUTs -> 500 (rounded up)
   #
   # --- Stock (~9,000 tickers — 90% of the ~10,000-instrument US/UK
   #     universe this scenario is sized against; packages/stock/config/
@@ -237,7 +237,7 @@ resource_usage:
   #   per-year accumulation to consolidate away for ETF events specifically.
   #
   # --- Benchmark (packages/benchmark/config/benchmarks.prod.yaml, currently
-  #     15 benchmarks) --- market indices aren't "holdings" any more than FX
+  #     16 benchmarks) --- market indices aren't "holdings" any more than FX
   #     pairs are, and weren't part of the 10,000-instrument scale-up
   #     either; no dividends/fundamentals, same per-file size assumption as
   #     the FX section above (a benchmark is a single yfinance symbol, not a
@@ -245,7 +245,7 @@ resource_usage:
   #   size:     profile.parquet ~15KB + metrics.parquet ~10KB +
   #             price.parquet ~20KB (current year only — full_load isn't
   #             passed on schedule) = ~45KB/benchmark
-  #   storage:  15 benchmarks * 45KB = 675KB
+  #   storage:  16 benchmarks * 45KB = 720KB
   #   schedule: benchmark-ingestion.yml, cron "0 23 * * 1-5" -> ~22 runs/month
   #             (1/weekday, offset 15 minutes from the stock schedule so
   #             none of the four pipelines overlap — see
@@ -253,7 +253,7 @@ resource_usage:
   #             stock/ETF) — there's no forecasting step for a Saturday run
   #             to do here.
   #   requests: 3 files/benchmark (profile + metrics + price), all PUT
-  #             22 runs * 15 benchmarks * 3 files = 990 PUTs
+  #             22 runs * 16 benchmarks * 3 files = 1,056 PUTs
   #
   # --- Future (packages/future/config/futures.prod.yaml, currently 16
   #     futures contracts) --- futures aren't "holdings" any more than FX
@@ -274,30 +274,49 @@ resource_usage:
   #   requests: 3 files/future (profile + metrics + price), all PUT
   #             22 runs * 16 futures * 3 files = 1,056 PUTs
   #
+  # --- Watchlist (packages/watchlist/config/global_markets.prod.yaml,
+  #     currently 24 entries: 16 futures + 4 fx pairs + 4 benchmarks) ---
+  #     unlike every pipeline above, equicast-watchlist writes one Parquet
+  #     file per *watchlist* (not per instrument) — all 24 entries land as
+  #     rows in a single watchlist=<KEY>/entries.parquet — since it's built
+  #     to be read back as one table, not looked up per-ticker the way
+  #     profile/metrics/price are.
+  #   size:     ~24 rows * ~250 bytes/row (ticker/name/currency/
+  #             current_price/change_1w_pct/change_1m_pct/timestamps) =
+  #             ~6KB, rounded up to 10KB for headroom
+  #   storage:  10KB (one file, regardless of entry count until it's in the
+  #             hundreds)
+  #   schedule: watchlist-ingestion.yml, cron "0 6 * * 6" -> ~4 runs/month
+  #             (1/week, Saturday only — a system watchlist is a periodic
+  #             snapshot, not a daily feed; see docs/watchlist-pipeline.md)
+  #   requests: 1 file (entries.parquet) per watchlist per run, all PUT
+  #             4 runs * 1 watchlist * 1 file = 4 PUTs -> 5 (rounded up)
+  #
   # --- Totals used below ---
-  #   storage:  180KB + 7,650,000KB + 539,000KB + 675KB + 720KB = 8,190,575KB
-  #             (~7.81GB) -> 7.9GB (rounded up for headroom, unaffected by
-  #             benchmark's/future's tiny additions). Recompute the
-  #             accumulated-years assumption in the stock/ETF sections once
-  #             actual bucket age approaches (or exceeds) 20 years, once
-  #             --full-load has actually been run and real multi-year sizes
-  #             are known instead of the 20-year projection, or once the
-  #             real prod ticker count is known instead of this 10,000
-  #             planning scenario.
-  #   requests (PUT): 300 (FX) + 990,000 (stock) + 110,000 (ETF) + 990
-  #             (benchmark) + 1,056 (future) = 1,102,346. Unaffected by the
-  #             price/dividend/events history.parquet+current.parquet split
-  #             — that split's ~522,000-PUT combined saving (486,000 stock +
-  #             36,000 ETF, see the Stock/ETF sections) is on the one-time
-  #             --full-load backfill, a manual workflow_dispatch run outside
-  #             this scheduled-runs figure, so it never shows up here.
+  #   storage:  315KB + 7,650,000KB + 539,000KB + 720KB + 720KB + 10KB =
+  #             8,190,765KB (~7.81GB) -> 7.9GB (rounded up for headroom,
+  #             unaffected by benchmark's/future's/watchlist's tiny
+  #             additions). Recompute the accumulated-years assumption in
+  #             the stock/ETF sections once actual bucket age approaches
+  #             (or exceeds) 20 years, once --full-load has actually been
+  #             run and real multi-year sizes are known instead of the
+  #             20-year projection, or once the real prod ticker count is
+  #             known instead of this 10,000 planning scenario.
+  #   requests (PUT): 500 (FX) + 990,000 (stock) + 110,000 (ETF) + 1,056
+  #             (benchmark) + 1,056 (future) + 5 (watchlist) = 1,102,617.
+  #             Unaffected by the price/dividend/events history.parquet+
+  #             current.parquet split — that split's ~522,000-PUT combined
+  #             saving (486,000 stock + 36,000 ETF, see the Stock/ETF
+  #             sections) is on the one-time --full-load backfill, a manual
+  #             workflow_dispatch run outside this scheduled-runs figure, so
+  #             it never shows up here.
   #   requests (GET): 3,000 — backend on-demand reads, from the session
   #             model above (60/user/month * 50 users), not sized from the
   #             ticker count or ingestion schedule
   module.market_data_bucket.aws_s3_bucket.this:
     standard:
       storage_gb: 7.9
-      monthly_tier_1_requests: 1102346 # PUT/COPY/POST/LIST — FX (300) + stock (990,000) + ETF (110,000) + benchmark (990) + future (1,056)
+      monthly_tier_1_requests: 1102617 # PUT/COPY/POST/LIST — FX (500) + stock (990,000) + ETF (110,000) + benchmark (1,056) + future (1,056) + watchlist (5)
       monthly_tier_2_requests: 3000 # GET — backend on-demand reads, from the session model above
 
   # React static site. Build size doesn't depend on traffic, so storage/

@@ -6,11 +6,10 @@ import Alert from "../../components/core/Alert.jsx";
 import EmptyState from "../../components/core/EmptyState.jsx";
 import Drawer from "../../components/core/Drawer.jsx";
 import ConfirmDialog from "../../components/core/ConfirmDialog.jsx";
-import AssetIcon from "../../components/core/AssetIcon.jsx";
 import TickerSearchField from "../pies/TickerSearchField.jsx";
 import WatchlistForm from "./WatchlistForm.jsx";
+import WatchlistEntryCard from "./WatchlistEntryCard.jsx";
 import { useApi } from "../../api/useApi.js";
-import { useCurrentUser } from "../../api/useCurrentUser.js";
 import {
   listWatchlists,
   createWatchlist,
@@ -18,28 +17,28 @@ import {
   deleteWatchlist,
 } from "../../api/watchlists.js";
 import { createHolding, deleteHolding } from "../../api/holdings.js";
-import { formatCurrency } from "../sampleFinancials.js";
 import "./WatchlistsPanel.css";
-
-const FALLBACK_CURRENCY = "USD";
 
 /**
  * The /dashboard watchlists panel: one Card, tabbed across the five system
  * defaults (see backend/watchlists/views.py's SYSTEM_WATCHLISTS — always
- * present, always first, holdings always empty for now — how each gets
- * populated is separate, not-yet-built work) followed by the caller's own
- * custom watchlists (up to MAX_WATCHLISTS, currently 5). A custom
+ * present, always first) followed by the caller's own custom watchlists
+ * (up to MAX_WATCHLISTS, currently 5). Global Markets is the first system
+ * tab with real content — built weekly by equicast-watchlist
+ * (packages/watchlist) and read back via `_SYSTEM_WATCHLIST_STORAGE_KEYS`
+ * in the backend view; every other system tab still comes back with
+ * `holdings: []` until its own population logic exists. A custom
  * watchlist's holdings are real — added/removed here via the same
  * POST/DELETE /api/holdings/ a direct account holding uses (see
  * TickerSearchField/handleAddHolding), just with `watchlist_id` instead of
  * `account_id` and never a nested transaction (watchlist holdings don't
- * carry shares/cost basis — see HoldingListView.post). A system tab is
- * read-only: no rename/delete, no add/remove-holding controls.
+ * carry shares/cost basis — see HoldingListView.post). Every entry, system
+ * or custom, renders as the same WatchlistEntryCard (logo/name/ticker/
+ * native price/1w+1m change) — a system tab is otherwise read-only: no
+ * rename/delete, no add/remove-holding controls.
  */
 function WatchlistsPanel() {
   const api = useApi();
-  const { profile } = useCurrentUser();
-  const currency = profile?.default_currency ?? FALLBACK_CURRENCY;
 
   const [watchlists, setWatchlists] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -225,35 +224,14 @@ function WatchlistsPanel() {
                     }
                   />
                 ) : (
-                  <div className="ec-detail-row-list">
+                  <div className="ec-watchlist-card-grid">
                     {active.holdings.map((holding) => (
-                      <Card key={holding.id} className="ec-detail-row">
-                        <div className="ec-detail-row-heading">
-                          <AssetIcon website={holding.website} size={32} />
-                          <div className="ec-detail-row-main">
-                            <h3 className="ec-detail-row-name">
-                              {holding.name ? `${holding.name} (${holding.ticker})` : holding.ticker}
-                            </h3>
-                          </div>
-                        </div>
-                        <div className="ec-watchlist-row-actions">
-                          <span className="ec-detail-row-current">
-                            {holding.current_price != null
-                              ? formatCurrency(holding.current_price, currency)
-                              : "—"}
-                          </span>
-                          {active.type === "custom" && (
-                            <button
-                              type="button"
-                              className="ec-icon-btn ec-icon-btn--danger"
-                              aria-label={`Remove ${holding.ticker}`}
-                              onClick={() => handleRemoveHolding(holding.id)}
-                            >
-                              <i className="bi bi-x-lg" aria-hidden="true" />
-                            </button>
-                          )}
-                        </div>
-                      </Card>
+                      <WatchlistEntryCard
+                        key={holding.id ?? holding.ticker}
+                        holding={holding}
+                        isRemovable={active.type === "custom"}
+                        onRemove={() => handleRemoveHolding(holding.id)}
+                      />
                     ))}
                   </div>
                 )}
