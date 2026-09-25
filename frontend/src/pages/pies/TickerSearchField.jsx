@@ -88,7 +88,7 @@ function TickerSearchField({ onSelect, disabled = false }) {
                   onClick={() => handleSelect(result)}
                   disabled={disabled}
                 >
-                  <AssetIcon website={result.website} size={16} />
+                  <AssetIcon ticker={result.ticker} website={result.website} size={16} />
                   <span className="ec-ticker-search-result-ticker">{result.ticker}</span>
                   <span className="ec-ticker-search-result-name">{result.name}</span>
                   <AssetTypeBadge type={result.type} />

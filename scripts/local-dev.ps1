@@ -33,6 +33,11 @@
       actually loads locally, same VITE_GA_MEASUREMENT_ID env-var-over-
       .env.local precedence as Auth0 above (see docs/analytics-setup.md).
       Leave it unset and analytics.js simply no-ops - nothing to warn about.
+    - Brandfetch's asset-icon lookup (see src/utils/websiteIcon.js) is
+      likewise optional - pass -BrandfetchClientId (or export
+      $env:BRANDFETCH_CLIENT_ID first) for VITE_BRANDFETCH_CLIENT_ID, same
+      precedence as above. Leave it unset and AssetIcon just falls through
+      to Google's favicon-by-domain (then a local SVG override) instead.
     - The backend runs via `manage.py runserver`, the same Django app
       `equicast_api.lambda_handler.handler` wraps in prod - Lambda/API
       Gateway themselves aren't part of this loop, so iteration stays
@@ -164,6 +169,8 @@
 .EXAMPLE
   .\scripts\local-dev.ps1 -StartFrontend -GaMeasurementId G-XXXXXXXXXX
 .EXAMPLE
+  .\scripts\local-dev.ps1 -StartFrontend -BrandfetchClientId <client-id>
+.EXAMPLE
   .\scripts\local-dev.ps1 -StartBackend -SupportIssueToken ghp_xxx -SupportRepo coldsofttech/equicast-support
 .EXAMPLE
   .\scripts\local-dev.ps1 -Stop
@@ -182,6 +189,7 @@ param(
     [string]$Auth0Audience = $env:AUTH0_AUDIENCE,
     [string]$Auth0ClientId = $env:AUTH0_CLIENT_ID,
     [string]$GaMeasurementId = $env:GA_MEASUREMENT_ID,
+    [string]$BrandfetchClientId = $env:BRANDFETCH_CLIENT_ID,
     [string]$SupportIssueToken = $env:SUPPORT_ISSUE_TOKEN,
     [string]$SupportRepo = $env:SUPPORT_REPO,
     [string]$Region = "eu-west-1",
@@ -493,6 +501,13 @@ if ($StartFrontend) {
     # about. Same env-var-over-.env.local precedence as Auth0.
     if ($GaMeasurementId) {
         $env:VITE_GA_MEASUREMENT_ID = $GaMeasurementId
+    }
+
+    # Also optional - AssetIcon (src/utils/websiteIcon.js) just falls
+    # through to Google's favicon-by-domain (then a local SVG override)
+    # when this is unset, same as GA above.
+    if ($BrandfetchClientId) {
+        $env:VITE_BRANDFETCH_CLIENT_ID = $BrandfetchClientId
     }
 }
 

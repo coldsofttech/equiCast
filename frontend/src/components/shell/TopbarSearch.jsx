@@ -134,7 +134,7 @@ function TopbarSearch() {
                           }
                         }}
                       >
-                        <AssetIcon website={result.website} size={16} />
+                        <AssetIcon ticker={result.ticker} website={result.website} size={16} />
                         <span className="ec-topbar-search-result-ticker">{result.ticker}</span>
                         <span className="ec-topbar-search-result-name">{result.name}</span>
                         <AssetTypeBadge type={result.type} />

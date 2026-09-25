@@ -496,7 +496,7 @@ function HoldingTickerPage() {
       title={name ?? ticker}
       subtitle={name ? ticker : undefined}
       stickyTitle
-      titleIcon={<AssetIcon website={marketProfile?.website} size={64} />}
+      titleIcon={<AssetIcon ticker={ticker} website={marketProfile?.website} size={64} />}
       titleBadges={
         marketProfile &&
         (marketProfile.exchange ||

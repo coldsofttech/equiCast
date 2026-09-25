@@ -1,0 +1,19 @@
+{
+  "//": [
+    "Per-ticker icon overrides for AssetIcon, consumed by resolveIconCandidates",
+    "in src/utils/websiteIcon.js. The default fallback order is Brandfetch (by",
+    "ticker), then Google's favicon-by-domain, then (if set here) a locally",
+    "hosted SVG. Add an entry keyed by ticker (uppercase) using either field",
+    "below; unset fields are omitted, not null.",
+    "",
+    "website: \"https://example.com\" — overrides the domain the Google-favicon",
+    "  fallback uses. Use this when the ticker's profile website is wrong/",
+    "  unhelpful for a favicon (e.g. GOOGL's yfinance website is a shared",
+    "  Alphabet domain, not google.com).",
+    "",
+    "source: \"/icons/TICKER.svg\" — a locally hosted SVG under frontend/public,",
+    "  tried last, after both Brandfetch and Google. Use this only when neither",
+    "  automated provider serves a usable icon for that ticker."
+  ],
+  "GOOGL": { "website": "https://google.com" }
+}
