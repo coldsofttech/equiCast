@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { useNavigate } from "react-router-dom";
 import { useAuth0 } from "@auth0/auth0-react";
@@ -8,6 +8,14 @@ import TopbarSearch from "./TopbarSearch.jsx";
 vi.mock("react-router-dom", () => ({ useNavigate: vi.fn() }));
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
 vi.mock("../../api/market.js", () => ({ searchTickers: vi.fn() }));
+// AssetIcon resolves icons through iconCache.js's loadIcon, which does a
+// real fetch() — mocked here so this suite never makes a real network call,
+// passing the candidate URL straight through unchanged/uncached so the
+// icon-src assertion below still exercises the real resolveIconCandidates
+// output.
+vi.mock("../../utils/iconCache.js", () => ({
+  loadIcon: vi.fn((url) => Promise.resolve({ src: url, isObjectUrl: false })),
+}));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -68,8 +76,10 @@ describe("TopbarSearch", () => {
     typeAndEnter("a");
 
     await screen.findByText("AAPL");
+    await waitFor(() =>
+      expect(container.querySelectorAll(".ec-topbar-search-result img")).toHaveLength(1)
+    );
     const icons = container.querySelectorAll(".ec-topbar-search-result img");
-    expect(icons).toHaveLength(1);
     expect(icons[0].src).toContain("apple.com");
   });
 

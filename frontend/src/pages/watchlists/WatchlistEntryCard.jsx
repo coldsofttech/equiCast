@@ -82,7 +82,7 @@ function WatchlistEntryCard({ holding, isRemovable, onRemove }) {
         </button>
       )}
       <div className="ec-watchlist-card-heading">
-        <AssetIcon website={holding.website} size={32} />
+        <AssetIcon ticker={holding.ticker} website={holding.website} size={32} />
         <div className="ec-watchlist-card-titles">
           <span className="ec-watchlist-card-name">{holding.name || holding.ticker}</span>
           <span className="ec-watchlist-card-ticker">{holding.ticker}</span>

@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Asset icons (`AssetIcon`) are now cached as `Blob`s in IndexedDB
+  (`frontend/src/utils/iconCache.js`, a new "icons" store in
+  `marketDataCache.js`) rather than re-requested from Brandfetch/Google on
+  every page load — neither service reliably sends long-lived
+  `Cache-Control`, so a plain `<img src>` was re-hitting them on every
+  refresh regardless of the browser's own HTTP cache (equicast-support#233).
+  Entries are cached for 30 days (icons rarely change) and cleared by the
+  Settings drawer's "Reset cache" action along with everything else.
+  Falls back to loading the candidate URL directly, uncached, when a
+  provider's response isn't readable cross-origin. Also fixed
+  `WatchlistEntryCard` not passing `ticker` to `AssetIcon`, so Brandfetch is
+  actually attempted for watchlist entries instead of skipping straight to
+  Google's favicon.
+
 - Asset icons (`AssetIcon`) now resolve through a three-tier fallback:
   [Brandfetch's free Logo API](https://brandfetch.com/developers/logo-api)
   (looked up by ticker) first, Google's favicon-by-domain second, then an
