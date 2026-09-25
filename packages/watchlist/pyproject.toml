@@ -1,0 +1,43 @@
+[project]
+name = "equicast-watchlist"
+version = "0.1.0"
+description = "Builds a system watchlist's entries (fx pairs, futures, benchmarks) fresh from yfinance, built on equicast-fx/-benchmark/-future."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "equicast-datafeed",
+    "equicast-fx",
+    "equicast-benchmark",
+    "equicast-future",
+    "pandas>=2.2",
+    "pyarrow>=17.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6.0",
+]
+
+[project.scripts]
+equicast-watchlist = "equicast_watchlist.cli:main"
+
+[tool.uv.sources]
+equicast-datafeed = { workspace = true }
+equicast-fx = { workspace = true }
+equicast-benchmark = { workspace = true }
+equicast-future = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/equicast_watchlist"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

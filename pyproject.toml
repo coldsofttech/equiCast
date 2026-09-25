@@ -12,6 +12,7 @@ members = [
     "packages/stock",
     "packages/etf",
     "packages/future",
+    "packages/watchlist",
     "backend",
 ]
 

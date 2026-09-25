@@ -9,6 +9,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Global Markets is now a live system watchlist end to end.
+  `MarketDataClient.get_watchlist_entries` reads `equicast-watchlist`'s
+  published `watchlist=<KEY>/entries.parquet`; `backend/watchlists/views.py`
+  gained `_SYSTEM_WATCHLIST_STORAGE_KEYS` mapping `"global-markets"` to
+  `"GLOBAL_MARKETS"` so `WatchlistListView.get` populates that tab's
+  `holdings` from real data (every other system watchlist still comes back
+  `holdings: []`, unaffected). The frontend's `WatchlistsPanel` renders
+  every entry — system or custom — as a new `WatchlistEntryCard` (logo,
+  name, ticker, current price in the instrument's own native currency via
+  `current_price_native ?? current_price`, and green/red 1-week/1-month %
+  change), replacing the old list-row layout.
+
+- A sixth pipeline, `equicast-watchlist` (`packages/watchlist`), building
+  the first system watchlist's real content: "Global Markets" (16 futures
+  + 4 currency pairs [EUR/USD, GBP/USD, USD/JPY, USD/CNY — added to
+  `packages/fx/config/fx_pairs.{dev,prod}.yaml`] + 3 equity benchmarks +
+  VIX [added to `packages/benchmark/config/benchmarks.{dev,prod}.yaml`],
+  configurable via `packages/watchlist/config/global_markets.{dev,prod}.yaml`).
+  Architecturally distinct from every other pipeline: it reads nothing from
+  S3, fetching each entry fresh from yfinance via equicast-fx/-benchmark/
+  -future's own Client classes, and writes one Parquet file per *watchlist*
+  (`watchlist=<KEY>/entries.parquet`, all entries as rows) rather than one
+  per instrument. Each row carries `current_price` in the instrument's own
+  native currency plus `change_1w_pct`/`change_1m_pct` (from one month of
+  daily closes; `None` when there isn't enough history yet, rather than
+  failing the row). An entry whose fetch fails outright (yfinance down, a
+  bad symbol) is skipped and recorded in a `failures.json` instead of
+  aborting the whole build, the same per-item resilience every other
+  pipeline's `cli.run()` already has (equicast-support#145).
+  `watchlist-ingestion.yml` runs weekly (Saturday only, 06:00 UTC) — a
+  system watchlist is a periodic snapshot, not a daily feed, so it doesn't
+  share the Monday-Friday schedule the other five pipelines stagger
+  across; its CI/image build are folded into the shared
+  `packages-ci.yml`/`images.yml` matrices rather than standalone
+  workflows. Not yet wired into the backend/frontend — this is the
+  data-producing half; `backend/watchlists/views.py`'s `SYSTEM_WATCHLISTS`
+  still returns empty `holdings` for "Global Markets" until that's built.
+
 - A fifth ingestion pipeline, `equicast-future` (`packages/future`), for
   futures contracts (Gold, Silver, Platinum, Palladium, WTI/Brent Crude,
   Natural Gas, Heating Oil, Copper, Aluminum, Wheat, Corn, Soybeans,
