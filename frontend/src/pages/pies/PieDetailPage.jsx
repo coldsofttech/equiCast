@@ -373,7 +373,7 @@ function PieDetailPage() {
                 }}
               >
                 <div className="ec-detail-row-heading">
-                  <AssetIcon website={holding.website} size={32} />
+                  <AssetIcon ticker={holding.ticker} website={holding.website} size={32} />
                   <div className="ec-detail-row-main">
                     <h3 className="ec-detail-row-name">
                       {holding.name ? `${holding.name} (${holding.ticker})` : holding.ticker}

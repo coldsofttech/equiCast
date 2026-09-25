@@ -185,7 +185,7 @@ function AllocationEditor({ holdings, onSave, isSaving, error }) {
           </div>
           {activeRows.map((row) => (
             <div className="ec-allocation-row" key={row.key}>
-              <AssetIcon website={row.website} size={24} />
+              <AssetIcon ticker={row.ticker} website={row.website} size={24} />
               <span className="ec-allocation-ticker">{row.ticker}</span>
               <span className="ec-allocation-name">{row.name ?? "—"}</span>
               <AssetTypeBadge type={row.asset_class} />

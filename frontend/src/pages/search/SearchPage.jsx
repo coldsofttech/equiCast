@@ -207,7 +207,7 @@ function SearchPage() {
                   >
                     <td className="ec-table-name">
                       <span className="ec-search-result-ticker">
-                        <AssetIcon website={result.website} size={20} />
+                        <AssetIcon ticker={result.ticker} website={result.website} size={20} />
                         {result.ticker}
                       </span>
                     </td>

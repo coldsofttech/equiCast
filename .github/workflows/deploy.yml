@@ -227,6 +227,7 @@ jobs:
           vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
           vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
           vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          vite-brandfetch-client-id: ${{ vars.BRANDFETCH_CLIENT_ID }}
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
@@ -275,6 +276,7 @@ jobs:
           vite-auth0-domain: ${{ vars.AUTH0_DOMAIN }}
           vite-auth0-client-id: ${{ vars.AUTH0_CLIENT_ID }}
           vite-auth0-audience: ${{ vars.AUTH0_AUDIENCE }}
+          vite-brandfetch-client-id: ${{ vars.BRANDFETCH_CLIENT_ID }}
 
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws

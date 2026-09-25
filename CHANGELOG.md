@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Asset icons (`AssetIcon`) now resolve through a three-tier fallback:
+  [Brandfetch's free Logo API](https://brandfetch.com/developers/logo-api)
+  (looked up by ticker) first, Google's favicon-by-domain second, then an
+  optional per-ticker local SVG override
+  (`frontend/src/config/websiteIcons.json`) as a last resort — each tier
+  is only tried if the previous one's image fails to load. Replaces the
+  old Clearbit-based per-ticker override, since `logo.clearbit.com` is no
+  longer available. `VITE_BRANDFETCH_CLIENT_ID` (a public client ID, not
+  a secret) is optional — unset, icons just fall through to Google/SVG.
+
 - All five system-default watchlists (Global Markets, Top Winners, Top
   Losers, Your Top Winners, Your Top Losers) are now live, computed at
   request time by `backend/watchlists/system_watchlists.py` from what
@@ -87,6 +97,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Per-watchlist holding caps (`MAX_HOLDINGS_FOR_WATCHLIST`, already a
   GitHub Environment variable wired into terraform) aren't yet set to
   different dev/prod values — that's a config change, not code.
+
+### Changed
+
+- Stock/ETF ingestion's missing-ISIN tracking issues (GitHub issue #215)
+  now file into the shared private `coldsofttech/equicast-support` repo
+  instead of the public `equiCast` repo — same repo/`SUPPORT_REPO`
+  variable and `SUPPORT_ISSUE_TOKEN` secret the Support page's backend
+  already uses (`backend/support/views.py`), so internal
+  engineering/data-quality trackers stay off the public repo's issue
+  list. `.github/scripts/sync-missing-isin-issue.sh` now takes the
+  target repo as its first argument; the `build-catalog` job in both
+  `stock-ingestion.yml`/`etf-ingestion.yml` no longer needs its
+  `issues: write` permission override, since it no longer writes issues
+  into its own repo.
+
+- Account/pie price charts now plot a true since-inception reconstruction
+  instead of "what today's holdings would have been worth historically"
+  (GitHub issue #194): the blue line is point-in-time current value
+  (shares actually held on each date, valued at that date's own price) and
+  the new grey dashed line is point-in-time invested value (that position's
+  own running cost basis, reduced by average cost on a SELL) — both start
+  on the real date of the first BUY across the account's/pie's holdings and
+  run to today, so they move up and down together as positions build up,
+  get trimmed, and get re-priced over time. The old static "current price"
+  dashed reference line is gone — the blue line already is current value.
+  The date-range picker (`frontend/src/pages/priceRangeSlicing.js`'s new
+  `visibleRanges`) now only offers presets the actual investment history
+  could show (no "10Y" button for a 3-month-old position). A "compare
+  against" pie/account/benchmark is unaffected — it keeps the pre-existing
+  "today's shares" aggregate, with no invested/current overlay of its own.
 
 ### Fixed
 
