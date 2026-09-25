@@ -6,6 +6,11 @@ import AllocationEditor from "./AllocationEditor.jsx";
 
 vi.mock("@auth0/auth0-react", () => ({ useAuth0: vi.fn() }));
 vi.mock("../../api/market.js", () => ({ searchTickers: vi.fn() }));
+// AssetIcon resolves icons through iconCache.js's loadIcon, which does a
+// real fetch() — mocked here so this suite never makes a real network call.
+vi.mock("../../utils/iconCache.js", () => ({
+  loadIcon: vi.fn(() => Promise.resolve(null)),
+}));
 
 const HOLDINGS = [
   { id: "h-1", ticker: "AAPL", asset_class: "stock", allocation_pct: "60" },

@@ -31,6 +31,14 @@
  *    "mutated directly by the user, not calendar-expired" model as
  *    "accounts" — `readGoalsValue`/`writeGoalsValue`/`deleteGoalsValue`
  *    store/return the raw value, undated.
+ *  - "icons" — fetched asset-icon images (see iconCache.js), keyed by the
+ *    resolved icon URL itself (Brandfetch/Google favicon/local override —
+ *    whichever one actually loaded), storing the raw `Blob` plus the
+ *    millisecond timestamp it was cached at. Unlike "holdings", a logo has
+ *    no daily publish cadence to key freshness off, so this is a rolling
+ *    `ICON_TTL_MS` (30 days) from the write, not a calendar-day cutoff —
+ *    `readIconValue`/`writeIconValue` compare against `Date.now()` instead
+ *    of `todayKey()`.
  *
  * A historical FX rate for a given date has no dedicated store of its
  * own — it's resolved client-side from an fx pair's own bundled price
@@ -47,11 +55,15 @@
  */
 
 const DB_NAME = "equicast-cache";
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 const HOLDINGS_STORE_NAME = "holdings";
 const ACCOUNTS_STORE_NAME = "accounts";
 const TRANSACTIONS_STORE_NAME = "transactions";
 const GOALS_STORE_NAME = "goals";
+const ICONS_STORE_NAME = "icons";
+
+/** 30 days — see the "icons" store's docstring above. */
+const ICON_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 function openDb() {
   return new Promise((resolve, reject) => {
@@ -62,6 +74,7 @@ function openDb() {
       if (!db.objectStoreNames.contains(ACCOUNTS_STORE_NAME)) db.createObjectStore(ACCOUNTS_STORE_NAME);
       if (!db.objectStoreNames.contains(TRANSACTIONS_STORE_NAME)) db.createObjectStore(TRANSACTIONS_STORE_NAME);
       if (!db.objectStoreNames.contains(GOALS_STORE_NAME)) db.createObjectStore(GOALS_STORE_NAME);
+      if (!db.objectStoreNames.contains(ICONS_STORE_NAME)) db.createObjectStore(ICONS_STORE_NAME);
     };
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
@@ -276,10 +289,50 @@ export async function writeTransactionsValue(key, value) {
 }
 
 /**
+ * @param {string} key - the resolved icon URL, see iconCache.js.
+ * @returns {Promise<Blob|null>} `null` on a cache miss, an entry older than
+ *   `ICON_TTL_MS`, or any failure.
+ */
+export async function readIconValue(key) {
+  try {
+    const db = await openDb();
+    const entry = await new Promise((resolve, reject) => {
+      const request = db.transaction(ICONS_STORE_NAME, "readonly").objectStore(ICONS_STORE_NAME).get(key);
+      request.onsuccess = () => resolve(request.result ?? null);
+      request.onerror = () => reject(request.error);
+    });
+    db.close();
+    return entry && Date.now() - entry.cachedAt < ICON_TTL_MS ? entry.blob : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string} key - the resolved icon URL, see iconCache.js.
+ * @param {Blob} blob
+ * @returns {Promise<void>}
+ */
+export async function writeIconValue(key, blob) {
+  try {
+    const db = await openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(ICONS_STORE_NAME, "readwrite");
+      tx.objectStore(ICONS_STORE_NAME).put({ blob, cachedAt: Date.now() }, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+    db.close();
+  } catch {
+    // Best-effort — see module docstring.
+  }
+}
+
+/**
  * GitHub issue #184: wipes every store in "equicast-cache" — holdings
  * (prices/profiles/metrics/dividends/news/events), accounts, transactions,
- * and goals — for the Settings drawer's "Reset cache" action. Clears the
- * object stores in place rather than deleting the database itself, so
+ * goals, and icons — for the Settings drawer's "Reset cache" action. Clears
+ * the object stores in place rather than deleting the database itself, so
  * there's no version/upgrade dance to redo and no risk of a stale
  * `indexedDB.deleteDatabase` hanging behind another open connection.
  *
@@ -290,13 +343,14 @@ export async function clearAllCaches() {
     const db = await openDb();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(
-        [HOLDINGS_STORE_NAME, ACCOUNTS_STORE_NAME, TRANSACTIONS_STORE_NAME, GOALS_STORE_NAME],
+        [HOLDINGS_STORE_NAME, ACCOUNTS_STORE_NAME, TRANSACTIONS_STORE_NAME, GOALS_STORE_NAME, ICONS_STORE_NAME],
         "readwrite"
       );
       tx.objectStore(HOLDINGS_STORE_NAME).clear();
       tx.objectStore(ACCOUNTS_STORE_NAME).clear();
       tx.objectStore(TRANSACTIONS_STORE_NAME).clear();
       tx.objectStore(GOALS_STORE_NAME).clear();
+      tx.objectStore(ICONS_STORE_NAME).clear();
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });

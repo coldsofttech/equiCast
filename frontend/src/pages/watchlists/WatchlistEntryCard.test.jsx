@@ -2,6 +2,12 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import WatchlistEntryCard from "./WatchlistEntryCard.jsx";
 
+// AssetIcon resolves icons through iconCache.js's loadIcon, which does a
+// real fetch() — mocked here so this suite never makes a real network call.
+vi.mock("../../utils/iconCache.js", () => ({
+  loadIcon: vi.fn(() => Promise.resolve(null)),
+}));
+
 describe("WatchlistEntryCard", () => {
   it("renders a system entry's name, ticker, native price, and change", () => {
     const holding = {
