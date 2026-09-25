@@ -10,14 +10,20 @@ universe grows well past today's handful per asset class, even though
 `search()` still reads a catalog in full on every call rather than doing a
 column-pruned read.
 
-Deliberately asset-class-agnostic and package-agnostic: every one of the
-five pipelines writes its profile.parquet files to the exact same
-`<asset_class>=<TICKER>/profile.parquet` local layout (see e.g.
-`equicast_stock.writer.write_profile_parquet`), so `build_catalog_rows`
-only needs a local directory and an `asset_class` string — no
-per-pipeline config parsing (`StockTicker`/`FxPair`/...) — which is what
-lets one shared CLI (`equicast-core-build-catalog`) serve every ingestion
-workflow instead of one near-identical script per pipeline.
+Deliberately asset-class-agnostic and package-agnostic for stock/etf/
+benchmark/future: every one of those pipelines writes its profile.parquet
+files to the exact same `<asset_class>=<TICKER>/profile.parquet` local
+layout (see e.g. `equicast_stock.writer.write_profile_parquet`), so
+`build_catalog_rows` only needs a local directory and an `asset_class`
+string for them — no per-pipeline config parsing (`StockTicker`/`FxPair`/
+...) — which is what lets one shared CLI (`equicast-core-build-catalog`)
+serve every ingestion workflow instead of one near-identical script per
+pipeline. `fx` is the first asset class merged under equicast-support#232
+and gets its own row-building/schema path (`_build_fx_catalog_rows`/
+`FX_CATALOG_SCHEMA`) instead, since a currency pair has none of
+website/market_cap/sector/industry/isin/tax_domicile/exchange/region's
+concepts at all (always null in the generic shape) — the others keep the
+original generic path until they get the same treatment.
 
 Each ingestion pipeline's own container only ever processes one matrix-
 chunked subset of its full ticker list (GitHub Actions caps a single
@@ -47,8 +53,10 @@ logger = logging.getLogger(__name__)
 #: `rows` so an empty ticker list (nothing published yet, or a config with
 #: no tickers) still produces a valid, readable Parquet file instead of
 #: pyarrow guessing column types from zero rows, and so every row (stock/
-#: etf/fx alike) round-trips through the same columns regardless of which
+#: etf alike) round-trips through the same columns regardless of which
 #: fields that asset class's profile actually populates.
+#:
+#: `fx` no longer uses this schema — see `FX_CATALOG_SCHEMA`.
 CATALOG_SCHEMA = pa.schema(
     [
         pa.field("ticker", pa.string()),
@@ -71,9 +79,123 @@ CATALOG_SCHEMA = pa.schema(
     ]
 )
 
+#: equicast-support#232 (fx slice): fx's own catalog schema, replacing its
+#: separate `profile.parquet`/`metrics.parquet` — every field either file
+#: actually populated for a currency pair, minus `source` (both files'
+#: copy is a constant provenance tag - "yfinance"/"equicast" - dropped the
+#: same way `equicast_core.client._without_source` already drops it from
+#: every API response; never stored at all now, for fx). Does *not* include
+#: `website`/`market_cap`/`sector`/`industry`/`isin`/`tax_domicile`/
+#: `exchange`/`region` - fx has no such concepts (a currency pair isn't
+#: traded on an exchange, domiciled anywhere, or issued by a company), and
+#: those 8 fields have always come back `None` for every fx row in the
+#: generic `CATALOG_SCHEMA` (see the old `build_catalog_rows`'s own
+#: docstring). Every consumer of a catalog row (`MarketDataClient.search`/
+#: `.enrich_holdings`) already reads fields via `dict.get(...)`, never
+#: direct indexing, so a fx row simply not carrying these keys is
+#: indistinguishable from today's always-`None` values to every caller.
+FX_CATALOG_SCHEMA = pa.schema(
+    [
+        pa.field("ticker", pa.string()),
+        pa.field("from_currency", pa.string()),
+        pa.field("to_currency", pa.string()),
+        pa.field("name", pa.string()),
+        pa.field("type", pa.string()),
+        pa.field("current_price", pa.float64()),
+        pa.field("currency", pa.string()),
+        pa.field("day_open", pa.float64()),
+        pa.field("day_high", pa.float64()),
+        pa.field("day_low", pa.float64()),
+        pa.field("day_close", pa.float64()),
+        pa.field("year_open", pa.float64()),
+        pa.field("year_high", pa.float64()),
+        pa.field("year_low", pa.float64()),
+        pa.field("year_close", pa.float64()),
+        pa.field("volatility", pa.float64()),
+        pa.field("sharpe_ratio", pa.float64()),
+        pa.field("max_drawdown", pa.float64()),
+        pa.field("cagr_1y", pa.float64()),
+        pa.field("cagr_2y", pa.float64()),
+        pa.field("cagr_3y", pa.float64()),
+        pa.field("cagr_5y", pa.float64()),
+        pa.field("cagr_10y", pa.float64()),
+        pa.field("change_1w_pct", pa.float64()),
+        pa.field("change_1m_pct", pa.float64()),
+        pa.field("last_updated", pa.string()),
+    ]
+)
+
+#: Per-asset-class schema override — checked by `_schema_for` before
+#: falling back to the generic `CATALOG_SCHEMA`. Only `fx` diverges so far
+#: (equicast-support#232); stock/etf/benchmark/future stay on the generic
+#: shape until they get the same treatment.
+CATALOG_SCHEMAS: dict[str, pa.Schema] = {"fx": FX_CATALOG_SCHEMA}
+
+
+def _schema_for(asset_class: str) -> pa.Schema:
+    return CATALOG_SCHEMAS.get(asset_class.lower(), CATALOG_SCHEMA)
+
 
 def catalog_key(asset_class: str) -> str:
     return f"catalog/{asset_class.lower()}.parquet"
+
+
+def _build_fx_catalog_rows(output_dir: Path) -> list[dict[str, Any]]:
+    """FX counterpart of the generic row-building below (equicast-support#232)
+    — one row per `fx=<PAIR>/profile.parquet` found under `output_dir`,
+    folding in that pair's sibling `metrics.parquet` the same way the
+    generic path does. Unlike the generic path, this carries every field
+    profile/metrics actually populate for a pair (`from_currency`/
+    `to_currency`, the full day/year OHLC range, and every risk/performance
+    metric — not just `cagr_1y`/`change_1w_pct`/`change_1m_pct`) rather than
+    a fixed cross-asset-class subset, since fx no longer publishes its own
+    `profile.parquet`/`metrics.parquet` to S3 — this catalog row is now the
+    only place that data lives (see `equicast_core.client.MarketDataClient.
+    get_profile`/`get_metrics`, which reconstruct their API-facing shape
+    from it for `asset_class="fx"`).
+
+    `metrics` defaults to `{}` for a pair with no sibling `metrics.parquet`
+    yet (same as the generic path), so every metrics field comes back
+    `None` rather than raising."""
+    rows = []
+    for profile_path in sorted(output_dir.glob("fx=*/profile.parquet")):
+        ticker = profile_path.parent.name[len("fx=") :]
+        profile = pq.read_table(profile_path).to_pylist()[0]
+
+        metrics_path = profile_path.parent / "metrics.parquet"
+        metrics = pq.read_table(metrics_path).to_pylist()[0] if metrics_path.exists() else {}
+
+        rows.append(
+            {
+                "ticker": ticker,
+                "from_currency": profile.get("from_currency"),
+                "to_currency": profile.get("to_currency"),
+                "name": profile.get("description"),
+                "type": "fx",
+                "current_price": profile.get("day_close"),
+                "currency": profile.get("to_currency"),
+                "day_open": profile.get("day_open"),
+                "day_high": profile.get("day_high"),
+                "day_low": profile.get("day_low"),
+                "day_close": profile.get("day_close"),
+                "year_open": profile.get("year_open"),
+                "year_high": profile.get("year_high"),
+                "year_low": profile.get("year_low"),
+                "year_close": profile.get("year_close"),
+                "volatility": metrics.get("volatility"),
+                "sharpe_ratio": metrics.get("sharpe_ratio"),
+                "max_drawdown": metrics.get("max_drawdown"),
+                "cagr_1y": metrics.get("cagr_1y"),
+                "cagr_2y": metrics.get("cagr_2y"),
+                "cagr_3y": metrics.get("cagr_3y"),
+                "cagr_5y": metrics.get("cagr_5y"),
+                "cagr_10y": metrics.get("cagr_10y"),
+                "change_1w_pct": metrics.get("change_1w_pct"),
+                "change_1m_pct": metrics.get("change_1m_pct"),
+                "last_updated": profile.get("last_updated"),
+            }
+        )
+    return rows
 
 
 def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any]]:
@@ -81,41 +203,35 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     under `output_dir` — exactly what a search result needs: `ticker`
     (from the directory name, not the profile itself, so this works
     uniformly across stock/etf/benchmark/future profiles carrying a
-    `ticker`-like field under different names and fx profiles which have
-    none — see equicast_fx.writer), `name` (`name` for stock/etf/benchmark/
-    future, `description` for fx — same "no literal name field" reason),
-    `type` (`asset_class`), `current_price` (`day_close`, the same field
-    every pipeline's profile() method already computes), `currency`
-    (`currency` for stock/etf/benchmark/future; an fx pair has no such
-    field — its own `current_price` is the exchange rate quoted *in*
-    `to_currency`, so that's what a display of it should be formatted as),
-    `website` (`None` for fx/benchmark/future profiles, which carry no such
-    field — a currency pair, an index, or a futures contract has no issuer
-    site to link/show a favicon for), `market_cap` — a stock's real
+    `ticker`-like field under different names — see equicast_fx.writer for
+    why fx itself no longer goes through this function at all),
+    `name` (`name` for stock/etf/benchmark/future), `type` (`asset_class`),
+    `current_price` (`day_close`, the same field every pipeline's profile()
+    method already computes), `currency` (`currency` for stock/etf/
+    benchmark/future), `website` (`None` for benchmark/future profiles,
+    which carry no such field — an index or a futures contract has no
+    issuer site to link/show a favicon for), `market_cap` — a stock's real
     `market_cap`, an etf's `total_assets` (fund AUM, the closest comparable
     "size" figure a fund has — etf profiles carry no market cap of their
-    own), or `None` for fx/benchmark/future, none of which has a size
+    own), or `None` for benchmark/future, neither of which has a size
     concept at all — `exchange` (stock/etf/benchmark/future's own
-    `exchange`, yfinance's raw code, e.g. "NMS"/"PCX"/"SNP"/"CMX", not a
-    bare "NASDAQ"/"NYSE" string; `None` for fx, which isn't traded on one),
+    `exchange`, yfinance's raw code, e.g. "NMS"/"PCX"/"SNP"/"CMX"),
     `region` (stock/etf/benchmark's own `region`, yfinance's short country
-    code, e.g. "us"/"gb"; `None` for fx, which isn't domiciled anywhere, and
-    usually `None` for future too — yfinance rarely populates a futures
-    contract's region), and `sector`/`industry` (a stock's own
-    `sector`/`industry` fields; an etf profile always sets both to the
-    literal "Exchange Traded Fund", since yfinance never populates either
-    for a fund — `category` is its closest equivalent but isn't surfaced
-    here — same reasoning as "Mutual Fund" for a mutual-fund profile, once
-    that asset class exists; always `None` for benchmark/future, which
-    yfinance never populates these for either, and for fx, which has no
-    such concept at all), and `last_updated` (every asset class's profile
-    carries this field already, stamped by its own ingestion pipeline —
-    see equicast_stock/etf/fx/benchmark/future's writers/clients — so it
-    round-trips here unchanged), `isin` (stock/etf profiles only; `None`
-    for fx/benchmark/future, which don't carry one), and `tax_domicile`
-    (GitHub issue #94 — stock/etf profiles only, either that ticker's
-    config override or derived from its `isin`; see
-    `equicast_stock.cli._derive_tax_domicile`).
+    code, e.g. "us"/"gb"; usually `None` for future too — yfinance rarely
+    populates a futures contract's region), and `sector`/`industry` (a
+    stock's own `sector`/`industry` fields; an etf profile always sets both
+    to the literal "Exchange Traded Fund", since yfinance never populates
+    either for a fund — `category` is its closest equivalent but isn't
+    surfaced here — same reasoning as "Mutual Fund" for a mutual-fund
+    profile, once that asset class exists; always `None` for benchmark/
+    future, which yfinance never populates these for either), and
+    `last_updated` (every asset class's profile carries this field already,
+    stamped by its own ingestion pipeline — see equicast_stock/etf/
+    benchmark/future's writers/clients — so it round-trips here unchanged),
+    `isin` (stock/etf profiles only; `None` for benchmark/future, which
+    don't carry one), and `tax_domicile` (GitHub issue #94 — stock/etf
+    profiles only, either that ticker's config override or derived from its
+    `isin`; see `equicast_stock.cli._derive_tax_domicile`).
 
     Also folds in `cagr_1y`/`change_1w_pct`/`change_1m_pct` from that same
     ticker's sibling `metrics.parquet` (see `equicast_metrics.MetricsClient.
@@ -129,7 +245,17 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
     build shouldn't fail because one ticker's metrics happened to lag.
 
     Sorted by ticker for a deterministic catalog file (stable diffs run to
-    run, and no reliance on filesystem iteration order)."""
+    run, and no reliance on filesystem iteration order).
+
+    `asset_class="fx"` is handled entirely by `_build_fx_catalog_rows`
+    instead (equicast-support#232) — a currency pair has none of this
+    function's website/market_cap/exchange/region/sector/industry/isin/
+    tax_domicile concepts, so fx gets its own row shape/schema
+    (`FX_CATALOG_SCHEMA`) rather than a row full of always-`None` columns.
+    """
+    if asset_class.lower() == "fx":
+        return _build_fx_catalog_rows(output_dir)
+
     prefix = f"{asset_class.lower()}="
     rows = []
     for profile_path in sorted(output_dir.glob(f"{prefix}*/profile.parquet")):
@@ -142,10 +268,10 @@ def build_catalog_rows(output_dir: Path, asset_class: str) -> list[dict[str, Any
         rows.append(
             {
                 "ticker": ticker,
-                "name": profile.get("name") or profile.get("description"),
+                "name": profile.get("name"),
                 "type": asset_class.lower(),
                 "current_price": profile.get("day_close"),
-                "currency": profile.get("currency") or profile.get("to_currency"),
+                "currency": profile.get("currency"),
                 "website": profile.get("website"),
                 "market_cap": profile.get("market_cap") or profile.get("total_assets"),
                 "exchange": profile.get("exchange"),
@@ -174,10 +300,12 @@ def upload_catalog(
     catalog this asset class previously had — a full rebuild each run
     (not a merge), since `rows` already reflects that pipeline's complete,
     just-refreshed ticker list rather than a partial update. Written
-    against `CATALOG_SCHEMA` rather than a schema inferred from `rows`, so
-    an empty ticker list still produces a valid, readable file."""
+    against that asset class's own schema (`_schema_for` — `fx` uses
+    `FX_CATALOG_SCHEMA`, everything else the generic `CATALOG_SCHEMA`)
+    rather than a schema inferred from `rows`, so an empty ticker list
+    still produces a valid, readable file."""
     s3 = s3_client or boto3.client("s3", region_name=region_name)
-    table = pa.Table.from_pylist(rows, schema=CATALOG_SCHEMA)
+    table = pa.Table.from_pylist(rows, schema=_schema_for(asset_class))
     buffer = pa.BufferOutputStream()
     pq.write_table(table, buffer)
     s3.put_object(
