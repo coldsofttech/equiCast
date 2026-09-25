@@ -199,8 +199,10 @@ def build_account_movers(
 
     result = []
     for row in ranked:
-        holding = enriched_by_ticker.get(row["ticker"])
-        if holding is None:
+        enriched = enriched_by_ticker.get(row["ticker"])
+        if enriched is None:
             continue
-        result.append({**holding, "change_1y_pct": round(cagr_by_ticker[row["ticker"]] * 100, 8)})
+        result.append(
+            {**enriched, "change_1y_pct": round(cagr_by_ticker[row["ticker"]] * 100, 8)}
+        )
     return result
