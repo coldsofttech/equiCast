@@ -22,6 +22,7 @@ const TYPES = [
   { value: "etf", label: "ETFs" },
   { value: "fx", label: "FX" },
   { value: "benchmark", label: "Benchmark Index" },
+  { value: "future", label: "Futures" },
 ];
 
 /**
@@ -33,9 +34,19 @@ const TYPES = [
  * (searchFilterOptions.js) rather than derived from the catalog, since
  * equiCast's ticker list is presently hand-picked from a small fixed set.
  * Type/Market cap/Region/Exchange only meaningfully narrow stock/etf rows,
- * and Sector/Industry only stock rows — a row from any other asset class
- * has none of those fields (always `None`) and is excluded outright once
- * such a filter is applied (see MarketDataClient.search's docstring).
+ * and Sector/Industry only stock rows — fx always matches every one of
+ * them regardless (see MarketDataClient.search's docstring) — but none of
+ * the controls call that out per-row; a fx-heavy result set simply won't
+ * visibly shrink as they tighten. "Benchmark Index" and "Futures" (`type:
+ * "benchmark"`/`"future"`, both offered here alongside Stocks/ETFs/FX)
+ * behave differently from fx: a benchmark/future row has none of Market
+ * cap/Sector/Industry's concepts (always `None` in its catalog row), so
+ * it's *excluded* whenever any of those is applied, rather than always
+ * matching like fx — only Exchange (and, for benchmark, Region) narrows it
+ * meaningfully, since yfinance does report those for a market index, and
+ * an exchange (if not usually a region) for a futures contract. Leaving
+ * Market cap/Sector/Industry (and Region, for Futures) at their defaults
+ * is what keeps a Type: Benchmark Index/Futures search populated.
  *
  * `query`/`type`/`minMarketCap`/`maxMarketCap`/`region`/`exchange`/
  * `sector`/`industry` are the currently-applied filters (from the URL —
