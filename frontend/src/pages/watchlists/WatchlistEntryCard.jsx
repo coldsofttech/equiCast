@@ -42,12 +42,17 @@ function ChangeStat({ label, pct }) {
  * `ticker` instead — only a real holding is removable, since a system
  * entry isn't something the caller added.
  *
+ * `change_1y_pct` is only ever present on Top Winners/Top Losers entries
+ * (it's the trailing 1-year CAGR those two watchlists are ranked by — see
+ * equicast_watchlist.movers) — rendered as a third stat only when set, so
+ * every other watchlist's cards keep their usual two.
+ *
  * @param {{
  *   holding: {
  *     id?: string, ticker: string, name?: string|null, website?: string|null,
  *     currency?: string|null, current_price?: number|null,
  *     current_price_native?: number|null, change_1w_pct?: number|null,
- *     change_1m_pct?: number|null,
+ *     change_1m_pct?: number|null, change_1y_pct?: number|null,
  *   },
  *   isRemovable?: boolean,
  *   onRemove?: () => void,
@@ -85,6 +90,7 @@ function WatchlistEntryCard({ holding, isRemovable, onRemove }) {
       <div className="ec-watchlist-card-changes">
         <ChangeStat label="1W" pct={holding.change_1w_pct} />
         <ChangeStat label="1M" pct={holding.change_1m_pct} />
+        {holding.change_1y_pct != null && <ChangeStat label="1Y" pct={holding.change_1y_pct} />}
       </div>
     </div>
   );

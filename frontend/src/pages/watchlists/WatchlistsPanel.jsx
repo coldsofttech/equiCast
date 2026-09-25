@@ -23,19 +23,23 @@ import "./WatchlistsPanel.css";
  * The /dashboard watchlists panel: one Card, tabbed across the five system
  * defaults (see backend/watchlists/views.py's SYSTEM_WATCHLISTS — always
  * present, always first) followed by the caller's own custom watchlists
- * (up to MAX_WATCHLISTS, currently 5). Global Markets is the first system
- * tab with real content — built weekly by equicast-watchlist
- * (packages/watchlist) and read back via `_SYSTEM_WATCHLIST_STORAGE_KEYS`
- * in the backend view; every other system tab still comes back with
- * `holdings: []` until its own population logic exists. A custom
+ * (up to MAX_WATCHLISTS, currently 5). Global Markets, Top Winners, and Top
+ * Losers are the three system tabs with real content — built weekly by
+ * equicast-watchlist (packages/watchlist) and read back via
+ * `_SYSTEM_WATCHLIST_STORAGE_KEYS` in the backend view (Top Winners/Losers
+ * rank the whole stock/ETF universe by trailing 1-year CAGR — see
+ * equicast_watchlist.movers — rather than Global Markets' hand-curated fx/
+ * future/benchmark list); the two "(Your Accounts)" tabs still come back
+ * with `holdings: []` until their own population logic exists. A custom
  * watchlist's holdings are real — added/removed here via the same
  * POST/DELETE /api/holdings/ a direct account holding uses (see
  * TickerSearchField/handleAddHolding), just with `watchlist_id` instead of
  * `account_id` and never a nested transaction (watchlist holdings don't
  * carry shares/cost basis — see HoldingListView.post). Every entry, system
  * or custom, renders as the same WatchlistEntryCard (logo/name/ticker/
- * native price/1w+1m change) — a system tab is otherwise read-only: no
- * rename/delete, no add/remove-holding controls.
+ * native price/1w+1m change, plus 1y change for Top Winners/Losers) — a
+ * system tab is otherwise read-only: no rename/delete, no add/remove-
+ * holding controls.
  */
 function WatchlistsPanel() {
   const api = useApi();
@@ -212,7 +216,7 @@ function WatchlistsPanel() {
                     title="No holdings yet"
                     description={
                       active.type === "system"
-                        ? "This watchlist isn't populated yet — that's separate work, coming later."
+                        ? "No entries published for this watchlist yet — check back after the next update."
                         : "Search for a ticker to add it to this watchlist."
                     }
                     action={

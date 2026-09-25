@@ -13,6 +13,8 @@ FUTURE_ENTRY = WatchlistEntry(
 BENCHMARK_ENTRY = WatchlistEntry(
     asset_class="benchmark", ticker="SP500", name="S&P 500", key="SP500", symbol="^GSPC"
 )
+STOCK_ENTRY = WatchlistEntry(asset_class="stock", ticker="AAPL", name="AAPL")
+ETF_ENTRY = WatchlistEntry(asset_class="etf", ticker="VOO", name="VOO")
 
 #: 21 ascending daily closes: enough for both the 5-trading-day-back "week"
 #: reference and a full "month" (oldest row) reference.
@@ -93,6 +95,46 @@ def test_build_entry_for_benchmark_uses_benchmark_client() -> None:
 
     mock_benchmark_client.assert_called_once_with("SP500", "^GSPC", datafeed=datafeed)
     assert row["name"] == "S&P 500"
+
+
+def test_build_entry_for_stock_uses_stock_client() -> None:
+    datafeed = _datafeed()
+    with patch("equicast_watchlist.builder.StockClient") as mock_stock_client:
+        mock_client = mock_stock_client.return_value
+        mock_client.symbol = "AAPL"
+        mock_client.profile.return_value = {
+            "name": "Apple Inc.",
+            "currency": "USD",
+            "day_close": 220.5,
+            "last_updated": "2026-08-28T21:29:05+00:00",
+        }
+
+        row = build_entry(STOCK_ENTRY, datafeed)
+
+    mock_stock_client.assert_called_once_with("AAPL", datafeed=datafeed)
+    assert row["asset_class"] == "stock"
+    assert row["name"] == "Apple Inc."
+    assert row["current_price"] == 220.5
+
+
+def test_build_entry_for_etf_uses_etf_client() -> None:
+    datafeed = _datafeed()
+    with patch("equicast_watchlist.builder.ETFClient") as mock_etf_client:
+        mock_client = mock_etf_client.return_value
+        mock_client.symbol = "VOO"
+        mock_client.profile.return_value = {
+            "name": "Vanguard S&P 500 ETF",
+            "currency": "USD",
+            "day_close": 480.1,
+            "last_updated": "2026-08-28T21:29:05+00:00",
+        }
+
+        row = build_entry(ETF_ENTRY, datafeed)
+
+    mock_etf_client.assert_called_once_with("VOO", datafeed=datafeed)
+    assert row["asset_class"] == "etf"
+    assert row["name"] == "Vanguard S&P 500 ETF"
+    assert row["current_price"] == 480.1
 
 
 def test_build_entry_falls_back_to_config_name_when_profile_has_none() -> None:

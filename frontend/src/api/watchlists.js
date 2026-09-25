@@ -4,13 +4,13 @@
 
 /**
  * @typedef {Object} WatchlistSystemEntry - one row of a system watchlist's
- *   pre-built content (e.g. Global Markets — see
+ *   pre-built content (Global Markets, Top Winners, or Top Losers — see
  *   equicast_watchlist.builder/writer and MarketDataClient.
  *   get_watchlist_entries). Not a real Holding: no `id` (nothing to key a
  *   remove action off), no shares/cost-basis fields. `current_price` is
  *   always this instrument's own native currency — a system watchlist has
  *   no single owner to convert it for.
- * @property {"fx"|"future"|"benchmark"} asset_class
+ * @property {"fx"|"future"|"benchmark"|"stock"|"etf"} asset_class
  * @property {string} ticker
  * @property {string} symbol
  * @property {string|null} name
@@ -18,6 +18,10 @@
  * @property {number|null} current_price
  * @property {number|null} change_1w_pct
  * @property {number|null} change_1m_pct
+ * @property {number|null} [change_1y_pct] - Top Winners/Top Losers only —
+ *   the trailing 1-year CAGR those two watchlists are ranked by, as a
+ *   percent (see equicast_watchlist.movers). Never set on a Global Markets
+ *   row.
  * @property {string} last_updated
  * @property {string} source
  */
@@ -33,19 +37,20 @@
  *   for one of the caller's own (up to MAX_WATCHLISTS, currently 5).
  * @property {(Holding|WatchlistSystemEntry)[]} holdings - always present;
  *   `WatchlistSystemEntry` rows for a system watchlist that's been built
- *   (today: just "global-markets" — see backend/watchlists/views.py's
- *   `_SYSTEM_WATCHLIST_STORAGE_KEYS`), empty for every other system
- *   watchlist (population is separate, not-yet-built work) and for any
- *   custom watchlist with nothing added to it yet.
+ *   ("global-markets"/"top-winners"/"top-losers" — see
+ *   backend/watchlists/views.py's `_SYSTEM_WATCHLIST_STORAGE_KEYS"),
+ *   `holdings: []` for the two "(Your Accounts)" system watchlists
+ *   (population is separate, not-yet-built work) and for any custom
+ *   watchlist with nothing added to it yet.
  */
 
 /**
  * GET /api/watchlists/ — see backend/watchlists/views.py's
  * WatchlistListView.get. Returns the five system watchlists (in a fixed
- * order — "global-markets" nested with its `WatchlistSystemEntry` rows,
- * the rest still `holdings: []`) followed by the caller's own custom ones,
- * each nested with its enriched real holdings — one fetch for the whole
- * tabbed panel.
+ * order — "global-markets"/"top-winners"/"top-losers" nested with their
+ * `WatchlistSystemEntry` rows, the two "(Your Accounts)" ones still
+ * `holdings: []`) followed by the caller's own custom ones, each nested
+ * with its enriched real holdings — one fetch for the whole tabbed panel.
  *
  * @param {(path: string, options?: object) => Promise<unknown>} api
  * @returns {Promise<Watchlist[]>}

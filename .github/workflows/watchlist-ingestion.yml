@@ -36,15 +36,23 @@ permissions:
   contents: read
 
 jobs:
-  # One job, one step per system watchlist — today just Global Markets.
-  # Unlike the other five pipelines, there's no "plan"/matrix-chunk job: a
-  # system watchlist's entry list is small enough (today: 24 for Global
-  # Markets) to fetch in a single container run — and no "build-catalog"
-  # job either, since equicast-watchlist doesn't produce (or read) a
-  # catalog/*.parquet file at all. (Additional system watchlists land here
-  # later as their own "Build <name> watchlist entries" step, each
-  # pointing at its own config file — no new job needed, no changes to the
-  # steps below.)
+  # `ingest`: one step per system watchlist that's built straight from a
+  # config file (today just Global Markets), plus the rank/movers steps
+  # that build Top Winners/Top Losers from the stock/ETF universe instead
+  # (see packages/watchlist/src/equicast_watchlist/movers.py). There's no
+  # "plan"/matrix-chunk job like the other five pipelines: a system
+  # watchlist's entry list is small enough to fetch in a single container
+  # run, and no "build-catalog" job either, since equicast-watchlist
+  # doesn't produce (or read) a catalog/*.parquet file at all. (Additional
+  # config-driven system watchlists land here later as their own "Build
+  # <name> watchlist entries" step, each pointing at its own config file —
+  # no new job needed, no changes to the steps already here.)
+  #
+  # `report-status`/`cleanup-failure-artifacts` give this pipeline the
+  # same equicast-support#145/#169 failure-reporting resilience every
+  # other pipeline already has, with `ingest`'s own result standing in for
+  # all three of plan/ingest/build-catalog - this pipeline has neither of
+  # the other two jobs, so there's nothing else to fold in.
   ingest:
     runs-on: ubuntu-latest
     outputs:
@@ -64,9 +72,13 @@ jobs:
           if [ "$ENVIRONMENT" = "production" ]; then
             BUCKET="${{ vars.MARKET_DATA_BUCKET_PROD }}"
             CONFIG="config/global_markets.prod.yaml"
+            STOCK_CONFIG="../stock/config/stocks.prod.yaml"
+            ETF_CONFIG="../etf/config/etfs.prod.yaml"
           else
             BUCKET="${{ vars.MARKET_DATA_BUCKET_DEV }}"
             CONFIG="config/global_markets.dev.yaml"
+            STOCK_CONFIG="../stock/config/stocks.dev.yaml"
+            ETF_CONFIG="../etf/config/etfs.dev.yaml"
           fi
 
           if [ -z "$BUCKET" ]; then
@@ -76,6 +88,8 @@ jobs:
 
           echo "bucket=$BUCKET" >> "$GITHUB_OUTPUT"
           echo "global_markets_config=$CONFIG" >> "$GITHUB_OUTPUT"
+          echo "stock_config=$STOCK_CONFIG" >> "$GITHUB_OUTPUT"
+          echo "etf_config=$ETF_CONFIG" >> "$GITHUB_OUTPUT"
 
           # equicast-support#185: dev/vX.Y branches (see images.yml's
           # build-push-image composite action) push a :dev tag rather than
@@ -113,40 +127,116 @@ jobs:
             --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
             --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
 
+      # failures.json (if any - see
+      # equicast_watchlist.writer.write_failures_manifest, written
+      # whenever an entry's fetch fails; GitHub issue equicast-support#145)
+      # is set aside under a step-specific name immediately after each
+      # docker run below, before the next run's own /output (or /rankings)
+      # mount can overwrite it — unlike the other five pipelines' matrix
+      # legs, every step here shares this same job's filesystem, so
+      # Global Markets/Top Winners/Top Losers would otherwise all
+      # clobber the same output/failures.json in turn.
+      - name: Set aside Global Markets' failures manifest, if any
+        run: |
+          mkdir -p chunk-failures
+          if [ -f output/failures.json ]; then
+            mv output/failures.json chunk-failures/failures-global_markets.json
+          fi
+
+      # --- Top Winners / Top Losers ---
+      # Step 1 (independent of winners/losers — see
+      # packages/watchlist/src/equicast_watchlist/movers.py): every stock/ETF
+      # ticker's trailing 1-year CAGR, computed once and written to
+      # ./rankings/rankings.json — a plain JSON file, not a watchlist itself,
+      # so it's kept out of ./output (never uploaded to S3 below).
+      - name: Compute stock/ETF 1-year CAGR rankings
+        run: |
+          mkdir -p rankings
+          docker run --rm \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:${{ steps.env.outputs.image_tag }} \
+            --mode rank \
+            --stock-config "${{ steps.env.outputs.stock_config }}" \
+            --etf-config "${{ steps.env.outputs.etf_config }}" \
+            --out /rankings \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      - name: Set aside the CAGR ranking's failures manifest, if any
+        run: |
+          if [ -f rankings/failures.json ]; then
+            mv rankings/failures.json chunk-failures/failures-rank.json
+          fi
+
+      # Steps 2 and 3: the rankings' top and bottom
+      # MAX_HOLDINGS_FOR_WATCHLIST tickers (same repo variable
+      # backend/watchlists/views.py's HoldingsClient reads for a custom
+      # watchlist's own holdings cap), each built into full watchlist
+      # entries the same way Global Markets' entries are above.
+      - name: Build Top Winners watchlist entries
+        run: |
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:${{ steps.env.outputs.image_tag }} \
+            --mode movers \
+            --watchlist-key TOP_WINNERS \
+            --direction winners \
+            --rankings /rankings/rankings.json \
+            --limit "${{ vars.MAX_HOLDINGS_FOR_WATCHLIST || '50' }}" \
+            --out /output \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      - name: Set aside Top Winners' failures manifest, if any
+        run: |
+          if [ -f output/failures.json ]; then
+            mv output/failures.json chunk-failures/failures-top_winners.json
+          fi
+
+      - name: Build Top Losers watchlist entries
+        run: |
+          docker run --rm \
+            -v "${PWD}/output:/output" \
+            -v "${PWD}/rankings:/rankings" \
+            ghcr.io/${{ github.repository_owner }}/equicast-watchlist:${{ steps.env.outputs.image_tag }} \
+            --mode movers \
+            --watchlist-key TOP_LOSERS \
+            --direction losers \
+            --rankings /rankings/rankings.json \
+            --limit "${{ vars.MAX_HOLDINGS_FOR_WATCHLIST || '50' }}" \
+            --out /output \
+            --max-workers "${{ github.event.inputs.max_workers || '5' }}" \
+            --max-calls "${{ github.event.inputs.max_calls || '5' }}" \
+            --period-seconds "${{ github.event.inputs.period_seconds || '1.0' }}"
+
+      - name: Set aside Top Losers' failures manifest, if any
+        run: |
+          if [ -f output/failures.json ]; then
+            mv output/failures.json chunk-failures/failures-top_losers.json
+          fi
+
       - name: Configure AWS credentials via OIDC
         uses: ./.github/actions/configure-aws
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
 
-      # Moved out of output/ before the S3 upload below so this run's
-      # failures.json (if any - see
-      # equicast_watchlist.writer.write_failures_manifest, written
-      # whenever an entry's fetch fails; GitHub issue equicast-support#145)
-      # never lands in S3 alongside the Hive-partitioned watchlist=*/...
-      # data. Renamed to failures-0.json (a single "chunk", unlike the
-      # other five pipelines' real matrix legs) purely so report-status's
-      # shared merge_failures.py script — written for multi-chunk
-      # pipelines — can still find it by the same failures-*.json glob.
-      - name: Set aside this run's failures manifest, if any
-        run: |
-          mkdir -p chunk-failures
-          if [ -f output/failures.json ]; then
-            mv output/failures.json "chunk-failures/failures-0.json"
-          fi
-
       - name: Upload watchlist entries to S3
         run: aws s3 cp output/ "s3://${{ steps.env.outputs.bucket }}/" --recursive
 
-      - name: Move this run's failures manifest under output/ for the artifact upload
+      - name: Move this run's failures manifests under output/ for the artifact upload
         run: mv chunk-failures output/chunk-failures
 
       # Feeds report-status below — same failures-manifest handoff every
       # other pipeline's ingest job does, just with no profile.parquet
-      # glob alongside it (there's no catalog build here to feed). Short
-      # retention: this artifact only exists to hand off within this run,
-      # not for later reference.
-      - name: Publish this run's failures manifest for report-status
+      # glob alongside it (there's no catalog build here to feed), and up
+      # to four manifests (Global Markets/rank/Top Winners/Top Losers)
+      # instead of one per matrix leg. Short retention: this artifact only
+      # exists to hand off within this run, not for later reference.
+      - name: Publish this run's failures manifests for report-status
         uses: actions/upload-artifact@v7
         with:
           name: watchlist-failures-0
