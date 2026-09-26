@@ -10,6 +10,13 @@ the ingestion pipelines write to (`<asset_class>=<symbol>/profile.parquet`,
 `catalog/<asset_class>.parquet` — see `equicast_core.catalog` for how the
 latter is built/uploaded by each ingestion pipeline), nothing about Django
 or any particular caller.
+
+`fx` is the one exception (equicast-support#232): it no longer publishes its
+own `profile.parquet`/`metrics.parquet` to S3 at all — `catalog/fx.parquet`
+(built against `equicast_core.catalog.FX_CATALOG_SCHEMA`) is the only place
+that data lives, so `get_profile`/`get_metrics` reconstruct their usual
+API-facing shape from a catalog row instead of a per-pair S3 read for that
+one asset class — see each method's own docstring.
 """
 
 from __future__ import annotations
@@ -177,6 +184,61 @@ def _without_source(row: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in row.items() if k != "source"}
 
 
+def _fx_profile_from_catalog_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct `get_profile`'s usual fx return shape from a
+    `catalog/fx.parquet` row (`FX_CATALOG_SCHEMA`) — same keys
+    `FXClient.profile()` always produced (minus `source`, already dropped
+    by `_without_source` everywhere else, and never stored for fx at all
+    now — see `equicast_core.catalog`), so `ProfileView`/the frontend see
+    no difference from before this field moved out of its own S3 object
+    (equicast-support#232). `exchange`/`region` are always `None` here,
+    same as they always were for fx (fx has no such catalog columns at all
+    any more — see `FX_CATALOG_SCHEMA`); `description` is the catalog's own
+    `name` field, which is where fx's profile `description` was folded into
+    at catalog-build time (see `equicast_core.catalog.
+    _build_fx_catalog_rows`)."""
+    return {
+        "from_currency": row.get("from_currency"),
+        "to_currency": row.get("to_currency"),
+        "exchange": None,
+        "region": None,
+        "description": row.get("name"),
+        "last_updated": row.get("last_updated"),
+        "day_open": row.get("day_open"),
+        "day_high": row.get("day_high"),
+        "day_low": row.get("day_low"),
+        "day_close": row.get("day_close"),
+        "year_open": row.get("year_open"),
+        "year_high": row.get("year_high"),
+        "year_low": row.get("year_low"),
+        "year_close": row.get("year_close"),
+    }
+
+
+def _fx_metrics_from_catalog_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Reconstruct `get_metrics`'s usual fx return shape from a
+    `catalog/fx.parquet` row — see `_fx_profile_from_catalog_row`'s
+    docstring for why this exists. Same keys `MetricsClient.metrics()`
+    always produced (minus `source`), fx never having had
+    `buyers_pct`/`sellers_pct`/fundamentals fields to begin with (see
+    that method's own docstring)."""
+    return {
+        "from_currency": row.get("from_currency"),
+        "to_currency": row.get("to_currency"),
+        "volatility": row.get("volatility"),
+        "sharpe_ratio": row.get("sharpe_ratio"),
+        "max_drawdown": row.get("max_drawdown"),
+        "cagr_1y": row.get("cagr_1y"),
+        "cagr_2y": row.get("cagr_2y"),
+        "cagr_3y": row.get("cagr_3y"),
+        "cagr_5y": row.get("cagr_5y"),
+        "cagr_10y": row.get("cagr_10y"),
+        "change_1w_pct": row.get("change_1w_pct"),
+        "change_1m_pct": row.get("change_1m_pct"),
+        "last_updated": row.get("last_updated"),
+    }
+
+
 #: Default TTL (seconds) for `MarketDataClient`'s in-process parquet cache
 #: (see `_cache`/`_read_parquet`), used when a caller doesn't pass its own
 #: `cache_ttl_seconds`. Overridable per deployment via the
@@ -308,7 +370,14 @@ class MarketDataClient:
 
     def get_profile(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single profile record for `symbol`, or `None` if this
-        ticker/pair has no `profile.parquet` in the bucket.
+        ticker/pair has no profile data published.
+
+        `asset_class="fx"` (equicast-support#232) reads `catalog/fx.parquet`
+        instead of a per-pair S3 object — fx no longer publishes its own
+        `profile.parquet` at all — and reconstructs the exact same shape
+        `FXClient.profile()` always returned (see
+        `_fx_profile_from_catalog_row`). Every other asset class is
+        unchanged.
 
         A stock profile's `ceos` is written as a JSON-encoded string column
         (see `equicast_stock.writer.write_profile_parquet`'s docstring —
@@ -328,6 +397,12 @@ class MarketDataClient:
         README (e.g. `packages/stock/README.md`) for what `source` means
         there.
         """
+        if asset_class.lower() == "fx":
+            row = next(
+                (r for r in self.get_catalog("fx") if r.get("ticker") == symbol.upper()), None
+            )
+            return _fx_profile_from_catalog_row(row) if row is not None else None
+
         key = f"{asset_class.lower()}={symbol.upper()}/profile.parquet"
         rows = self._read_parquet(key)
         if not rows:
@@ -339,21 +414,32 @@ class MarketDataClient:
 
     def get_metrics(self, asset_class: str, symbol: str) -> dict[str, Any] | None:
         """Return the single metrics record for `symbol`, or `None` if this
-        ticker/pair has no `metrics.parquet` in the bucket.
+        ticker/pair has no metrics data published.
 
-        Always carries the generic risk/performance fields
+        `asset_class="fx"` (equicast-support#232) reads `catalog/fx.parquet`
+        instead of a per-pair S3 object — fx no longer publishes its own
+        `metrics.parquet` at all — and reconstructs the exact same shape
+        `MetricsClient.metrics()` always returned for fx (see
+        `_fx_metrics_from_catalog_row`). Every other asset class is
+        unchanged and still carries the generic risk/performance fields
         (`volatility`/`sharpe_ratio`/`max_drawdown`/`cagr_1y`..`cagr_10y` —
         see `equicast_metrics.MetricsClient.metrics()`); a stock or etf's
         record additionally carries `buyers_pct`/`sellers_pct` (see
         `.buy_sell_pressure()`), and a stock's record further carries the
         valuation/fundamental fields (`trailing_pe`, etc. — see
         `.fundamentals()`) — all merged in by each ingestion pipeline's own
-        CLI before writing (benchmark/fx have neither, so their
-        `metrics.parquet` only ever has the generic fields).
+        CLI before writing (benchmark has neither, so its `metrics.parquet`
+        only ever has the generic fields).
 
         Drops the raw row's `source` field — see `get_profile`'s docstring
         for why.
         """
+        if asset_class.lower() == "fx":
+            row = next(
+                (r for r in self.get_catalog("fx") if r.get("ticker") == symbol.upper()), None
+            )
+            return _fx_metrics_from_catalog_row(row) if row is not None else None
+
         key = f"{asset_class.lower()}={symbol.upper()}/metrics.parquet"
         rows = self._read_parquet(key)
         if not rows:
@@ -772,15 +858,26 @@ class MarketDataClient:
         return None
 
     def get_catalog(self, asset_class: str) -> list[dict[str, Any]]:
-        """Return every `{ticker, name, type, current_price, currency,
-        website, market_cap, exchange, region, sector, industry, cagr_1y,
-        change_1w_pct, change_1m_pct}` row this asset class's ingestion
-        pipeline last published (see `equicast_core.catalog` —
-        `cagr_1y`/`change_1w_pct`/`change_1m_pct` are folded in from each
+        """Return every row this asset class's ingestion pipeline last
+        published to `catalog/<asset_class>.parquet` (see
+        `equicast_core.catalog`), or `[]` if no catalog has been uploaded
+        yet for it.
+
+        For every asset class but `fx`, each row is `{ticker, name, type,
+        current_price, currency, website, market_cap, exchange, region,
+        sector, industry, cagr_1y, change_1w_pct, change_1m_pct}`
+        (`CATALOG_SCHEMA`). `fx` rows follow `FX_CATALOG_SCHEMA` instead
+        (equicast-support#232) — no website/market_cap/exchange/region/
+        sector/industry/isin/tax_domicile (a currency pair has none of
+        those concepts, and they were always `None` for fx in the old
+        shared schema anyway), but with `from_currency`/`to_currency` and
+        every profile/metrics field fx used to publish as its own
+        `profile.parquet`/`metrics.parquet` folded in directly, since those
+        files no longer exist. `cagr_1y`/`change_1w_pct`/`change_1m_pct`
+        (and, for fx, every other metrics field) are folded in from each
         ticker's own `metrics.parquet` at catalog-build time, used by
         backend/watchlists' system watchlists to rank/display without a
-        separate ingestion pipeline), or `[]` if no catalog has been
-        uploaded yet for it."""
+        separate ingestion pipeline."""
         rows = self._read_parquet(catalog_key(asset_class))
         return rows if rows is not None else []
 
@@ -839,6 +936,13 @@ class MarketDataClient:
         for an unmodeled/unknown domicile), so a caller can show the actual
         rate that applies before any holding-level `tax_override_pct`
         (stored on the holding itself, untouched here) overrides it.
+
+        `sector`/`industry`/`website`/`market_cap`/`tax_domicile` are always
+        `None` for a fx holding (equicast-support#232's `FX_CATALOG_SCHEMA`
+        carries no such columns at all, same as they were always `None` in
+        the old shared schema) — `row.get(...)` returns `None` identically
+        whether the column is absent or present-but-null, so this needs no
+        asset-class branch of its own.
 
         Reads each distinct asset class present in `holdings` once (via
         `get_catalog`), plus the `fx` catalog for currency conversion, so a
@@ -928,14 +1032,16 @@ class MarketDataClient:
         their `market_cap` (a stock's real market cap, an etf's total
         assets as the closest comparable "size" figure a fund has),
         `exchange`, `region`, `sector`, and `industry` respectively (see
-        `equicast_core.catalog.build_catalog_rows`) — fx rows always match
-        every one of these regardless, having none of those concepts for a
-        currency pair; etf/benchmark/future rows have no `sector`/`industry`
-        of their own either (always `None`), so a row from any of the three
-        is excluded whenever either of those two filters is given, the same
-        as a stock row missing the field — a benchmark/future row is
-        likewise excluded whenever `min_market_cap`/`max_market_cap` is
-        given, having no market-cap concept of its own (unlike etf's
+        `equicast_core.catalog.build_catalog_rows`) — fx rows have none of
+        these columns at all (`FX_CATALOG_SCHEMA`), so `row.get(...)`
+        returns `None` for each and they're excluded the same way any
+        other row missing the field being filtered on is; etf/benchmark/
+        future rows have no `sector`/`industry` of their own either
+        (always `None`), so a row from any of the three is excluded
+        whenever either of those two filters is given, the same as a stock
+        row missing the field — a benchmark/future row is likewise
+        excluded whenever `min_market_cap`/`max_market_cap` is given,
+        having no market-cap concept of its own (unlike etf's
         `total_assets` stand-in). `exchange`/`region`/`sector`/`industry`
         match case-insensitively against the row's exact value (not a
         substring, unlike `query`), since all four are short codes/labels
